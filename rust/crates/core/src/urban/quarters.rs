@@ -79,6 +79,32 @@ pub(super) fn outline_frame(s: &Shape) -> f64 {
     let f = frame(s);
     f.u.y.atan2(f.u.x)
 }
+/// Frame of a planned grid inside an enceinte. A polygonal curtain (an octagon,
+/// a trace bent by the river) may run mostly on axes its tightest box misses:
+/// the grid then takes the curtain's dominant axes (length-weighted mean edge
+/// direction modulo a right angle) when they fit the curtain clearly better,
+/// turned to the axis nearest the box's long side. A rectangle keeps its box.
+pub(super) fn enclosure_frame(s: &Shape) -> f64 {
+    let boxed = outline_frame(s);
+    let n = s.outer.len();
+    let (mut c, mut si, mut total) = (0.0, 0.0, 0.0);
+    for i in 0..n {
+        let (a, b) = (s.outer[i], s.outer[(i + 1) % n]);
+        let l = (b.x - a.x).hypot(b.y - a.y);
+        let t = 4.0 * (b.y - a.y).atan2(b.x - a.x);
+        (c, si, total) = (c + l * t.cos(), si + l * t.sin(), total + l);
+    }
+    if total <= 0.0 {
+        return boxed;
+    }
+    // Share of the curtain on the axes of frame `a`, in [-1, 1].
+    let fit = |a: f64| (c * (4.0 * a).cos() + si * (4.0 * a).sin()) / total;
+    let dominant = si.atan2(c) / 4.0;
+    if fit(dominant) <= fit(boxed) + 0.05 {
+        return boxed;
+    }
+    dominant + ((boxed - dominant) / FRAC_PI_2).round() * FRAC_PI_2
+}
 fn len(path: &[Point]) -> f64 {
     path.windows(2)
         .map(|q| (q[0].x - q[1].x).hypot(q[0].y - q[1].y))
@@ -3464,7 +3490,7 @@ fn generate_once(
         };
         let hint = local_field.grid_frame(lattice);
         let frame = if let Some(enclosure) = enclosure {
-            outline_frame(enclosure)
+            enclosure_frame(enclosure)
         } else if local_morph.text("streetOp") == "grid" {
             armature_frame(&base_streets, lattice, hint).unwrap_or(hint)
         } else {
@@ -3634,6 +3660,8 @@ fn generate_once(
         .map_or_else(Vec::new, |s| s.centers.iter().map(|c| c.point).collect());
     warnings.extend(network::clean_options(&mut streets, center, radius,
         !enclosures.is_empty() || cfg.exit_treatment != "legacy", &centers, cfg, surface));
+    // `roadNetworkPrune`: no diagonal shortcut triangles or doubled runs.
+    if cfg.road_network_prune { network::junction_triangles(&mut streets, m.text("streetOp") == "grid"); }
     network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
     // Camp entrances hand over to their native paths, never urban bypass feeders.
     let path_camp = cfg.settlement_form == "camp" || !m.text("campLayout").is_empty();

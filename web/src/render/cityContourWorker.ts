@@ -10,7 +10,7 @@ self.onmessage = async ({ data }: MessageEvent<ContourWorkerRequest>) => {
   try {
     await loadRenderGeometry();
     if (!source) throw new Error('Contour samples are missing.');
-    response.paths = cityContourPaths(source, data.landform, data.scale);
+    response.paths = cityContourPaths(source, data.landform, data.scale, data.topographic);
   } catch (error) { response.error = String(error); }
   self.postMessage(response);
 };

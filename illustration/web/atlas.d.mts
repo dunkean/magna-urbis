@@ -1,0 +1,2 @@
+export function neighbourView(job: any, direction: string): { cx: number; cy: number; scale: number };
+export function mountBattlemapAtlas(options: {host: HTMLElement; requestNeighbour(parent: any, direction: string, neighbours: string[], server: string): Promise<{job:any;blob:Blob}>;onStatus(message:string,error?:boolean):void}): {setRoot(job:any,blob:Blob,server:string):Promise<void>;dispose():void};

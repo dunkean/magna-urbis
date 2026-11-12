@@ -16,6 +16,9 @@ from .context import clean, compile_prompt, dimensions
 from .images import decode_image, guide_images, png, reference_images, simplify_guide
 from .providers import DEFAULT_MODELS
 from .settings import local_settings, CONTROL_PRESETS
+from .battlemap import draw_grid, cell_size, availability
+from .resolution import GENERATION_PIXELS, EXPORT_PIXELS, resolution_settings
+from . import outpaint
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
@@ -62,7 +65,11 @@ class IllustrationService:
                 "configuredKeys": {"openai": bool(os.environ.get("OPENAI_API_KEY")), "gemini": bool(os.environ.get("GEMINI_API_KEY"))},
                 "steps": {"fast": [4, 8, 20, 30, 40, 50], "quality": [4, 20, 30, 40, 50]},
                 "variants": {"fast": ["base", "lightning"], "quality": ["base", "distilled"]},
-                "controlPresets": CONTROL_PRESETS, "queueLimit": 6}
+                "controlPresets": CONTROL_PRESETS, "queueLimit": 6,
+                "promptRevision": 5, "outputs": ["illustration", "battlemap"], "battlemapCellMetres": 1.5,
+                "gridTypes": ['square', 'hex', 'none'], "cellMetresRange": [.5, 100],
+                'outpainting': ['openai-orthographic'],
+                "generationPixels": list(GENERATION_PIXELS), "exportPixels": list(EXPORT_PIXELS)}
 
     def preview_prompt(self, body):
         if not isinstance(body, dict) or body.get("version") != PROTOCOL:
@@ -74,8 +81,9 @@ class IllustrationService:
         if mode not in ("fast", "quality", "cloud"):
             raise ValueError("Moteur inconnu.")
         settings.update(local_settings(mode, settings))
+        settings.update(resolution_settings(settings))
         compiled = compile_prompt(context, settings)
-        return {"description": compiled["description"], "style": compiled["style"], "customized": compiled["customized"],
+        return {"description": compiled["description"], "style": compiled["style"], "customized": compiled["customized"], "battlemap": compiled['battlemap'],
                 "prompt": compiled["prompt"] if mode == "cloud" else compiled["fastPrompt"] if mode == "fast" else compiled["localPrompt"]}
 
     def preview_guides(self, body):
@@ -86,10 +94,9 @@ class IllustrationService:
         if mode not in ('fast', 'quality'):
             raise ValueError('Les guides concernent les moteurs locaux.')
         settings.update(local_settings(mode, settings))
+        settings.update(resolution_settings(settings))
         source = decode_image(body.get('image'))
         pixels = int(settings.get('pixels', 1048576))
-        if pixels not in (393216, 786432, 1048576, 2097152):
-            raise ValueError('Résolution non prise en charge.')
         supplied = body.get('guides', {})
         if not isinstance(supplied, dict):
             raise ValueError('Guides invalides.')
@@ -120,6 +127,7 @@ class IllustrationService:
         if mode not in ("fast", "quality", "cloud"):
             raise ValueError("Moteur inconnu.")
         settings.update(local_settings(mode, settings))
+        settings.update(resolution_settings(settings))
         if mode != "cloud" and not self.capabilities()["localDependencies"] and self.local_runtime is None:
             raise ValueError("Dépendances locales absentes. Installez illustration/requirements.txt dans l’environnement du service.")
         source = decode_image(body.get("image"))
@@ -138,10 +146,6 @@ class IllustrationService:
             raise ValueError('La référence FLUX « capture + profondeur » nécessite une capture 3D avec profondeur.')
         steps = int(settings.get("steps", 4))
         pixels = int(settings.get("pixels", 786432 if mode == "fast" else 1048576))
-        if pixels not in (393216, 786432, 1048576, 2097152):
-            raise ValueError("Résolution non prise en charge.")
-        if mode == "fast" and settings['sdxlVariant'] == 'lightning' and pixels > 1048576:
-            raise ValueError("Lightning est limité à un mégapixel ; choisissez SDXL complet pour 2 MP.")
         if max(source.size) / min(source.size) > 4:
             raise ValueError("Recadrez la capture à un ratio inférieur ou égal à 4:1.")
         if mode == "cloud" and settings.get("provider", "openai") == "openai" and max(source.size) / min(source.size) > 3:
@@ -152,12 +156,25 @@ class IllustrationService:
         settings["steps"] = steps
         settings["projection"] = context.get("projection", "orthographic")
         settings["pixels"] = pixels
+        settings['cellMetres'] = cell_size(settings)
         compiled = compile_prompt(context, settings)
+        continuation = outpaint.validate_continuation(self, body.get('continuation'), context, settings)
+        if continuation:
+            # Reuse completed or running tiles, including recent tiles restored
+            # after a page reload. Never bill twice for the same atlas region.
+            for previous in self.history():
+                family = (previous.get('continuation') or {}).get('rootId', previous['id'])
+                if previous['status'] in ('failed', 'cancelled') or family != continuation['rootId']:
+                    continue
+                if all(abs(a-b) < 1e-5 for a, b in zip(outpaint.bounds(previous['context']), outpaint.bounds(context))):
+                    return previous
+            compiled['prompt'] = outpaint.PROMPT + '\n\n' + compiled['prompt']
         job_id = secrets.token_hex(12)
         job = {"id": job_id, "version": PROTOCOL, "status": "queued", "progress": 0, "message": "En attente…",
                "createdAt": time.time(), "context": context, "settings": settings,
                "prompt": compiled["prompt"], "description": compiled["description"], "resolvedStyle": compiled["style"], "promptCustomized": compiled["customized"],
                "localPrompt": compiled["fastPrompt"] if mode == "fast" else compiled["localPrompt"],
+               "battlemap": compiled['battlemap'] if settings.get('output') == 'battlemap' else None, 'continuation': continuation,
                "sourceSize": list(source.size), "size": list(dimensions(*source.size, pixels)),
                "sourceHash": hashlib.sha256(png(source)).hexdigest()}
         credential = str(body.get("apiKey", ""))
@@ -226,7 +243,7 @@ class IllustrationService:
 
     def asset(self, job_id, name):
         self.get(job_id)
-        if name not in ("result.png", "source.png", "edges.png", "depth.png", "normal.png", "segmentation.png", "metadata.json"):
+        if name not in ("result.png", "artwork.png", "mask.png", "source.png", "edges.png", "depth.png", "normal.png", "segmentation.png", "metadata.json"):
             raise KeyError("Fichier inconnu.")
         path = self.output / job_id / name
         if not path.is_file():
@@ -275,8 +292,12 @@ class IllustrationService:
                 if mode == "cloud":
                     from .providers import generate
                     progress("generating", 0, "Génération chez le fournisseur…")
+                    reference, references = source, {}
+                    if job.get('continuation'):
+                        reference, references = outpaint.prepare(self, source, job)
+                        (directory / 'mask.png').write_bytes(png(references['mask']))
                     data, provenance = (self.cloud_generate or generate)(settings.get("provider", "openai"), key,
-                        settings.get("model", ""), job["prompt"], source, {}, settings)
+                        settings.get("model", ""), job["prompt"], reference, references, settings)
                 else:
                     from .local import LocalRuntime
                     if self.local_runtime is None:
@@ -284,14 +305,42 @@ class IllustrationService:
                     data, provenance = self.local_runtime.generate(mode, job["localPrompt"], guides, tuple(job["size"]), settings, progress, check, source=source)
                 check()
                 with Image.open(io.BytesIO(data)) as image:
-                    result = png(image.convert("RGB"))
-                    output_size = list(image.size)
+                    artwork = image.convert('RGB')
+                native_size = list(artwork.size)
+                target_pixels = max(artwork.width * artwork.height, settings.get('outputPixels', 0))
+                grid_metadata = None
+                if settings.get('output') == 'battlemap':
+                    # Provider aspect ratios may differ. Match the source framing before
+                    # overlaying metre geometry; reject severe unexpected provider crops.
+                    ratio_error = abs((artwork.width / artwork.height) / (source.width / source.height) - 1)
+                    if ratio_error > .12:
+                        raise ValueError('Le fournisseur a modifié le format de la battlemap. Relancez avec un format proche de la capture.')
+                    # Preserve provider detail instead of shrinking every battlemap
+                    # back to the requested generation budget.
+                    if ratio_error > .002 or target_pixels > artwork.width * artwork.height:
+                        artwork = artwork.resize(dimensions(*source.size, target_pixels), Image.Resampling.LANCZOS)
+                    if job.get('continuation'):
+                        artwork = artwork.resize(tuple(job['continuation']['outputSize']), Image.Resampling.LANCZOS)
+                        artwork = outpaint.paste_known(self, artwork, job['context'], job['continuation']['neighbours'])
+                    grid_metadata = {**availability(job['context'], artwork.width * artwork.height, settings['cellMetres']),
+                                     'nativeCellPixels': job['battlemap']['cellPixels'], 'grid': settings.get('grid', 'square'),
+                                     'hexSizeConvention': 'opposite-faces' if settings.get('grid') == 'hex' else None,
+                                     'plane': 'horizontal-target' if job['context'].get('projection') == 'perspective' else 'map-ground'}
+                    if settings.get('grid', 'square') != 'none':
+                        check()
+                        (directory / 'artwork.png').write_bytes(png(artwork))
+                        artwork = draw_grid(artwork, job['context'], settings)
+                elif target_pixels > artwork.width * artwork.height:
+                    artwork = artwork.resize(dimensions(*artwork.size, target_pixels), Image.Resampling.LANCZOS)
+                result = png(artwork)
+                output_size = list(artwork.size)
                 with self.lock:
                     check()
                     (directory / "result.png").write_bytes(result)
                     self.jobs[job_id].update(status="succeeded", progress=1, message="Illustration terminée.",
                         finishedAt=time.time(), totalSeconds=round(time.monotonic() - begin, 3), outputSize=output_size,
-                        provenance=clean(provenance))
+                        provenance=clean(provenance), battlemap=grid_metadata, nativeOutputSize=native_size,
+                        upscaled=artwork.width * artwork.height > native_size[0] * native_size[1])
                     self._save(self.jobs[job_id])
             except Cancelled:
                 pass

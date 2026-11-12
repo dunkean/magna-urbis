@@ -14,14 +14,22 @@ export function townRoofAltitudes(buildings: readonly { id: string; parcel_id?: 
   return new Map(buildings.map(b => { const town = towns.get(owner(b))!; return [b.id, town.count ? town.sum / town.count : 0]; }));
 }
 
-/** Snow is one uniform cover on every roof face (walls, nz < .12, stay untouched).
- * Geometry stays inside the face, leaving a narrow dark ridge/eave border. */
-export function roofSnowPatches(points: readonly Vertex3[], normal: readonly number[], border = .055): { points: Vertex3[]; weight: number }[] {
+/** Snow share of a roof face: one even cover, a touch thinner on steep pitches; walls and near-vertical
+ * faces (nz < .12) hold none. */
+export function roofSnowCover(normal: readonly number[]): number {
   const nz = normal[2];
-  if (nz < .12 || points.length < 3) return [];
+  return nz < .12 ? 0 : .98 - .04 * (1 - nz);
+}
+
+/** Plan (2D) roofs: snow is one uniform cover on every roof face (walls stay untouched).
+ * Geometry stays inside the face, leaving a narrow dark ridge/eave border. The 3D view whitens the
+ * roof triangles in place instead (an inset per triangle draws the triangulation as stripes). */
+export function roofSnowPatches(points: readonly Vertex3[], normal: readonly number[], border = .055): { points: Vertex3[]; weight: number }[] {
+  const weight = roofSnowCover(normal);
+  if (!weight || points.length < 3) return [];
   const centre = points.reduce((s, p) => ({ x: s.x + p.x / points.length, y: s.y + p.y / points.length, z: s.z + p.z / points.length }), { x: 0, y: 0, z: 0 });
   const inset = points.map(p => ({ x: p.x + (centre.x - p.x) * border, y: p.y + (centre.y - p.y) * border, z: p.z + (centre.z - p.z) * border }));
-  return [{ points: inset, weight: .97 }];
+  return [{ points: inset, weight }];
 }
 /** Snow is cooler on the unlit face, while the original cover shows through. */
 export function snowRoofTint(base: PaletteRgb, amount: number, light: number): PaletteRgb {

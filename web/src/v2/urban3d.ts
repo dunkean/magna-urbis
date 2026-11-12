@@ -1,5 +1,7 @@
 import { cityGroundSettings, cityGroundLook } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
+import { decorWater3d } from '../ui/decorWater3d';
+import { paintSeaCover } from '../render/seaCover';
 import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';
 /** Exact City Bench renderer inside V2; no iframe, geometry regeneration or surrogate houses. */
 import { v2DisplayForest, v2ForestOccupation } from './displayForest';
@@ -105,30 +107,45 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
     riverArea: vector.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: 'none', season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar } } : undefined;
   const climate = regimeDisplay?.season?.zone ? waterClimate(regimeDisplay.season) : undefined, active = !!climate && (climate.aridity > 0 || climate.ice > 0), frozenLakes = active && climate!.ice >= .5;
   const exactRivers = !!vector?.rivers && regimeDisplay?.riverMode === 'vector';
-  const key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined,regimeDisplay]);
+  // A decor world hands its smoothed banks to the 3D view (getRetainedWater): its rivers come from them alone, never
+  // again from the planning cells or their grid-cornered polygons, which drew a staircase beside the smooth bank.
+  const banks = !!retainedDecorOf(world.terrain) && r.composition.networks.water.visible, vectorCourses = exactRivers || banks;
+  const key=JSON.stringify([shown,lakes,ink,ink?palette.lakeFill:undefined,ink?palette.waterEdge:undefined,regimeDisplay,banks]);
   let cache = waterDisplays.get(raster); if (!cache) { cache = new Map(); waterDisplays.set(raster, cache); }
   const retained = cache.get(key); if (retained) return retained;
-  const texture = document.createElement('canvas'); texture.width = texture.height = raster.n;
+  // The sea follows the 2D coast: the zero level of the native field at its own spacing (terrainGl's land cover).
+  // The settlement cells (78 m on a 40 km map) mark a cell sea when its mean height is <= 0, which drowned shore houses.
+  const field = renderScene(world, settings).nativeTerrain?.field;
+  const sea = field && Number.isInteger(field.n) && field.n >= 2 && field.data instanceof Float32Array && field.data.length === field.n ** 2 && !(field.floor > 0) && !field.cave?.length ? field : undefined;
+  const side = sea?.n ?? raster.n;
+  const texture = document.createElement('canvas'); texture.width = texture.height = side;
   const ctx = texture.getContext('2d')!, pixels = ctx.createImageData(raster.n, raster.n), paths = new Path2D(), lakePaths = new Path2D();
   if (shown) {
     const value=parseInt(palette.lakeFill.slice(1),16),rgba=ink?[value>>16&255,value>>8&255,value&255,255]:[74,134,179,255];
-    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && !(exactRivers && raster.water[i] === 3) && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
+    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && !(sea && raster.water[i] === 1) && !(vectorCourses && raster.water[i] === 3) && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
+    if (sea) {
+      const cells = document.createElement('canvas'); cells.width = cells.height = raster.n; cells.getContext('2d')!.putImageData(pixels, 0, 0);
+      ctx.imageSmoothingEnabled = false; ctx.drawImage(cells, 0, 0, side, side); ctx.imageSmoothingEnabled = true;
+      const out = ctx.getImageData(0, 0, side, side);
+      paintSeaCover(out.data, sea.data, rgba);
+      ctx.putImageData(out, 0, 0);
+    }
     const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length, redrawn = active && !ink && regimeDisplay?.riverMode === 'vector' && !!vector?.rivers;
     for (const [index, polygon] of (raster.geometry?.water ?? []).entries()) {
       const lake = index >= firstLake && index < lastLake;
       if (lake && !lakes) continue;
       // Material grounds under an active regime keep the river ribbons out of the closed water: each tile redraws the
       // running courses from the 2D vector banks and leaves the dry and frozen ones to their bed and ice.
-      if (index >= lastLake && (redrawn || exactRivers)) continue;
+      if (index >= lastLake && (redrawn || vectorCourses)) continue;
       // Frozen lakes leave the water cover: their ice is painted on the ground.
       const target = lake && frozenLakes ? lakePaths : paths;
       for (const ring of polygon) { if (ring.length < 3) continue; target.moveTo(ring[0].x, ring[0].y); for (const p of ring.slice(1)) target.lineTo(p.x, p.y); target.closePath(); }
     }
   }
-  ctx.putImageData(pixels, 0, 0);
+  if (!sea) ctx.putImageData(pixels, 0, 0);
   const fill = ink ? palette.lakeFill : '#4a86b3';
   const regime = active && vector && regimeDisplay ? (target: CanvasRenderingContext2D, mode: 'erase' | 'ground' | 'ice' | 'ink', mpp: number): boolean => paintWaterRegime(target, vector, regimeDisplay, mode, mpp, lakePaths, fill) : undefined;
-  if (regime) { ctx.setTransform(raster.n / raster.width, 0, 0, raster.n / raster.width, 0, 0); regime(ctx, 'erase', raster.width / raster.n); ctx.setTransform(1, 0, 0, 1, 0, 0); }
+  if (regime) { ctx.setTransform(side / raster.width, 0, 0, side / raster.width, 0, 0); regime(ctx, 'erase', raster.width / side); ctx.setTransform(1, 0, 0, 1, 0, 0); }
   const result = { texture, paths, ...(exactRivers ? { riverPaths: vectorRiverPath(vector!, regimeDisplay!) } : {}), ...(ink?{ink:{fill:palette.lakeFill,stroke:palette.waterEdge}}:{}), ...(regime ? { regime, frozen: climate!.ice > 0 } : {}) }; cache.set(key, result); return result;
 }
 /** Preserve the native control grid and the applied lake levels; never resample the terrain. */
@@ -293,6 +310,13 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
     getLook: () => cityGroundLook(v2Resolved3d(options.getSettings())),
     getWaterDisplay: () => { const world = options.getWorld(); return world && v2WaterDisplay(world, options.getSettings()); },
+    getRetainedWater: () => {
+      const world = options.getWorld(), decor = world && retainedDecorOf(world.terrain); if (!world || !decor) return;
+      const settings = options.getSettings(), r = v2Resolved3d(settings, world); if (!r.composition.networks.water.visible) return;
+      const effective = effectiveTerrainSettings(settings, world.mapSize);
+      return decorWater3d(decor, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.ground.lakes, r.palette.colors,
+        { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar });
+    },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     getForest: () => {
       // An Illustrated ground has its canopy in the raster draped as the map.

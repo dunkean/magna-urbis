@@ -518,7 +518,7 @@ pub fn build_forest_field(p: &ForestParams) -> Result<ForestPlanes, String> {
     // Only V2 crowns avoid beaches; about 8 m texels.
     let (beach_n, beach) = if p.progressive {
         let res = f64::min(2048.0, f64::max(256.0, 2f64.powi((p.width / 8.0).log2().ceil() as i32))) as usize;
-        (res, beach_grid(&heights, p.x, p.y, p.width, nsrc, seed, res))
+        (res, beach_grid(&heights, p.x, p.y, p.width, nsrc, seed, p.climate[0], res))
     } else {
         (0, Vec::new())
     };

@@ -562,15 +562,18 @@ export function orchardMarks(layer: TextureLayer, tile: number, seed: string): M
   let seedValue = 2166136261;
   for (let i = 0; i < seed.length; i++) seedValue = Math.imul(seedValue ^ seed.charCodeAt(i), 16777619);
   for (const id of layer.index.itemsOf(tile)) {
-    const area = layer.areas[id], angle = area.stripAngle ?? 0;
+    const area = layer.areas[id];
+    let direction = 0, longest = 0;
+    for (let k = 0; k < area.poly.length; k++) { const a = area.poly[k], b = area.poly[(k + 1) % area.poly.length], d = (b.x - a.x) ** 2 + (b.y - a.y) ** 2; if (d > longest) { longest = d; direction = Math.atan2(b.y - a.y, b.x - a.x); } }
+    const angle = area.stripAngle ?? direction;
     const ca = Math.cos(angle), sa = Math.sin(angle);
     const corners = [[rect.minX, rect.minY], [rect.maxX, rect.minY], [rect.maxX, rect.maxY], [rect.minX, rect.maxY]];
     const us = corners.map(([x, y]) => x * ca + y * sa), vs = corners.map(([x, y]) => -x * sa + y * ca);
     const salt = Math.floor(hash3(Math.round(area.poly[0].x * 7), Math.round(area.poly[0].y * 7), seedValue) * 0x7fffffff);
-    const spacing = 11, offset = hash3(salt, 0, 31) * spacing;
+    const spacing = 8, offset = hash3(salt, 0, 31) * spacing;
     for (let j = Math.floor((Math.min(...vs) - offset) / spacing); j <= Math.ceil((Math.max(...vs) - offset) / spacing); j++) {
       for (let i = Math.floor(Math.min(...us) / spacing); i <= Math.ceil(Math.max(...us) / spacing); i++) {
-        const u = (i + .5) * spacing, v = j * spacing + offset;
+        const u = (i + .5 + (hash3(i, j, salt + 41) - .5) * .12) * spacing, v = j * spacing + offset;
         const x = u * ca - v * sa, y = u * sa + v * ca;
         if (x < rect.minX || x >= rect.maxX || y < rect.minY || y >= rect.maxY || !insideArea(area, x, y)) continue;
         if (Array.from({ length: 8 }, (_, k) => [5.3 * Math.cos(angle + k * Math.PI / 4), 5.3 * Math.sin(angle + k * Math.PI / 4)]).some(([dx, dy]) => !insideArea(area, x + dx, y + dy))) continue;

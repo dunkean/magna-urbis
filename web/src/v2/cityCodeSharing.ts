@@ -1,4 +1,4 @@
-import { encodeCityCode, decodeCityCode, cityCodeUrl } from './cityCode';
+import { encodeCityCode, decodeCityCode, cityCodeUrl, resolveCityCodeDecor } from './cityCode';
 import type { V2Settings } from './contracts';
 import { insertHTML, setText, setDynamicText, registerMessages, translate } from './i18n';
 
@@ -68,13 +68,13 @@ export function mountCityCodeSharing(bindings: CityCodeBindings): { restoreFromL
   find('city-code-load').onclick = async () => {
     if (bindings.busy()) return;
     setText(error, '');
-    try { await bindings.load(decodeCityCode(input.value)); dialog.close(); }
+    try { await bindings.load(await resolveCityCodeDecor(decodeCityCode(input.value))); dialog.close(); }
     catch (e) { showError(e); }
   };
   return { async restoreFromLocation() {
     const shared = new URLSearchParams(location.hash.slice(1)).get('city');
     if (!shared) return;
-    try { await bindings.load(decodeCityCode(shared)); }
+    try { await bindings.load(await resolveCityCodeDecor(decodeCityCode(shared))); }
     catch (e) { open(); input.value = shared; showError(e); }
   } };
 }

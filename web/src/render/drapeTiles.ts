@@ -8,9 +8,13 @@ interface Box { minX: number; minY: number; maxX: number; maxY: number }
  * Whole-tile capture painting remains with the caller; live fills yield between cache misses. */
 export class DrapeTiles {
   private cache = new RasterTileCache<HTMLCanvasElement>(48 * 1024 * 1024);
+  /** Squares painted with provisional content (e.g. contours still in their worker), with the callers that drew them. */
+  private waiting = new Map<string, Set<() => void>>();
 
+  /** The painter calls `defer()` when it draws provisional content and calls the returned function once that content is
+   * outdated: the square leaves the cache and every caller that drew it gets `onStale` (once), to repaint its tile. */
   *paint(target: HTMLCanvasElement, box: Box, key: string,
-    paint: (target: HTMLCanvasElement, box: Box) => boolean): Generator<void, boolean> {
+    paint: (target: HTMLCanvasElement, box: Box, defer: () => () => void) => boolean, onStale?: () => void): Generator<void, boolean> {
     const density = target.width / (box.maxX - box.minX), pixels = DRAPE_TILE_PIXELS, gutter = 16, span = pixels / density;
     const ctx = target.getContext('2d')!;
     const x0 = Math.floor(box.minX / span), y0 = Math.floor(box.minY / span);
@@ -18,14 +22,30 @@ export class DrapeTiles {
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
       const id = `${key}|${density}|${x},${y}`;
       let image = this.cache.get(id);
-      if (!image) {
+      if (image) { if (onStale) this.waiting.get(id)?.add(onStale); }
+      else {
         const area = { minX: x * span - gutter / density, minY: y * span - gutter / density,
           maxX: (x + 1) * span + gutter / density, maxY: (y + 1) * span + gutter / density };
-        image = document.createElement('canvas'); image.width = image.height = pixels + 2 * gutter;
-        paint(image, area);
-        const retained = image;
-        this.cache.put(id, { value: image, bounds: area, bytes: image.width * image.height * 4,
-          release: () => { retained.width = retained.height = 0; } });
+        const fresh = document.createElement('canvas'); fresh.width = fresh.height = pixels + 2 * gutter;
+        let listeners: Set<() => void> | undefined, outdated = false;
+        paint(fresh, area, () => {
+          const own = listeners ??= new Set(onStale ? [onStale] : []);
+          return () => {
+            if (outdated) return;
+            outdated = true;
+            if (this.waiting.get(id) === own) this.waiting.delete(id);
+            this.cache.delete(id, fresh);
+            for (const listener of own) listener();
+          };
+        });
+        image = fresh;
+        // Content outdated during the paint itself is drawn once and not kept.
+        if (!outdated) {
+          const own = listeners;
+          this.cache.put(id, { value: fresh, bounds: area, bytes: fresh.width * fresh.height * 4,
+            release: () => { fresh.width = fresh.height = 0; if (own && this.waiting.get(id) === own) this.waiting.delete(id); } });
+          if (own) this.waiting.set(id, own);
+        }
       }
       const left = Math.round((x * span - box.minX) * density), top = Math.round((y * span - box.minY) * density);
       ctx.drawImage(image, gutter, gutter, pixels, pixels, left, top, pixels, pixels);
@@ -34,5 +54,5 @@ export class DrapeTiles {
     return true;
   }
 
-  clear(): void { this.cache.clear(); }
+  clear(): void { this.cache.clear(); this.waiting.clear(); }
 }

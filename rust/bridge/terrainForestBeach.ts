@@ -85,8 +85,8 @@ function fbm(x: number, y: number, scale: number, octaves: number, footprint: nu
 const FP = 30;
 const DIRS = Array.from({ length: 12 }, (_, i) => [Math.cos(i * .523598776), Math.sin(i * .523598776)] as const);
 
-/** forestBeachCoverage(world) in 0..1. */
-export function forestBeachCoverageAt(layer: ForestBeachLayer, seed: number, wxm: number, wym: number): number {
+/** forestBeachCoverage(world) in 0..1; `temperature` is the sea-level climate temperature (uMaterialClimate.x). */
+export function forestBeachCoverageAt(layer: ForestBeachLayer, seed: number, wxm: number, wym: number, temperature: number): number {
   const cell = layer.width / layer.n;
   surface(layer, cell, wxm, wym);
   const h = sh, gx = sgx, gy = sgy, slope = Math.hypot(gx, gy);
@@ -105,16 +105,17 @@ export function forestBeachCoverageAt(layer: ForestBeachLayer, seed: number, wxm
   const s = seed >>> 0;
   const reach = fbm(wxm, wym, 20000, 3, FP, s + 7), grove = fbm(wxm, wym, 4800, 4, FP, s + 3), fine = fbm(wxm, wym, 240, 4, FP, s + 5);
   // surfaceBeachWidth multiplies by sqrt(variance) already folded into the fbm values above
-  const width = 140 * sstep(-.15, .75, .65 * reach + .5 * grove) * sstep(.15, .4, openness) * (1 + .35 * fine);
+  const supply = 40 + 80 * sstep(8, 22, temperature), along = sstep(-.8, .8, .65 * reach + .5 * grove);
+  const width = supply * (.4 + .8 * along) * sstep(.15, .4, openness) * (1 + .35 * fine);
   return Math.min(1, Math.max(0, (Math.min(width, 20 * FP) - shore + FP) / FP)) * (1 - sstep(4, 12, h)) * (1 - sstep(.2, .5, slope));
 }
 
 /** Bakes forestBeachCoverage on a resolution x resolution grid of texel centres (row j = increasing world y). */
-export function forestBeachGrid(layer: ForestBeachLayer, seed: number, resolution: number): ForestBeachGrid {
+export function forestBeachGrid(layer: ForestBeachLayer, seed: number, resolution: number, temperature: number): ForestBeachGrid {
   const data = new Uint8Array(resolution * resolution), c = layer.width / resolution;
   for (let j = 0; j < resolution; j++) {
     const wy0 = layer.y + (j + .5) * c;
-    for (let i = 0; i < resolution; i++) data[j * resolution + i] = Math.round(forestBeachCoverageAt(layer, seed, layer.x + (i + .5) * c, wy0) * 255);
+    for (let i = 0; i < resolution; i++) data[j * resolution + i] = Math.round(forestBeachCoverageAt(layer, seed, layer.x + (i + .5) * c, wy0, temperature) * 255);
   }
   return { x: layer.x, y: layer.y, width: layer.width, n: resolution, data };
 }

@@ -9,7 +9,7 @@ import { chaikin, simplify, polylineLength } from '../gen/core/geom';
 export interface CityContourPaths { step: number; thin: string; index: string }
 /** One square of fine contours (Path2D strings); neighbours share their border samples, so lines meet. */
 export interface FineBlock { thin: string; index: string }
-interface Entry { terrain: TerrainData; world: World; relief: Relief; slope: number; paths: Map<string, CityContourPaths>; smoothed: Map<number, Float32Array>; blocks: Map<string, FineBlock>; pending: Set<string>; idle?: number; warmScale?: number }
+interface Entry { terrain: TerrainData; world: World; relief: Relief; slope: number; range: number; paths: Map<string, CityContourPaths>; smoothed: Map<number, Float32Array>; blocks: Map<string, FineBlock>; pending: Set<string>; idle?: number; warmScale?: number }
 const cache = new WeakMap<TerrainData, Entry>();
 /** Thin lines stay this many pixels apart on a typical slope: a contour map reads the shape, not a hatching. */
 const LINE_GAP_PX = 18;
@@ -28,6 +28,13 @@ export function cityContourInterval(relief: Relief, scale: number, slope = 0, fi
   const wanted = Math.max(thinning ? base * 2 ** thinning : floor, slope * LINE_GAP_PX / Math.max(1e-6, scale));
   const decade = 10 ** Math.floor(Math.log10(wanted));
   return Math.max(floor, NICE_STEPS.map(n => n * decade).find(step => step >= wanted * .999) ?? wanted);
+}
+/** Half the normal interval/spacing, with at least a dozen levels across low-relief terrain.
+ * The slope floor still leaves roughly nine screen pixels between lines on steep ground. */
+export function topographicContourInterval(relief: Relief, scale: number, slope = 0, range = Infinity): number {
+  const thinning = Math.max(1, 2 ** Math.max(0, Math.floor(Math.log2(1 / Math.max(1e-6, scale) / 4))));
+  const base = Math.min(cityContourInterval(relief, scale, slope) / 2, Math.max(.1, range / 12) * thinning);
+  return Math.max(base, slope * LINE_GAP_PX / 2 / Math.max(1e-6, scale));
 }
 /** Slope that most of the land stays under: steep gullies must not thin the lines of the whole map. */
 function typicalSlope(data: Float32Array): number {
@@ -58,7 +65,9 @@ function entryOf(terrain: TerrainData, relief: Relief): Entry {
   let entry = cache.get(terrain);
   if (!entry || entry.relief !== relief) {
     const height = { w: terrain.resolution, h: terrain.resolution, cell: terrain.width / terrain.resolution, data: terrain.height }, slope = slopeGrid(height);
-    entry = { terrain, world: { terrain: { height, slope }, options: { relief } } as unknown as World, relief, slope: typicalSlope(slope.data), paths: new Map(), smoothed: new Map(), blocks: new Map(), pending: new Set() }; cache.set(terrain, entry);
+    let lo = Infinity, hi = -Infinity;
+    for (const value of terrain.height) if (value > 0) { lo = Math.min(lo, value); hi = Math.max(hi, value); }
+    entry = { terrain, world: { terrain: { height, slope }, options: { relief } } as unknown as World, relief, slope: typicalSlope(slope.data), range: Math.max(0, hi - lo), paths: new Map(), smoothed: new Map(), blocks: new Map(), pending: new Set() }; cache.set(terrain, entry);
   }
   return entry;
 }
@@ -71,15 +80,49 @@ function smoothedFor(entry: Entry, metresPerPixel: number): Float32Array {
 }
 const reliefOf = (landform: string): Relief => landform === 'flat' || landform === 'hills' || landform === 'valley' ? landform : 'mountains';
 
-function contourKey(entry: Entry, scale: number): { key: string; step: number; metresPerPixel: number } {
-  const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale))), step = cityContourInterval(entry.relief, scale, entry.slope);
-  return { key: `${step}:${metresPerPixel}`, step, metresPerPixel };
+function contourKey(entry: Entry, scale: number, topographic = false): { key: string; step: number; metresPerPixel: number } {
+  const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale)));
+  const step = topographic ? topographicContourInterval(entry.relief, 1 / metresPerPixel, entry.slope, entry.range) : cityContourInterval(entry.relief, scale, entry.slope);
+  return { key: `${topographic}:${step}:${metresPerPixel}`, step, metresPerPixel };
 }
 
-export type ContourWorkerRequest = { id: number; landform: string; scale: number; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
+export type ContourWorkerRequest = { id: number; landform: string; scale: number; topographic?: boolean; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
 export type ContourWorkerResponse = { id: number; paths?: CityContourPaths; error?: string };
 let warmer: Worker | undefined, workerEntry: WeakRef<Entry> | undefined, warmId = 0, workerFailed = false;
-const warming = new Map<number, { entry: Entry; key: string }>();
+const warming = new Map<number, { entry: Entry; key: string; ready?: Set<() => void> }>();
+
+/** Topographic extraction, smoothing and path encoding all run in the existing worker. */
+function queueTopographic(entry: Entry, scale: number, key: string, ready: () => void): void {
+  if (entry.pending.has(key)) {
+    for (const job of warming.values()) if (job.entry === entry && job.key === key) job.ready?.add(ready);
+    return;
+  }
+  try {
+    ensureWarmer();
+    const id = ++warmId, t = entry.terrain;
+    const request: ContourWorkerRequest = { id, landform: entry.relief, scale, topographic: true };
+    if (workerEntry?.deref() !== entry) { request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask }; workerEntry = new WeakRef(entry); }
+    entry.pending.add(key); warming.set(id, { entry, key, ready: new Set([ready]) }); warmer!.postMessage(request);
+  } catch { stopWarmer(); ready(); }
+}
+function ensureWarmer(): void {
+  if (warmer) return;
+  warmer = new Worker(new URL('./cityContourWorker.ts', import.meta.url), { type: 'module' });
+  warmer.onmessage = ({ data }: MessageEvent<ContourWorkerResponse>) => {
+    const job = warming.get(data.id); if (!job) return;
+    warming.delete(data.id); job.entry.pending.delete(job.key);
+    if (data.paths && !job.entry.paths.has(job.key)) job.entry.paths.set(job.key, data.paths);
+    if (data.error) stopWarmer();
+    for (const ready of job.ready ?? []) ready();
+  };
+  warmer.onerror = stopWarmer;
+}
+export const cityContoursPending = (terrain: TerrainData | undefined): number => terrain ? cache.get(terrain)?.pending.size ?? 0 : 0;
+/** Whether the topographic contours of this zoom band are still in the worker (the last call drew none). */
+export function cityContourPathsPending(terrain: TerrainData, landform: string, scale: number): boolean {
+  const entry = cache.get(terrain);
+  return !!entry && entry.relief === reliefOf(landform) && entry.pending.has(contourKey(entry, scale, true).key);
+}
 
 /** Warm the neighbouring zoom levels off the main thread, using the exact same contour builder.
  * The first level still draws synchronously; later levels are copied into its normal cache. */
@@ -91,16 +134,7 @@ function warmNeighbours(entry: Entry, scale: number): void {
   entry.idle = requestIdleCallback(() => {
     entry.idle = undefined;
     try {
-      if (!warmer) {
-        warmer = new Worker(new URL('./cityContourWorker.ts', import.meta.url), { type: 'module' });
-        warmer.onmessage = ({ data }: MessageEvent<ContourWorkerResponse>) => {
-          const job = warming.get(data.id); if (!job) return;
-          warming.delete(data.id); job.entry.pending.delete(job.key);
-          if (data.paths && !job.entry.paths.has(job.key)) job.entry.paths.set(job.key, data.paths);
-          if (data.error) stopWarmer();
-        };
-        warmer.onerror = stopWarmer;
-      }
+      ensureWarmer();
       for (const next of [entry.warmScale! / 2, entry.warmScale! * 2]) {
         const { key } = contourKey(entry, next);
         if (entry.paths.has(key) || entry.pending.has(key)) continue;
@@ -111,32 +145,46 @@ function warmNeighbours(entry: Entry, scale: number): void {
           request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask };
           workerEntry = new WeakRef(entry);
         }
-        entry.pending.add(key); warming.set(id, { entry, key }); warmer.postMessage(request);
+        entry.pending.add(key); warming.set(id, { entry, key }); warmer!.postMessage(request);
       }
     } catch { stopWarmer(); }
   });
 }
 function stopWarmer(): void {
   workerFailed = true; warmer?.terminate(); warmer = undefined; workerEntry = undefined;
-  for (const job of warming.values()) job.entry.pending.delete(job.key);
+  const jobs = [...warming.values()];
   warming.clear();
+  for (const job of jobs) { job.entry.pending.delete(job.key); for (const ready of job.ready ?? []) ready(); }
 }
 
 /** Same samples, slope filtering and index levels as Terrain Bench, without repainting its raster; smoothing follows the zoom. */
-export function cityContourPaths(terrain: TerrainData, landform: string, scale: number): CityContourPaths {
+export function cityContourPaths(terrain: TerrainData, landform: string, scale: number, topographic = false, onReady?: () => void): CityContourPaths {
   if (terrain.caveMask.length || landform === 'cavern') return { step: 0, thin: '', index: '' };
   const relief = reliefOf(landform);
   const entry = entryOf(terrain, relief);
   // One detail level per doubling of the zoom, so the cache stays small and a zoom step does not redraw every line.
-  const { metresPerPixel, step, key } = contourKey(entry, scale), retained = entry.paths.get(key);
-  warmNeighbours(entry, scale);
+  const { metresPerPixel, step, key } = contourKey(entry, scale, topographic), retained = entry.paths.get(key);
+  if (!topographic) warmNeighbours(entry, scale);
   if (retained) return retained;
+  if (topographic && onReady && typeof document !== 'undefined' && typeof Worker !== 'undefined' && !workerFailed) {
+    queueTopographic(entry, scale, key, onReady);
+    return { step, thin: '', index: '' };
+  }
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, metresPerPixel) } } } as World;
-  const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step);
+  const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[relief]) : 1);
   const pathData = (lines: typeof contours.thin): string => lines.map(path => path.pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('') + (path.closed ? 'Z' : '')).join('');
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths); return paths;
+}
+
+/** Async captures wait for the same retained paths as the live overlay. */
+export function cityContourPathsReady(terrain: TerrainData, landform: string, scale: number): Promise<CityContourPaths> {
+  return new Promise(resolve => {
+    const ready = () => resolve(cityContourPaths(terrain, landform, scale, true));
+    const paths = cityContourPaths(terrain, landform, scale, true, ready), entry = cache.get(terrain);
+    if (!entry || !entry.pending.has(contourKey(entry, scale, true).key)) resolve(paths);
+  });
 }
 
 /** Grid samples per side of a fine block (about 280 m on a 6 km map at 1024 samples). */

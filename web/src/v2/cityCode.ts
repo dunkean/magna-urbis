@@ -69,6 +69,8 @@ function portableSettings(input: V2Settings): V2Settings {
   if (input.options.importedHeight) throw new Error('Une heightmap importée nécessite un projet complet.');
   validateSettings(input);
   const settings = structuredClone(input);
+  // A saved decor travels by its id (web/decors/<id>.decor); the receiver reopens the file (resolveCityCodeDecor).
+  if (settings.decor) settings.decor = { id: settings.decor.id } as V2Settings['decor'];
   migrateUrbanSeeds(settings);
   if (settings.runtime) {
     delete settings.runtime.localServer; delete settings.runtime.pythonServer;
@@ -127,7 +129,8 @@ export function encodeCityCode(input: V2Settings, mods: unknown[] = []): string 
   while (values.length > 3 && equal(values.at(-1), schema[values.length - 1])) values.pop();
   return encodeCompact(values, schema, CITY_CODE_PREFIX);
 }
-export function decodeCityCode(text: string): { settings: V2Settings; mods: unknown[] } {
+export interface DecodedCityCode { settings: V2Settings; mods: unknown[]; /** Saved decor to reopen before loading. */ decor?: string }
+export function decodeCityCode(text: string): DecodedCityCode {
   const values = decodeCompact(cityCodeFromInput(text), schema, CITY_CODE_PREFIX);
   try {
     if (!Array.isArray(values) || values.length < 3 || values.length > 6) throw new Error();
@@ -140,14 +143,27 @@ export function decodeCityCode(text: string): { settings: V2Settings; mods: unkn
     if (entries.length > 2000 || entries.some(([key, value]) => key.length > 160 || ['__proto__', 'constructor', 'prototype'].includes(key)
       || !(typeof value === 'string' && value.length <= 4096 || Number.isInteger(value) && value >= 0 && value <= 0xffffffff))) throw new Error();
     const settings = structuredClone(saved) as V2Settings;
+    const decor = record(settings.decor) && typeof settings.decor.id === 'string' && /^[\w.-]{1,160}$/.test(settings.decor.id) ? settings.decor.id : undefined;
+    if (settings.decor !== undefined && !decor) throw new Error();
+    delete settings.decor;
     settings.options.seed = writeGenerationSeed({ base: String(root), variations });
     if (Object.hasOwn(settings.options, 'biome')) settings.options.biome = biome as typeof settings.options.biome;
     settings.options.culture = culture;
     if (relief !== settings.options.relief) { settings.terrain ??= {}; settings.terrain.relief = relief as NonNullable<V2Settings['terrain']>['relief']; }
     settings.extent = extent === 0 ? 'auto' : extent;
     validateSettings(settings); validateModifications(mods);
-    return { settings, mods };
+    return decor ? { settings, mods, decor } : { settings, mods };
   } catch { throw new Error('Code incomplet, corrompu ou trop volumineux.'); }
+}
+/** Reopens the saved decor named by a decoded code (served at /decors/<id>.decor) and attaches its bytes. */
+export async function resolveCityCodeDecor(decoded: DecodedCityCode): Promise<{ settings: V2Settings; mods: unknown[] }> {
+  const { settings, mods, decor } = decoded;
+  if (!decor) return { settings, mods };
+  const response = await fetch(`/decors/${decor}.decor`);
+  if (!response.ok) throw new Error(`Saved decor not found: ${decor}`);
+  settings.decor = { id: decor, bytes: new Uint8Array(await response.arrayBuffer()) };
+  validateSettings(settings);
+  return { settings, mods };
 }
 /** Accept a copied code or a share URL, including line-wrapped clipboard text. */
 export function cityCodeFromInput(text: string): string {

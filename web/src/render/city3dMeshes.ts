@@ -16,7 +16,7 @@ import type { Enclosure } from '../../../rust/bridge/urban';
 import { loftRidges, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof, type ResolvedVolume } from './cityMassing';
 import { buildingTint } from './buildingPalette';
 import { lightCrowns, type TreeDwelling } from './cityTrees';
-const TREE_CROWNS = ['city3d:tree:crown@34502a', 'city3d:tree:crown@4c6d36', 'city3d:tree:crown@668a45', 'city3d:tree:crown@83a65a'];
+const TREE_CROWNS = ['city3d:tree:crown@5a7b41', 'city3d:tree:crown@5d7f44', 'city3d:tree:crown@618347', 'city3d:tree:crown@65874a'];
 import type { LotEnclosure } from '../../../rust/bridge/urban';
 import type { YardBoundary } from './cityLotEnclosures';
 import { TOP_LIGHT, yardMeshTint, yardRuns, yardStyle } from './yardStyle';
@@ -412,17 +412,61 @@ function baseVolume(id: string, footprint: Surface, z: number, wall: number, ris
     roof_system: roofSystem, roof_pitch_deg: 0, overhang_m: 0, roof_spec: {} as ArchitectureVolume['roof_spec'], materials, role: 'main', envelope: 'walled', roof_mesh: roof, foundation };
 }
 
+/** Steepest footprint ground (rise over run) still read as a hillside: a level floor stands
+ * on its high side over a footing. Steeper is a cliff (Rust `activities::ground_fits`). */
+export const CITY3D_CLIFF_SLOPE = 1;
+/** Retaining plinth under a floor built against a cliff face, m. */
+export const CITY3D_RETAINING_PLINTH_M = 3;
+/** Terrain under a footprint: lowest and highest sample and steepest sample-to-sample slope.
+ * Corners first; a large or uneven footprint adds an interior grid (inside its rings, at most
+ * 9 × 9) so a cliff between corners is not missed. */
+export function footprintTerrain(footprint: Surface, heightAt: City3dHeight): { low: number; high: number; slope: number } | undefined {
+  let low = Infinity, high = -Infinity, slope = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const shape of footprint) {
+    const ring = shape.outer, hs = ring.map(p => heightAt(p.x, p.y));
+    ring.forEach((p, i) => {
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+      const h = hs[i]; if (!Number.isFinite(h)) return;
+      low = Math.min(low, h); high = Math.max(high, h);
+      const n = ring[(i + 1) % ring.length], hn = hs[(i + 1) % ring.length], run = Math.hypot(n.x - p.x, n.y - p.y);
+      if (Number.isFinite(hn) && run > .5) slope = Math.max(slope, Math.abs(hn - h) / run);
+    });
+  }
+  if (!Number.isFinite(low)) return undefined;
+  if (high - low > .5 || Math.max(x1 - x0, y1 - y0) > 12) {
+    const nx = Math.min(8, Math.max(1, Math.ceil((x1 - x0) / 2))), ny = Math.min(8, Math.max(1, Math.ceil((y1 - y0) / 2)));
+    const dx = (x1 - x0) / nx, dy = (y1 - y0) / ny, grid: number[] = [];
+    for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
+      const p = { x: x0 + dx * i, y: y0 + dy * j };
+      const h = footprint.some(shape => inRing(shape.outer, p)) ? heightAt(p.x, p.y) : NaN;
+      grid.push(h);
+      if (!Number.isFinite(h)) continue;
+      low = Math.min(low, h); high = Math.max(high, h);
+      const left = i > 0 ? grid[grid.length - 2] : NaN, up = j > 0 ? grid[grid.length - 2 - nx] : NaN;
+      if (Number.isFinite(left) && dx > 1e-6) slope = Math.max(slope, Math.abs(h - left) / dx);
+      if (Number.isFinite(up) && dy > 1e-6) slope = Math.max(slope, Math.abs(h - up) / dy);
+    }
+  }
+  return { low, high, slope };
+}
+/** Floor level of a level building on that terrain: its high side on a hillside (the footing
+ * fills down to the low side, terraces keep their heights), a retaining plinth above the low
+ * side against a cliff (the uphill part stands into the face, never hung from the top). */
+export const terrainSeat = (t: { low: number; high: number; slope: number }): number =>
+  t.slope > CITY3D_CLIFF_SLOPE ? Math.min(t.high, t.low + CITY3D_RETAINING_PLINTH_M) : t.high;
+
 /** Extruded silhouette: walls of `floors × 3 m`, a gable or hip roof on
  * rectangular shapes, a pitched border elsewhere, a foundation down to the lowest
- * terrain sample so no wall floats above a slope. */
+ * terrain sample under the whole footprint so no wall floats above a slope or a cliff. */
 export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight, lightTrees = false): PlacedBuilding {
   const footprint = building.footprint, area = surfaceArea(footprint), m = silhouetteMassing(building, area);
   const culture = building.culture.culture, programme = (building as PlacedBuilding & { programme?: Programme }).programme;
   const role = `${programme?.role ?? ''} ${m.family}${programme?.landmark ? ' monument' : ''}`;
-  let low = Infinity, high = -Infinity;
-  if (heightAt) for (const shape of footprint) for (const p of shape.outer) { const h = heightAt(p.x, p.y); if (Number.isFinite(h)) { low = Math.min(low, h); high = Math.max(high, h); } }
-  let ground = Number.isFinite(building.ground_z_m) ? building.ground_z_m : (Number.isFinite(low) ? (low + high) / 2 : 0);
-  if (Number.isFinite(low)) ground = Math.max(low, Math.min(high, ground));
+  const terrain = heightAt ? footprintTerrain(footprint, heightAt) : undefined, low = terrain?.low ?? NaN;
+  // Silhouette plans may carry a zero/centre reference, not a terrain footing.
+  // A level floor clears the high side of a hillside (clamping that reference to the
+  // low side buries terraces and pyramids); against a cliff it stands on a retaining plinth.
+  let ground = terrain ? terrainSeat(terrain) : Number.isFinite(building.ground_z_m) ? building.ground_z_m : 0;
   const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, footprint, building.id);
   const raised = massing?.some((m, i) => pieceVolumes(footprint[i], m).some(v => (v.detail?.stilts_m ?? 0) > 0));
   if (raised && waterAt) for (const shape of footprint) for (const p of [...shape.outer, ringCentre(shape.outer)]) {
@@ -438,7 +482,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : '')), wallId = materials.coating;
         if (v.tree) {
           const tree = lightTrees ? { ...v.tree, light: true } : v.tree;
-          // Crown lobes from the dark lower ring to the lit top (TreeCrown.tone).
+          // Closely related greens per crown, independent of its height.
           for (const c of tree.light ? lightCrowns(tree) : tree.crowns) for (const face of volumeRoof({ ...v, tree: { ...tree, crowns: [c] } }, i, j)) roof.face(face.points.map(p => ({ ...p, z: p.z + ground })), TREE_CROWNS[Math.min(TREE_CROWNS.length - 1, Math.floor(c.tone * TREE_CROWNS.length))]);
           const trunk = treeDetails(roof, tree, ground, 'city3d:tree:trunk@4b5a36', 'city3d:tree:crown@5f8247'), bodyShape = { outer: trunk, holes: [] };
           const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, v.rise_m, materials, roof.mesh(), 'RF-DOME',
@@ -551,6 +595,9 @@ const hasTreeDwelling = (b: PlacedBuilding): boolean => {
   const massing = (b as PlacedBuilding & { programme?: { massing?: { volumes?: { form?: string }[] }[] } }).programme?.massing;
   return Array.isArray(massing) && massing.some(m => m?.volumes?.some(v => v.form === 'tree'));
 };
+/** An activity building drawn from its massing (activitySites.ts `massingScene`), not a native plan. */
+const activityMassing = (b: PlacedBuilding): boolean =>
+  b.recipe_id.startsWith('activity:') && Array.isArray((b as PlacedBuilding & { programme?: { massing?: unknown } }).programme?.massing);
 /** Display batch for the 3D pass. `details` replaces buildings by their realized
  * native exterior (same id). Ids, parcels and functions are those of the scene. */
 export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dHeight; waterAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> } = {}): PlacementBatch & { kinds: Record<City3dKind, number> } {
@@ -560,7 +607,9 @@ export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dH
   const buildings = scene.buildings.map(source => {
     const detail = options.details?.get(source.id);
     if (detail) { kinds.detailed++; return detail; }
-    const kind = city3dKind(source); kinds[kind]++;
+    // Activity sites (mills, farms, chapels: activitySites.ts) carry the city massing at their site's
+    // centre height; they stand on their own footprint terrain like the town volumes.
+    const kind = activityMassing(source) ? 'silhouette' : city3dKind(source); kinds[kind]++;
     return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt, lightTrees) : kind === 'compact' ? compactBuilding(source) : source;
   });
   return { ...scene, materials: [...(scene.materials ?? []), ...CITY3D_MATERIALS], buildings, kinds };

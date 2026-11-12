@@ -193,9 +193,45 @@ improves structural adherence but can preserve the source's placeholder cubes;
 reducing it can alter the plan. FLUX exposes reference and guide resolution instead.
 **Aperçu des guides / références** shows the actual preprocessed images before
 generation without creating an image job. Recipes record all effective settings.
-Local prompts
-prioritize visible content, cultural architecture and the requested art style,
-without repeating technical altitude ranges or unrelated native recipe pack names.
+Choose an artistic style independently of the map layer: fine-art photorealism,
+RPG illustration, watercolor, black graphite, oil painting, engraving, or a
+cartographic style. Every engine receives the visible scene, cultural architecture,
+biome, camera direction and measured ground footprint in metres. Visible native
+buildings supply a typical footprint span as an additional scale anchor. Population
+describes the whole settlement, not how many buildings to fit into a close crop.
+V2 samples visible terrain for local elevations and water, without sending rasters.
+Recapturing a view starts a new prompt draft so an old crop's custom wording cannot
+silently describe a different place.
+
+**Battlemap** is available for measured 2D views and 3D orbit views looking down at
+least 75 degrees. Cells default to 1.50 m and can be set from 0.5 to 100 m. Square
+and hexagonal grids use one thin stroke with no outline; hex size measures opposite
+faces (also neighbouring centres). Grids are drawn after generation and resizing,
+with the same world origin across views. Gridded jobs also retain a gridless PNG.
+The wider framing limit is 512 cells per side and 3 native generation pixels per
+cell. Below 12 pixels the panel advises a larger generation or wider cells, without
+blocking. Export upscaling does not relax this native-detail check.
+In 3D the grid is projected onto the horizontal target plane: slopes and elevated
+roofs are not terrain measurements. Provider outputs with substantially changed
+aspect ratios are rejected for battlemaps. Restart the connector after updating.
+
+Generation resolution and exported PNG size are separate. Complete local models
+offer up to 4 MP. OpenAI GPT Image offers custom sizes up to 3840 pixels per edge
+and 8,294,400 pixels total (larger outputs are experimental); the panel offers
+1 MP, 2 MP, 4 MP and up to 4K. Native provider output is preserved instead of being
+reduced to the request budget. Optional 4/8/16 MP exports enlarge the artwork with
+Lanczos before drawing the grid, and explicitly report the original dimensions.
+This resizing does not add generated detail.
+
+For a completed OpenAI 2D battlemap, **Explorer / prolonger la battlemap** opens a
+scrollable mosaic. Drag, scroll or use the compass buttons to generate neighbouring
+tiles. Each new tile captures the same retained world at the same scale with a
+20% overlap, sends an alpha mask plus the new procedural layout to OpenAI's edit
+endpoint, then restores the known overlap pixels before drawing the aligned grid.
+Revisiting tiles reuses their images. New tiles use the initial style, model and
+cell size; each is a provider-billed generation. Individual PNGs and recipes remain
+in history. Continuous extension is limited to 2D OpenAI maps and 128 tiles per
+mosaic; FLUX/SDXL extension is deferred.
 Strong fidelity remains a generative constraint, not a
 guarantee of geometrically exact output. Seed reproducibility also depends on
 runtime, hardware and model versions. Cloud output may use the provider's nearest
@@ -232,6 +268,11 @@ native roofs in the real City Bench, using the existing native-house fixture and
 the decor catalogue. Native raster views derive Canny from the complete capture.
 `node scripts/illustration_prompt_smoke.mjs` checks the live prose preview and
 explicit cloud editing instruction without starting an image job.
+`node scripts/illustration_zoom_smoke.mjs` checks real wheel zoom through the
+viewer and battlemap selection on Full HD and 4K displays. The 2D viewer allows
+up to 128 CSS pixels per metre, including cartographic backgrounds.
+`node scripts/illustration_atlas_smoke.mjs` checks real neighbouring viewer captures,
+scroll-triggered extension and cached revisits against a mocked connector.
 The opt-in `python -m illustration.tests.smoke_real --mode fast` runs a real GPU
 job through the connector; `--depth path.png --control both` exercises dual
 conditioning, `--variant base --steps 30` selects complete SDXL, and

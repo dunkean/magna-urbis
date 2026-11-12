@@ -236,8 +236,25 @@ fn build(s: &Settlement, c: &Candidate, f: &Fields) -> Option<ActivitySite> {
     .min((rng.float() * 3.0) as usize);
     let names = pick(c.site, culture, extra, &mut rng);
     let angle = rng.float() * std::f64::consts::PI;
-    let centre = Point { x: c.anchor.x, y: c.anchor.y };
-    let buildings = yard(&id, culture, &names, centre, angle, &mut rng, f, &|_| true);
+    let mut centre = Point { x: c.anchor.x, y: c.anchor.y };
+    let mut buildings = yard(&id, culture, &names, centre, angle, &mut rng, f, &|_| true);
+    // A main building refused by its ground (a cliff, water) moves to the nearest spot
+    // round the anchor where it stands: rings 12 to 48 m out, 8 directions each.
+    let main = |b: &[ActivityBuilding]| b.first().is_some_and(|b| names.first().is_some_and(|n| b.archetype == *n));
+    if !main(&buildings) {
+        'shift: for ring in 1..=4 {
+            for k in 0..8 {
+                let a = angle + k as f64 * std::f64::consts::FRAC_PI_4;
+                let at = Point { x: c.anchor.x + 12.0 * ring as f64 * a.cos(), y: c.anchor.y + 12.0 * ring as f64 * a.sin() };
+                let mut shifted_rng = Rng::new(&format!("{id}:shift:{ring}:{k}"));
+                let shifted = yard(&id, culture, &names, at, angle, &mut shifted_rng, f, &|_| true);
+                if main(&shifted) {
+                    (centre, buildings) = (at, shifted);
+                    break 'shift;
+                }
+            }
+        }
+    }
     if buildings.is_empty() {
         return None;
     }
@@ -295,7 +312,8 @@ pub(crate) fn pick<'a>(site: &'a act::Site, culture: &str, extra: usize, rng: &m
 }
 
 /// Buildings laid as a yard around `centre`: slots on the axis (`angle`) and across it,
-/// the cross ones turned a quarter. A building off the map, on water or refused by `ok` is dropped.
+/// the cross ones turned a quarter. A building off the map, on water, on ground
+/// its culture does not build on (a cliff) or refused by `ok` is dropped.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn yard(id: &str, culture: &str, names: &[&str], centre: Point, angle: f64, rng: &mut Rng, f: &dyn Ground, ok: &dyn Fn(&[Point]) -> bool) -> Vec<ActivityBuilding> {
     // A culture with no archetype for this site has nothing to lay out.
@@ -337,7 +355,8 @@ pub(crate) fn yard(id: &str, culture: &str, names: &[&str], centre: Point, angle
                 .map(|(a, e)| Point { x: p.x + u.x * a * hw + v.x * e * hd, y: p.y + u.y * a * hw + v.y * e * hd })
                 .collect()
         };
-        if !ok(&ring) {
+        // Never on a cliff: the body's ground must suit its culture (`act::ground_fits`).
+        if !ok(&ring) || !act::ground_fits(&ring, culture, f) {
             continue;
         }
         let look = act::archetype(b).and_then(|a| a.look.clone()).unwrap_or_default();

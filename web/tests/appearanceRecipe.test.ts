@@ -34,7 +34,7 @@ describe('appearance recipe', () => {
     expect(resolve(undefined).vegetation.symbols).toBe('classic');
     expect(resolve(undefined, false, 'export').vegetation.symbols).toBe('canopy');
   });
-  it('raises footprint presets in 3D while preserving their flat 2D and export tiers', () => {
+  it('keeps cadastre flat in 3D while topographic retains its perspective architecture', () => {
     for (const preset of ['cadastre', 'topographic'] as const) {
       const composition = presetComposition(preset), input: AppearanceInput = { style: 'parchment', composition };
       for (const target of ['view2d', 'export'] as const) {
@@ -42,8 +42,10 @@ describe('appearance recipe', () => {
         expect(resolve(input, true, target).composition.buildings.meshes).toBe('none');
       }
       const perspective = resolve(input, true, 'view3d');
-      expect(perspective.city.buildingStyle).toBe('cartographic');
-      expect(perspective.composition.buildings).toMatchObject({ visible: true, look: 'detailed-volumes', meshes: 'detailed' });
+      expect(perspective.city.buildingStyle).toBe(preset === 'cadastre' ? 'silhouette' : 'cartographic');
+      expect(perspective.composition.buildings).toMatchObject(preset === 'cadastre'
+        ? { visible: true, look: 'footprints', meshes: 'none' }
+        : { visible: true, look: 'detailed-volumes', meshes: 'detailed' });
       composition.buildings.visible = false;
       expect(resolve(input, true, 'view3d').composition.buildings.visible).toBe(false);
     }

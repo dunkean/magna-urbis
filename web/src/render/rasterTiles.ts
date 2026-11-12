@@ -27,6 +27,11 @@ export class RasterTileCache<T> {
     while (this.used > this.maxBytes && this.entries.size > 1) this.drop(this.entries.keys().next().value!);
   }
 
+  /** Drop one entry, only while it still holds `value` when given. */
+  delete(key: string, value?: T): void {
+    if (value === undefined || this.entries.get(key)?.value === value) this.drop(key);
+  }
+
   private drop(key: string): void {
     const tile = this.entries.get(key);
     if (!tile) return;

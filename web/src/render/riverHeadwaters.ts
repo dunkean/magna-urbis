@@ -71,3 +71,42 @@ export function headwaterGeometry(line: HeadwaterLine, widths: readonly number[]
   }
   return { points, widths: out, level, kind, reach };
 }
+
+/** Retained hydrology ribbons store the left bank forward and the right bank backward.
+ * Match only an explicit spring cap, then taper paired banks; downstream vertices stay exact.
+ * This also handles decor captures made before source tapering was introduced. */
+export function taperSpringBank(d: string, springs: readonly { x: number; y: number }[]): string {
+  if (!springs.length || !/^M[\d\s.,eE+L-]+Z$/.test(d)) return d;
+  const numbers = d.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)?.map(Number) ?? [];
+  if (numbers.length < 8 || numbers.length % 4) return d;
+  const count = numbers.length / 2, half = count / 2;
+  const point = (i: number) => ({ x: numbers[2 * i], y: numbers[2 * i + 1] });
+  const a = point(0), b = point(count - 1), x = (a.x + b.x) / 2, y = (a.y + b.y) / 2, width = Math.hypot(a.x - b.x, a.y - b.y);
+  if (width < .01 || !springs.some(p => Math.hypot(p.x - x, p.y - y) < .1)) return d;
+  let total = 0, prev = { x, y };
+  for (let i = 1; i < half; i++) {
+    const l = point(i), r = point(count - 1 - i), c = { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2 };
+    total += Math.hypot(c.x - prev.x, c.y - prev.y); prev = c;
+  }
+  const s = HEADWATER_PROFILE, reach = Math.min(total * .6, Math.max(s.minimumReachMetres, Math.min(s.maximumReachMetres, width * s.widthMultiples)));
+  if (reach <= 0) return d;
+  const left: { x: number; y: number }[] = [], right: typeof left = [];
+  let arc = 0;
+  const add = (l: typeof a, r: typeof a, distance: number) => {
+    const u = Math.min(1, distance / reach), k = 1 - (1 - u) ** 2, cx = (l.x + r.x) / 2, cy = (l.y + r.y) / 2;
+    left.push({ x: cx + (l.x - cx) * k, y: cy + (l.y - cy) * k });
+    right.push({ x: cx + (r.x - cx) * k, y: cy + (r.y - cy) * k });
+  };
+  add(a, b, 0);
+  for (let i = 1; i < half; i++) {
+    const l0 = point(i - 1), r0 = point(count - i), l = point(i), r = point(count - 1 - i);
+    const length = Math.hypot((l.x + r.x - l0.x - r0.x) / 2, (l.y + r.y - l0.y - r0.y) / 2);
+    const pieces = arc < reach ? Math.max(1, Math.ceil(length / Math.max(2, reach / 24))) : 1;
+    for (let j = 1; j <= pieces; j++) {
+      const t = j / pieces;
+      add({ x: l0.x + (l.x - l0.x) * t, y: l0.y + (l.y - l0.y) * t }, { x: r0.x + (r.x - r0.x) * t, y: r0.y + (r.y - r0.y) * t }, arc + length * t);
+    }
+    arc += length;
+  }
+  return [...left, ...right.reverse()].map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('') + 'Z';
+}

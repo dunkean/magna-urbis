@@ -5,6 +5,7 @@
  * within TREE_FAR of the eye are built; trees grow out of their painted crown between TREE_FAR and TREE_NEAR,
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow): the painted crown keeps the exact Render colour. Display only. */
+import { ForestRoom } from '../render/forestRoom';
 import { FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
 /** Horizontal distance from the eye (m): full trees within TREE_NEAR, none beyond TREE_FAR. */
@@ -140,6 +141,51 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
   const snow = inputs.renderV2 > 0 ? winter * (1 - sstep(2, 10, T)) : 0;
   const temperate = 1 - kind[0] - kind[1] - kind[2];
   const out: number[] = [];
+  // Planted trees precede the natural candidates in the same budgeted stream and GPU buffer.
+  // Decode the same nearest detail texel and use the shader's hash/grid, including its crown setback.
+  const detail = occ?.detail;
+  // Exact parcel boundaries supplement the categorical raster along sub-texel edges.
+  const orchardRoom = detail?.orchards?.length ? new ForestRoom([], detail.orchards) : undefined;
+  const inside = (ring: readonly { x: number; y: number }[], x: number, y: number): boolean => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i], b = ring[j];
+      if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) hit = !hit;
+    }
+    return hit;
+  };
+  for (const patch of detail?.orchards ?? []) {
+    const [ca, sa] = patch.along;
+    const us = patch.poly.map(p => p.x * ca + p.y * sa), vs = patch.poly.map(p => -p.x * sa + p.y * ca);
+    const eyeU = view.x * ca + view.y * sa, eyeV = -view.x * sa + view.y * ca;
+    const i0 = Math.floor(Math.max(Math.min(...us), eyeU - TREE_FAR - 1) / 8), i1 = Math.ceil(Math.min(Math.max(...us), eyeU + TREE_FAR + 1) / 8);
+    const j0 = Math.floor(Math.max(Math.min(...vs), eyeV - TREE_FAR - 1) / 8), j1 = Math.ceil(Math.min(Math.max(...vs), eyeV + TREE_FAR + 1) / 8);
+    for (let j = j0; j <= j1; j++) {
+      yield;
+      for (let i = i0; i <= i1; i++) {
+        const h = forestHash(i, j, 877, seed), h2 = forestHash(i, j, 878, seed);
+        const u = (i + .5 + (u8(h, 0) - .5) * .12) * 8, v = (j + .5 + (u8(h, 8) - .5) * .12) * 8;
+        const x = ca * u - sa * v, y = sa * u + ca * v, dx = x - view.x, dy = y - view.y;
+        if (dx * dx + dy * dy > TREE_FAR * TREE_FAR || dx * view.forwardX + dy * view.forwardY < -48) continue;
+        if (!inside(patch.poly, x, y) || patch.holes?.some(hole => inside(hole, x, y)) || occAt(x, y)?.[2] !== 4) continue;
+        const di = clamp(Math.floor((x - detail!.x) / detail!.width * detail!.n), 0, detail!.n - 1), dj = clamp(Math.floor((y - detail!.y) / detail!.width * detail!.n), 0, detail!.n - 1);
+        const d = (dj * detail!.n + di) * 4, radius = 2.3 + .4 * u8(h, 16), height = 6 + 1.2 * u8(h2, 16);
+        const a = .5 * Math.atan2(detail!.rgba[d + 2] / 255 * 2 - 1, detail!.rgba[d + 1] / 255 * 2 - 1);
+        if (Math.cos(a) * ca + Math.sin(a) * sa <= .9999 || detail!.rgba[d + 3] / 255 * 6 <= radius * 1.2) continue;
+        if (heightGate(fieldAt(x, y)?.height ?? 0) <= .5 || inputs.water(x, y) >= .05) continue;
+        const z = inputs.height(x, y); if (z === undefined || z <= 0) continue;
+        const tint = u8(Math.imul(h2, 0x9e3779b9) >>> 0, 0), tone = .86 + .28 * tint;
+        const summer = .5 - .5 * Math.cos(6.2831853 * (inputs.renderV2 > 0 ? season : .5));
+        const fruitLeaf = inputs.renderV2 > 0 ? leaf : 1;
+        const fall = sx * temperate * .65;
+        let c = [mix(.25, .22, summer) * tone, mix(.34, .37, summer) * tone, mix(.15, .16, summer) * tone];
+        c = c.map((v, k) => mix(mix(v, [.47, .34, .12][k], fall), [.31, .27, .23][k] * (.85 + .3 * tint), 1 - fruitLeaf));
+        c = c.map((v, k) => mix(v, [.84, .88, .90][k], snow * .3));
+        out.push(x, y, z, radius, height, radius * .8, 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], fruitLeaf < .5 ? 1 : 0);
+        if (out.length >= TREE_MAX * TREE_STRIDE) return new Float32Array(out);
+      }
+    }
+  }
   const far2 = TREE_FAR * TREE_FAR, block = 24;
   const bx0 = Math.floor((view.x - TREE_FAR) / block), bx1 = Math.floor((view.x + TREE_FAR) / block);
   const by0 = Math.floor((view.y - TREE_FAR) / block), by1 = Math.floor((view.y + TREE_FAR) / block);
@@ -159,16 +205,18 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         if (Math.floor(cx / block) !== bx || Math.floor(cy / block) !== by) continue;
         const ex = cx - view.x, ey = cy - view.y;
         if (ex * ex + ey * ey > far2) continue;
+        if (orchardRoom && !orchardRoom.keeps(cx, cy, 0)) continue;
         const centre = fieldAt(cx, cy); if (!centre) continue;
         let { cover, needle } = centre; const height = centre.height;
-        let open = -1e3, forced = -1e3, allow = 0, hedge = 0, openGallery = .5, occupied = false;
+        let open = -1e3, forced = -1e3, allow = 0, hedge = 0, openGallery = .5, occupied = false, tilledPlot = false;
         const o = occAt(cx, cy);
         if (o) {
           open = o[0]; forced = o[1]; const cls = o[2];
-          allow = (cls === 4 ? .45 : cls === 5 ? .22 : cls === 6 ? .12 : cls === 3 ? .05 : cls === 2 ? .02 : cls === 7 ? .03 : 0) * heightGate(height);
+          tilledPlot = cls === 5;   // kitchen and market-garden plots root no crown
+          allow = (cls === 6 ? .12 : cls === 3 ? .05 : cls === 2 ? .02 : cls === 7 ? .03 : 0) * heightGate(height);
           hedge = (cls >= 1 && cls <= 3 ? .6 : 0) * sstep(3, 8, height) * (1 - dry);
           if (cls === 7 || cls === 8 || cls === 9 || cls === 11) openGallery = 0;
-          occupied = cls === 8 || cls === 9 || cls === 11;
+          occupied = cls === 4 || cls === 8 || cls === 9 || cls === 11;
         }
         if (forced > 0) cover = Math.max(cover, .25 * heightGate(height));
         let kappa = kappaOf(height, needle);
@@ -180,7 +228,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
           const e = occCell, openAt = (x: number, y: number): number => occAt(x, y)?.[0] ?? -1e3;
           const gx = openAt(cx + e, cy) - openAt(cx - e, cy), gy = openAt(cx, cy + e) - openAt(cx, cy - e), gl = Math.max(Math.hypot(gx, gy), 1e-4);
           const side = occAt(cx + gx / gl * (.5 * e - open), cy + gy / gl * (.5 * e - open))?.[2] ?? 0;
-          if ((side === 8 || side === 9 || side === 11) && open > -(.7 + .3 * u8(h2, 16)) * radius) occupied = true;
+          if ((side === 4 || side === 8 || side === 9 || side === 11) && open > -(.7 + .3 * u8(h2, 16)) * radius) occupied = true;
         }
         if (occupied) continue;
         const centreLevel = clamp(2 * Math.log2(radius / rhoOf(tauOf(dens)) / 2), 0, 5.999);
@@ -192,7 +240,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         let alive: boolean, edge: number;
         if (beyond > 0) {
           const stray = .18 * (1 - sstep(0, 4 * radius, open)) * Math.min(cover * 3, 1);
-          alive = u8(Math.imul(h2, 0x27d4eb2d) >>> 0, 24) < Math.max(allow + (open < 5 ? hedge : 0) + stray, openGallery * gal); edge = 1;
+          alive = !tilledPlot && u8(Math.imul(h2, 0x27d4eb2d) >>> 0, 24) < Math.max(allow + (open < 5 ? hedge : 0) + stray, openGallery * gal); edge = 1;
         } else { alive = u8(h, 16) < q && threshold < share; edge = 1 - sstep(0, .1, share - threshold); }
         if (!alive || inputs.water(cx, cy) >= (inputs.renderV2 > 0 ? .05 : .5)) continue;
         if (inputs.renderV2 > 0 && u8(forestHash(i, j, level * 2 + 37, crownSeed), 0) < beachAt(cx, cy)) continue;
@@ -225,6 +273,15 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         // Real scale: the painted lattice may draw wide, tall crowns (up to 1.14 cell); a standing tree keeps the
         // painted crown's centre and, within real sizes, its width. Stand crowns widen a little so the canopy closes.
         const tree = Math.min(th, isNeedle ? 25 : 20), width = Math.min(r * (beyond > 0 ? 1 : 1.12), isNeedle ? 3.4 : 5.5);
+        // Keep the whole modelled forest crown off planted parcels, including sub-texel boundary slivers.
+        if (orchardRoom && open > -1.5 * radius) {
+          let overlaps = false;
+          for (let k = 0; k < 8; k++) {
+            const a = k * Math.PI / 4;
+            if (!orchardRoom.keeps(cx + 1.22 * width * Math.cos(a), cy + 1.22 * width * Math.sin(a), 0)) { overlaps = true; break; }
+          }
+          if (overlaps) continue;
+        }
         out.push(cx, cy, z, width, tree, Math.min(depth * tree / th, .94 * tree), isNeedle ? 1 : 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], !isNeedle && leaf < .5 ? 1 : 0);
         if (out.length >= TREE_MAX * TREE_STRIDE) return new Float32Array(out);
       }

@@ -1128,7 +1128,7 @@ showMapId();
 updateHeightmapUI();
 // Probe the offscreen pipeline first (a few ms), then start the first run on whichever path works.
 const backendReady: Promise<OffscreenBackend | null> = forceMain ? Promise.resolve(null) : OffscreenBackend.create(backendEvents, window.devicePixelRatio || 1);
-mountIllustration({ host: document.querySelector('header') ?? $('corner'), capture: async () => {
+mountIllustration({ host: document.querySelector('header') ?? $('corner'), navigation: { getView: () => viewer.getView(), setView: next => viewer.setView(next), ready: () => viewer.waitForFrame() }, capture: async () => {
   captureExport();
   const capturedOptions = { ...opts }, capturedView = { ...viewer.getView() };
   const context = illustrationContext({ sourceStyle: String(capturedOptions.style), seed: capturedOptions.seed,

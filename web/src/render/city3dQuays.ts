@@ -4,10 +4,13 @@ import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/ur
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import { CityGlPacker, triangulatePolygons } from './cityGlBuild';
 
-function slab(id: string, shape: Shape, bottom: number, top: number, timber: boolean): ArchitectureVolume {
-  const material = timber ? 'city3d:wall:timber' : 'city3d:wall:stone';
+/** Weathered quay colours (final sRGB): a lit stone or timber deck never reads white from above. */
+const QUAY_TINT = { stone: '857e6e', timber: '6b5640' };
+function slab(id: string, shape: Shape, bottom: number, top: number, timber: boolean, tint = ''): ArchitectureVolume {
+  const at = (material: string): string => tint ? `${material}@${tint}` : material;
+  const material = at(timber ? 'city3d:wall:timber' : 'city3d:wall:stone');
   const materials: MaterialSlots = { frame: material, infill: material, coating: material, base: material,
-    cladding: timber ? 'city3d:road:timber' : 'city3d:road:bridge', roof_frame: 'city3d:wall:timber' };
+    cladding: at(timber ? 'city3d:road:timber' : 'city3d:road:bridge'), roof_frame: 'city3d:wall:timber' };
   const packer = new CityGlPacker({ x: 0, y: 0 }); packer.add(shape, 0);
   const p = packer.done(), triangles = triangulatePolygons(p).triangles;
   const vertices = Array.from({ length: p.coords.length / 2 }, (_, i) => ({ x: p.coords[i * 2], y: p.coords[i * 2 + 1], z: top }));
@@ -22,12 +25,12 @@ function slab(id: string, shape: Shape, bottom: number, top: number, timber: boo
 export function city3dQuays(layouts: readonly Layout[]): PlacedBuilding[] {
   return layouts.flatMap((layout, li) => (layout.structure?.quays ?? []).map((q: Quay, qi) => {
     const id = `city3d-quay:${li}:${qi}`, timber = q.material === 'timber', top = q.deck_z_m;
-    const thickness = timber ? 0.5 : 0.8, volumes = [slab(`${id}:deck`, q.shape, top - thickness, top, timber)];
+    const thickness = timber ? 0.5 : 0.8, tint = timber ? QUAY_TINT.timber : QUAY_TINT.stone, volumes = [slab(`${id}:deck`, q.shape, top - thickness, top, timber, tint)];
     if (timber) for (let i = 0; i < q.shape.outer.length; i++) {
       const a = q.shape.outer[i], b = q.shape.outer[(i + 1) % q.shape.outer.length], length = Math.hypot(b.x - a.x, b.y - a.y);
       for (let d = 1; d < length; d += 8) {
         const x = a.x + (b.x - a.x) * d / length, y = a.y + (b.y - a.y) * d / length, r = 0.22;
-        volumes.push(slab(`${id}:post:${i}:${d}`, { outer: [{ x: x-r, y: y-r }, { x: x+r, y: y-r }, { x: x+r, y: y+r }, { x: x-r, y: y+r }], holes: [] }, top - 3.5, top - 0.7, true));
+        volumes.push(slab(`${id}:post:${i}:${d}`, { outer: [{ x: x-r, y: y-r }, { x: x+r, y: y-r }, { x: x+r, y: y+r }, { x: x-r, y: y+r }], holes: [] }, top - 3.5, top - 0.7, true, QUAY_TINT.timber));
       }
     }
     const origin = q.shape.outer[0], footprint = [q.shape];
@@ -39,12 +42,12 @@ export function city3dQuays(layouts: readonly Layout[]): PlacedBuilding[] {
 }
 
 /** Lagoon channels are water surfaces above the bed, with small dry crossings. */
-export function city3dWaterways(layouts: readonly Layout[]): PlacedBuilding[] {
+export function city3dWaterways(layouts: readonly Layout[], color = '#8aaeb8', waterSurfaces = true): PlacedBuilding[] {
   return layouts.flatMap((layout, li) => (layout.structure?.waterways ?? []).flatMap((w, wi) => [
-    { shape: w.shape, water: true }, ...w.crossings.map(shape => ({ shape, water: false })),
+    ...(waterSurfaces ? [{ shape: w.shape, water: true }] : []), ...w.crossings.map(shape => ({ shape, water: false })),
   ].map(({ shape, water }, si) => {
     const id = `city3d-canal:${li}:${wi}:${si}`, top = w.levelM + (water ? 0 : 0.25), v = slab(id, shape, top - 0.03, top, false);
-    if (water) { v.materials.cladding = 'city3d:water@8aaeb8'; for (const f of v.roof_mesh.faces) f.material = v.materials.cladding; }
+    if (water) { v.materials.cladding = `city3d:water@${color.replace('#', '')}`; for (const f of v.roof_mesh.faces) f.material = v.materials.cladding; }
     const footprint = [shape], origin = shape.outer[0];
     return { id, parcel_id: '', function: 'open_space', culture: { culture: layout.culture, pack: '', mode: 'inspired', borrowing: null },
       recipe_id: 'city3d-canal', variant_id: water ? 'water' : 'crossing', transform: { origin, orientation_deg: 0 }, ground_z_m: top,

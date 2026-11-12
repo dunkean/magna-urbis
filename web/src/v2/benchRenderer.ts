@@ -54,7 +54,7 @@ import type { Rect } from '../render/tileindex';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
 /** Overlay repaints slower than this follow pan/zoom as a transformed bitmap, repainted LIVE_SETTLE_MS after the view rests. */
 const LIVE_DEFER_MS = 40, LIVE_SETTLE_MS = 160;
-import { cityContourPaths, cityFineContours } from '../render/cityContours';
+import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady, cityContourPathsPending } from '../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
 import { isResourceDiagnostic } from '../render/displayDiagnostics';
@@ -126,6 +126,12 @@ export class BenchRenderer {
   private exportCity?: ReturnType<typeof createNativeCityMap>;
   private cartography?: CanvasRenderer;
   private physical?: PhysicalGround;
+  private contourRevision = 0;
+  private contoursReady = (): void => {
+    if (this.disposed) return;
+    this.contourRevision++;
+    this.invalidate();
+  };
   /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
   private exportOverlay?:HTMLCanvasElement;
   /** Physical land use of an export when a rural semantic look is on: drawn under the semantics, the rest of the overlay above. */
@@ -479,12 +485,12 @@ export class BenchRenderer {
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
     this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.world!) } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
-      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}|w${this.waterAboveLand() ? this.waterMaskVersion : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
+      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}:${this.contourRevision}|w${this.waterAboveLand() ? this.waterMaskVersion : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
       invalidate: () => this.invalidate(), brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
     const renderer = this.cartography;
     this.cartographyState = { config, scene: built, world: shown };
     // The 3D drape tiles take the physical land use without the semantic hook: their contours are inked here, at the tile's scale.
-    this.physical = { key: passKeys(this.input()).cartography, preview: (target, box) => renderer.drawCachedMap(target, box), paint: (target, box, options) => { const ground = renderer.drawGround(target, box, options); return this.drapeContours(target, box, displayQualityFor(!!options?.live) === 'light') || ground; } };
+    this.physical = { key: passKeys(this.input()).cartography, preview: (target, box) => renderer.drawCachedMap(target, box), paint: (target, box, options, defer) => { const ground = renderer.drawGround(target, box, options); return this.drapeContours(target, box, displayQualityFor(!!options?.live) === 'light', defer) || ground; } };
     this.passes.reset('overlays');
   }
   /** Overlay renderer inputs: a matching configuration reuses the renderer through a dirty-region update. */
@@ -527,20 +533,28 @@ export class BenchRenderer {
   }
   /** Same screen weight at every zoom; close views split the interval (cityFineContours) instead of losing the lines on flat ground. */
   /** Contours on one 3D drape tile (world square `box` on `target`); heavier than on the flat map, as the tile is seen minified and at a slant. */
-  private drapeContours(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }, light = false): boolean {
+  private drapeContours(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }, light = false, defer?: () => () => void): boolean {
     if (!this.contourLook()) return false;
     const ctx = target.getContext('2d'); if (!ctx) return false;
     const k = target.width / (box.maxX - box.minX);
     ctx.save(); ctx.setTransform(k, 0, 0, k, -box.minX * k, -box.minY * k); ctx.globalCompositeOperation = 'source-over';
-    const drawn = this.paintContours(ctx, box, 1 / k, DRAPE_CONTOUR_WEIGHT, light);
+    const drawn = this.paintContours(ctx, box, 1 / k, DRAPE_CONTOUR_WEIGHT, light, defer);
     ctx.restore(); return drawn;
   }
-  private paintContours(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, weight = 1, light = false): boolean {
+  /** `defer` (3D drape squares): contours still in the worker repaint only the squares that drew without them, not the 2D map. */
+  private paintContours(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, weight = 1, light = false, defer?: () => () => void): boolean {
     const look = this.contourLook(); if (!look) return false;
     const pal = terrainStyle(this.resolved!.ground.style, this.resolved!.palette.colors).palette, sc = 1 / mpp;
     const farLight = light && sc < 1;
-    const fine = farLight ? undefined : cityFineContours(this.native!, look.landform, sc, viewport);
-    const sets = fine ? fine.blocks : [cityContourPaths(this.native!, look.landform, sc)].filter(paths => paths.step);
+    const topographic = this.resolved!.composition.recipe.ground.variant === 'topographic';
+    const fine = farLight || topographic ? undefined : cityFineContours(this.native!, look.landform, sc, viewport);
+    let sets = fine?.blocks;
+    if (!sets) {
+      let done: (() => void) | undefined, landed = false;
+      const ready = defer ? () => { landed = true; done?.(); } : this.contoursReady;
+      sets = [cityContourPaths(this.native!, look.landform, sc, topographic, ready)].filter(paths => paths.step);
+      if (defer && topographic && (landed || cityContourPathsPending(this.native!, look.landform, sc))) { done = defer(); if (landed) done(); }
+    }
     if (!sets.length) return false;
     ctx.save(); ctx.strokeStyle = pal.contour; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.globalAlpha = pal.contourOpacity * 0.7; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
@@ -721,7 +735,7 @@ export class BenchRenderer {
   /** Resolves once the progressive updates (woods after a town build) are on screen. */
   async settled(): Promise<void> { while (this.forestJob) await this.forestJob; }
   /** Display work still owed to the last live frame (missing overlay tiles); 0 once the map is complete. */
-  pendingWork(): number { return this.preparing || this.forestJob ? 1 : this.cartography?.lastStats().rasterPending ?? 0; }
+  pendingWork(): number { return this.preparing || this.forestJob ? 1 : (this.cartography?.lastStats().rasterPending ?? 0) + cityContoursPending(this.native); }
   /** Explicit readback for screenshots/illustration; ordinary navigation never calls it. */
   prepareCapture(): void {
     const frame = this.livePending ?? this.liveShown;
@@ -814,6 +828,9 @@ export class BenchRenderer {
     await this.settled();
     if (this.gpuActive) await this.gpu!.variantReady();   // draw() is synchronous: it would create a missing pipeline in place
     const view = { cx: this.world!.mapSize / 2, cy: this.world!.mapSize / 2, scale: size / this.world!.mapSize };
+    const contours = this.contourLook();
+    if (contours && this.resolved!.composition.recipe.ground.variant === 'topographic')
+      await cityContourPathsReady(this.native!, contours.landform, view.scale);
     // Vectors at the export density before the synchronous draw.
     if (this.vectors && !viewRasterFits(this.vectorView?.region, viewRect(view, size, size), view.scale, this.world!.mapSize)
       && !viewRasterFits(this.vectorBase?.region, viewRect(view, size, size), view.scale, this.world!.mapSize, Infinity)) {

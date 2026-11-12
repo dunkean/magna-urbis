@@ -345,7 +345,7 @@ describe('V2 and City Bench stay in sync', () => {
     expect(resolveAppearance({ style: 'parchment', composition: hidden }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').city.layers.lotEnclosures).toBe(false);
     // Both draw paths gate the fences on lotEnclosures alone (parcelOverlay is the parcel diagram).
     expect(read('../../src/render/cityCanvas.ts')).toContain('if (layers.lotEnclosures !== false) drawLotEnclosures(');
-    expect(read('../../src/ui/city3d.ts')).toContain('yardsShown = yardLayers?.lotEnclosures !== false;');
+    expect(read('../../src/ui/city3d.ts')).toContain('yardsShown = !flat && yardLayers?.lotEnclosures !== false;');
   });
 
   it('builds the drawCity options of both pages with the shared function only', () => {
@@ -489,7 +489,8 @@ describe('retained city environment parity', () => {
     expect(cityGlOverlayLayers({ ...layers, streets: true, waterways: false }).waterways).toBe(false);
     expect(read('../../src/v2/decorTerrain.ts')).toContain('v2Decor: decor');
     expect(read('../../src/v2/benchRenderer.ts')).toContain('decorWaterSvg(decor,');
-    expect(read('../../src/ui/citybench.ts')).toContain('decorWaterSvg(decor,');
+    expect(read('../../src/ui/citybench.ts')).toContain('decorWater3d(decor,');
+    expect(read('../../src/v2/urban3d.ts')).toContain('decorWater3d(decor,');
     expect(read('../../src/v2/urban3d.ts')).toContain('retainedDecorOf(world.terrain)');
   });
 
@@ -559,5 +560,14 @@ describe('retained city environment parity', () => {
       expect(driver).toContain('const seed = process.env.SEED ?? meta.seed;');
       expect(driver).toContain("p.evaluate(hideOverlays, '.map-area')");
     }
+  });
+  it('draws the 3D sea at the 2D coast in both pages (render/seaCover.ts)', async () => {
+    const { paintSeaCover } = await import('../../src/render/seaCover');
+    const pixels = new Uint8ClampedArray(4 * 4);
+    paintSeaCover(pixels, [-1, 0, .1, 3], [1, 2, 3, 255]);
+    expect([...pixels]).toEqual([1, 2, 3, 255, 1, 2, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // V2 (native field) and City Bench (decor heights) paint the sea through the same helper.
+    expect(read('../../src/v2/urban3d.ts')).toContain('paintSeaCover(');
+    expect(read('../../src/ui/city3d.ts')).toContain('paintSeaCover(');
   });
 });

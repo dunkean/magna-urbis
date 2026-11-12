@@ -360,7 +360,11 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         if (cultivated(x, y) || s.occupied) continue;
         // The silhouette stays on the relief: its base must stand on land (not sea, lake or off the map). A stamp that
         // overhangs is shrunk towards its anchor until its whole base is dry land, and dropped when it cannot fit.
-        const onLand = (width: number): boolean => [-.4, -.2, 0, .2, .4].every(dx => { const n = sample(px + dx * width, py); return !!n && !n.water && n.height > 0; });
+        // The body stands above the foot and its flanks reach the full width: a coast that bends behind the foot must not
+        // carry the painted flank over the sea, so two body rows are tested too (off the map is fine there: the frame clips).
+        const dry = (n: PaintSample | undefined): boolean => !!n && !n.water && n.height > 0;
+        const onLand = (width: number): boolean => [-.4, -.2, 0, .2, .4].every(dx => dry(sample(px + dx * width, py)))
+          && [-.15, -.3].every(dy => [-.5, -.25, 0, .25, .5].every(dx => { const n = sample(px + dx * width, py + dy * width); return !n || dry(n); }));
         let fitted = 1;
         while (!onLand(w * fitted) && fitted > .4) fitted *= .8;
         if (!onLand(w * fitted)) continue;

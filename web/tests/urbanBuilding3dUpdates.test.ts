@@ -24,7 +24,8 @@ it('uses satellite ground snow on compact and projected roofs and refreshes the 
     for (const sector of state.sectors) state.prepare(sector, false);
     expect(colors().some(c => c[0] > .8 && c[1] > .8 && c[2] > .8)).toBe(true);
     (pass as unknown as { render(frame: unknown, shown: unknown, textured: boolean): void }).render({ matrix: new Float32Array(16), cameraX: 0, cameraY: 0, targetHeight: 0, exaggeration: 1 }, state.sectors, textured);
-    expect(gl.polygonOffset).toHaveBeenCalledWith(-1, -2);
+    // Snow whitens the roof triangles in place: no overlay, so no depth bias.
+    expect(gl.polygonOffset).not.toHaveBeenCalled();
     pass.setScene(scene, { ...appearance, roofSnow: { ...appearance.roofSnow, season: .5 } });
     for (const sector of state.sectors) state.prepare(sector, false);
     expect(colors().some(c => c[0] > .8 && c[1] > .8 && c[2] > .8)).toBe(false);

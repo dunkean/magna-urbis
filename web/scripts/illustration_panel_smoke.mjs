@@ -6,7 +6,10 @@ const base = process.env.NEURAL_EARTH_URL || process.env.MAGNA_ILLUSTRATION_BENC
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page.setDefaultTimeout(10000);
   await page.route(base + '/illustration/index.mjs', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile(new URL('../../illustration/web/index.mjs', import.meta.url)) }));
+  await page.route(base + '/illustration/framing.mjs', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile(new URL('../../illustration/web/framing.mjs', import.meta.url)) }));
+  await page.route(base + '/illustration/atlas.mjs', async route => route.fulfill({ contentType: 'text/javascript', body: await readFile(new URL('../../illustration/web/atlas.mjs', import.meta.url)) }));
   await page.route(base + '/panel-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><body>
     <header></header><div id="view" style="width:256px;height:128px;position:relative"><canvas width="256" height="128"></canvas>
     <svg xmlns="http://www.w3.org/2000/svg" width="256" height="128" style="position:absolute;inset:0">
@@ -26,7 +29,7 @@ try {
     const out = probe.getContext('2d'); out.drawImage(frozen, 0, 0); frozen.close();
     const at = (x, y) => [...out.getImageData(x, y, 1, 1).data];
     const result = { background: at(8, 8), paint: at(80, 20) };
-    mountIllustration({ host: document.querySelector('header'), capture: async () => ({ image: await captureViewport(document.getElementById('view')), context: { application: 'test', sourceStyle: 'parchment' } }) });
+    mountIllustration({ host: document.querySelector('header'), capture: async () => ({ image: await captureViewport(document.getElementById('view')), context: { application: 'test', sourceStyle: 'parchment', ...window.illustrationContext } }) });
     return result;
   });
   assert.deepEqual(pixels.background, [255, 0, 0, 255]); assert.deepEqual(pixels.paint, [0, 0, 255, 255]);
@@ -36,10 +39,10 @@ try {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (path === '/status') {
       if (connectionState === 'offline') return route.abort('connectionrefused');
-      return route.fulfill({ json: { service: connectionState === 'incompatible' ? 'other-service' : 'magna-illustration', protocol: 1, localDependencies: connectionState !== 'missing' } });
+      return route.fulfill({ json: { service: connectionState === 'incompatible' ? 'other-service' : 'magna-illustration', protocol: 1, promptRevision: 5, localDependencies: connectionState !== 'missing' } });
     }
     if (path.endsWith('/jobs') && request.method() === 'POST') { submissions++; return route.fulfill({ status: 500, json: { error: 'Unexpected generation' } }); }
-    if (path.endsWith('/prompt')) return route.fulfill({ json: { description: 'Test scene', prompt: 'Test prompt' } });
+    if (path.endsWith('/prompt')) return route.fulfill({ json: { description: 'Test scene', prompt: 'Test prompt ' + request.postDataJSON().settings.output + ' ' + request.postDataJSON().settings.style } });
     if (path.endsWith('/guides')) {
       assert.equal(request.postDataJSON().settings.referenceMode, 'source+edges');
       assert.equal(request.postDataJSON().apiKey, undefined);
@@ -132,5 +135,31 @@ try {
   assert.equal(await page.evaluate(() => JSON.stringify(localStorage).includes('test-secret')), false);
   const layout = await page.locator('.illustration-dialog').evaluate(dialog => ({ width: dialog.getBoundingClientRect().width, overflow: dialog.scrollWidth > dialog.clientWidth }));
   assert.ok(layout.width <= 390); assert.equal(layout.overflow, false);
+  assert.equal(await page.locator('[name=output] option[value=battlemap]').evaluate(option => option.disabled), true, await page.locator('[data-battlemap-hint]').textContent());
+  await page.evaluate(() => { window.illustrationContext = { projection: 'orthographic', viewport: { width: 256, height: 128 }, extentMetres: { width: 60, height: 30 } }; });
+  await page.locator('[data-recapture]').click();
+  await page.waitForFunction(() => !document.querySelector('[name=output] option[value=battlemap]').disabled);
+  for (const style of ['fineart-photo', 'rpg', 'watercolor', 'pencil']) {
+    await page.locator('[name=style]').selectOption(style);
+    await page.waitForFunction(style => document.querySelector('.illustration-prompt').textContent.endsWith(style), style);
+  }
+  await page.locator('[name=output]').selectOption('battlemap');
+  await page.waitForFunction(() => document.querySelector('.illustration-prompt').textContent.includes('battlemap'));
+  assert.equal(await page.locator('[name=grid]').isVisible(), true);
+  assert.ok((await page.locator('[data-framing]').textContent()).includes('60 × 30 m'));
+  await page.locator('details').filter({ has: page.locator('[data-prompt-edit]') }).evaluate(details => { details.open = true; });
+  await page.locator('[data-prompt-edit]').click();
+  await page.locator('[data-prompt-editor]').fill('Prompt for the old crop');
+  await page.evaluate(() => { window.illustrationContext.extentMetres = { width: 2400, height: 1200 }; });
+  await page.locator('[data-recapture]').click();
+  await page.waitForFunction(() => document.querySelector('.illustration-prompt').textContent.includes('illustration pencil'));
+  assert.equal(await page.locator('[name=output]').inputValue(), 'illustration');
+  assert.equal(await page.locator('[name=output] option[value=battlemap]').evaluate(option => option.disabled), true);
+  assert.ok(!(await page.locator('[data-prompt-state]').textContent()).includes('personnalisé'), 'A recaptured view must not reuse a custom prompt describing an old crop.');
+  await page.evaluate(() => { window.illustrationContext = { projection: 'perspective', viewport: { width: 256, height: 128 }, camera: { distance: 30, pitch: 1.48, yaw: 0 } }; });
+  await page.locator('[data-recapture]').click();
+  await page.waitForFunction(() => !document.querySelector('[name=output] option[value=battlemap]').disabled);
+  assert.ok((await page.locator('[data-battlemap-hint]').textContent()).includes('plan horizontal'));
+  assert.equal(submissions, 0);
   console.log('Shared illustration panel passed: Save As with PNG extension and exact bytes, download fallback location, connection errors, quality defaults, frozen capture, isolated credentials, mobile layout.');
 } finally { await browser.close(); }

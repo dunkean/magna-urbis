@@ -281,6 +281,18 @@ float groundMacroHeight(vec2 p){
   ivec2 q=ivec2((p-macroRect.xy)/macroRect.z*float(macroN));
   return texelFetch(macroField,clamp(q,ivec2(0),ivec2(macroN-1)),0).r;
 }
+// Bilinear macro height and the 2D map's topographic position (naturalTpi: 300 m ring, 6r scale), so the
+// draped Render v2 snow keeps its hollows and ridges: 16 fetches, no pass, no texture.
+float groundMacroBilinear(vec2 p){
+  float cell=macroRect.z/float(macroN);vec2 g=(p-macroRect.xy)/cell-.5,f=fract(g);ivec2 b=ivec2(floor(g)),hi=ivec2(macroN-1);
+  float h00=texelFetch(macroField,clamp(b,ivec2(0),hi),0).r,h10=texelFetch(macroField,clamp(b+ivec2(1,0),ivec2(0),hi),0).r;
+  float h01=texelFetch(macroField,clamp(b+ivec2(0,1),ivec2(0),hi),0).r,h11=texelFetch(macroField,clamp(b+ivec2(1,1),ivec2(0),hi),0).r;
+  return mix(mix(h00,h10,f.x),mix(h01,h11,f.x),f.y);
+}
+float groundTpi(vec2 p,float h){
+  float r=max(300.,2.*macroRect.z/float(macroN));
+  return (h-.25*(groundMacroBilinear(p+vec2(r,0.))+groundMacroBilinear(p-vec2(r,0.))+groundMacroBilinear(p+vec2(0.,r))+groundMacroBilinear(p-vec2(0.,r))))/(6.*r);
+}
 vec3 forestRootSurface(vec2 p){return groundMacroSurface(p);}
 float forestRootCell(){return macroRect.z/float(macroN);}
 ${CITY_WATER_3D_GLSL}
@@ -302,7 +314,7 @@ void main() {
     }
     GroundMaterial m;
     vec3 macro=earthMaterial(s,physical.xz,max(footprint,1.),0.,shore,openness);
-    if(uRenderV2>0)m=v2Ground(s,physical.xz,footprint,0.,groundLight,groundLight2,groundStrength,renderGuideBaseOpen);
+    if(uRenderV2>0)m=v2Ground(s,physical.xz,footprint,groundTpi(physical.xz,s.x),groundLight,groundLight2,groundStrength,renderGuideBaseOpen);
     else {
       m=terrainGroundMaterial(s,physical.xz,footprint,macro,uMaterialClimate,uMaterialSeed);
     }
@@ -619,6 +631,8 @@ export interface Patch {
   maxHeight: number;
   used: number;
   status: 'idle' | 'loading' | 'ready' | 'failed';
+  /** Bumped when the tile's texture goes stale: a load started before it is dropped, the old texture stays shown until the new one is ready. */
+  revision: number;
   heights?: Float32Array;
   /** The exact fine and parent fields uploaded to this mesh. */
   field?: Float32Array;
@@ -738,6 +752,8 @@ export class Terrain3d {
   private protected = new Set<string>();
   private jobs = new Set<object>();
   private epoch = 0;
+  /** Texture invalidations wait for the next frame, so several async completions coalesce into one pass. */
+  private staleTiles: 'all' | ({ minX: number; minY: number; maxX: number; maxY: number } | string)[] | undefined;
   private clock = 0;
   private heightRange = 0;
   private maxSlope = 0;
@@ -1028,18 +1044,37 @@ export class Terrain3d {
     if (this.requireHeights !== requireHeights) { this.requireHeights = requireHeights; this.clearPatches(); }
     this.tileLoader = loader; this.invalidateTiles();
   }
-  invalidateTiles(): void {
-    ++this.epoch;
-    this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
-    for (const patch of this.patches.values()) {
-      if (patch.texture) this.releaseMaterial(patch.texture);
-      if (patch.pendingTexture) this.releaseMaterial(patch.pendingTexture);
-      patch.texture = undefined; patch.textureBytes = 0; patch.status = 'idle'; patch.textureFadeStart = 0; patch.textureProgress = 0; patch.materialParent = undefined;
-      patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.pendingHeights = undefined;
-    }
+  /** Repaint the ground textures: all of them, the tiles overlapping a world `region`, or one tile by its key.
+   * A tile keeps showing its current texture until the replacement is built and uploaded (swap on ready). */
+  invalidateTiles(region?: { minX: number; minY: number; maxX: number; maxY: number } | string): void {
+    if (region === undefined) this.staleTiles = 'all';
+    else if (!this.staleTiles) this.staleTiles = [region];
+    else if (this.staleTiles !== 'all') this.staleTiles.push(region);
     this.request();
   }
-  getLodInfo(): typeof this.lod { return { ...this.lod, pending: this.jobs.size + this.preparation.pending }; }
+  private applyStaleTiles(): void {
+    const stale = this.staleTiles; if (!stale) return;
+    this.staleTiles = undefined;
+    if (stale === 'all') {
+      ++this.epoch;
+      this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
+    }
+    // Without a loader nothing would replace them: the whole-map material takes over at once.
+    const drop = !this.tileLoader;
+    for (const patch of this.patches.values()) {
+      const t = patch.tile;
+      if (stale !== 'all' && !stale.some(r => typeof r === 'string' ? r === t.key : t.x < r.maxX && t.x + t.width > r.minX && t.y < r.maxY && t.y + t.width > r.minY)) continue;
+      ++patch.revision;
+      if (patch.pendingTexture) this.releaseMaterial(patch.pendingTexture);
+      patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.pendingHeights = undefined;
+      patch.status = 'idle';
+      if (drop) {
+        if (patch.texture) this.releaseMaterial(patch.texture);
+        patch.texture = undefined; patch.textureBytes = 0; patch.textureFadeStart = 0; patch.textureProgress = 0; patch.materialParent = undefined;
+      }
+    }
+  }
+  getLodInfo(): typeof this.lod { return { ...this.lod, pending: this.jobs.size + this.preparation.pending + (this.staleTiles ? 1 : 0) }; }
 
   private clearPatches(): void {
     ++this.epoch;
@@ -1151,7 +1186,7 @@ export class Terrain3d {
       const padding = Math.min(this.heightRange, this.maxSlope * width * .6 + this.heightRange * .003);
       low -= padding; high += padding;
       patch = { tile: { key, x, y, width, level, pixels: TILE_PIXELS }, textureBytes: 0, meshBytes: 0,
-        heightOrigin: centre, minHeight: low, maxHeight: high, used: this.clock, status: 'idle', textureFadeStart: 0, textureProgress: 0, textureUpdated: 0,
+        heightOrigin: centre, minHeight: low, maxHeight: high, used: this.clock, status: 'idle', revision: 0, textureFadeStart: 0, textureProgress: 0, textureUpdated: 0,
         hasHeight: false, coherentReady: false, pendingTextureBytes: 0 };
       this.patches.set(key, patch);
     }
@@ -1398,35 +1433,36 @@ export class Terrain3d {
       // A moving preview never displaces a completed full tile.
       if (patch.status === 'ready' && (patch.preview && !preview || this.captureMode && !patch.exact)) patch.status = 'idle';
       if (patch.status !== 'idle') continue;
-      const job = {}, epoch = this.epoch, loader = this.tileLoader, exact = this.captureMode;
+      const job = {}, epoch = this.epoch, revision = patch.revision, loader = this.tileLoader, exact = this.captureMode;
+      const current = (): boolean => epoch === this.epoch && revision === patch.revision && !this.disposed && this.patches.get(patch.tile.key) === patch;
       patch.status = 'loading'; this.jobs.add(job);
       ++started;
       // In its own task: a synchronous tile paint must not hold back the frame that asked for it.
       void new Promise<void>(resolve => setTimeout(resolve)).then(() => {
-        if (epoch !== this.epoch || this.disposed) throw new Error('Tuile abandonnée.');
+        if (epoch !== this.epoch || revision !== patch.revision || this.disposed) throw new Error('Tuile abandonnée.');
         const far = patch.tile.width * this.frameGeometry().focal / Math.max(this.camera.distance, 1) < 384;
         const pixels = !exact && (this.useMapShader || this.lookSettings.paperMap) && far && (preview || displayQualityFor(true) === 'light') ? 256 : TILE_PIXELS;
         return loader({ ...patch.tile, pixels, preview, exact,
-          prepare: work => this.preparation.run(work, () => epoch === this.epoch && !this.disposed && this.patches.get(patch.tile.key) === patch,
+          prepare: work => this.preparation.run(work, current,
             () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y)) });
       }).then(async result => {
         const content = typeof result === 'object' && result !== null && 'texture' in result ? result as Terrain3dTileContent : { texture: result as TexImageSource };
         const source = content.texture;
-        if (epoch !== this.epoch || this.disposed || this.contextLost() || this.patches.get(patch.tile.key) !== patch) {
+        if (!current() || this.contextLost()) {
           if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
           return;
         }
         if (this.requireHeights && !content.height) throw new Error('Tuile de relief 3D sans grille d’altitude.');
         let deferred = false;
         if (content.height) {
-          const heights = await this.preparation.run(this.decodedGrid(patch.tile, content.height), () => epoch === this.epoch && !this.disposed && this.patches.get(patch.tile.key) === patch, patch.tile.level * 1e9);
+          const heights = await this.preparation.run(this.decodedGrid(patch.tile, content.height), current, patch.tile.level * 1e9);
           const unchanged = patch.hasHeight && patch.heights?.every((value, i) => Math.abs(value - heights[i]) < .0001);
           if (!unchanged) {
             if (patch.heights && this.containsLivePatch(patch)) { patch.pendingHeights = heights; deferred = true; }
             else this.installHeights(patch, heights);
           }
         }
-        if (epoch !== this.epoch || this.disposed || this.contextLost() || this.patches.get(patch.tile.key) !== patch) {
+        if (!current() || this.contextLost()) {
           if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
           return;
         }
@@ -1461,15 +1497,18 @@ export class Terrain3d {
         }
         if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; patch.pendingTexturePixels=materialSize(source).width-2*gutter; }
         else {
+          // A replacement swaps in at once: no fade through the parent tile, which read as a flicker.
+          const replaced = !!patch.texture;
           if (patch.texture) this.releaseMaterial(patch.texture);
-          patch.texture = texture; patch.textureBytes = textureBytes; patch.textureFadeStart = 0; patch.textureProgress = 0;
+          patch.texture = texture; patch.textureBytes = textureBytes; patch.textureFadeStart = 0; patch.textureProgress = replaced ? 1 : 0;
+          if (replaced) patch.materialParent = undefined;
           patch.textureGutter=gutter; patch.texturePixels=materialSize(source).width-2*gutter;
         }
         patch.status = 'ready'; patch.preview = preview; patch.exact = exact;
         if (patch.hasHeight && patch.texture) patch.coherentReady = true;
         if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
       }).catch(error => {
-        if (epoch !== this.epoch || this.disposed) return;
+        if (epoch !== this.epoch || revision !== patch.revision || this.disposed) return;
         if ((error as { name?: string })?.name === 'AbortError') { patch.status = 'idle'; return; }
         patch.status = 'failed'; console.warn(`Terrain 3D tile ${patch.tile.key}:`, error);
       }).finally(() => {
@@ -1488,7 +1527,7 @@ export class Terrain3d {
       if (parent?.texture) {
         parent.used = this.clock; this.protected.add(parent.tile.key);
         const width = parent.tile.width;
-        return { texture: parent.texture, rect: [(tile.x - parent.tile.x) / width, (tile.y - parent.tile.y) / width, tile.width / width, tile.width / width], texel: width / (parent.texturePixels ?? TILE_PIXELS), ready: parent === patch };
+        return { texture: parent.texture, rect: [(tile.x - parent.tile.x) / width, (tile.y - parent.tile.y) / width, tile.width / width, tile.width / width], texel: width / (parent.texturePixels ?? TILE_PIXELS), ready: parent === patch && patch.status !== 'idle' && patch.status !== 'loading' };
       }
       --level; ix = Math.floor(ix / 2); iy = Math.floor(iy / 2);
     }
@@ -1791,7 +1830,7 @@ export class Terrain3d {
     if (!inputs) { this.treeCount = 0; this.treeKey = ''; return; }
     const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
     const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
-    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.seed].join('|');
+    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.seed].join('|');
     if (key === this.treeKey && (!this.fullQualityCapture || this.treeReadyKey === key)) return;
     this.treeKey = key;
     if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; return; }
@@ -1988,6 +2027,7 @@ export class Terrain3d {
     const dpr = this.dpr(), w = Math.max(1, Math.floor(this.width * dpr)), h = Math.max(1, Math.floor(this.height * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
     this.now = performance.now(); this.animating = false;
+    this.applyStaleTiles();
     const frame = this.frameGeometry(); this.select(frame); const preparing = this.prepareMeshes(); this.loadTiles();
     if (this.root) this.advanceMorphs(this.root);
     const drawn: Patch[] = [], draws: PatchDraw[] = [];
@@ -2287,7 +2327,7 @@ export class Terrain3d {
    * variant is ready (a backend switch waits for it before showing the new view). */
   isSettled(): boolean {
     const lod = this.getLodInfo();
-    return !!this.layer && lod.tiles > 0 && lod.pending === 0 && lod.ready === lod.tiles
+    return !!this.layer && !this.staleTiles && lod.tiles > 0 && lod.pending === 0 && lod.ready === lod.tiles
       && !this.frameInteracting
       && !this.billboardDirty && this.billboardsReady()
       && (this.useMapShader || this.status.groundVariant !== 'pending');

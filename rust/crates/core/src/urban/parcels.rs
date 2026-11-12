@@ -4779,6 +4779,27 @@ pub(super) fn generate(
                 actual - expected
             ));
         }
+        // An id is minted from a parcel's geometry at its birth and kept while
+        // tidying reshapes it, so a later cut (an arm garden) can reproduce an
+        // earlier parcel's birth shape and its id. Twins re-key from their
+        // current geometry; exact geometric twins take an ordinal.
+        let mut count = std::collections::HashMap::<String, usize>::new();
+        for p in &parcels {
+            *count.entry(p.id.clone()).or_default() += 1;
+        }
+        if count.values().any(|&n| n > 1) {
+            for p in parcels.iter_mut().filter(|p| count[&p.id] > 1) {
+                p.id = identity(&p.shape, bi);
+            }
+            let mut seen = std::collections::HashMap::<String, usize>::new();
+            for p in &mut parcels {
+                let n = seen.entry(p.id.clone()).or_default();
+                *n += 1;
+                if *n > 1 {
+                    p.id = format!("{}-{}", p.id, *n - 1);
+                }
+            }
+        }
         for p in &mut parcels {
             resolve_identity(p, bi, &block_id);
             if cfg.street_aligned_homes && !camp && p.use_kind == "plot" {

@@ -1,6 +1,8 @@
 /** Shared, build-free illustration client used by both applications. No credentials are persisted. */
+import { battlemapAvailability, groundFrame } from './framing.mjs';
+import { mountBattlemapAtlas, neighbourView } from './atlas.mjs';
 const terminal = new Set(['succeeded', 'failed', 'cancelled']);
-const styles = [['auto', 'Style de la couche visible'], ['cadastre', 'Cadastre'], ['parchment', 'Carte parchemin'], ['geographic', 'Carte géographique'], ['satellite', 'Satellite'], ['engraving', 'Gravure'], ['watercolor', 'Aquarelle'], ['fineart', 'Peinture · fine art'], ['photorealistic', 'Photoréaliste'], ['atlas', 'Atlas illustré']];
+const styles = [['fineart-photo', 'Fine art · photoréaliste'], ['rpg', 'Illustration RPG'], ['watercolor', 'Peinture aquarelle'], ['pencil', 'Crayon noir · graphite'], ['fineart', 'Peinture à l’huile'], ['photorealistic', 'Photoréaliste'], ['engraving', 'Gravure'], ['auto', 'Style de la couche visible'], ['cadastre', 'Cadastre'], ['parchment', 'Carte parchemin'], ['geographic', 'Carte géographique'], ['satellite', 'Satellite'], ['atlas', 'Atlas illustré']];
 const tuningFields = ['sdxlVariant', 'sdxlInit', 'fluxVariant', 'controlPreset', 'edgeScale', 'edgeStart', 'edgeEnd', 'depthScale', 'depthStart', 'depthEnd', 'guideResolution', 'sdxlGuidance', 'denoiseStrength', 'fluxGuidance', 'referenceMode', 'referenceResolution', 'negativePrompt'];
 const controlPresets = {
   balanced: [.3, 0, .45, .6, 0, .7], plan: [.65, 0, .8, .4, 0, .65],
@@ -10,7 +12,7 @@ const defaultNegative = 'untextured blockout, plain cuboids, clay render, low-po
 const css = `
 .illustration-dialog{color:#e9edf0;background:#172126;border:1px solid #657b85;border-radius:14px;width:min(1120px,94vw);max-height:92vh;padding:0;font:14px/1.45 system-ui,sans-serif;box-shadow:0 20px 80px #0008}.illustration-dialog::backdrop{background:#071014bd}.illustration-dialog *{box-sizing:border-box}.illustration-dialog header{display:flex;align-items:center;gap:12px;background:none;padding:18px 22px;border-bottom:1px solid #415158}.illustration-dialog h2{margin:0;font-size:20px}.illustration-dialog header button{margin-left:auto}.illustration-body{padding:18px 22px;display:grid;grid-template-columns:minmax(230px,300px) minmax(0,1fr);gap:22px}.illustration-fields{display:flex;flex-direction:column;gap:12px}.illustration-dialog label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#c9d7dc}.illustration-dialog input:not([type=range]),.illustration-dialog select,.illustration-dialog textarea{width:100%;padding:8px;color:#edf2f4;background:#243239;border:1px solid #5a707a;border-radius:5px;font:inherit}.illustration-dialog button,.illustration-dialog a.illustration-download{padding:8px 12px;color:#edf2f4;background:#2e444d;border:1px solid #6e8994;border-radius:6px;cursor:pointer;font:inherit;text-decoration:none}.illustration-dialog button:disabled{opacity:.5;cursor:default}.illustration-dialog .illustration-primary{background:#447369;font-weight:600}.illustration-dialog small{color:#aabfc8;font-size:12px}.illustration-dialog details{border-top:1px solid #415158;padding-top:10px}.illustration-dialog summary{cursor:pointer;margin-bottom:8px}.illustration-dialog progress{width:100%;height:9px;accent-color:#8ac2ac}.illustration-preview{position:relative;background:#0c1317;border-radius:7px;overflow:hidden;min-height:190px;display:grid;place-items:center}.illustration-preview img{display:block;width:100%;max-height:62vh;object-fit:contain;grid-area:1/1}.illustration-preview .illustration-result{position:absolute;inset:0;width:100%;height:100%;clip-path:inset(0 0 0 50%)}.illustration-preview .illustration-placeholder{padding:50px 20px;color:#b3c5cd;text-align:center}.illustration-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.illustration-status{white-space:pre-wrap;overflow-wrap:anywhere;min-height:40px}.illustration-status[role=alert]{color:#ffc6a7}.illustration-history{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.illustration-history button{padding:3px;width:76px;height:60px;overflow:hidden}.illustration-history img{width:100%;height:100%;object-fit:cover}.illustration-prompt{white-space:pre-wrap;max-height:180px;overflow:auto;font:12px/1.5 monospace;color:#bbced5}.illustration-dialog [hidden]{display:none!important}.illustration-trigger{cursor:pointer}@media(max-width:720px){.illustration-body{grid-template-columns:1fr;padding:14px}.illustration-preview img{max-height:42vh}.illustration-dialog{max-height:96vh}.illustration-fields{display:grid;grid-template-columns:1fr 1fr}.illustration-fields>details,.illustration-fields>.illustration-full{grid-column:1/-1}}`;
 
-const resetCss = `.illustration-dialog{max-width:min(1120px,94vw)}.illustration-dialog label{align-items:stretch;justify-content:initial;width:100%;margin:0;text-align:left}.illustration-dialog input:not([type=range]),.illustration-dialog select,.illustration-dialog button,.illustration-dialog textarea{height:auto;min-height:36px;line-height:1.4;max-width:none;white-space:normal;text-indent:0}.illustration-dialog select{width:100%;min-width:0;font-size:14px}.illustration-dialog header{height:auto}.illustration-dialog .illustration-history button{height:60px}`;
+const resetCss = `.illustration-dialog{max-width:min(1120px,94vw)}.illustration-dialog label{align-items:stretch;justify-content:initial;width:100%;margin:0;text-align:left}.illustration-dialog input:not([type=range]),.illustration-dialog select,.illustration-dialog button,.illustration-dialog textarea{height:auto;min-height:36px;line-height:1.4;max-width:none;white-space:normal;text-indent:0}.illustration-dialog select{width:100%;min-width:0;font-size:14px}.illustration-dialog header{height:auto}.illustration-dialog .illustration-history button{height:60px}.illustration-dialog[open]{display:flex;flex-direction:column;overflow:hidden}.illustration-dialog header{flex:none}.illustration-dialog .illustration-body{flex:1 1 auto;min-height:0;overflow:auto}`;
 
 export function serviceUrl(value) {
   const url = new URL(value);
@@ -135,13 +137,20 @@ export async function saveIllustrationFile(blob, name, fallbackUrl) {
   return `Téléchargement demandé : ${filename}. Ouvrez les téléchargements du navigateur (Ctrl+J) pour trouver le fichier et son emplacement.`;
 }
 
-export function mountIllustration({ host, capture, defaultService = 'http://127.0.0.1:8794' }) {
+export function mountIllustration({ host, capture, navigation, defaultService = 'http://127.0.0.1:8794' }) {
   if (!document.getElementById('illustration-css')) { const sheet = document.createElement('style'); sheet.id = 'illustration-css'; sheet.textContent = css + resetCss; document.head.append(sheet); }
   const button = document.createElement('button'); button.type = 'button'; button.className = 'illustration-trigger'; button.textContent = '✦ Illustrer'; button.title = 'Créer une illustration de cette vue'; host.append(button);
   const dialog = document.createElement('dialog'); dialog.className = 'illustration-dialog'; dialog.setAttribute('aria-label', 'Illustrer cette vue');
-  dialog.innerHTML = `<header><h2>Illustrer cette vue</h2><button type="button" data-close aria-label="Fermer">✕</button></header><div class="illustration-body"><div class="illustration-fields">
+  dialog.innerHTML = `<header><h2>Illustrer cette vue</h2><button type="button" data-illustration-close aria-label="Fermer">✕</button></header><div class="illustration-body"><div class="illustration-fields">
     <label>Moteur<select name="mode"><option value="quality">Local · FLUX · édition</option><option value="fast">Local · SDXL · ControlNet</option><option value="cloud">API externe</option></select></label>
-    <label>Style<select name="style"></select></label><label data-fidelity>Respect du plan<select name="fidelity"><option value="strong">Strict · détails libres</option><option value="balanced">Plan conservé · architecture libre</option><option value="free">Plan conservé · interprétation large</option></select></label>
+    <label>Style artistique<select name="style"></select></label>
+    <label>Usage<select name="output"><option value="illustration">Illustration de la vue</option><option value="battlemap">Battlemap</option></select></label>
+    <small class="illustration-full" data-framing></small><small class="illustration-full" data-battlemap-hint></small>
+    <label data-grid>Grille de battlemap<select name="grid"><option value="square">Carrée · trait simple</option><option value="hex">Hexagonale · trait simple</option><option value="none">Sans grille</option></select></label>
+    <label>Taille d’une case · mètres<input name="cellMetres" type="number" min="0.5" max="100" step="0.5" value="1.5"><small data-cell-hint>1,50 m par défaut. Augmentez cette valeur pour couvrir une zone plus large.</small></label>
+    <label>Résolution de génération<select name="pixels"><option value="393216">0,4 MP · petit aperçu</option><option value="786432">0,8 MP · aperçu</option><option value="1048576" selected>1 MP</option><option value="2097152">2 MP · détaillé</option><option value="4194304">4 MP · haute résolution</option><option value="8294400">Jusqu’à 4K · OpenAI · expérimental</option></select></label>
+    <label>Taille du PNG exporté<select name="outputPixels"><option value="0">Résolution native · conserver tous les détails</option><option value="4194304">4 MP minimum · agrandissement si nécessaire</option><option value="8388608">8 MP minimum · agrandissement si nécessaire</option><option value="16777216">16 MP minimum · agrandissement si nécessaire</option></select><small data-output-size>Un agrandissement augmente la taille du fichier, sans ajouter de détails générés.</small></label>
+    <label data-fidelity>Respect du plan<select name="fidelity"><option value="strong">Strict · détails libres</option><option value="balanced">Plan conservé · architecture libre</option><option value="free">Plan conservé · interprétation large</option></select></label>
     <label data-cloud hidden>Fournisseur<select name="provider"><option value="openai">OpenAI · GPT Image</option><option value="gemini">Google · Gemini Image</option></select></label>
     <label data-cloud hidden>Modèle<input name="model" spellcheck="false" value="gpt-image-2.5-sunburst"></label><label data-cloud hidden>Clé API personnelle<input name="apiKey" type="password" autocomplete="off" placeholder="Clé conservée pour cette session"></label>
     <label class="illustration-full">Instruction supplémentaire<textarea name="instruction" rows="3" placeholder="Lumière du matin, ambiance brumeuse…"></textarea></label>
@@ -162,13 +171,12 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
     </details>
     <details><summary>Réglages avancés</summary><label>Service local<input name="service" spellcheck="false"></label><button type="button" data-connect>Vérifier la connexion</button><small data-connection>Le connecteur local doit être démarré.</small>
     <label>Guide<select name="control"><option value="auto">Automatique</option><option value="edges">Contours</option><option value="depth">Profondeur</option><option value="both">Contours + profondeur · SDXL</option></select></label>
-    <label>Résolution<select name="pixels"><option value="393216">0,4 MP · petit aperçu</option><option value="786432">0,8 MP · aperçu</option><option value="1048576" selected>1 MP</option><option value="2097152">2 MP · qualité</option></select></label>
     <label>Étapes<select name="steps"><option value="4" selected>4 · FLUX / aperçu SDXL</option><option value="8">8 · SDXL détaillé</option></select></label><label>Seed<input name="seed" type="number" min="0" max="4294967295" placeholder="Aléatoire"></label></details>
     <small class="illustration-full" data-budget>Rapide : privilégie la latence. Premier chargement et téléchargement plus longs.</small><small class="illustration-full">La fidélité reste indicative. Les images générées peuvent modifier des détails de la carte.</small>
     <button type="button" class="illustration-primary illustration-full" data-generate>Générer l’illustration</button><button type="button" data-cancel hidden>Annuler</button></div>
     <div><div class="illustration-preview"><div class="illustration-placeholder">Préparation de la capture…</div><img data-source alt="Vue capturée" hidden><img data-result class="illustration-result" alt="Illustration générée" hidden></div>
     <label data-compare hidden>Original ↔ illustration<input type="range" min="0" max="100" value="50" aria-label="Comparer original et illustration"></label>
-    <div class="illustration-actions"><button type="button" data-recapture>Capturer la vue actuelle</button><button type="button" data-source-download hidden>Source PNG</button><button type="button" data-download hidden>Illustration PNG</button><button type="button" data-recipe hidden>Recette JSON</button></div>
+    <div class="illustration-actions"><button type="button" data-recapture>Capturer la vue actuelle</button><button type="button" data-source-download hidden>Source PNG</button><button type="button" data-download hidden>Illustration PNG</button><button type="button" data-artwork hidden>Sans grille PNG</button><button type="button" data-recipe hidden>Recette JSON</button><button type="button" data-explore hidden>Explorer / prolonger la battlemap</button></div><div data-atlas hidden></div>
     <progress value="0" max="1" hidden></progress><div class="illustration-status" role="status" aria-live="polite"></div>
     <details><summary>Description et prompt</summary><p data-scene-description></p><small data-prompt-state>Template automatique</small><pre class="illustration-prompt"></pre><textarea data-prompt-editor rows="10" aria-label="Prompt complet" spellcheck="false" hidden></textarea><small>Les templates suivent le style choisi. Vos modifications sont conservées pour chaque combinaison de réglages, pendant cette session. L’image de référence reste jointe.</small><div class="illustration-actions"><button type="button" data-prompt-edit>Modifier le prompt</button><button type="button" data-prompt-reset>Revenir au template</button><button type="button" data-prompt-preview>Actualiser le prompt</button></div></details><details data-history><summary>Historique local</summary><div class="illustration-history"></div></details></div></div>`;
   document.body.append(dialog);
@@ -177,14 +185,15 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
   let preferences = {}; try { preferences = JSON.parse(localStorage.getItem('magna-illustration-settings') || '{}'); } catch {}
   field('service').value = preferences.service || defaultService;
   field('negativePrompt').value = defaultNegative;
-  for (const name of ['mode', 'style', 'fidelity', 'provider', 'model', 'control', 'pixels', 'steps', ...tuningFields]) if (preferences[name] !== undefined) field(name).value = preferences[name];
-  let snapshot, activeId, activeServer, timer, previewTimer, previewTicket = 0, guideTicket = 0, captureTicket = 0, disposed = false, metadata, resultBlob, resultServer, busy = false;
+  for (const name of ['mode', 'style', 'grid', 'cellMetres', 'outputPixels', 'fidelity', 'provider', 'model', 'control', 'pixels', 'steps', ...tuningFields]) if (preferences[name] !== undefined) field(name).value = preferences[name];
+  let snapshot, activeId, activeServer, timer, previewTimer, previewTicket = 0, guideTicket = 0, captureTicket = 0, disposed = false, metadata, resultBlob, artworkBlob, resultServer, busy = false;
   const promptDrafts = new Map();
-  const promptKey = () => JSON.stringify(['mode', 'style', 'fidelity', 'instruction', 'sdxlVariant', 'sdxlInit', 'fluxVariant', 'referenceMode'].map(name => field(name).value));
+  let snapshotRevision = 0;
+  const promptKey = () => JSON.stringify([snapshotRevision, ...['mode', 'style', 'output', 'grid', 'cellMetres', 'fidelity', 'instruction', 'sdxlVariant', 'sdxlInit', 'fluxVariant', 'referenceMode'].map(name => field(name).value)]);
   const objectUrls = new Map();
   const setImage = (selector, blob) => { const image = $(selector); if (objectUrls.has(selector)) URL.revokeObjectURL(objectUrls.get(selector)); const url = URL.createObjectURL(blob); objectUrls.set(selector, url); image.src = url; image.hidden = false; };
   const status = (message, error = false) => { $('.illustration-status').textContent = message; $('.illustration-status').setAttribute('role', error ? 'alert' : 'status'); };
-  const settings = () => ({ ...Object.fromEntries(['mode', 'style', 'fidelity', 'provider', 'model', 'control', 'pixels', 'steps', 'instruction', 'seed', ...tuningFields].map(name => [name, field(name).value]).filter(([name, value]) => name !== 'seed' || value !== '')),
+  const settings = () => ({ ...Object.fromEntries(['mode', 'style', 'output', 'grid', 'cellMetres', 'outputPixels', 'fidelity', 'provider', 'model', 'control', 'pixels', 'steps', 'instruction', 'seed', ...tuningFields].map(name => [name, field(name).value]).filter(([name, value]) => name !== 'seed' || value !== '')),
     ...(promptDrafts.has(promptKey()) ? { promptOverride: promptDrafts.get(promptKey()) } : {}) });
   const renderPrompt = prompt => { $('.illustration-prompt').textContent = prompt; $('[data-prompt-editor]').value = prompt; };
   const api = async (path, options = {}, server = serviceUrl(field('service').value)) => {
@@ -195,6 +204,43 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
     }
     const result = await response.json(); if (!response.ok) throw Error(result.error || `Service HTTP ${response.status}`); return result;
   };
+  const atlas = mountBattlemapAtlas({ host: $('[data-atlas]'), onStatus: status, requestNeighbour: async (parent, direction, neighbours, server) => {
+    if (!navigation || busy) throw Error('La capture d’une zone voisine est déjà en cours.');
+    busy = true; sync(); $('progress').hidden = false; $('progress').value = 0;
+    let completed;
+    try {
+      const info = await api('/status', {}, server);
+      if (!info.outpainting?.includes('openai-orthographic')) throw Error('Redémarrez le connecteur local pour activer l’extension OpenAI.');
+      status('Capture du terrain voisin…');
+      const previous = { ...navigation.getView() }, target = neighbourView(parent, direction);
+      let captured;
+      const ready = async () => { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); await navigation.ready?.(); };
+      try { navigation.setView(target); await ready(); captured = await capture(); }
+      finally { navigation.setView(previous); await ready(); }
+      const chosen = { ...parent.settings, style: parent.resolvedStyle || parent.settings.style }; delete chosen.promptOverride;
+      activeServer = server;
+      const job = await api('/v1/illustrations/jobs', { method:'POST', body:JSON.stringify({ version:1, image:await dataUrl(captured.image), guides:{}, context:captured.context, settings:chosen,
+        continuation:{ parentId:parent.id, direction, neighbours }, apiKey:field('provider').value === 'openai' ? field('apiKey').value : credentials.get('openai') || '' }) }, server);
+      activeId = job.id;
+      for (;;) {
+        if (disposed) throw Error('Exploration fermée.');
+        let state;
+        try { state = await api(`/v1/illustrations/jobs/${job.id}`, {}, server); }
+        catch (error) { status('Connexion interrompue ; la génération continue. Reconnexion…'); await new Promise(resolve=>setTimeout(resolve,1500)); continue; }
+        status(state.message, state.status === 'failed'); $('progress').value = state.progress;
+        if (terminal.has(state.status)) {
+          if (state.status !== 'succeeded') throw Error(state.message);
+          completed = state; break;
+        }
+        await new Promise(resolve=>setTimeout(resolve,1000));
+      }
+      const response = await fetch(`${server}/v1/illustrations/jobs/${completed.id}/result.png`);
+      if (!response.ok) throw Error('La tuile est générée mais son téléchargement a échoué. Elle reste disponible dans l’historique.');
+      status(`Zone voisine terminée · ${completed.totalSeconds}s · ${completed.outputSize.join(' × ')} px`);
+      void history().catch(()=>{});
+      return { job:completed, blob:await response.blob() };
+    } finally { activeId=undefined;busy=false;$('progress').hidden=true;sync(); }
+  } });
   async function previewPrompt() {
     if (!snapshot || busy || disposed) return;
     const ticket = ++previewTicket, source = snapshot;
@@ -203,8 +249,8 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
       if (ticket !== previewTicket || source !== snapshot || disposed || busy) return;
       $('[data-scene-description]').textContent = result.description;
       renderPrompt(result.prompt); sync();
-    } catch {
-      if (ticket === previewTicket && source === snapshot && !disposed && !busy) $('.illustration-prompt').textContent = 'Démarrez ou mettez à jour le connecteur local pour prévisualiser le prompt rédigé.';
+    } catch (error) {
+      if (ticket === previewTicket && source === snapshot && !disposed && !busy) $('.illustration-prompt').textContent = error.message;
     }
   }
   const schedulePreview = () => {
@@ -231,28 +277,44 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
     field('steps').disabled = mode === 'cloud' || (flux && !complete) || busy;
     const smallPreview = sdxl && !complete;
     if (smallPreview && +field('pixels').value > 1048576) field('pixels').value = '786432';
-    for (const option of field('pixels').options) option.disabled = smallPreview && +option.value > 1048576;
+    const pixelLimit = smallPreview ? 1048576 : mode !== 'cloud' ? 4194304 : field('provider').value === 'openai' ? 8294400 : 2097152;
+    if (+field('pixels').value > pixelLimit) field('pixels').value = String(pixelLimit);
+    for (const option of field('pixels').options) option.disabled = +option.value > pixelLimit;
+    const tactical = field('output').value === 'battlemap', battlemap = battlemapAvailability(snapshot?.context, +field('pixels').value, +field('cellMetres').value);
+    field('output').querySelector('[value="battlemap"]').disabled = !battlemap.eligible;
+    $('[data-cell-hint]').textContent = field('grid').value === 'hex' ? 'Hexagones : distance entre deux faces opposées, également égale à la distance entre centres voisins.' : '1,50 m par défaut. Augmentez cette valeur pour couvrir une zone plus large.';
+    const frame = snapshot && groundFrame(snapshot.context);
+    $('[data-framing]').textContent = frame ? `Vue capturée : ${frame.width.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} × ${frame.height.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m${frame.perspective ? ' · emprise horizontale estimée' : ''}.` : '';
+    $('[data-battlemap-hint]').textContent = battlemap.eligible ? `Battlemap disponible · ${battlemap.cellMetres.toLocaleString('fr-FR')} m par case · ${battlemap.cellPixels.toFixed(1)} px par case à la génération. ${battlemap.warning || ''}${battlemap.approximate ? ' En 3D, la grille est projetée sur le plan horizontal de la cible ; les pentes ne sont pas mesurées.' : ''}` : `Battlemap : ${battlemap.reason} Après déplacement ou zoom, capturez à nouveau la vue.`;
+    if (frame) {
+      const aspect = snapshot.context.viewport?.width / snapshot.context.viewport?.height || frame.width / frame.height;
+      const size = targetSize(aspect, 1, Math.max(+field('pixels').value, +field('outputPixels').value));
+      $('[data-output-size]').textContent = +field('outputPixels').value ? `PNG estimé : ${size.width} × ${size.height} px, en conservant le cadrage. L’agrandissement n’ajoute pas de détails générés ; la grille est tracée après celui-ci.` : 'Le PNG conserve la résolution réellement renvoyée par le modèle, sans réduction. Le fournisseur API peut adapter le format demandé.';
+    }
     for (const option of field('control').options) option.disabled = (['depth', 'both'].includes(option.value) && !snapshot?.guides?.depth) || (option.value === 'both' && mode !== 'fast');
     if (field('control').selectedOptions[0]?.disabled) field('control').value = 'auto';
     for (const option of field('referenceMode').options) option.disabled = option.value === 'source+depth' && !snapshot?.guides?.depth;
     if (field('referenceMode').selectedOptions[0]?.disabled) field('referenceMode').value = 'source+edges';
     $('[data-budget]').textContent = sdxl ? 'Contours et profondeur ont des poids et durées indépendants. Des contrôles faibles et arrêtés tôt libèrent les détails. La capture couleur est optionnelle : elle renforce les formes, mais peut conserver les cubes.' : flux ? 'Pour renforcer le plan : capture + contours, référence détaillée. La version complète offre davantage d’étapes et un CFG réglable ; elle est plus lente.' : 'La capture et son contexte seront envoyés au fournisseur choisi. Votre compte API est facturé par ce fournisseur.';
-    $('[data-generate]').disabled = !snapshot || busy || (promptDrafts.has(promptKey()) && !promptDrafts.get(promptKey()).trim()); $('[data-recapture]').disabled = busy; $('[data-cancel]').hidden = !busy;
+    $('[data-generate]').disabled = !snapshot || busy || (tactical && !battlemap.eligible) || (promptDrafts.has(promptKey()) && !promptDrafts.get(promptKey()).trim()); $('[data-recapture]').disabled = busy; $('[data-cancel]').hidden = !busy;
     $('[data-prompt-preview]').disabled = !snapshot || busy;
     $('[data-preview-guides]').disabled = !snapshot || busy || mode === 'cloud';
     $('[data-prompt-edit]').disabled = !snapshot || busy; $('[data-prompt-editor]').disabled = busy;
     $('[data-prompt-editor]').maxLength = { fast: 3000, quality: 6000, cloud: 28000 }[mode];
     $('[data-prompt-reset]').disabled = busy || !promptDrafts.has(promptKey());
+    $('[data-explore]').disabled = busy;
     $('[data-prompt-state]').textContent = promptDrafts.has(promptKey()) ? 'Prompt personnalisé · texte transmis tel que modifié' : 'Template automatique · ' + (styles.find(([key]) => key === field('style').value)?.[1] || 'Style de la vue');
-    field('mode').disabled = busy; field('service').disabled = busy;
+    for (const name of ['mode', 'style', 'output', 'grid', 'cellMetres', 'outputPixels', 'fidelity', 'instruction', 'pixels', 'provider', 'model', 'seed', 'service']) field(name).disabled = busy;
   }
   async function recapture() {
-    const ticket = ++captureTicket; ++guideTicket; $('[data-guide-previews]').hidden = true; snapshot = undefined; metadata = undefined; resultBlob = undefined; resultServer = undefined; sync(); status('Capture de la vue…');
-    $('[data-result]').hidden = true; $('[data-compare]').hidden = true; $('[data-download]').hidden = true; $('[data-recipe]').hidden = true;
+    const ticket = ++captureTicket; ++snapshotRevision; ++previewTicket; clearTimeout(previewTimer); ++guideTicket; $('[data-guide-previews]').hidden = true; snapshot = undefined; metadata = undefined; resultBlob = undefined; artworkBlob = undefined; resultServer = undefined; sync(); status('Capture de la vue…');
+    $('[data-result]').hidden = true; $('[data-compare]').hidden = true; $('[data-download]').hidden = true; $('[data-artwork]').hidden = true; $('[data-recipe]').hidden = true;
+    $('[data-explore]').hidden = true; $('[data-atlas]').hidden = true; $('.illustration-preview').hidden = false;
     try {
       const captured = await capture(); if (disposed || ticket !== captureTicket) return;
       if (!(captured.image instanceof Blob)) throw Error('Capture invalide.');
       snapshot = { ...captured, context: structuredClone(captured.context), guides: { ...captured.guides } };
+      if (!battlemapAvailability(snapshot.context, +field('pixels').value, +field('cellMetres').value).eligible) field('output').value = 'illustration';
       setImage('[data-source]', snapshot.image); $('.illustration-placeholder').hidden = true; $('[data-source-download]').hidden = false;
       $('[data-scene-description]').textContent = ''; $('.illustration-prompt').textContent = 'Préparation de la description et du prompt…'; status('Capture prête.'); sync(); void previewPrompt();
     } catch (error) { if (ticket === captureTicket) { status(error.message, true); sync(); } }
@@ -274,10 +336,13 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
     const blob = await response.blob();
     setImage('[data-result]', blob);
     if (fromHistory) {
+      ++snapshotRevision; ++previewTicket; clearTimeout(previewTimer);
       const response = await fetch(`${server}/v1/illustrations/jobs/${job.id}/source.png`); if (!response.ok) throw Error('Source indisponible.');
       const image = await response.blob(); snapshot = { image, context: job.context, guides: {} }; setImage('[data-source]', image); $('.illustration-placeholder').hidden = true;
       if (job.settings.provider && job.settings.provider !== field('provider').value) switchCredentialProvider(job.settings.provider);
       for (const name of ['mode', 'style', 'fidelity', 'provider', 'model', 'control', 'pixels', 'steps', 'instruction', 'seed', ...tuningFields]) if (job.settings[name] !== undefined) field(name).value = String(job.settings[name]);
+      field('output').value = job.settings.output || 'illustration'; field('grid').value = job.settings.grid || 'square';
+      field('cellMetres').value = job.settings.cellMetres ?? 1.5; field('outputPixels').value = job.settings.outputPixels ?? 0;
       field('sdxlVariant').value = job.settings.sdxlVariant || 'lightning';
       field('fluxVariant').value = job.settings.fluxVariant || 'distilled';
       field('referenceMode').value = job.settings.referenceMode || 'source';
@@ -287,10 +352,17 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
         const guide = await fetch(`${server}/v1/illustrations/jobs/${job.id}/${kind}.png`); if (guide.ok) snapshot.guides[kind] = await guide.blob();
       }
     }
+    artworkBlob = undefined;
+    if (job.battlemap?.grid && job.battlemap.grid !== 'none') {
+      try { const response = await fetch(`${server}/v1/illustrations/jobs/${job.id}/artwork.png`); if (response.ok) artworkBlob = await response.blob(); } catch {}
+    }
     metadata = job; resultBlob = blob; resultServer = server; $('[data-compare]').hidden = false; $('[data-download]').hidden = false; $('[data-recipe]').hidden = false;
+    $('[data-artwork]').hidden = !artworkBlob;
+    $('[data-atlas]').hidden = true; $('.illustration-preview').hidden = false;
+    $('[data-explore]').hidden = !(navigation && job.settings.output === 'battlemap' && job.settings.mode === 'cloud' && (job.settings.provider || 'openai') === 'openai' && job.context.projection === 'orthographic');
     $('[data-scene-description]').textContent = job.description || '';
     renderPrompt(job.settings.mode === 'cloud' ? job.prompt : job.localPrompt || job.prompt);
-    status(`Illustration terminée · ${job.totalSeconds}s · ${job.outputSize.join(' × ')} px`); sync();
+    status(`Illustration terminée · ${job.totalSeconds}s · ${job.outputSize.join(' × ')} px${job.upscaled ? ` · agrandie depuis ${job.nativeOutputSize.join(' × ')} px` : ''}`); sync();
   }
   async function poll() {
     if (!activeId || disposed) return;
@@ -307,10 +379,12 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
   }
   async function generate() {
     if (!snapshot || busy) return;
+    if (field('output').value === 'battlemap' && !battlemapAvailability(snapshot.context, +field('pixels').value, +field('cellMetres').value).eligible) return;
     busy = true; sync(); $('progress').hidden = false; $('progress').value = 0; status('Envoi de la capture…');
     try {
       activeServer = serviceUrl(field('service').value);
       const info = await connection();
+      activeServer = serviceUrl(field('service').value);
       if (field('mode').value !== 'cloud' && !info.localDependencies) throw Error('Dépendances de diffusion absentes. Depuis web/, lancez npm run illustration:setup, puis redémarrez le connecteur.');
       const chosen = settings(), guides = {};
       for (const [kind, blob] of Object.entries(snapshot.guides || {})) guides[kind] = await dataUrl(blob);
@@ -325,8 +399,16 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
     catch (error) { status(`Enregistrement impossible : ${error.message}`, true); }
   };
   button.onclick = () => { dialog.showModal(); if (!busy) { void recapture(); void connection().then(history).catch(() => {}); } };
-  $('[data-close]').onclick = () => dialog.close(); $('[data-recapture]').onclick = () => void recapture(); $('[data-generate]').onclick = () => void generate();
+  $('[data-illustration-close]').onclick = () => dialog.close(); dialog.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); dialog.close(); } }); $('[data-recapture]').onclick = () => void recapture(); $('[data-generate]').onclick = () => void generate();
   $('[data-prompt-preview]').onclick = () => void previewPrompt();
+  $('[data-explore]').onclick = async () => {
+    const active = $('[data-atlas]').hidden;
+    $('[data-atlas]').hidden = !active; $('.illustration-preview').hidden = active; $('[data-compare]').hidden = active;
+    $('[data-explore]').textContent = active ? 'Revenir à l’illustration' : 'Explorer / prolonger la battlemap';
+    if (active && metadata && resultBlob) {
+      try { await atlas.setRoot(metadata,resultBlob,resultServer); $('[data-atlas-pane]').scrollIntoView({block:'nearest'}); } catch(error) { status(error.message,true); }
+    }
+  };
   $('[data-preview-guides]').onclick = async () => {
     if (!snapshot || busy) return;
     const source = snapshot, ticket = ++guideTicket;
@@ -354,7 +436,7 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
     $('.illustration-prompt').textContent = event.target.value; sync();
   };
   $('[data-prompt-reset]').onclick = () => { promptDrafts.delete(promptKey()); sync(); void previewPrompt(); };
-  for (const name of ['style', 'fidelity', 'instruction', 'mode', 'service', 'control', 'pixels', 'steps']) field(name).addEventListener('input', schedulePreview);
+  for (const name of ['style', 'output', 'grid', 'cellMetres', 'outputPixels', 'fidelity', 'instruction', 'mode', 'service', 'control', 'pixels', 'steps']) field(name).addEventListener('input', schedulePreview);
   for (const name of tuningFields) field(name).addEventListener('input', () => {
     if (['edgeScale', 'edgeStart', 'edgeEnd', 'depthScale', 'depthStart', 'depthEnd'].includes(name)) field('controlPreset').value = 'custom';
     if (name === 'controlPreset' && controlPresets[field(name).value]) ['edgeScale', 'edgeStart', 'edgeEnd', 'depthScale', 'depthStart', 'depthEnd'].forEach((key, index) => field(key).value = String(controlPresets[field(name).value][index]));
@@ -363,8 +445,22 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
   $('[data-cancel]').onclick = async () => { if (!activeId) return; try { await api(`/v1/illustrations/jobs/${activeId}/cancel`, { method: 'POST' }, activeServer); } catch (error) { status(error.message, true); } };
   async function connection() {
     try {
-      const info = await api('/status');
+      let info = await api('/status');
       if (info.service !== 'magna-illustration' || info.protocol !== 1) throw Error('Service incompatible : démarrez le connecteur de cette version de Magna Urbis.');
+      // A newer connector can run beside an older, still loaded local runtime.
+      // Keep explicit custom addresses; only discover the adjacent default port.
+      if ((info.promptRevision || 0) < 5 && serviceUrl(field('service').value) === serviceUrl(defaultService)) {
+        const candidate = new URL(defaultService); candidate.port = '8795';
+        try {
+          const updated = await api('/status', {}, candidate.origin);
+          if (updated.service === 'magna-illustration' && updated.protocol === 1 && updated.promptRevision >= 5) {
+            field('service').value = candidate.origin; info = updated;
+            schedulePreview();
+          }
+        } catch { /* The ordinary connector can still handle its existing features. */ }
+      }
+      if (field('output').value === 'battlemap' && !info.outputs?.includes('battlemap')) throw Error('Mettez à jour et redémarrez le connecteur local pour générer une battlemap.');
+      if ((field('grid').value === 'hex' || +field('cellMetres').value !== 1.5 || +field('outputPixels').value || +field('pixels').value > 2097152) && (info.promptRevision || 0) < 5) throw Error('Redémarrez le connecteur local pour charger les grilles et tailles configurables.');
       $('[data-connection]').textContent = info.localDependencies ? 'Connecté · SDXL / FLUX.2 Klein (CUDA requis).' : 'Connecté · API disponible ; lancez npm run illustration:setup pour les modèles locaux.';
       return info;
     } catch (error) { $('[data-connection]').textContent = error.message; throw error; }
@@ -372,6 +468,7 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
   $('[data-connect]').onclick = () => void connection().then(history).catch(error => status(error.message, true));
   $('[data-source-download]').onclick = () => snapshot && download(snapshot.image, 'illustration-source.png');
   $('[data-download]').onclick = () => metadata && resultBlob && download(resultBlob, `illustration-${metadata.id}.png`, `${resultServer}/v1/illustrations/jobs/${metadata.id}/result.png?download=1`);
+  $('[data-artwork]').onclick = () => metadata && artworkBlob && download(artworkBlob, `battlemap-${metadata.id}-sans-grille.png`, `${resultServer}/v1/illustrations/jobs/${metadata.id}/artwork.png?download=1`);
   $('[data-recipe]').onclick = () => metadata && download(new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' }), `illustration-${metadata.id}.json`);
   $('[data-compare] input').oninput = event => { $('[data-result]').style.clipPath = `inset(0 0 0 ${event.target.value}%)`; };
   const credentials = new Map(); let previousProvider = field('provider').value;
@@ -382,7 +479,8 @@ export function mountIllustration({ host, capture, defaultService = 'http://127.
   field('mode').onchange = sync; field('provider').onchange = () => {
     switchCredentialProvider(field('provider').value);
     field('model').value = previousProvider === 'openai' ? 'gpt-image-2.5-sunburst' : 'gemini-3.1-flash-image';
+    schedulePreview();
   };
   sync();
-  return { button, dialog, open: () => button.click(), dispose() { disposed = true; clearTimeout(timer); clearTimeout(previewTimer); ++captureTicket; ++previewTicket; objectUrls.forEach(url => URL.revokeObjectURL(url)); dialog.remove(); button.remove(); } };
+  return { button, dialog, open: () => button.click(), dispose() { disposed = true; atlas.dispose(); clearTimeout(timer); clearTimeout(previewTimer); ++captureTicket; ++previewTicket; objectUrls.forEach(url => URL.revokeObjectURL(url)); dialog.remove(); button.remove(); } };
 }

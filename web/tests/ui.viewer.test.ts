@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createViewer, type FrameRequest } from '../src/ui/viewer';
+import { illustrationContext } from '../src/ui/illustrationContext';
+import { battlemapAvailability } from '../../illustration/web/framing.mjs';
+import { MAX_SCALE } from '../src/render/view';
 
 class Element extends EventTarget {
   style = { opacity: '', transform: '', width: '', height: '' };
@@ -9,18 +12,19 @@ class Element extends EventTarget {
   parentElement?: Element;
   children: Element[] = [];
   context = { drawImage: vi.fn(), clearRect: vi.fn(), setTransform: vi.fn(), strokeRect: vi.fn(), transferFromImageBitmap: vi.fn() };
-  getBoundingClientRect() { return { width: 800, height: 600, left: 0, top: 0 }; }
+  getBoundingClientRect() { return { width: this.width, height: this.height, left: 0, top: 0 }; }
   getContext() { return this.context; }
   insertBefore(child: Element, _before: Element) { child.parentElement = this; this.children.push(child); }
   remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this); this.parentElement = undefined; }
 }
-function setup() {
+function setup(width = 800, height = 600) {
   const callbacks = new Map<number, FrameRequestCallback>(); let next = 0;
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { callbacks.set(++next, cb); return next; });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id));
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.stubGlobal('window', Object.assign(new EventTarget(), { devicePixelRatio: 2 }));
   const container = new Element(), canvas = new Element(), minimap = new Element();
+  container.width = width; container.height = height;
   const errors = vi.fn();
   const viewer = createViewer({ container: container as unknown as HTMLElement, canvas: canvas as unknown as HTMLCanvasElement,
     minimap: minimap as unknown as HTMLCanvasElement, onError: errors });
@@ -30,6 +34,20 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('viewer presentation and scheduling', () => {
+  it.each([[1920, 1080], [3840, 2160], [390, 844]])('can zoom a %i × %i view to an eligible battlemap and retain it after drawing', (width, height) => {
+    const { viewer, tick } = setup(width, height);
+    const context = () => illustrationContext({ sourceStyle: 'parchment', seed: 'zoom', view: viewer.getView(), width, height });
+    viewer.contentChanged(10000, false);
+    viewer.setView({ cx: 5000, cy: 5000, scale: 8 }); tick();
+    expect(battlemapAvailability(context()).eligible).toBe(true);
+    for (let i = 0; i < 20; i++) viewer.zoomBy(1.4);
+    tick(); // frame() must apply the same limit as wheel/setView.
+    expect(viewer.getView().scale).toBe(MAX_SCALE);
+    expect(battlemapAvailability(context(), 393216).eligible).toBe(true);
+    viewer.invalidate(); tick();
+    expect(battlemapAvailability(context()).eligible).toBe(true);
+    viewer.destroy();
+  });
   it('coalesces direct camera changes into one draw, retains the miniature, and stays idle after painting', () => {
     const { viewer, canvas, container, minimap, tick, callbacks } = setup();
     const element = new Element(), mini = new Element(); let first = true;

@@ -182,6 +182,10 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   if (target !== 'view3d') {
     city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';
     city.painted = !flatBuildings;
+  } else if (composition.buildings.meshes === 'none') {
+    city.buildingStyle = 'silhouette';
+    city.painted = false;
+    city.view = 'buildings';
   } else if (appearance?.composition?.buildings.look === 'footprints') {
     city.buildingStyle = 'cartographic';
   }

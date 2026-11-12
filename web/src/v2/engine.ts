@@ -16,6 +16,7 @@ import { refreshCavernMask } from '../gen/terrain/caverns';
 import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/bridge/landuseNative';
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
+import { effectiveRegion } from './regionSettings';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
 import { routeNetwork } from '../gen/settlements/network';
@@ -500,7 +501,7 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
     // Rust resource soil (depth, stoniness, drainage); the noise field only when no resource payload exists (TypeScript backend).
     const resources = await (await import('./region')).regionResources(world, settings);
     const rural = await generateRuralNative({ ...world, options: mainOptions }, new Rng('magna-urbis:' + world.seed), Number(world.stats['v2.regionalRoads'] ?? world.roads?.length ?? 0), undefined,
-      (world.terrain as V2TerrainLayer).v2NaturalForest ? { footprint: world.urban.footprintH ?? [], population: world.urban.population, naturalForest: (world.terrain as V2TerrainLayer).v2NaturalForest } : undefined,
+      (world.terrain as V2TerrainLayer).v2NaturalForest ? { footprint: world.urban.footprintH ?? [], population: world.urban.population, naturalForest: (world.terrain as V2TerrainLayer).v2NaturalForest, cropSurplus: effectiveRegion(settings).cropSurplus } : undefined,
       resources && (await import('./resourceSoil')).ruralSoilField(resources),
       settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined);
     world.landuse = rural.layer;

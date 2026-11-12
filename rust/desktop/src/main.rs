@@ -7,6 +7,8 @@ use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+mod neural;
+use neural::NeuralEngine;
 
 struct Engine(Mutex<Child>);
 struct IllustrationEngine(Mutex<Option<Child>>);
@@ -105,6 +107,7 @@ fn start_engine(binary: PathBuf) -> Result<(Engine, u16), Box<dyn std::error::Er
 
 fn main() {
     let app = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![neural::ensure_neural])
         .setup(|app| {
             let binary = std::env::var_os("MAGNA_LOCAL_BIN")
                 .map(PathBuf::from)
@@ -133,6 +136,7 @@ fn main() {
             } else {
                 app.path().resource_dir()?.join("resources")
             };
+            app.manage(NeuralEngine::new(resources.clone()));
             app.manage(start_illustration(resources));
             let profiles: serde_json::Value =
                 serde_json::from_str(include_str!("../../../config/execution.json"))?;
@@ -162,6 +166,7 @@ fn main() {
         .expect("Magna Urbis could not start");
     app.run(|app, event| {
         if matches!(event, RunEvent::Exit) {
+            app.state::<NeuralEngine>().stop();
             app.state::<Engine>().stop();
         }
     });

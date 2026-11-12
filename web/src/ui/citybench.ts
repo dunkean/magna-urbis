@@ -33,9 +33,8 @@ import { forestOccupation } from './forestOccupation';
 import { ROAD_MARGIN } from '../render/forestRoom';
 import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
-import { retainedWaterPaths } from '../render/retainedWaterGeometry';
+import { decorWater3d } from './decorWater3d';
 import type { City3dRetainedWater } from './city3d';
-import { retainedRegime } from './retainedWaterRegime';
 import type { WaterSeason } from '../render/waterRegime';
 import { encodePng, pngDataUrl } from '../render/raster';
 import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
@@ -180,8 +179,7 @@ function retainedWater3d(): City3dRetainedWater | undefined {
   const style = c.networks.water.look === 'ink' ? r.palette.mapStyle : c.variant, season = retainedWaterSeason(decor, r);
   const key = JSON.stringify([style, r.ground.lakes, r.palette.colors, season]);
   if (retained3d?.decor !== decor || retained3d.key !== key) {
-    const paths = retainedWaterPaths(decorWaterSvg(decor, style, r.ground.lakes, r.palette.colors), decor.raster.width);
-    retained3d = { decor, key, water: paths.length ? { paths, color: terrainStyle(style, r.palette.colors).water.stops[0][1], regime: retainedRegime(paths, decor.raster.width, season), style } : undefined };
+    retained3d = { decor, key, water: decorWater3d(decor, style, r.ground.lakes, r.palette.colors, season) };
   }
   return retained3d.water;
 }
@@ -237,8 +235,9 @@ function publishBenchCapabilities(): void {
   setBenchRenderCapabilities({ nativeTerrain: !!terrain, nativeCities: !!settlements.urban.layouts?.length, buildings: !!settlements.urban.buildingState.scene?.buildings.length || !!settlements.urban.buildingProjection, parcels: !!settlements.urban.partitions?.length, ruralLanduse: !!settlements.landuse, urbanLanduse: !!settlements.urban.layouts?.length, limitations }, city3d.active ? 'view3d' : 'view2d');
 }
 
+function contoursReady(): void { contourScale = NaN; drawContours(); }
 function drawContours(): void {
-  const r = resolveBenchAppearance(), visible = r.ground.contours && r.ground.layers.relief;
+  const r = resolveBenchAppearance(), visible = r.ground.contours && (r.ground.layers.relief || r.composition.recipe.ground.variant === 'topographic');
   contours.style.display = visible ? '' : 'none';
   if (!visible || !terrain || !decor) return;
   if (contourTerrain === terrain && contourScale === view.scale && contourStyle === backgroundStyle) return;
@@ -250,7 +249,7 @@ function drawContours(): void {
     contours.innerHTML = `<defs><mask id="cityContourLand" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${width}" style="mask-type:alpha"><image width="${width}" height="${width}" href="${mask}"/></mask></defs><g class="layer-contours" mask="url(#cityContourLand)" fill="none" stroke-linejoin="round" stroke-linecap="round"><path vector-effect="non-scaling-stroke"/><path vector-effect="non-scaling-stroke"/></g>`;
     contourTerrain = terrain; shownContours = undefined;
   }
-  const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale);
+  const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', contoursReady);
   const layer = contours.querySelector('g')!, [thin, index] = Array.from(layer.querySelectorAll('path'));
   if (shownContours !== paths) { thin.setAttribute('d', paths.thin); index.setAttribute('d', paths.index); shownContours = paths; }
   const style = r.composition.variant, pal = terrainStyle(style, getBenchRenderColors()).palette, widths = terrainContourWidths(style, view.scale);
@@ -429,7 +428,7 @@ setProjection(false);
 window.dispatchEvent(new Event('bench-space-change'));
 view3d.onclick = () => setProjection(!city3d.active);
 (window as Window & { magnaCity3d?: typeof city3d }).magnaCity3d = city3d; // Automated checks (stats, capture).
-mountIllustration({ host: document.querySelector('header')!, capture: async () => {
+mountIllustration({ host: document.querySelector('header')!, navigation: { getView: () => ({ ...view }), setView }, capture: async () => {
   if (!ready || !decor || !settlements.contextReady()) throw new Error('Chargez une ville et attendez la fin de la génération.');
     const palette = document.querySelector<HTMLSelectElement>('select[data-render="palette"]')?.value;
     const sourceStyle = palette === 'cadastre' || palette === 'parchment' ? palette : backgroundStyle;

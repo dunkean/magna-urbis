@@ -1,6 +1,7 @@
 import { CITY_3D_MATERIAL_GROUNDS, type CityGround as CityGroundMode } from '../render/cityGroundModes';
 export { CITY_3D_MATERIAL_GROUNDS } from '../render/cityGroundModes';
 import { displayQualityFor } from '../render/displayQuality';
+import { paintSeaCover } from '../render/seaCover';
 import { DrapeTiles } from '../render/drapeTiles';
 import { TileWaterMask } from './tileWaterMask';
 import { drawTileRoads, tileRoadVisible, cityTileHasInk } from '../render/tileNetworks';
@@ -17,6 +18,7 @@ import { city3dLotEnclosures } from '../render/city3dMeshes';
 import { city3dBoardwalks } from '../render/city3dBoardwalks';
 import { city3dCanopy, cityCanopy } from '../render/cityGrove';
 import { city3dQuays, city3dWaterways } from '../render/city3dQuays';
+import { cityWaterwayPaths } from '../render/cityWaterways';
 import { bridgeWaterHeight, cityBridgeStreets } from '../render/cityBridges';
 /** City Bench 3D view. Reuses the Terrain Bench engine (Terrain3d: quadtree
  * relief, tiled materials, orbit camera, native building pass with 256 m sectors,
@@ -75,7 +77,7 @@ export interface City3dOptions {
   getHeightSampler?(): ((x: number, y: number, metresPerPixel: number) => number) | undefined;
   getViewSettings?(): Partial<City3dViewSettings>;
   onViewSettingsChange?(settings: City3dViewSettings): void;
-  getPlanOptions?(): Partial<Pick<CityDrawOptions, 'colors' | 'view' | 'palette' | 'width' | 'layers' | 'groundBlend' | 'roadLook' | 'roadEmphasis' | 'streetPalette' | 'night' | 'labels' | 'buildingsVisible' | 'appearance'>> & { opacity?: number; roadInk?: RoadInk };
+  getPlanOptions?(): Partial<Pick<CityDrawOptions, 'colors' | 'view' | 'palette' | 'width' | 'layers' | 'groundBlend' | 'roadLook' | 'roadEmphasis' | 'waterColor' | 'streetPalette' | 'night' | 'labels' | 'buildingsVisible' | 'appearance'>> & { opacity?: number; roadInk?: RoadInk };
   getBuildingAppearance?(): Partial<UrbanBuildingAppearance>;
   getBuildingsVisible?(): boolean;
   /** Semantic land use on the ground: independent of the plan overlay and of the ground look. */
@@ -139,7 +141,9 @@ export interface City3dPhysicalGround {
   keepsWater?: boolean;
   /** Read-only reuse of the live 2D pyramid while the camera moves. */
   preview?(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean;
-  paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }, options?: { live: boolean }): boolean;
+  /** `defer`, when given: the painter calls it when it draws provisional content (async work still running) and calls the
+   * returned function once that work lands, so only the tiles that drew it repaint. */
+  paint(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }, options?: { live: boolean }, defer?: () => () => void): boolean;
 }
 export interface City3dDetailService {
   setActiveView(view: '2d' | '3d'): void;
@@ -262,6 +266,11 @@ export function mountCity3d(options: City3dOptions): City3d {
   let waterDisplay: City3dWaterDisplay | undefined, retainedWater: City3dRetainedWater | undefined;
   /** Rivers come from the vector banks: the raster keeps only the sea and lakes (its river cells are 30 m blocks). */
   const vectorRivers = (): boolean => !!retainedWater?.paths.length || !!waterDisplay?.riverPaths;
+  const materialCanals = (): boolean => proceduralGround && options.getLook?.()?.waterLook === 'natural';
+  function fillCanals(ctx: CanvasRenderingContext2D, tile: { x: number; y: number }, k: number): void {
+    const layouts = options.getLayouts?.(); if (!layouts?.length || options.getPlanOptions?.()?.layers?.waterways === false) return;
+    ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fill(cityWaterwayPaths(layouts).water); ctx.restore();
+  }
   /** `cover`: the running water only (dry and frozen courses leave the cover); `ink`: the map symbols too. */
   function fillRetainedWater(ctx: CanvasRenderingContext2D, tile: Terrain3dTile, k: number, color: string, mode: 'cover' | 'ink' | 'symbols' | 'ground' | 'ice' = 'cover'): void {
     if (!retainedWater?.paths.length) return;
@@ -373,10 +382,12 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   /** Render3D mode: water only, land left transparent for the procedural ground. */
   function water(d: Decor, visible = true): HTMLCanvasElement {
-    const { n, water } = d.raster, c = document.createElement('canvas'); c.width = c.height = n;
+    const { n, water, height } = d.raster, c = document.createElement('canvas'); c.width = c.height = n;
     const ctx = c.getContext('2d')!, pixels = ctx.createImageData(n, n);
-    const rivers = !vectorRivers();
-    if (visible) for (let i = 0; i < n * n; i++) if (water[i] && (rivers || water[i] !== 3)) pixels.data.set([...WATER, 255], i * 4);
+    const rivers = !vectorRivers(), heights = height?.length === n * n ? height : undefined;
+    // The sea follows the 2D coast (render/seaCover.ts): the zero level of the decor heights, not the sea cell flag.
+    if (visible) for (let i = 0; i < n * n; i++) if (water[i] && !(heights && water[i] === 1) && (rivers || water[i] !== 3)) pixels.data.set([...WATER, 255], i * 4);
+    if (visible && heights) paintSeaCover(pixels.data, heights, [...WATER, 255]);
     ctx.putImageData(pixels, 0, 0); return c;
   }
   function waterPath(d: Decor): Path2D | undefined {
@@ -463,6 +474,38 @@ export function mountCity3d(options: City3dOptions): City3d {
     return JSON.stringify([ground,refinement,resources]);
   }
   const waterTileScratch=document.createElement('canvas'), tileWaterMask = new TileWaterMask();
+  const cellScratch = document.createElement('canvas'), cellOutput = document.createElement('canvas');
+  /**
+   * Draws the square `sw` of a water-cell raster (one pixel per planning cell: sea, lakes, raster rivers) over the whole
+   * `size` × `size` target. Magnified with bilinear filtering alone, the cells read as a blurred staircase on every 3D
+   * tile closer than the 1024 grid. Here the cells are low-passed over half a cell at four pixels per cell, magnified,
+   * then re-thresholded to an antialiased edge: the shore follows a smooth contour at tile resolution. Per tile load,
+   * never per frame; a tile without water costs one small readback.
+   */
+  function drawWaterCells(target: CanvasRenderingContext2D, source: CanvasImageSource & { width: number }, sx: number, sy: number, sw: number, size: number): void {
+    const cellPx = size / sw;
+    if (cellPx < 1.5) { target.drawImage(source, sx, sy, sw, sw, 0, 0, size, size); return; }
+    // Two cells of margin keep the blur symmetric across tile borders (no seam between neighbouring tiles).
+    const q = Math.min(4, cellPx), margin = 2, low = Math.ceil((sw + 2 * margin) * q);
+    cellScratch.width = cellScratch.height = low;
+    const lc = cellScratch.getContext('2d', { willReadFrequently: true })!;
+    lc.imageSmoothingEnabled = true; lc.filter = `blur(${(q * .5).toFixed(2)}px)`;
+    lc.drawImage(source, sx - margin, sy - margin, sw + 2 * margin, sw + 2 * margin, 0, 0, low, low); lc.filter = 'none';
+    const probe = lc.getImageData(0, 0, low, low).data;
+    let wet = false; for (let i = 3; i < probe.length; i += 4) if (probe[i]) { wet = true; break; }
+    if (!wet) return;
+    const full = Math.round((sw + 2 * margin) * cellPx), offset = Math.round(margin * cellPx);
+    cellOutput.width = cellOutput.height = full;
+    const oc = cellOutput.getContext('2d', { willReadFrequently: true })!;
+    oc.imageSmoothingEnabled = true; oc.imageSmoothingQuality = 'high'; oc.drawImage(cellScratch, 0, 0, full, full);
+    const image = oc.getImageData(offset, offset, size, size), p = image.data;
+    // Threshold at 0.4: a chain of diagonal single cells (a narrow raster river) keeps its corners joined after the blur.
+    const gain = Math.max(1, cellPx * 1.25);
+    for (let i = 3; i < p.length; i += 4) { const a = p[i]; if (a !== 0 && a !== 255) p[i] = Math.max(0, Math.min(255, Math.round((a - 102) * gain + 128))); }
+    oc.putImageData(image, 0, 0);
+    const smoothing = target.imageSmoothingEnabled; target.imageSmoothingEnabled = false;
+    target.drawImage(cellOutput, 0, 0, size, size, 0, 0, size, size); target.imageSmoothingEnabled = smoothing;
+  }
   let fallbackWater: {decor:Decor;key:string;display:City3dWaterDisplay}|undefined;
   function currentWaterDisplay(): City3dWaterDisplay | undefined {
     const supplied=options.getWaterDisplay?.();if(supplied)return supplied;
@@ -482,7 +525,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const extent = { ...tile, x: tile.x - pad * tile.width / pixels, y: tile.y - pad * tile.width / pixels, width: tile.width * (pixels + 2 * pad) / pixels };
     const width=surfaceDecor!.raster.width,k=n/extent.width,source=display.texture;
     waterTileScratch.width=waterTileScratch.height=n;const ctx=waterTileScratch.getContext('2d')!;
-    const scale=source.width/width;ctx.drawImage(source,extent.x*scale,extent.y*scale,extent.width*scale,extent.width*scale,0,0,n,n);
+    const scale=source.width/width;drawWaterCells(ctx,source,extent.x*scale,extent.y*scale,extent.width*scale,n);
     if(display.paths){ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k);ctx.fillStyle='#fff';ctx.fill(display.paths,'evenodd');}
     if(display.riverPaths){
       // A river keeps a minimum width of two texels at every tile resolution: a thin ribbon on a far tile would
@@ -496,6 +539,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       ctx.setTransform(k,0,0,k,-extent.x*k,-extent.y*k); ctx.fillStyle='#fff';
       for (const item of retainedWater.paths) ctx.fill(item.path,item.rule);
     }
+    ctx.fillStyle = '#fff'; fillCanals(ctx, extent, k);
     const alpha = await tileWaterMask.read(waterTileScratch);
     return {x:extent.x,y:extent.y,width:extent.width,n,alpha};
   }
@@ -515,8 +559,10 @@ export function mountCity3d(options: City3dOptions): City3d {
   async function physicalLayer(tile: Terrain3dTile, ground: City3dPhysicalGround, box: { minX: number; minY: number; maxX: number; maxY: number }): Promise<HTMLCanvasElement | undefined> {
     const c = document.createElement('canvas');
     c.width = c.height = tile.pixels;
-    if (!tile.exact && tile.prepare) await tile.prepare(drapeTiles.paint(c, box, `${ground.key}|${displayQualityFor(true)}`, (target, area) => ground.paint(target, area, { live: true })));
-    else if (!ground.paint(c, box)) return undefined;
+    // Async completions (contours) repaint only the tile that drew the provisional content; it keeps its texture until then.
+    const stale = (): void => terrain?.invalidateTiles(tile.key);
+    if (!tile.exact && tile.prepare) await tile.prepare(drapeTiles.paint(c, box, `${ground.key}|${displayQualityFor(true)}`, (target, area, defer) => ground.paint(target, area, { live: true }, defer), stale));
+    else if (!ground.paint(c, box, undefined, () => stale)) return undefined;
     if (!proceduralGround && !ground.keepsWater) clearSemanticWater(tile, c.getContext('2d')!);
     return c;
   }
@@ -548,8 +594,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (paths) ctx.fill(paths, 'evenodd');
     if (retainedWater) for (const item of retainedWater.paths) ctx.fill(item.path, item.rule);
     if (regime?.riverPaths) ctx.fill(regime.riverPaths);
+    if (materialCanals()) { ctx.fillStyle = '#fff'; fillCanals(ctx, tile, k); }
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(mask, tile.x * scale, tile.y * scale, tile.width * scale, tile.width * scale, 0, 0, size, size);
+    drawWaterCells(ctx, mask, tile.x * scale, tile.y * scale, tile.width * scale, size);
     ctx.globalCompositeOperation = 'source-over';
     if (streams) ctx.drawImage(streams, tile.x * scale, tile.y * scale, tile.width * scale, tile.width * scale, 0, 0, size, size);
   }
@@ -568,12 +615,18 @@ export function mountCity3d(options: City3dOptions): City3d {
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     // V2 can supply a physical raster without a pre-rendered external PNG.
     // Use the same hillshade for both the overview and close-up map tiles.
-    if (source) { const k = source.width / width; c.getContext('2d')!.drawImage(source, tile.x * k, tile.y * k, tile.width * k, tile.width * k, 0, 0, size, size); }
+    // A map ground lies on its paper, as the 2D map does: a flat style without relief (topographic, cadastre) supplies
+    // a background that is transparent on land, which the 3D shader would otherwise read as black ground.
+    const paper = !proceduralGround ? options.getText?.()?.palette.paper : undefined;
+    if (paper) { const base = c.getContext('2d')!; base.fillStyle = paper; base.fillRect(0, 0, size, size); }
+    // A material tile's source is the water-cell raster: its shore is smoothed at tile resolution.
+    if (source) { const k = source.width / width, base = c.getContext('2d')!; if (proceduralGround) drawWaterCells(base, source, tile.x * k, tile.y * k, tile.width * k, size); else base.drawImage(source, tile.x * k, tile.y * k, tile.width * k, tile.width * k, 0, 0, size, size); }
     const k = size / tile.width, mpp = tile.width / size, semanticMpp = proceduralGround ? tile.width / Math.ceil(size / 2) : mpp;
     const groundSettings=options.getGroundSettings?.(ground),satellite=proceduralGround&&groundSettings?.renderV2===1;
     const waterVisible = groundSettings?.waterVisible !== false;
     if (proceduralGround && waterPaths && waterVisible) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
     if (proceduralGround && waterVisible) fillRetainedWater(ctx, tile, k, `rgb(${WATER})`);
+    if (waterVisible && materialCanals()) { ctx.fillStyle = `rgb(${WATER})`; fillCanals(ctx, tile, k); }
     const regimeDisplay = currentWaterDisplay();
     if (proceduralGround && waterVisible && regimeDisplay?.riverPaths) { ctx.save(); ctx.setTransform(k,0,0,k,-tile.x*k,-tile.y*k); ctx.fillStyle=`rgb(${WATER})`; ctx.fill(regimeDisplay.riverPaths); ctx.restore(); }
     // The material shader paints water wherever this tile is opaque: the seasonal regime takes the dry and frozen
@@ -622,7 +675,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     let footprints = footprintScene && footprintPlans.get(footprintScene);
     if (footprintScene && !footprints) { footprints = buildCityBuildings(footprintScene); footprintPlans.set(footprintScene, footprints); }
     const city = (planOverlay ? cityPlan() : undefined) ?? (footprints ? emptyFootprintPlan : undefined);
-    const planLayers = { ...planOptions?.layers ?? PLAN_LAYERS, lotEnclosureMeshes: true }, lod = selectCityLod(mpp);
+    const planLayers = { ...planOptions?.layers ?? PLAN_LAYERS, lotEnclosureMeshes: planOptions?.layers?.lotEnclosureMeshes !== false }, lod = selectCityLod(mpp);
     const planInk = city && cityTileHasInk(city, box, planLayers, lod, footprints);
     if (city && planInk && (planOptions?.opacity ?? 1) > 0) {
       if(satellite){
@@ -635,8 +688,9 @@ export function mountCity3d(options: City3dOptions): City3d {
       target.globalAlpha = planOptions?.opacity ?? 1;
       const thematic=planOptions?.view==='uses'||planOptions?.view==='roles';
       const inkLayers=satellite?{...planLayers,blocks:thematic&&planLayers.blocks,domains:thematic&&planLayers.domains,parcels:thematic&&planLayers.parcels,gardens:thematic&&planLayers.gardens,places:thematic&&planLayers.places,streets:planLayers.streets&&planOptions?.roadLook==='ink',enclosures:false,lotEnclosures:false}:planLayers;
+      if (materialCanals()) inkLayers.waterways = false;
       drawCity(target, city, { viewport: box, mpp, dpr: 1, lod,
-        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: inkLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
+        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: inkLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, waterColor: planOptions?.waterColor, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       target.restore();
     }
     const scene = semantic && semantic.urban !== 'off' ? cityPlan() : undefined;
@@ -665,7 +719,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const display=currentWaterDisplay(),look=options.getLook?.();
     if(look?.waterLook==='ink' && look.waterVisible!==false && display?.ink){
       const target=inkContext(),source=display.texture,scale=source.width/width;
-      target.save();target.setTransform(1,0,0,1,0,0);target.drawImage(source,tile.x*scale,tile.y*scale,tile.width*scale,tile.width*scale,0,0,size,size);
+      target.save();target.setTransform(1,0,0,1,0,0);drawWaterCells(target,source,tile.x*scale,tile.y*scale,tile.width*scale,size);
       if(display.paths){target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.fillStyle=display.ink.fill;target.fill(display.paths,'evenodd');target.strokeStyle=display.ink.stroke;target.lineWidth=mpp*.8;target.stroke(display.paths);}
       if(display.riverPaths){target.setTransform(k,0,0,k,-tile.x*k,-tile.y*k);target.fillStyle=display.ink.fill;target.fill(display.riverPaths);}
       target.restore();
@@ -704,8 +758,9 @@ export function mountCity3d(options: City3dOptions): City3d {
   function syncBuildings(force = false): void {
     const t = terrain; if (!t) return;
     // Lot fences, hedges and walls stand with the buildings (composition), not with the parcel diagram: off, they are neither drawn nor cleared from the forest.
-    const yardLayers = options.getPlanOptions?.()?.layers, yardsShown = yardLayers?.lotEnclosures !== false;
-    const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.(), yardsShown];
+    const planOptions = options.getPlanOptions?.(), flat = planOptions?.appearance?.style === 'silhouette';
+    const yardLayers = planOptions?.layers, yardsShown = !flat && yardLayers?.lotEnclosures !== false;
+    const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.(), yardsShown, flat];
     if (nextYards.some((input, i) => input !== yardInputs[i])) { yardInputs = nextYards; force = true; t.invalidateTiles(); }
     const scene = options.getProjection?.() ?? options.getScene(), layouts = options.getLayouts?.(), regional = options.getRegionalStreets?.();
     if (layouts !== bridgesOf[0] || regional !== bridgesOf[1]) { bridgesOf = [layouts, regional]; force = true; }
@@ -715,12 +770,18 @@ export function mountCity3d(options: City3dOptions): City3d {
       for (const id of [...details.keys()]) { const base = detailBases.get(id); if (!base || !samePlan(byId.get(id), base)) { details.delete(id); detailBases.delete(id); } }
       force = true; sceneOf = scene; sourceEpoch++;
     }
-    if (force) {
+    const waterColor = planOptions?.waterColor, canalMaterial = materialCanals();
+    const nextStructureInputs = [layouts, regional, heightAt, bridgeWaterAt, waterColor, canalMaterial];
+    if (!flat && nextStructureInputs.some((input, i) => input !== structureInputs[i])) force = true;
+    if (force && flat) {
+      clearTimeout(detailTimer); pendingSwaps.clear(); display = undefined; displayMs = 0;
+      bridgeStats = { count: 0 }; wallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 }; quayCount = 0;
+      structureInputs = []; canopyInputs = [];
+    } else if (force) {
       // Swaps queued for the previous display must not be reinjected by id.
       clearTimeout(detailTimer); pendingSwaps.clear();
       const started = performance.now();
       display = scene ? 'projection' in scene ? city3dProjectionScene(scene, { details }) : city3dScene(scene, { heightAt, waterAt: stiltWaterAt, details }) : undefined;
-      const nextStructureInputs = [layouts, regional, heightAt, bridgeWaterAt];
       if (nextStructureInputs.some((input, i) => input !== structureInputs[i])) {
         structureInputs = nextStructureInputs;
         // Architecture edits/colours do not change bridges, walls or quays.
@@ -734,7 +795,7 @@ export function mountCity3d(options: City3dOptions): City3d {
         wallStats = { count: enclosures.size, pieces: walls.length, ms: Math.round(performance.now() - wallStarted),
           triangles: walls.reduce((n, w) => n + w.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
           first: walls[0] && center(walls[0]), gate: gate && center(gate) };
-        const quays = [...city3dQuays(layouts ?? []), ...city3dWaterways(layouts ?? [])], boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
+        const quays = [...city3dQuays(layouts ?? []), ...city3dWaterways(layouts ?? [], waterColor, !canalMaterial)], boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
         structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
       }
       const yardPlan = yardsShown ? cityPlan() : undefined;
@@ -754,9 +815,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     const appearance = options.getBuildingAppearance?.(), diagnostic = colors === 'uses' ? 'uses' : appearance?.diagnostic === 'uses' ? 'none' : appearance?.diagnostic ?? 'none';
     const snowGround = options.getGroundSettings?.(ground);
     const roofSnow = snowGround?.renderV2 === 1 ? { season: snowGround.v2Season ?? .5, climateZone: snowGround.climateZone, climate: snowGround.climate, calendar: snowGround.v2Calendar } : undefined;
-    t.setBuildings(display, { ambience: appearance?.ambience, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roofSnow, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, options.getBuildingsVisible?.() ?? true);
+    // A cadastral drape includes the real footprints and ground boundary ink only.
+    // Suppress the entire volume batch, including walls, quays and canopy platforms.
+    t.setBuildings(display, { ambience: appearance?.ambience, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roofSnow, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, !flat && (options.getBuildingsVisible?.() ?? true));
     ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && (!options.details || scene.projection === 'native-parent-window-3d-1');
-    if (options.details) { applyServiceDetails(); driveDetails(); }
+    if (!flat && options.details) { applyServiceDetails(); driveDetails(); }
     placeMarker(); updateInfo();
   }
   const center = (b: Building3dVisual): Point => {

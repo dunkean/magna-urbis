@@ -273,6 +273,17 @@ class AdapterTests(unittest.TestCase):
         self.assertTrue(data.startswith(b'\x89PNG'))
         self.assertIsNone(meta['seed'])
 
+    def test_openai_uploads_an_alpha_mask_and_layout_for_outpainting(self):
+        image = Image.new('RGB', (192, 108))
+        mask = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        def transport(req, timeout):
+            self.assertIn(b'name="mask"; filename="mask.png"', req.data)
+            self.assertIn(b'filename="layout.png"', req.data)
+            self.assertIn(b'3840x2160', req.data)
+            return io.BytesIO(json.dumps({'data': [{'b64_json': base64.b64encode(png(image)).decode()}]}).encode())
+        generate('openai', 'session-key', 'gpt-image-2.5-sunburst', 'Continue the map', image,
+                 {'layout': image, 'mask': mask}, {'pixels': 8294400}, transport=transport)
+
     def test_prompt_uses_style_geometry_and_facts(self):
         compiled = compile_prompt({'sourceStyle': 'parchment', 'projection': 'orthographic', 'biome': 'arid', 'apiKey': 'hidden'}, {'fidelity': 'strong'})
         self.assertEqual(compiled['style'], 'parchment')

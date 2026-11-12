@@ -15,6 +15,7 @@ import { drawNightTown } from './cityNight';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { CityScene } from './cityCanvas';
 import { roadInkOf } from './roadStyle';
+import { hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 
 const finite = (value: number | undefined, fallback: number, min: number, max: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
@@ -47,6 +48,7 @@ export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
   const a = i.appearance, c = a.composition, colors = a.palette.colors;
   return {
     colors: i.buildingAppearance.colors, roadEmphasis: c.networks.roads.emphasis, night: c.ambience === 'night',
+    waterColor: hydrologyWaterColour(c.networks.water.look === 'ink' ? a.palette.mapStyle : 'render3d', colors),
     viewport: i.frame.viewport, mpp: i.frame.mpp, dpr: i.frame.dpr, lod: i.lod, view: i.view ?? i.city.view, palette: i.city.palette,
     layers: cityCanvasLayers(i.layers, i.glFrame), width: finite(i.city.width, .6, 0, 5),
     labels: i.labelsAllowed && a.cartography.labels, text: c.text, textPalette: terrainStyle(c.variant, colors).palette,
@@ -72,8 +74,9 @@ export function city3dPlanOptions(r: ResolvedAppearance, labelsAllowed = true) {
   const c = r.composition, city = r.city;
   return { colors: buildingColors(r.palette.colors, c.ambience), view: city.view, palette: city.palette, width: city.width, opacity: city.opacity,
     labels: labelsAllowed && r.cartography.labels,
-    layers: { ...city.layers, streets: city.layers.streets && c.networks.roads.visible, waterways: c.networks.water.visible && city.layers.waterways !== false },
+    layers: { ...city.layers, ...(c.buildings.meshes === 'none' ? { lotEnclosureMeshes: false } : {}), streets: city.layers.streets && c.networks.roads.visible, waterways: c.networks.water.visible && city.layers.waterways !== false },
     roadLook: c.networks.roads.look, roadEmphasis: c.networks.roads.emphasis, streetPalette: city.palette === 'terrain' ? 'parchment' as const : city.palette,
+    waterColor: hydrologyWaterColour(c.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors),
     roadInk: roadInkOf(terrainStyle(r.palette.mapStyle, r.palette.colors).palette, buildingColors(r.palette.colors, c.ambience)),
     groundBlend: c.networks.roads.look === 'natural', night: c.ambience === 'night',
     buildingsVisible: c.buildings.visible && c.buildings.meshes === 'none',

@@ -1,7 +1,5 @@
 # Building textures — offline collection
 
-[Français](README_FR.md)
-
 57 PBR sets, 283 maps, 501.1 MiB of maps. Source resolution 1K; original files unmodified.
 
 Collection only: no engine integration or automatic assignment to buildings.

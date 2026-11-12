@@ -175,10 +175,6 @@ vec3 surfaceGroundCap(vec2 d,vec2 radius){
   vec2 inverse=1./(radius*radius);float t=max(1.-dot(d*d,inverse),0.);
   return vec3(t*t,-4.*t*d*inverse);
 }
-vec4 surfaceGroundHerbCap(vec2 d,vec2 radius){
-  vec3 cap=surfaceGroundCap(d,radius);
-  return vec4(cap,cap.x*(sqrt(cap.x)-.75));
-}
 vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,uint salt,vec3 broad,vec3 fine){
   surfaceGroundSlope=vec2(0.);vec3 tone=vec3(0.);
   if(uQuality>0)return tone;
@@ -201,53 +197,22 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
   exposed*=land*(1.-surfaceGroundWet);vec2 light=uGroundCover.xz;
   light=dot(light,light)>.0001?normalize(light):vec2(1.,0.);
   float herb=grass*(1.-rock)*exposed*(1.-sstep(.35,.7,slope));
-  float tuftKeep=1.-sstep(.6,1.5,fp);
-  if(herb>.01&&tuftKeep>0.){
+  // Sward grain: continuous zero-mean bands under the 0.8 m mottle band. Discrete
+  // tufts (lit elliptic caps on a lattice) read as small crescents up close.
+  float swardKeep=1.-sstep(.125,.25,fp);
+  if(herb>.01&&swardKeep>0.){
     float density=(.38+.55*sstep(.2,1.6,moisture))*(cls==2?1.:cls==3?.8:.72);
     if(uRenderV2==1){
       float phase=.5-.5*cos(6.283185307*uV2Season);
       float temperature=uMaterialClimate.x-.0065*surfaceGroundHeight+6.*(2.*phase-1.);
       green=sstep(.35,1.3,moisture)*sstep(1.,13.,temperature);
     }
-    float singleKeep=1.-sstep(.25,.65,fp);
-    // Two fixed world lattices: broad three-tuft clumps resolve first, then
-    // individual tufts. Crossfade amplitudes, never cell size or phase.
-    for(int level=0;level<2;level++){
-      float keep=level==0?tuftKeep*(1.-singleKeep):singleKeep;
-      if(keep<=0.)continue;
-      float cell=level==0?6.:cls==3?1.6:1.9;
-      // Bend both lattices with retained bands; their gradients keep the cap lighting aligned.
-      vec2 q=(vec2(dot(world,vec2(.8,.6)),dot(world,vec2(-.6,.8)))+.6*vec2(broad.x,fine.x))/cell;
-      uint h=groundHash(ivec3(ivec2(floor(q)),811+level),salt);
-      uint patchHash=groundHash(ivec3(ivec2(floor(q/8.)),809),salt);
-      if(float(h>>24u)/255.>=density*(.35+.65*float(patchHash&255u)/255.))continue;
-      vec2 centre=.38+.24*vec2(float(h&255u),float((h>>8u)&255u))/255.,d=fract(q)-centre;
-      float angle=float((h>>16u)&255u)*.024543693,cs=cos(angle),sn=sin(angle);
-      vec2 local=vec2(cs*d.x+sn*d.y,-sn*d.x+cs*d.y);
-      float variation=float((h>>20u)&15u)/15.;
-      // Each tuft draws its own shape: overall size, spread of its blades and per-blade radii come from a second hash,
-      // so no crescent repeats across the lattice. Scales only shrink, a cap never reaches its cell edge.
-      uint h2=groundHash(ivec3(ivec2(floor(q)),823+level),salt);
-      vec4 jit=vec4(float(h2&255u),float((h2>>8u)&255u),float((h2>>16u)&255u),float(h2>>24u))/255.;
-      float spread=.55+.45*jit.x,size=.7+.3*jit.y;
-      vec2 r1=vec2(.85+.15*jit.z,1.-.3*jit.w),r2=vec2(1.-.3*jit.z,.85+.15*jit.w),r3=vec2(.8+.2*jit.w,.8+.2*jit.x);
-      vec4 cap;
-      if(level==0)cap=surfaceGroundHerbCap(local-spread*vec2(-.15,-.06),size*r1*vec2(.19,.15))
-        +surfaceGroundHerbCap(local-spread*vec2(.13,-.10),size*r2*vec2(.17,.14))+surfaceGroundHerbCap(local-spread*vec2(.02,.15),size*r3*vec2(.18,.15));
-      else cap=surfaceGroundHerbCap(local+spread*vec2(.11,.03),size*r1*vec2(.12,.22))
-        +surfaceGroundHerbCap(local-spread*vec2(.10,-.04),size*r2*vec2(.13,.20))+surfaceGroundHerbCap(local-spread*vec2(.01,.11),size*r3*vec2(.20,.12));
-      float amount=herb*keep;
-      vec2 g=vec2(cs*cap.y-sn*cap.z,sn*cap.y+cs*cap.z)*(level==0?.65:cls==3?.14:.23)/cell;
-      surfaceGroundSlope+=amount*(vec2(.8*g.x-.6*g.y,.6*g.x+.8*g.y)+.6*(g.x*broad.yz+g.y*fine.yz));
-      // Integral of t^2(t-3/4) over an ellipse is exactly zero: dark base,
-      // bright tip, no cell-wide compensation and no change to mean grass.
-      vec2 sun=vec2(dot(light,vec2(.8,.6)),dot(light,vec2(-.6,.8)));
-      vec2 shadowD=d+sun*.055,shadowLocal=vec2(cs*shadowD.x+sn*shadowD.y,-sn*shadowD.x+cs*shadowD.y);
-      float shadow=surfaceGroundCap(shadowLocal,vec2(.32,.25)).x;
-      float shade=(1.-sstep(.85,.99,uGroundCover.y/max(length(uGroundCover.xyz),.001)))*.05;
-      tone+=.35*amount*(cap.w*mix(vec3(.85,.65,.30),vec3(.55,.85,.36),green)
-        +cap.x*((variation-.5)*vec3(.34,.43,.12)+green*vec3(-.055,.08,-.035))-vec3(shade*max(shadow-cap.x,0.)));
-    }
+    float fineKeep=1.-sstep(.035,.07,fp);
+    vec3 s1=surfaceBand(world,1.,salt+817u),s2=fineKeep>0.?surfaceBand(world,.28,salt+818u):vec3(0.);
+    float amount=herb*density;
+    surfaceGroundSlope+=amount*(.03*swardKeep*s1.yz+.012*fineKeep*s2.yz);
+    float grain=.6*swardKeep*s1.x+.4*fineKeep*s2.x;
+    tone+=.07*amount*grain*mix(vec3(.85,.70,.32),vec3(.55,.85,.38),green);
   }
   // Dunes need loose sand: a gravel plain stays flat.
   float sand=sstep(.3,.7,surfaceGroundEnv.z)*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));

@@ -221,11 +221,23 @@ fn extend(a: &[Point], d: f64) -> Polygon {
 struct Cutter<'a, 'b> {
     ctx: &'a Context<'b>,
     root_angle: f64,
+    natural: bool,
+}
+fn angle_delta(a: f64) -> f64 {
+    (2.0 * a).sin().atan2((2.0 * a).cos()) / 2.0
 }
 impl Cutter<'_, '_> {
     fn direction(&self, p: Point) -> f64 {
         if self.ctx.regular {
-            self.root_angle
+            if self.natural {
+                let slope = (self.ctx.slope)(p.x, p.y);
+                let follow = ((slope - 0.02) / 0.04).clamp(0.0, 1.0);
+                self.root_angle
+                    + follow * angle_delta((self.ctx.dir)(p.x, p.y) - self.root_angle)
+                    + (1.0 - follow) * 0.07 * (self.ctx.noise)(p.x / 160.0, p.y / 160.0)
+            } else {
+                self.root_angle
+            }
         } else {
             (self.ctx.dir)(p.x, p.y)
         }
@@ -255,14 +267,41 @@ impl Cutter<'_, '_> {
         if self.ctx.regular {
             let span = 4.0 * (u1 - u0).hypot(v1 - v0) + 32.0;
             let q = |u: f64, v: f64| p(mid.x + u * dx - v * dy, mid.y + u * dy + v * dx);
+            // Parcel boundaries share one separator: no gaps or overlaps where a
+            // curved contour crosses an irregular road/stream outline. Coarse
+            // access-track cuts and small horticultural plots stay unchanged.
+            let line = if self.natural && !straight {
+                let reach = (u1 - u0).hypot(v1 - v0) + 32.0;
+                let steps = (reach / 32.0).ceil().max(2.0) as usize;
+                let step = reach / steps as f64;
+                let heading = dy.atan2(dx);
+                let skew = 0.045 * (self.ctx.noise)(mid.x / 95.0 + 7.0, mid.y / 95.0);
+                let run = |sign: f64| {
+                    let mut out = vec![];
+                    let mut offset = 0.0;
+                    for k in 1..=steps {
+                        let sample = q(sign * (k as f64 - 0.5) * step, offset);
+                        let a = self.direction(sample) + rot + if across { PI / 2.0 } else { 0.0 };
+                        offset +=
+                            sign * step * (angle_delta(a - heading).tan().clamp(-0.5, 0.5) + skew);
+                        out.push(q(sign * k as f64 * step, offset));
+                    }
+                    out
+                };
+                let mut line = run(-1.0);
+                line.reverse();
+                line.push(mid);
+                line.extend(run(1.0));
+                simplify(&line, 0.3)
+            } else {
+                vec![q(-span, 0.0), q(span, 0.0)]
+            };
             let mut pcs = vec![];
             for sign in [-1.0, 1.0] {
-                let clip = piece(vec![
-                    q(-span, 0.0),
-                    q(span, 0.0),
-                    q(span, sign * span),
-                    q(-span, sign * span),
-                ]);
+                let mut side = line.clone();
+                side.push(q(span, sign * span));
+                side.push(q(-span, sign * span));
+                let clip = piece(side);
                 pcs.extend(bo::exact(&[r.clone()], &[clip], Op::Intersection).ok()?);
             }
             if pcs.len() < 2 {
@@ -277,7 +316,7 @@ impl Cutter<'_, '_> {
             }) {
                 return None;
             }
-            bucket.extend(clip_line(&[q(-span, 0.0), q(span, 0.0)], r));
+            bucket.extend(clip_line(&line, r));
             return Some(pcs);
         }
         let box_ = bbox(&r.outer).grow(30.0);
@@ -376,7 +415,9 @@ pub fn partition(region: &Region, ctx: &Context, rng: &mut impl FieldRandom, net
     let cutter = Cutter {
         ctx,
         root_angle: (ctx.dir)(c.x, c.y),
+        natural: false,
     };
+    let agricultural = ctx.min_area.unwrap_or(1000.0) >= 500.0;
     let mut blocks: Vec<(Region, f64)> = vec![];
     let mut leaves: Vec<(Region, f64, bool)> = vec![];
     if closed && !regular {
@@ -430,12 +471,20 @@ pub fn partition(region: &Region, ctx: &Context, rng: &mut impl FieldRandom, net
                     *rot = rng.range(0.25, 0.5) * if rng.chance(0.5) { 1.0 } else { -1.0 } * flat;
                 }
             }
-            if regular && sl >= 0.08 {
+            if regular && agricultural && sl >= 0.025 {
+                // The local direction follows contours below; do not rotate
+                // those elongated parcels back across the slope.
+                *rot = 0.0;
+            } else if regular && sl >= 0.08 {
                 let rel = (ctx.dir)(c.x, c.y) - cutter.root_angle;
                 *rot = (2.0 * rel).sin().atan2((2.0 * rel).cos()) / 2.0;
             }
         }
     }
+    let cutter = Cutter {
+        natural: regular && agricultural,
+        ..cutter
+    };
     for (r, rot) in blocks {
         let mut stack = vec![(r, rot, 0_usize)];
         let mut guard = 0;
@@ -444,14 +493,19 @@ pub fn partition(region: &Region, ctx: &Context, rng: &mut impl FieldRandom, net
             let (r, rot, depth) = stack.pop().unwrap();
             let a = region_area(&r);
             let (c, l, w, fill) = cutter.dims(&r, rot);
-            let lm = if regular {
+            let slope = (ctx.slope)(c.x, c.y);
+            let lm = if cutter.natural {
+                rng.range(130.0, 290.0) * (1.0 + 0.8 * (slope / 0.12).clamp(0.0, 1.0))
+            } else if regular {
                 rng.range(150.0, 240.0)
             } else if closed {
                 rng.range(110.0, 190.0)
             } else {
                 rng.range(305.0, 345.0)
             };
-            let wm = if closed {
+            let wm = if cutter.natural {
+                rng.range(90.0, 210.0) / (1.0 + (slope / 0.1).clamp(0.0, 1.0))
+            } else if closed {
                 rng.range(100.0, 170.0)
             } else {
                 rng.range(130.0, 250.0)
@@ -478,7 +532,9 @@ pub fn partition(region: &Region, ctx: &Context, rng: &mut impl FieldRandom, net
                 continue;
             }
             let access = !regular && closed && ctx.access && depth == 0;
-            let f = if closed || !across {
+            let f = if cutter.natural {
+                rng.range(0.32, 0.68)
+            } else if closed || !across {
                 rng.range(0.4, 0.6)
             } else {
                 rng.range(0.46, 0.54)
@@ -553,7 +609,7 @@ pub fn partition(region: &Region, ctx: &Context, rng: &mut impl FieldRandom, net
             parcel: regular,
         };
         if !regular && !enclosed {
-            cut_strips(&mut fl, rng, ctx.strips_at);
+            cut_strips(&mut fl, rng, ctx.strips_at, Some(ctx));
         }
         net.furlongs.push(fl);
     }
@@ -562,6 +618,7 @@ pub fn cut_strips(
     fl: &mut Furlong,
     rng: &mut impl FieldRandom,
     strips_at: Option<&dyn Fn(Point) -> bool>,
+    ctx: Option<&Context>,
 ) {
     let cen = centroid(&fl.region.outer);
     let (ca, sa) = (fl.angle.cos(), fl.angle.sin());
@@ -576,7 +633,40 @@ pub fn cut_strips(
     }
     let amp = rng.range(-1.0, 1.0) * (0.012 * l).min(2.5);
     let phase = rng.range(0.0, 0.4);
-    let bend = |u: f64| amp * (2.0 * PI * ((u - u0) / l.max(1.0) + phase)).sin();
+    let steps = 8_usize.max((l / 24.0).ceil() as usize);
+    let us: Vec<_> = (0..=steps)
+        .map(|k| u0 - 1.0 + (l + 2.0) * k as f64 / steps as f64)
+        .collect();
+    // Integrate one shared centreline at generation time. Offset boundaries
+    // cannot cross, and slope strips lengthen along contours rather than climb.
+    let mut bends = vec![0.0; steps + 1];
+    let centre = steps / 2;
+    for sign in [-1_isize, 1] {
+        let mut k = centre;
+        loop {
+            let next = k as isize + sign;
+            if next < 0 || next > steps as isize {
+                break;
+            }
+            let next = next as usize;
+            let u = (us[k] + us[next]) / 2.0;
+            let v = (v0 + v1) / 2.0 + bends[k];
+            let q = p(u * ca - v * sa, u * sa + v * ca);
+            let tangent = ctx.map_or(0.0, |ctx| {
+                let follow = (((ctx.slope)(q.x, q.y) - 0.02) / 0.04).clamp(0.0, 1.0);
+                follow
+                    * angle_delta((ctx.dir)(q.x, q.y) - fl.angle)
+                        .tan()
+                        .clamp(-0.5, 0.5)
+            });
+            bends[next] = bends[k] + (us[next] - us[k]) * tangent;
+            k = next;
+        }
+    }
+    for (u, bend) in us.iter().zip(&mut bends) {
+        *bend += amp * (2.0 * PI * ((*u - u0) / l.max(1.0) + phase)).sin();
+    }
+    let padding = bends.iter().map(|v| v.abs()).fold(0.0_f64, f64::max) + ws;
     let transform = |a: &Polygon| {
         a.iter()
             .map(|p| local_point(p, ca, sa))
@@ -594,22 +684,13 @@ pub fn cut_strips(
     fn append(
         piece: Region,
         depth: usize,
-        ca: f64,
-        sa: f64,
         v0: f64,
         v1: f64,
         extent: f64,
-        out: &mut Vec<Polygon>,
+        out: &mut Vec<Region>,
     ) -> Result<(), ()> {
         if piece.holes.is_empty() {
-            let poly: Polygon = piece
-                .outer
-                .iter()
-                .map(|p| super::geom::p(p.x * ca - p.y * sa, p.x * sa + p.y * ca))
-                .collect();
-            if area(&poly).abs() >= 120.0 {
-                out.push(poly);
-            }
+            out.push(piece);
             return Ok(());
         }
         if depth >= 32 {
@@ -626,28 +707,27 @@ pub fn cut_strips(
                 super::geom::p(lo, v1 + extent),
             ]);
             for pg in bo::exact(&[piece.clone()], &[clip], Op::Intersection)? {
-                append(pg, depth + 1, ca, sa, v0, v1, extent, out)?;
+                append(pg, depth + 1, v0, v1, extent, out)?;
             }
         }
         Ok(())
     }
-    let count = ((v1 - v0 + 2.0 * amp.abs()) / ws).ceil() as usize;
-    for i in 0..count {
-        let lo = v0 - amp.abs() + i as f64 * ws;
-        let hi = lo + ws - 0.65;
-        let steps = 8_usize.max((l / 20.0).ceil() as usize);
-        let mut band = vec![];
-        for k in 0..=steps {
-            let u = u0 - 1.0 + (l + 2.0) * k as f64 / steps as f64;
-            band.push(super::geom::p(u, lo + bend(u)));
-        }
-        for k in (0..=steps).rev() {
-            let u = u0 - 1.0 + (l + 2.0) * k as f64 / steps as f64;
-            band.push(super::geom::p(u, hi + bend(u)));
-        }
+    let boundary = |v: f64, taper: f64| -> Polygon {
+        us.iter()
+            .zip(&bends)
+            .map(|(&u, &bend)| p(u, v + bend + taper * (u - (u0 + u1) / 2.0) / l.max(1.0)))
+            .collect()
+    };
+    let mut v = v0 - padding;
+    let mut lower = boundary(v, 0.0);
+    for _ in 0..120 {
+        v += ws * rng.range(0.65, 1.45);
+        let upper = boundary(v, ws * rng.range(-0.18, 0.18));
+        let mut band = lower.clone();
+        band.extend(upper.iter().rev().copied());
         let result = (|| {
             for pg in bo::exact(&[local.clone()], &[piece(band)], Op::Intersection)? {
-                append(pg, 0, ca, sa, v0, v1, extent, &mut strips)?;
+                append(pg, 0, v0, v1, extent, &mut strips)?;
             }
             Ok::<_, ()>(())
         })();
@@ -655,9 +735,91 @@ pub fn cut_strips(
             strips.clear();
             break;
         }
+        lower = upper;
+        if v > v1 + padding {
+            break;
+        }
     }
+    merge_strip_slivers(&mut strips, ws);
     if !strips.is_empty() {
-        fl.strips = strips;
+        fl.strips = strips
+            .into_iter()
+            // An isolated unmergeable tip keeps the holder's base crop colour.
+            .filter(|r| !strip_sliver(r, ws))
+            .map(|r| {
+                r.outer
+                    .into_iter()
+                    .map(|p| super::geom::p(p.x * ca - p.y * sa, p.x * sa + p.y * ca))
+                    .collect()
+            })
+            .collect();
+    }
+}
+
+fn strip_sliver(r: &Region, width: f64) -> bool {
+    let b = bbox(&r.outer);
+    let a = region_area(r);
+    let length = (b.x1 - b.x0).max(1.0);
+    let breadth = (b.y1 - b.y0).max(1.0);
+    a < 120.0_f64.max(0.6 * width * width)
+        || a / length < width * 0.32
+        || breadth < width * 1.8 && a / (length * breadth) < 0.58
+}
+
+// Shared-edge overlap, including collinear edges subdivided by clipping.
+// Only nearby clipped tips use this; healthy strips need no union operation.
+fn shared_border(a: &Polygon, b: &Polygon) -> f64 {
+    let mut shared = 0.0;
+    for i in 0..a.len() {
+        let (p, q) = (a[i], a[(i + 1) % a.len()]);
+        let len = dist(p, q);
+        if len < 0.001 {
+            continue;
+        }
+        let (dx, dy) = ((q.x - p.x) / len, (q.y - p.y) / len);
+        for j in 0..b.len() {
+            let (r, s) = (b[j], b[(j + 1) % b.len()]);
+            if ((r.x - p.x) * dy - (r.y - p.y) * dx).abs() > 0.002
+                || ((s.x - p.x) * dy - (s.y - p.y) * dx).abs() > 0.002
+            {
+                continue;
+            }
+            let t = (r.x - p.x) * dx + (r.y - p.y) * dy;
+            let u = (s.x - p.x) * dx + (s.y - p.y) * dy;
+            shared += (len.min(t.max(u)) - 0.0_f64.max(t.min(u))).max(0.0);
+        }
+    }
+    shared
+}
+
+fn merge_strip_slivers(strips: &mut Vec<Region>, width: f64) {
+    // Two bounded passes also absorb a tip whose first neighbour was a tip.
+    for _ in 0..2 {
+        let mut i = 0;
+        while i < strips.len() {
+            if !strip_sliver(&strips[i], width) {
+                i += 1;
+                continue;
+            }
+            let b = bbox(&strips[i].outer).grow(0.01);
+            let neighbour = (0..strips.len())
+                .filter(|&j| j != i && b.meets(bbox(&strips[j].outer)))
+                .map(|j| (j, shared_border(&strips[i].outer, &strips[j].outer)))
+                .filter(|(_, shared)| *shared > 0.01)
+                .max_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((j, _)) = neighbour {
+                if let Ok(mut joined) =
+                    bo::exact(&[strips[i].clone()], &[strips[j].clone()], Op::Union)
+                {
+                    if joined.len() == 1 && joined[0].holes.is_empty() {
+                        strips[j] = joined.remove(0);
+                        strips.remove(i);
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        }
     }
 }
 
@@ -804,4 +966,178 @@ pub fn connect(
         }
     }
     links
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn furlong(region: Region) -> Furlong {
+        Furlong {
+            region,
+            angle: 0.0,
+            enclosed: false,
+            strips: vec![],
+            strip_w: 0.0,
+            parcel: true,
+        }
+    }
+
+    #[test]
+    fn triangular_tips_merge_without_losing_area() {
+        let mut strips = vec![
+            piece(vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 8.0)]),
+            piece(vec![
+                p(20.0, 0.0),
+                p(100.0, 0.0),
+                p(100.0, 20.0),
+                p(20.0, 20.0),
+            ]),
+        ];
+        let before: f64 = strips.iter().map(region_area).sum();
+        assert!(strip_sliver(&strips[0], 16.0));
+        merge_strip_slivers(&mut strips, 16.0);
+        assert_eq!(strips.len(), 1);
+        assert!((region_area(&strips[0]) - before).abs() < 0.01);
+        assert!(!strip_sliver(&strips[0], 16.0));
+    }
+
+    #[test]
+    fn clipped_strips_are_deterministic_varied_and_respect_holes() {
+        let mut region = piece(vec![
+            p(0.0, 0.0),
+            p(310.0, 8.0),
+            p(285.0, 180.0),
+            p(140.0, 200.0),
+            p(0.0, 150.0),
+        ]);
+        region.holes.push(rect(150.0, 95.0, 32.0, 35.0, 0.2));
+        let mut a = furlong(region.clone());
+        let mut b = furlong(region.clone());
+        cut_strips(&mut a, &mut Rng::new("field-clipping"), None, None);
+        cut_strips(&mut b, &mut Rng::new("field-clipping"), None, None);
+        assert_eq!(a.strips, b.strips);
+        assert!(a.strips.len() >= 6 && a.strips.len() < 40);
+        let rs: Vec<_> = a.strips.iter().cloned().map(piece).collect();
+        let covered: f64 = rs.iter().map(region_area).sum();
+        assert!(covered > region_area(&region) * 0.97);
+        for (i, r) in rs.iter().enumerate() {
+            assert!(!strip_sliver(r, a.strip_w));
+            let outside: f64 = bo::exact(&[r.clone()], &[region.clone()], Op::Difference)
+                .unwrap()
+                .iter()
+                .map(region_area)
+                .sum();
+            assert!(
+                outside < 0.05,
+                "strip crosses its holder or a hole: {outside}"
+            );
+            for other in &rs[..i] {
+                if !bbox(&r.outer).meets(bbox(&other.outer)) {
+                    continue;
+                }
+                let overlap: f64 = bo::exact(&[r.clone()], &[other.clone()], Op::Intersection)
+                    .unwrap()
+                    .iter()
+                    .map(region_area)
+                    .sum();
+                assert!(overlap < 0.05, "strips overlap: {overlap}");
+            }
+        }
+        // Compare sections well away from the irregular outline and hole.
+        let widths: Vec<_> = rs
+            .iter()
+            .filter_map(|r| {
+                let b = bbox(&r.outer);
+                (b.x0 < 1.0 && b.x1 > 280.0).then_some(region_area(r) / (b.x1 - b.x0))
+            })
+            .collect();
+        assert!(widths.len() >= 3);
+        let low = widths.iter().copied().fold(f64::INFINITY, f64::min);
+        let high = widths.iter().copied().fold(0.0_f64, f64::max);
+        assert!(high > low * 1.15);
+    }
+
+    #[test]
+    fn contour_parcel_separator_curves_and_preserves_coverage() {
+        let ctx = Context {
+            dir: &|x, _| x * 0.002,
+            slope: &|_, _| 0.12,
+            closed: false,
+            noise: &|_, _| 0.0,
+            regular: true,
+            access: false,
+            min_area: None,
+            strips_at: None,
+        };
+        let cutter = Cutter {
+            ctx: &ctx,
+            root_angle: 0.0,
+            natural: true,
+        };
+        let r = piece(rect(0.0, 0.0, 360.0, 200.0, 0.0));
+        let mut cuts = vec![];
+        let parts = cutter
+            .once(&r, 0.0, false, 0.5, 0.0, 0.0, &mut cuts, false, false)
+            .unwrap();
+        assert_eq!(parts.len(), 2);
+        assert!(parts.iter().all(|r| r.outer.len() > 5));
+        let covered: f64 = parts.iter().map(region_area).sum();
+        assert!((covered - region_area(&r)).abs() < 0.05);
+        assert!(cuts.iter().any(|line| {
+            let b = bbox(line);
+            b.y1 - b.y0 > 15.0 && b.x1 - b.x0 > 350.0
+        }));
+        let overlap: f64 = bo::exact(&parts[..1], &parts[1..], Op::Intersection)
+            .unwrap()
+            .iter()
+            .map(region_area)
+            .sum();
+        assert!(overlap < 0.05);
+    }
+
+    #[test]
+    fn contour_strips_bend_and_partition_stays_deterministic() {
+        let ctx = Context {
+            dir: &|x, _| x * 0.002,
+            slope: &|_, _| 0.12,
+            closed: false,
+            noise: &|x, y| (x + y).sin(),
+            regular: true,
+            access: false,
+            min_area: None,
+            strips_at: None,
+        };
+        let r = piece(rect(0.0, 0.0, 360.0, 200.0, 0.0));
+        let mut sloped = furlong(r.clone());
+        let mut flat = furlong(r.clone());
+        cut_strips(
+            &mut sloped,
+            &mut Rng::new("contour-strips"),
+            None,
+            Some(&ctx),
+        );
+        cut_strips(&mut flat, &mut Rng::new("contour-strips"), None, None);
+        assert_ne!(sloped.strips, flat.strips);
+        // At a parcel's centre the contour is horizontal; its ends turn uphill
+        // symmetrically. At least one strip retains this curved shared edge.
+        assert!(sloped.strips.iter().any(|ring| ring.len() > 10));
+        let mut first = Net::default();
+        let mut second = Net::default();
+        partition(&r, &ctx, &mut Rng::new("contour-parcels"), &mut first);
+        partition(&r, &ctx, &mut Rng::new("contour-parcels"), &mut second);
+        assert!(first.furlongs.len() > 1 && first.furlongs.len() < 30);
+        assert_eq!(first.furlongs.len(), second.furlongs.len());
+        for (a, b) in first.furlongs.iter().zip(&second.furlongs) {
+            assert_eq!(a.region.outer, b.region.outer);
+            assert_eq!(a.angle, b.angle);
+            let (_, length, breadth, _) = Cutter {
+                ctx: &ctx,
+                root_angle: 0.0,
+                natural: true,
+            }
+            .dims(&a.region, 0.0);
+            assert!(length > breadth, "slope parcels must extend along contours");
+        }
+    }
 }

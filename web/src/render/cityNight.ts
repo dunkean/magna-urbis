@@ -6,12 +6,12 @@ export function nightRoof(color: string, ink = false): string {
   const v = parseInt(color.replace('#', ''), 16), rgb = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(color);
   const c = rgb ? rgb.slice(1).map(Number) : [v >> 16 & 255, v >> 8 & 255, v & 255];
   const y = c[0] * .3 + c[1] * .59 + c[2] * .11;
-  const out = ink ? [38 + y * .30, 54 + y * .32, 73 + y * .34] : [9 + c[0] * .19, 15 + c[1] * .23, 24 + c[2] * .29];
+  const out = ink ? [17 + y * .18, 27 + y * .22, 44 + y * .28] : [9 + c[0] * .19, 15 + c[1] * .23, 24 + c[2] * .29];
   return '#' + out.map(x => Math.round(x).toString(16).padStart(2, '0')).join('');
 }
 const hash = (id: string): number => { let h = 2166136261; for (const c of id) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
 const visible = (x: number, y: number, b: BuildingViewport, pad = 10): boolean => x >= b.minX - pad && x <= b.maxX + pad && y >= b.minY - pad && y <= b.maxY + pad;
-/** Radii are world metres; only the visibility floor follows metres per CSS pixel. */
+/** Halos stay in world metres; their cores keep a subpixel visibility floor at town overview. */
 export const nightWindowReach = (mpp: number): number => Math.max(6, 3.5 * mpp);
 function lamp(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, reach: number, ink: boolean): void {
   const halo = reach, g = ctx.createRadialGradient(x, y, 0, x, y, halo);
@@ -39,10 +39,10 @@ export function drawNightBuildings(ctx: CanvasRenderingContext2D, buildings: rea
     const x = a.x * .6 + z.x * .4, y = a.y * .6 + z.y * .4;
     if (h % 100 > (b.function === 'mixed' || b.function === 'collective' ? 80 : 56)) continue;
     const reach = Math.max(3.5 + (h % 26) / 10, 3.5 * mpp);
-    if (visible(x, y, box, reach)) lamp(ctx, x, y, Math.max(.36, Math.min(.85, mpp * .85)), reach, ink);
+    if (visible(x, y, box, reach)) lamp(ctx, x, y, Math.max(.36, mpp * .75), reach, ink);
     if (h % 5 === 0 && Math.hypot(z.x - a.x, z.y - a.y) > 5) {
       const x2 = a.x * .25 + z.x * .75, y2 = a.y * .25 + z.y * .75, reach2 = Math.max(3.5, 3.5 * mpp);
-      if (visible(x2, y2, box, reach2)) lamp(ctx, x2, y2, Math.max(.28, Math.min(.65, mpp * .65)), reach2, ink);
+      if (visible(x2, y2, box, reach2)) lamp(ctx, x2, y2, Math.max(.28, mpp * .6), reach2, ink);
     }
   }
   ctx.restore();
@@ -70,7 +70,7 @@ export function drawNightTown(ctx: CanvasRenderingContext2D, scene: CityScene, b
       while (next < len) {
         const side = s.width * .40, x = a.x + dx * next / len - dy / len * side, y = a.y + dy * next / len + dx / len * side;
         const reach = Math.max(s.rank <= 1 ? 15 : 12, 5 * mpp);
-        if (visible(x, y, box, reach)) lamp(ctx, x, y, Math.max(.4, Math.min(.95, mpp)), reach, ink);
+        if (visible(x, y, box, reach)) lamp(ctx, x, y, Math.max(.4, mpp * .9), reach, ink);
         next += spacing;
       }
       next -= len;
@@ -78,7 +78,7 @@ export function drawNightTown(ctx: CanvasRenderingContext2D, scene: CityScene, b
   }
   for (const b of scene.blocks) if (b.kind === 'place' && b.shape.outer.length) {
     const p = b.shape.outer[0], reach = Math.max(15, 5 * mpp);
-    if (visible(p.x, p.y, box, reach)) lamp(ctx, p.x, p.y, Math.max(.5, Math.min(1.1, mpp)), reach, ink);
+    if (visible(p.x, p.y, box, reach)) lamp(ctx, p.x, p.y, Math.max(.5, mpp), reach, ink);
   }
   ctx.restore();
 }

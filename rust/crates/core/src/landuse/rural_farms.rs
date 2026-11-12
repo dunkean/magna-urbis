@@ -290,7 +290,8 @@ impl Builder<'_> {
         self.farms.push(g);
     }
 }
-pub(crate) fn generate<'a>(
+#[allow(clippy::too_many_arguments)]
+fn new_builder<'a>(
     input: &'a Input,
     rr: &Rng,
     soil: &'a Soil<'a>,
@@ -299,14 +300,8 @@ pub(crate) fn generate<'a>(
     reserve: &'a [u8],
     u_dist: &'a [f32],
     lm: f64,
-    pasture_max: f64,
-    stats: &mut BTreeMap<String, f64>,
-) -> (Vec<Value>, Vec<u8>) {
-    let n = input.w;
-    let cell = input.cell;
-    let total = n * n;
+) -> Builder<'a> {
     let s_map = input.map_size;
-    let pl = plan(input);
     let mut build = Builder {
         input,
         soil,
@@ -352,6 +347,76 @@ pub(crate) fn generate<'a>(
             );
         }
     }
+    build
+}
+/// Farmsteads for cultivated land that no existing farmer reaches: one farm per site, laid out
+/// like the other farms and given a drive to the nearest road when one is within walking range.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn add_for_demand<'a>(
+    input: &'a Input,
+    rr: &Rng,
+    soil: &'a Soil<'a>,
+    roads: &'a [Road],
+    slope: &'a [f32],
+    reserve: &'a [u8],
+    u_dist: &'a [f32],
+    lm: f64,
+    existing: &[Value],
+    sites: &[Point],
+) -> Vec<Value> {
+    let mut build = new_builder(input, rr, soil, roads, slope, reserve, u_dist, lm);
+    for f in existing {
+        if let Ok(c) = serde_json::from_value::<Point>(f["pos"].clone()) {
+            build.lots.push((c, 30.0));
+        }
+    }
+    let fr = rr.fork("demand-farm");
+    for (k, &c) in sites.iter().enumerate() {
+        let nr = build.nearest_road(c);
+        let culture = build.culture_at(c);
+        let ctx = build.context(c, &culture, None);
+        let d0 = if nr.d > 1.0 {
+            p((c.x - nr.bp.x) / nr.d, (c.y - nr.bp.y) / nr.d)
+        } else {
+            ctx.downhill.unwrap_or(p(0.0, 1.0))
+        };
+        let places = |d: f64| {
+            [(1.0, 0.0), (0.0, 1.0), (0.0, -1.0), (-1.0, 0.0)]
+                .iter()
+                .map(|&(cx, cy)| {
+                    let v = p(d0.x * cx - d0.y * cy, d0.x * cy + d0.y * cx);
+                    Place {
+                        o: p(c.x - v.x * d / 2.0, c.y - v.y * d / 2.0),
+                        v,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        if let Some(pl) = build.plan_on(ctx, fr.fork(&format!("d{k}")), places, 12.0) {
+            build.accept(pl, &culture, (nr.d < 1500.0).then_some(nr.bp));
+        }
+    }
+    build.farms
+}
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate<'a>(
+    input: &'a Input,
+    rr: &Rng,
+    soil: &'a Soil<'a>,
+    roads: &'a [Road],
+    slope: &'a [f32],
+    reserve: &'a [u8],
+    u_dist: &'a [f32],
+    lm: f64,
+    pasture_max: f64,
+    stats: &mut BTreeMap<String, f64>,
+) -> (Vec<Value>, Vec<u8>) {
+    let n = input.w;
+    let cell = input.cell;
+    let total = n * n;
+    let s_map = input.map_size;
+    let pl = plan(input);
+    let mut build = new_builder(input, rr, soil, roads, slope, reserve, u_dist, lm);
     let enabled = pl["farmsteads"].as_bool() != Some(false);
     let root = Rng::new(&input.seed);
     if enabled {

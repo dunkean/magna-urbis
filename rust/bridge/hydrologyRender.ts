@@ -4,6 +4,7 @@ import type { RenderColors } from '../../web/src/render/customColors';
 import { lakeMaterialSvg } from '../../web/src/render/terrainWater';
 import type { HydrologyData, HydrologyOverlay } from './hydrology';
 import type { TerrainStyle } from './terrainRender';
+import { headwaterGeometry } from '../../web/src/render/riverHeadwaters';
 
 export { HYDROLOGY_LEGENDS } from '../../web/src/render/displayDiagnostics';
 const format = (v: number): string => v.toFixed(2);
@@ -103,12 +104,27 @@ export function hydrologyLakeMaterial(data: HydrologyData, style: TerrainStyle =
 }
 
 /** River capsules for the GPU renderer: x0, y0, x1, y1, widths (m) at both ends, r, g, b. */
+const drawnRivers = new WeakMap<HydrologyData, Float32Array[]>();
+function hydrologyRiverGeometry(data: HydrologyData): Float32Array[] {
+  const found = drawnRivers.get(data); if (found) return found;
+  const rivers: Float32Array[] = [], margin = 2 * data.width / data.resolution;
+  for (let i = 0; i < data.riverCount; i++) {
+    const start = data.riverOffsets[i], end = data.riverOffsets[i + 1], p = data.riverPoints.subarray(start * 4, end * 4), from = data.riverMeta[i * 6 + 1];
+    const source = data.nodeMeta[from * 3 + 2] === 0 && data.nodeMeta[from * 3 + 1] === 0 && p[0] >= margin && p[1] >= margin && p[0] <= data.width - margin && p[1] <= data.width - margin;
+    if (!source || end - start < 2) { rivers.push(p); continue; }
+    const points: number[] = [], widths: number[] = [], level: number[] = [];
+    for (let k = 0; k < p.length; k += 4) { points.push(p[k], p[k + 1]); widths.push(p[k + 2]); level.push(p[k + 3]); }
+    const g = headwaterGeometry({ points, area: widths, level, kind: widths.map(() => 0) }, widths), packed = new Float32Array(g.widths.length * 4);
+    g.widths.forEach((w, k) => packed.set([g.points[2 * k], g.points[2 * k + 1], w, g.level[k]], 4 * k)); rivers.push(packed);
+  }
+  drawnRivers.set(data, rivers); return rivers;
+}
 export function hydrologySegments(data: HydrologyData, colour: string): Float32Array {
   const r = parseInt(colour.slice(1, 3), 16) / 255, g = parseInt(colour.slice(3, 5), 16) / 255, b = parseInt(colour.slice(5, 7), 16) / 255;
-  const p = data.riverPoints, out: number[] = [];
-  for (let i = 0; i < data.riverCount; i++) {
-    for (let k = data.riverOffsets[i]; k + 1 < data.riverOffsets[i + 1]; k++) {
-      out.push(p[k * 4], p[k * 4 + 1], p[k * 4 + 4], p[k * 4 + 5], p[k * 4 + 2], p[k * 4 + 6], r, g, b);
+  const out: number[] = [];
+  for (const p of hydrologyRiverGeometry(data)) {
+    for (let k = 0; k + 7 < p.length; k += 4) {
+      out.push(p[k], p[k + 1], p[k + 4], p[k + 5], p[k + 2], p[k + 6], r, g, b);
     }
   }
   return Float32Array.from(out);
@@ -125,7 +141,7 @@ export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, 
     for (let i = 0; i < data.lakeOffsets.length - 1; i++) lakes += ring(data.lakePoints, data.lakeOffsets[i], data.lakeOffsets[i + 1]);
     svg += `<defs><clipPath id="hydrology-map-clip"><rect width="${data.width}" height="${data.width}"/></clipPath></defs><g class="hydrology-water" clip-path="url(#hydrology-map-clip)" fill="${waterFill}"><path class="water-lakes" d="${lakes}" fill-rule="evenodd" stroke="${waterFill}" stroke-width="0.35" vector-effect="non-scaling-stroke"/>`;
     const junctionWidths = new Float32Array(data.nodePoints.length / 2);
-    for (let i = 0; i < data.riverCount; i++) svg += `<path d="${riverBank(data.riverPoints, data.riverOffsets[i], data.riverOffsets[i + 1])}" stroke="none"/>`;
+    for (const p of hydrologyRiverGeometry(data)) svg += `<path d="${riverBank(p, 0, p.length / 4)}" stroke="none"/>`;
     for (let i = 0; i < data.riverCount; i++) {
       const start = data.riverOffsets[i], end = data.riverOffsets[i + 1] - 1;
       if (end <= start) continue;

@@ -5,6 +5,7 @@
  * silhouette raised in volume; no other house generator is involved. */
 import type { Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
 import { treeDwelling, treeCrownFaces, type TreeDwelling } from './cityTrees';
+import { roofPlaneLight } from './roofPlaneLight';
 import { intersectionS, unionS } from '../gen/geo/bool';
 type Shape = Surface[number];
 
@@ -433,13 +434,9 @@ export const pieceTop = (m: MassingPiece): number => {
   })) : m.eave_m + Math.max(0, m.rise_m);
 };
 
-/** Map light from the north-west, high: brightness factor of a roof face (−0.52…+0.34). */
-export function roofLight([nx, ny, nz]: readonly [number, number, number]): number {
-  const lx = -0.55, ly = -0.55, lz = 0.63; // y grows southward on the map
-  const lambert = nx * lx + ny * ly + nz * lz, flatLambert = lz;
-  // A shallow pitched face still needs a readable pan at settlement zoom.
-  const h = Math.hypot(nx, ny), directional = h > .001 ? -(nx + ny) / h * .24 : 0;
-  return Math.max(-.52, Math.min(.34, (lambert - flatLambert) * 1.45 + directional));
+/** Per-plane roof light shared with the retained 3D mesh. */
+export function roofLight(normal: readonly [number, number, number]): number {
+  return roofPlaneLight(normal) - 1;
 }
 
 /** Ground shadow of a piece (sun from the north-west): the sweep of the outline and

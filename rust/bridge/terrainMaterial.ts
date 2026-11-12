@@ -249,8 +249,15 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float v=pattern.x/sqrt(1.+pattern.x*pattern.x)*sqrt(pattern.y);
       return c+clamp(sharp,0.,1.)*c*(1.-c)*v;
     }
+    // Beach width (m). The climate sets the sand supply: wide strands on warm coasts (about 100 m), narrow
+    // fringes on cold ones (about 30 m). Noise only varies it along the coast around that mean: gating it on
+    // the 20 km and 4.8 km octaves left every small map (near the world origin, where they are ~0) with a
+    // 10-20 m strip that crowns covered. Height, slope and openness then shrink it to nothing on cliffs.
+    // Mirrored in terrainForestBeach.ts and magna_urbis_terrain::forest_beach (crown exclusion).
     float surfaceBeachWidth(vec2 reach,vec2 grove,vec2 fine,float openness){
-      return 140.*sstep(-.15,.75,.65*reach.x*sqrt(reach.y)+.5*grove.x*sqrt(grove.y))*sstep(.15,.4,openness)*(1.+.35*fine.x*sqrt(fine.y));
+      float supply=40.+80.*sstep(8.,22.,uMaterialClimate.x);
+      float along=sstep(-.8,.8,.65*reach.x*sqrt(reach.y)+.5*grove.x*sqrt(grove.y));
+      return supply*(.4+.8*along)*sstep(.15,.4,openness)*(1.+.35*fine.x*sqrt(fine.y));
     }
     // Fixed physical reference for V2 crown roots, independent of the viewport.
     float surfaceRootBeach(vec3 s,vec2 world,float shore,float openness){
@@ -399,8 +406,8 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
 #endif
       color=surfaceMix(color,canopy,woods);
       float flats=(1.-sstep(1.5,6.,height))*(1.-sstep(.05,.2,grade));
-      // Beaches: an intermittent strip along open water (none beside ponds), up to
-      // ~190 m wide with a ragged inner edge, as area coverage (visible at 240 m
+      // Beaches: a strip along open water (none beside ponds), 30-190 m wide by
+      // climate, with a ragged inner edge, as area coverage (visible at 240 m
       // samples); low flats behind it stay as wetter river/estuary bars.
       vec2 reach=surfaceFbm(point,20000.,3,fp,salt+7u);
       float width=surfaceBeachWidth(reach,grove,fine,openness);

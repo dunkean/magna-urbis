@@ -25,6 +25,7 @@ const labels: Record<string, Words> = {
   streetFrontage:['À tester · Construire ou simplifier les rues','Testing · Build frontage or simplify streets','测试 · 建设临街地块或简化街道','En prueba · Ocupar frentes o simplificar calles','Em teste · Ocupar frentes ou simplificar ruas'],
   alignEnclosedGrid:['À tester · Grille alignée sur son enceinte','Testing · Align grid to its enclosure','测试 · 网格对齐围墙','En prueba · Cuadrícula alineada con su recinto','Em teste · Grelha alinhada ao seu recinto'],
   villageBridgeBudget:['À tester · Ponts selon le besoin (village)','Testing · Bridges by need (village)','测试 · 按需建桥（村庄）','En prueba · Puentes según la necesidad (aldea)','Em teste · Pontes conforme a necessidade (aldeia)'],
+  roadNetworkPrune:['À tester · Élaguer les routes inutiles','Testing · Prune useless roads','测试 · 删减无用道路','En prueba · Podar las calles inútiles','Em teste · Podar as ruas inúteis'],
   linksJoinRoads:['À tester · Liaisons vers la route','Testing · Links join the road','测试 · 连接到道路','En prueba · Enlaces hacia la carretera','Em teste · Ligações à estrada'],
   hideUnusedQuarters:['À tester · Effacer les quartiers annulés','Testing · Hide cancelled quarters','测试 · 隐藏取消的街区','En prueba · Ocultar barrios cancelados','Em teste · Ocultar bairros cancelados'],
   deepBlockLanes:['À tester · Ruelles dans les îlots profonds','Testing · Back lanes in deep blocks','测试 · 深街区后巷','En prueba · Callejones en manzanas profundas','Em teste · Ruelas em quarteirões profundos'],

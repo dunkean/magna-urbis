@@ -107,7 +107,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
   // Absent is off; keep the payload of old strict engines unchanged.
   const input: Partial<LayoutConfig> = { ...config };
   if (input.gateVillage === 0 && !input.gateVillages) delete input.gateVillage;
-  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity', 'naturalCampApproaches', 'streetFrontage', 'alignEnclosedGrid', 'hideUnusedQuarters', 'deepBlockLanes', 'villageBridgeBudget', 'linksJoinRoads'] as const)
+  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity', 'naturalCampApproaches', 'streetFrontage', 'alignEnclosedGrid', 'hideUnusedQuarters', 'deepBlockLanes', 'villageBridgeBudget', 'linksJoinRoads', 'roadNetworkPrune'] as const)
     if (input[key] === false || input[key] === undefined) delete input[key];
   for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness', 'lagoonCanals', 'campRingWobble'] as const)
     if (input[key] == null) delete input[key];

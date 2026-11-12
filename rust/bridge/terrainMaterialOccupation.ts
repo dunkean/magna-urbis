@@ -9,15 +9,35 @@ const LAND_DETAIL_ABSENT = `vec4 landDetailSample(vec2 uv,float lod){return vec4
 /** For GL contexts limited to 16 texture units (ANGLE on D3D11): every unit is already taken. */
 export const withoutLandDetail = (shader: string): string => shader.replace(LAND_DETAIL_SAMPLER, LAND_DETAIL_ABSENT);
 
-export const GROUND_OCCUPATION_GLSL = `
+export const LAND_DETAIL_GLSL = `
 uniform int uHasLandDetail;uniform vec3 uLandDetailRect;uniform float uLandDetailN;
 ${LAND_DETAIL_SAMPLER}
+vec4 orchardDetail(vec2 world){
+  if(uHasLandDetail==0)return vec4(0.,1.,.5,1.);
+  vec2 uv=(world-uLandDetailRect.xy)/uLandDetailRect.z;
+  // Exact texel centres keep categorical parcel directions stable across a crown.
+  uv=(clamp(floor(uv*uLandDetailN),vec2(0.),vec2(uLandDetailN-1.))+.5)/uLandDetailN;
+  return landDetailSample(uv,0.);
+}
+vec2 orchardRows(vec2 world){vec4 d=orchardDetail(world);vec2 c=d.gb*2.-1.;float a=.5*atan(c.y,c.x);return vec2(cos(a),sin(a));}
+`;
+
+export const GROUND_OCCUPATION_GLSL = `
 // Crop ramp of the raster's red channel: neighbours are plausible mixes, so filtered strips stay credible.
 vec3 landCropTone(float t,float green){
   vec3 plough=vec3(.36,.29,.21),stubble=vec3(.55,.49,.36),wheat=vec3(.58,.51,.32),barley=vec3(.53,.51,.32),oats=vec3(.40,.45,.25),beans=vec3(.27,.36,.20);
   vec3 c=t<.18?mix(plough,stubble,t/.18):t<.36?mix(stubble,wheat,(t-.18)/.18):t<.52?mix(wheat,barley,(t-.36)/.16):t<.72?mix(barley,oats,(t-.52)/.2):mix(oats,beans,(t-.72)/.28);
   // Winter: autumn-sown cereals stay thin and green over the soil, the rest lies bare.
-  vec3 winter=mix(vec3(.34,.28,.21),vec3(.31,.35,.22),groundSmooth(.3,.8,t));
+  vec3 winter=mix(vec3(.31,.25,.19),vec3(.25,.35,.19),groundSmooth(.3,.8,t));
+  return mix(winter,c,green);
+}
+// The same ramp on dry farmland, as satellite images of it show: turned or fallow strips take the local soil (darker
+// when ploughed), stubble and ripe cereals are paler than the dry grass around them, irrigated crops stay green.
+// The wet season greens the sown cereals. Holdings keep their mosaic where one straw wash over every crop would hide them.
+vec3 landDryCropTone(float t,float green,vec3 bare){
+  vec3 turned=mix(bare,vec3(.40,.31,.22),.55),fallow=mix(bare,vec3(.58,.50,.37),.45),stubble=vec3(.66,.59,.42),irrigated=mix(vec3(.33,.38,.20),vec3(.25,.37,.17),green);
+  vec3 c=t<.18?mix(turned,fallow,t/.18):t<.6?mix(fallow,stubble,groundSmooth(.18,.4,t)):mix(stubble,irrigated,groundSmooth(.6,.75,t));
+  vec3 winter=mix(turned,vec3(.31,.37,.20),groundSmooth(.3,.8,t));
   return mix(winter,c,green);
 }
 // A holding: mosaic of crops, ridge and furrow, row grain, grass balks. Every band fades before its period reaches two pixels.
@@ -33,7 +53,8 @@ vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out ve
   uint salt=uMaterialSeed+977u;
   float patchy=surfaceNoise(vec3(world/70.,0.),salt);
   float soil=surfaceNoise(vec3(world/23.,0.),salt+1u);
-  vec3 c=landCropTone(clamp(d.r+patchy*.012,0.,1.),green);
+  float crop=clamp(d.r+patchy*.012,0.,1.);
+  vec3 c=mix(landCropTone(crop,green),landDryCropTone(crop,green,bare),dry);
   c*=1.+.035*patchy+.03*soil;
   // Ploughland ridges: broad strips of medieval ploughing, a few metres wide, slightly wandering.
   float wander=surfaceNoise(vec3(v/70.,u/240.,0.),salt+2u)*3.;
@@ -63,7 +84,11 @@ vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out ve
     c=mix(c,grass,balk*.7);
     rough=mix(.94,.86,balk);
   }
-  c=mix(c,mix(bare,vec3(.57,.49,.31),.55),.9*dry);
+  // Holding limits (hedge, ditch, headland): one dark line a pixel or two wide from afar, so the patchwork of holdings
+  // reads at every zoom. Close up the grass balks above draw them instead; the line fades in as the balks fade out.
+  float limit=1.-groundSmooth(0.,max(footprint*.8,1.2),landDetailSample(uv,0.).a*6.);
+  // Dry farmland is not washed toward the dry grass: its own crop ramp above keeps the holdings apart from the meadows.
+  c*=1.-.25*limit*groundSmooth(.7,2.6,footprint)*(1.-groundSmooth(14.,40.,footprint));
   return c;
 }
 // Grassland keeps the ground's hue and breathes with soil and exposure instead of filling a polygon.
@@ -100,31 +125,10 @@ vec3 landMarsh(vec2 world,float footprint,vec3 bare,out float rough,out float po
   rough=mix(.78,.16,pool);
   return mix(mix(bare,rush,.6),water,pool*.55);
 }
-// Rows of crowned trees on their alley grass, along the plot's own direction.
+// Ground contains the pale alleys only; all trees use the forest crown/instance path.
 vec3 landOrchard(vec2 world,float footprint,float green,vec3 bare,out float rough){
   rough=.87;
-  vec2 uv=(world-uLandDetailRect.xy)/uLandDetailRect.z;
-  vec4 d=landDetailSample(uv,max(log2(max(footprint,.001)/(uLandDetailRect.z/uLandDetailN)),0.));
-  vec3 alley=mix(vec3(.36,.37,.24),vec3(.33,.41,.23),green);
-  vec3 crown=mix(vec3(.31,.27,.19),vec3(.22,.31,.16),green);
-  vec3 mean=mix(alley,crown,.32);
-  float keep=1.-groundSmooth(1.2,3.,footprint);
-  if(keep<=0.||d.a<=0.)return mix(bare,mean,.7);
-  vec2 c2=d.gb*2.-1.;float a=.5*atan(c2.y,c2.x);
-  vec2 along=vec2(cos(a),sin(a)),across=vec2(-along.y,along.x);
-  vec2 q=vec2(dot(world,along),dot(world,across))/8.;
-  vec2 f=fract(q)-.5;
-  uint h=groundHash(ivec3(ivec2(floor(q)),877),uMaterialSeed);
-  vec2 jitter=(vec2(float(h&255u),float((h>>8u)&255u))/255.-.5)*.22;
-  float radius=.26+.08*float((h>>16u)&255u)/255.;
-  vec2 light=uGroundCover.xz;light=dot(light,light)>.0001?normalize(light):vec2(1.,0.);
-  vec2 sun=vec2(dot(light,along),dot(light,across));
-  float r=length(f-jitter);
-  float tree=1.-groundSmooth(radius*.8,radius*1.08,r);
-  float shadow=(1.-groundSmooth(radius*.7,radius*1.2,length(f-jitter+sun*.2)))*(1.-tree);
-  float lit=clamp(.5-dot(f-jitter,sun)/radius*.75,0.,1.);
-  vec3 c=mix(alley*(1.-.42*shadow),crown*(.72+.62*lit),tree);
-  return mix(bare,mix(mean,c,keep),.85);
+  return mix(bare,mix(vec3(.45,.43,.27),vec3(.42,.50,.27),green),.85);
 }
 // Town ground shares the fields' seasonal earth and lighting. Worn paths separate pale yard patches;
 // the natural floor contributes lightness only, so wetland/tropical greens cannot tint the packed earth.
@@ -160,11 +164,17 @@ vec4 occupationMaterial(int cls,vec2 world,float footprint,vec3 bare,vec3 micro,
   else if(cls==6)target=landHeath(world,footprint,green,bare);
   else if(cls==7)target=landTown(world,footprint,green,bare);
   else {target=mix(bare,vec3(.45,.40,.31),.55);rough=.91;}
-  if(cls<=5)target=mix(target,mix(bare,vec3(.55,.47,.30),.55),.9*dry);
+  // Dry climates bleach the grass and the plots toward straw; fields take their dry crop ramp instead (landField).
+  if(cls==1)target=mix(target,landDryCropTone(.36,green,bare),dry);
+  else if(cls<=5)target=mix(target,mix(bare,vec3(.55,.47,.30),.55),.9*dry);
   // Keep the existing microdetail, slope normal, snow and sun response.
   return vec4(clamp(target*micro,0.,1.),rough);
 }
 uniform int uPaperMap;
+// Class shares of this fragment, written by applyGroundOccupation from its bilinear class weights (commons through the
+// same wandered lookup as the satellite heath): a nearest class gate here drew the commons and the tended/wild shade
+// limit as whole occupation texels, a staircase the satellite render does not have.
+float paperCommonsShare=0.,paperTendedShare=0.;
 // The ink and wash map: the physical materials of the satellite render, before light, repainted on paper tones.
 void applyPaperMap(inout GroundMaterial m,vec2 world,float footprint){
   if(uPaperMap==0)return;
@@ -180,11 +190,9 @@ void applyPaperMap(inout GroundMaterial m,vec2 world,float footprint){
   vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;
   float share=uHasOccupation==1?groundSmooth(.40,.74,textureLod(uOccupation,uv,5.).g):0.;
   float near=uHasOccupation==1?groundSmooth(.40,.74,textureLod(uOccupation,uv,3.5).g):0.;
-  int cls=int(groundOccupation(world).z);
-  bool tended=cls==1||cls==4||cls==5||cls==7||cls==8||cls==9;
-  float shade=mix(share,near,.5)*(tended?.15:1.);
+  float shade=mix(share,near,.5)*(1.-.85*paperTendedShare);
   // Heath belongs with the woods on the slopes: a soft middle tone, not a hole in them.
-  if(cls==6)open=mix(open,vec3(.47,.45,.27),.6);
+  open=mix(open,vec3(.47,.45,.27),.6*paperCommonsShare);
   open=mix(open,vec3(.33,.34,.16),shade*.9);
   forest=mix(mix(forest,vec3(.40,.39,.20),.75),forest,groundSmooth(.15,.9,share));
   vec3 p=mix(open,forest,wood);
@@ -199,6 +207,7 @@ vec3 paperWater(float kind,float shore){
   return mix(sea,edge,.8*shore);
 }
 void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
+  paperCommonsShare=0.;paperTendedShare=0.;
   if(uRenderV2!=1||uHasOccupation==0)return;
   vec3 o=groundOccupation(world);
   float cell=uOccupationRect.z/uOccupationN;
@@ -217,7 +226,7 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
     int cls=int(texelFetch(uOccupation,clamp(base+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
     float weight=(x==0?1.-f.x:f.x)*(y==0?1.-f.y:f.y);
     // Class 11 clearings are wild ground: the lookup below gives them grass.
-    if(cls==8||cls<1||cls>11)hardShare+=weight;
+    if(cls==8||cls<1||cls>11){hardShare+=weight;if(cls==8)paperTendedShare+=weight;}
     else if(cls==1)wField+=weight;
     else if(cls==4)wOrchard+=weight;
     else if(cls==5)wGarden+=weight;
@@ -225,6 +234,7 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
     else if(cls==9)wLane+=weight;
   }
   float tendedShare=wField+wOrchard+wGarden+wTown+wLane;
+  paperTendedShare+=tendedShare;
   vec4 tended=vec4(0.);float fieldShare=0.;vec2 fieldSlope=vec2(0.);float pool;
   if(wField>0.){
     if(uHasLandDetail==1){float rough;vec3 c=landField(world,footprint,green,bare,dry,fieldSlope,rough);tended+=wField*vec4(clamp(c*micro,0.,1.),rough);fieldShare=wField;}
@@ -250,6 +260,7 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
     }
     // The lookup wandered onto a plot or a road: this ground is still grass.
     wMeadow+=max(0.,1.-wMeadow-wPasture-wHeath-wMarsh);
+    paperCommonsShare=wHeath*wildShare;
     if(wMeadow>0.)wild+=wMeadow*occupationMaterial(2,world,footprint,bare,micro,dry,green,pool);
     if(wPasture>0.)wild+=wPasture*occupationMaterial(3,world,footprint,bare,micro,dry,green,pool);
     if(wHeath>0.)wild+=wHeath*occupationMaterial(6,world,footprint,bare,micro,0.,green,pool);
@@ -262,12 +273,30 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   // Wild ground fades into its surroundings; ploughed land keeps a firm edge.
   float edgeWidth=fieldShare>.5*covered?max(footprint,cell*.6):cell*3.;
   float width=min(edgeWidth*(1.+1.5*dry),cell*6.);
-  float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-.3*dry)*(1.-v2GroundSnow)*covered;
-  if(a<=0.)return;
+  // Dry wild ground lets the bare earth through; tended land (fields, plots, town) keeps its full cover.
+  // Partial snow follows the land: each holding takes its own share of the local (relief-driven) cover, from a hash
+  // of its crop value; holding limits (hedges, ditches, headlands) hold less and stay darker; thin snow lets the
+  // strips show through. Full cover and bare ground are unchanged.
+  float snow=v2GroundSnow;
+  if(fieldShare>0.&&uHasLandDetail==1&&snow>0.&&snow<1.){
+    vec2 luv=(world-uLandDetailRect.xy)/uLandDetailRect.z;
+    vec4 ld=landDetailSample((clamp(floor(luv*uLandDetailN),vec2(0.),vec2(uLandDetailN-1.))+.5)/uLandDetailN,0.);
+    if(ld.a>0.){
+      float h=fract(sin(ld.r*91.7+3.1)*43758.5);
+      float limit=1.-groundSmooth(0.,max(footprint*.8,1.5),landDetailSample(luv,0.).a*6.);
+      float own=clamp(snow+(h-.5)*2.8*snow*(1.-snow),0.,1.)*(1.-.55*limit);
+      snow=mix(snow,own,fieldShare/covered);
+    }
+  }
+  float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-.3*dry*wildShare/covered)*(1.-snow)*covered;
+  // A holding whiter than the local mean takes its extra snow over its own cover.
+  float extra=max(snow-v2GroundSnow,0.)*covered;
+  if(a<=0.&&extra<=0.)return;
   renderGuideOpen=mix(renderGuideOpen,target.rgb,a);
   m.albedo=mix(m.albedo,groundToLinear(target.rgb)*v2FloorModulation,a);
   m.roughness=mix(m.roughness,target.a,a);
   m.normal=normalize(mix(m.normal,v2MacroNormal,a*max(marsh,poolShare)*.6));
   if(fieldShare>0.)m.normal=normalize(m.normal+vec3(-fieldSlope.x,0.,-fieldSlope.y)*a*fieldShare);
+  if(extra>0.){m.albedo=mix(m.albedo,groundToLinear(vec3(.88,.91,.91))*v2FloorModulation,extra);renderGuideOpen=mix(renderGuideOpen,vec3(.88,.91,.91),extra);}
 }
 `;

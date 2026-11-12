@@ -8,6 +8,7 @@ import { urbanEffectiveValues } from '../src/v2/urbanControls';
 import { urbanSeed, rerollUrbanSeeds } from '../src/v2/urbanSeeds';
 import { rerollSeed, seedRoot, stepSeed } from '../../rust/bridge/generationSeed';
 import defaults from '../src/v2/cityCodeDefaults.json';
+import { CULTURES } from '../src/gen/options';
 import type { V2Settings } from '../src/v2/contracts';
 
 const terrain = (s: V2Settings) => effectiveTerrainSettings(s, adaptedExtent(s));
@@ -101,6 +102,17 @@ describe('V2 compact generation codes', () => {
     settings.runtime!.pythonServer = 'http://127.0.0.1:8793'; settings.urban = { backend: 'native' };
     expect(encodeCityCode(settings)).toBe(encodeCityCode(base()));
     expect(restored(settings).runtime).not.toHaveProperty('localServer');
+  });
+  it('has a code for every culture the V2 offers', () => {
+    expect(CULTURES.filter(c => !defaults.cultures.includes(c))).toEqual([]);
+    expect(defaults.cultures.length).toBeLessThanOrEqual(256);
+  });
+  it('carries a saved decor by its id, never its bytes', () => {
+    const settings = base(); settings.decor = { id: 'city-v7r-test', bytes: new Uint8Array(4096).fill(7) };
+    const code = encodeCityCode(settings), decoded = decodeCityCode(code);
+    expect(code.length).toBeLessThan(80);
+    expect(decoded.decor).toBe('city-v7r-test');
+    expect(decoded.settings).toEqual({ ...settings, decor: undefined });
   });
   it('accepts copied links and line-wrapped codes', () => {
     const settings = base(), code = encodeCityCode(settings), link = cityCodeUrl(code, 'https://example.test/v2.html?lang=fr#old');

@@ -2,7 +2,8 @@
 export interface View { cx: number; cy: number; /** CSS pixels per meter */ scale: number }
 export interface Rect4 { minX: number; minY: number; maxX: number; maxY: number }
 
-export const MAX_SCALE = 8;
+/** CSS pixels per metre: enough to frame encounter areas on large displays. */
+export const MAX_SCALE = 128;
 
 export function viewRect(v: View, w: number, h: number, pad = 0): Rect4 {
   const hw = w / (2 * v.scale) + pad, hh = h / (2 * v.scale) + pad;

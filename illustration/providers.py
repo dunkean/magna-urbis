@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 import uuid
 from .images import png
-from .context import dimensions
+from .resolution import openai_dimensions
 
 DEFAULT_MODELS = {"openai": "gpt-image-2.5-sunburst", "gemini": "gemini-3.1-flash-image"}
 
@@ -33,20 +33,22 @@ def generate(provider, key, model, prompt, source, guides, settings, *, transpor
     model = model or DEFAULT_MODELS[provider]
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", model):
         raise ValueError("Identifiant de modèle invalide.")
-    references = [("source", source)] + [(name, image) for name, image in guides.items() if name in ("edges", "depth")]
+    references = [("source", source)] + [(name, image) for name, image in guides.items() if name in ("edges", "depth", "layout")]
     prompt += (" Reference image 1 is the source image to reproduce in the requested new style. "
                "Use its visible details, composition and layout as the primary reference, respecting the fidelity instructions above. "
                "Additional images are structural guides, not output styles.")
     if provider == "openai":
         boundary = "magna" + uuid.uuid4().hex
         chunks = []
-        width, height = dimensions(*source.size, max(786432, int(settings.get("pixels", 1048576))))
+        width, height = openai_dimensions(*source.size, int(settings.get("pixels", 1048576)))
         if model.startswith("gpt-image-1"):
             width, height = (1536, 1024) if source.width / source.height > 1.2 else (1024, 1536) if source.height / source.width > 1.2 else (1024, 1024)
         for name, value in {"model": model, "prompt": prompt, "size": f"{width}x{height}", "quality": settings.get("cloudQuality", "high"), "n": "1"}.items():
             chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
         for name, image in references:
             chunks += [f'--{boundary}\r\nContent-Disposition: form-data; name="image[]"; filename="{name}.png"\r\nContent-Type: image/png\r\n\r\n'.encode(), png(image), b"\r\n"]
+        if 'mask' in guides:
+            chunks += [f'--{boundary}\r\nContent-Disposition: form-data; name="mask"; filename="mask.png"\r\nContent-Type: image/png\r\n\r\n'.encode(), png(guides['mask']), b'\r\n']
         chunks.append(f"--{boundary}--\r\n".encode())
         result = request_json("https://api.openai.com/v1/images/edits", b"".join(chunks),
                               {"Authorization": f"Bearer {key}", "Content-Type": f"multipart/form-data; boundary={boundary}"}, transport=transport)

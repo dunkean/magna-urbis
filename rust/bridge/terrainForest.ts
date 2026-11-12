@@ -8,6 +8,7 @@
  * shader keeps Render's colour as the unresolved reference. Display only:
  * never feeds terrain. */
 
+import { LAND_DETAIL_GLSL } from './terrainMaterialOccupation';
 import { RENDER_V2_ZONE_GLSL } from './terrainRenderV2Zones';
 import { forestBeachGrid } from './terrainForestBeach';
 import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterior, forestRoutingRiverSegments, forestSegmentsKey, type ForestBank } from './terrainForestRiparian';
@@ -25,7 +26,7 @@ export const V2_FOREST_PROFILE_VERSION = 'optical-thinning4';
  * 9 agricultural lane clearance, 10 marsh; A 255 inside applied polygons. */
 export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Holdings for the satellite ground, on their own finer grid. */ detail?: LandDetail }
 /** Holdings raster (web/src/ui/landDetail.ts): R crop, G and B cos 2a and sin 2a of the row direction, A edge distance over 8 m. */
-export interface LandDetail { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string }
+export interface LandDetail { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Quantized parcel frames, matching GB. */ orchards?: { poly: { x: number; y: number }[]; holes?: { x: number; y: number }[][]; along: [number, number] }[] }
 /** RGBA8 world raster on the height layer's square: R canopy cover 0..1,
  * G potential canopy height 0..50 m (also where cover is 0), B needleleaf
  * fraction, A stand tone (age/disturbance, .5 neutral). Texel centres at
@@ -420,7 +421,7 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
   let beach: ForestBeachGrid | undefined;
   if (input.clearingProfile === 'progressive') {
     const beachKey = `${terrainKey}:${input.seed >>> 0}`;
-    if (beachCache?.key !== beachKey) beachCache = { key: beachKey, beach: forestBeachGrid(input.height, input.seed >>> 0, Math.min(2048, Math.max(256, 2 ** Math.ceil(Math.log2(input.height.width / 8))))) };
+    if (beachCache?.key !== beachKey) beachCache = { key: beachKey, beach: forestBeachGrid(input.height, input.seed >>> 0, Math.min(2048, Math.max(256, 2 ** Math.ceil(Math.log2(input.height.width / 8)))), input.climate[0]) };
     beach = beachCache.beach;
   }
   return { x: layer.x, y: layer.y, width: layer.width, n: N, rgba, bank: bankRgba, bankDensity: density, clearingProfile: input.clearingProfile, beach, key };
@@ -487,6 +488,7 @@ float renderGuideShore=1e9,renderGuideOpenness=0.;
 /** Needs GROUND_FIELD_GLSL (GroundMaterial, groundHash, groundSmooth), uMaterialSeed/uMaterialClimate
  * and an earthMaterial call for the same fragment before applyForest (Render guide). */
 export const FOREST_GLSL = `
+${LAND_DETAIL_GLSL}
 // Class IDs are categorical: never decode the bilinearly filtered B channel.
 bool groundOccupationCached=false;vec2 groundOccupationPoint=vec2(0.);vec3 groundOccupationSample=vec3(0.);
 vec3 groundOccupation(vec2 world){
@@ -557,7 +559,7 @@ ${FOREST_BANK_GLSL}
 struct ForestStand{
   vec2 p;float cover;float height;float needle;float tone;
   float kappa;float trop;float dry;
-  float open;float forced;float allow;float hedge;
+  float open;float forced;float allow;float hedge;bool orchard;vec2 rows;
 };
 float forestDensity(float c,float kappa){return clamp(c+kappa*(.985-c),c,.985);}
 // Broadleaf forest type of the regional climate: x Mediterranean, y tropical, z savanna; temperate is
@@ -604,18 +606,20 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   // probabilities/radii can otherwise switch half-way through a drawing,
   // leaving a sliced crown or only a thin strip of its painted foot.
   vec4 centre=forestField(k.c,0.);float cover=centre.r,height=centre.g*50.,needle=centre.b;
-  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false;
+  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false,tilledPlot=false;
   if(uHasOccupation==1){
     vec2 ouv=(k.c-uOccupationRect.xy)/uOccupationRect.z;
     if(all(greaterThanEqual(ouv,vec2(0.)))&&all(lessThanEqual(ouv,vec2(1.)))){
       vec2 dist=(textureLod(uOccupation,ouv,0.).rg*255.-128.)/16.*uOccupationRect.z/uOccupationN;
       open=dist.x;forced=dist.y;
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
-      allow=(cls==4?.45:cls==5?.22:cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(height);
+      // Kitchen and market-garden plots (class 5) root no crown: only the woods around them overhang the beds.
+      tilledPlot=cls==5;
+      allow=(cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(height);
       hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,height)*(1.-st.dry);
       if(cls==7||cls==8||cls==9||cls==11)openGallery=0.;
       // Class 11 clearings (road corridors, farmsteads) root no crown; crowns rooted outside may overhang them.
-      occupied=cls==8||cls==9||cls==11;
+      occupied=cls==4||cls==8||cls==9||cls==11;
     }
   }
   if(forced>0.)cover=forestWoods(cover,height);
@@ -635,7 +639,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     vec2 g=vec2(forestOpenAt(k.c+vec2(e,0.))-forestOpenAt(k.c-vec2(e,0.)),forestOpenAt(k.c+vec2(0.,e))-forestOpenAt(k.c-vec2(0.,e)));
     vec2 edge=(k.c+g/max(length(g),1e-4)*(.5*e-open)-uOccupationRect.xy)/uOccupationRect.z;
     int side=int(texelFetch(uOccupation,clamp(ivec2(edge*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
-    if((side==8||side==9||side==11)&&open>-(.7+.3*forestU8(h2,16u))*radius)occupied=true;
+    if((side==4||side==8||side==9||side==11)&&open>-(.7+.3*forestU8(h2,16u))*radius)occupied=true;
   }
   float centreLevel=clamp(2.*log2(radius/forestRho(forestTau(density))/2.),0.,5.999);
   float weight=max(0.,1.-abs(centreLevel-float(level)));
@@ -651,7 +655,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     // lone trees within a few crowns of the stand. Bank strips persist in
     // farmland at half density, not in built land.
     float stray=.18*(1.-groundSmooth(0.,4.*radius,open))*min(cover*3.,1.);
-    k.alive=forestU8(h2*0x27d4eb2du,24u)<max(allow+(open<5.?hedge:0.)+stray,openGallery*gallery)*(1.-v2ZoneBare);k.edge=1.;
+    k.alive=!tilledPlot&&forestU8(h2*0x27d4eb2du,24u)<max(allow+(open<5.?hedge:0.)+stray,openGallery*gallery)*(1.-v2ZoneBare);k.edge=1.;
   } else {
     // The zone bare belt (rock, treeline) takes the same share cut as the mean, so near crowns stop where it does.
     k.alive=forestU8(h,16u)<q&&threshold<share*(1.-v2ZoneBare);
@@ -679,6 +683,19 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   }
   return k;
 }
+// Fruit trees use the forest crown primitive on the parcel-aligned 8 m grid.
+vec2 orchardGrid(vec2 world,vec2 rows){return vec2(dot(world,rows),dot(world,vec2(-rows.y,rows.x)))/8.;}
+ForestCrown orchardCrown(ivec2 cell,ForestStand st){
+  ForestCrown k;uint h=groundHash(ivec3(cell,877),uMaterialSeed);k.id=groundHash(ivec3(cell,878),uMaterialSeed);
+  vec2 q=(vec2(cell)+.5+(vec2(forestU8(h,0u),forestU8(h,8u))-.5)*.12)*8.;
+  k.c=st.rows*q.x+vec2(-st.rows.y,st.rows.x)*q.y;
+  k.r=2.3+.4*forestU8(h,16u);k.h=6.+1.2*forestU8(k.id,16u);k.depth=k.r*.8;
+  k.needle=false;k.riparian=false;k.edge=0.;
+  vec4 detail=orchardDetail(k.c);vec2 c2=detail.gb*2.-1.;float a=.5*atan(c2.y,c2.x);vec2 rows=vec2(cos(a),sin(a));
+  k.alive=int(groundOccupation(k.c).z)==4&&dot(rows,st.rows)>.9999&&detail.a*6.>k.r*1.2
+    &&forestHeightGate(forestField(k.c,0.).g*50.)>.5&&forestWaterCoverage(k.c)<.05;
+  return k;
+}
 // Independent harmonics keep conifer branch tips uneven, without a regular six-sided rim.
 float forestOutline(ForestCrown k,vec2 n,float aa){
   uint h=k.id*0x9e3779b9u;vec2 a=vec2(forestU8(h,0u),forestU8(h,8u))*6.2831853;float amp=k.needle?.07:.13;
@@ -704,13 +721,13 @@ struct ForestHit{float cover;float top;float second;vec2 slope;float rel;vec2 lo
 vec2 forestBrush(ForestCrown k,ForestStand st,vec2 d,float aa,float s){
   float extent=min(1.22*k.r,1.12*s);vec2 uv=d/(2.*extent)+.5;
   if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return vec2(0.,.5);
-  int family=st.trop>.5?2:k.needle?0:1;
-  if(st.dry>.35&&uMaterialClimate.x>10.&&forestU8(k.id,16u)<.35)family=3;
+  int family=st.orchard?1:st.trop>.5?2:k.needle?0:1;
+  if(!st.orchard&&st.dry>.35&&uMaterialClimate.x>10.&&forestU8(k.id,16u)<.35)family=3;
   // Low physical canopies are shrubs, chosen from the candidate's own height
   // (fixed centre and hash), never from its screen size: shrubs up to 3 m,
   // trees from 5.5 m. Dry scrub in arid climates, greener bank shrubs.
   uint hs=k.id*0x85ebca6bu;
-  if(forestU8(hs,8u)<forestShrubShare(k.h))family=forestU8(hs,16u)<groundSmooth(.2,.7,st.dry)*(k.riparian?.3:1.)?5:4;
+  if(!st.orchard&&forestU8(hs,8u)<forestShrubShare(k.h))family=forestU8(hs,16u)<groundSmooth(.2,.7,st.dry)*(k.riparian?.3:1.)?5:4;
   // Mirror only: random rotations would turn trunks upside down.
   if((k.id&1u)==1u)uv.x=1.-uv.x;
   float layer=float(family*8+int((k.id>>4u)&7u));
@@ -720,10 +737,10 @@ vec2 forestBrush(ForestCrown k,ForestStand st,vec2 d,float aa,float s){
 // A crown out of leaf is its limbs: narrower than the summer dome.
 float forestLeafSpan(bool needle){return uRenderV2>0&&!needle?mix(.84,1.,v2SeasonLeaf()):1.;}
 void forestCrowns(inout ForestHit hit,int level,float s,ForestStand st,float aa){
-  ivec2 cell=ivec2(floor(st.p/s));ForestPatch lattice=forestPatchAround(cell,s);
-  float umbrella=forestKind(st.trop,st.dry).z;
+  ivec2 cell=ivec2(floor(level<0?orchardGrid(st.p,st.rows):st.p/s));ForestPatch lattice=forestPatchAround(cell,s);
+  float umbrella=st.orchard?0.:forestKind(st.trop,st.dry).z;
   for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
-    ForestCrown k=forestCrown(cell+ivec2(i,j),level,s,st,lattice);if(!k.alive)continue;
+    ForestCrown k;if(level<0)k=orchardCrown(cell+ivec2(i,j),st);else k=forestCrown(cell+ivec2(i,j),level,s,st,lattice);if(!k.alive)continue;
     vec2 d=st.p-k.c;
     if(k.needle&&uForestBrushes==0){vec2 lean=vec2(forestU8(k.id,16u),forestU8(k.id,24u))-.5;float reach=clamp(length(d)/max(k.r,.001),0.,1.);d-=lean*k.r*.24*(1.-reach);}
     float dist=length(d);
@@ -758,9 +775,9 @@ float forestTaper(vec2 p,vec2 ab,float ra,float rb){
 float forestShadow(ForestHit hit,int level,float s,ForestStand st,float aa,float zp,vec2 sun,float cot){
   // Spires centre the search on the broad foot of their wedge, not its thin apex.
   vec2 from=st.p+sun*max(st.height*mix(.75,.45,st.needle)-zp,0.)*cot;
-  ivec2 cell=ivec2(floor(from/s));ForestPatch lattice=forestPatchAround(cell,s);float shade=0.;
+  ivec2 cell=ivec2(floor(level<0?orchardGrid(from,st.rows):from/s));ForestPatch lattice=forestPatchAround(cell,s);float shade=0.;
   for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
-    ForestCrown k=forestCrown(cell+ivec2(i,j),level,s,st,lattice);
+    ForestCrown k;if(level<0)k=orchardCrown(cell+ivec2(i,j),st);else k=forestCrown(cell+ivec2(i,j),level,s,st,lattice);
     if(!k.alive||(hit.level==level&&k.id==hit.id&&hit.cover>0.))continue;
     if(k.needle){
       // A spire is a cone down to its lower boughs: its shadow tapers from the tree's foot
@@ -827,6 +844,7 @@ vec3 forestCanopy(ForestStand st,float needle,vec2 jitter,float special){
 // Crown colour as a residual of Render's own canopy colour (guide): the
 // stand's mean palette maps onto it, crown type/tone/jitter modulate it.
 vec3 forestCrownColor(ForestStand st,vec3 guide,float needle,vec2 jitter,float special){
+  if(st.orchard)return mix(vec3(.25,.34,.15),vec3(.22,.37,.16),forestSeason().z)*(.86+.28*(jitter.x*.5+.5));
   return guide*forestGrade(st,needle)*forestCanopy(st,needle,jitter,special)/max(forestPalette(st,st.needle),vec3(.02));
 }
 vec3 forestFloor(vec3 ground,ForestStand st,float cold){
@@ -875,7 +893,7 @@ ForestPrep forestPrep(vec2 world,float footprint){
     vec2 q=world+8.*vec2(cos(float(i)*.7853982),sin(float(i)*.7853982));vec4 g=forestField(q,p.standLod);
     if(g.r>f.r){f=g;standAt=q;}
   }
-  ForestStand st;st.p=world;st.cover=f.r;st.height=f.g*50.;st.needle=f.b;st.tone=f.a;
+  ForestStand st;st.orchard=false;st.rows=vec2(1.,0.);st.p=world;st.cover=f.r;st.height=f.g*50.;st.needle=f.b;st.tone=f.a;
   float T=uMaterialClimate.x,P=uMaterialClimate.y;p.humid=P/max(20.*T+280.,120.);
   st.trop=groundSmooth(13.,19.,T-6.);st.dry=1.-groundSmooth(.8,2.,p.humid);
   p.cold=1.-groundSmooth(8.,16.,T+6.);
@@ -890,24 +908,29 @@ ForestPrep forestPrep(vec2 world,float footprint){
       float texel=uOccupationRect.z/uOccupationN;
       vec3 o=groundOccupation(world);
       st.open=o.x;st.forced=o.y;
-      int cls=int(o.z);
+      int cls=int(o.z);st.orchard=cls==4;
       // Construction, lanes and clearings (classes 8, 9, 11) root no crown (forestCrown), but crowns rooted outside
       // may overhang them. No per-fragment class gate: a nearest-texel cut sliced crowns into staircases.
       // Trees retained in general open land and built reserves (class 7).
-      st.allow=(cls==4?.45:cls==5?.22:cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(st.height);
+      st.allow=(cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(st.height);
       st.hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,st.height)*(1.-st.dry);
       float w=max(p.fp,.5*texel);p.openW=w;p.openA=clamp(st.open/w+.5,0.,1.);p.forcedA=clamp(st.forced/w+.5,0.,1.)*(1.-p.openA);
       p.hedgeA=p.openA-clamp((st.open-5.)/w+.5,0.,1.);
     }
   }
+  if(st.orchard){
+    // Natural and gallery cover are zero inside planted parcels at every LOD.
+    st.cover=0.;st.needle=0.;st.kappa=0.;st.height=7.;st.allow=0.;st.hedge=0.;st.rows=orchardRows(world);
+    p.openA=1.;p.forcedA=0.;p.hedgeA=0.;
+  }
   p.st=st;
   // Stand statistics: share s = c/d of the ground in stands, crown cover d inside them.
-  p.radius=forestRadius(st.height,st.needle,st.dry);
+  p.radius=st.orchard?2.5:forestRadius(st.height,st.needle,st.dry);
   // The illustrated sprites need more pixels than an analytic crown.
   p.crownVis=uForestBrushes==1?groundSmooth(2.,5.,p.radius/p.fp):groundSmooth(.9,2.,p.radius/p.fp);
   // Sparse arid cover resolves to a fine mottled trace, not broad flat paint.
   p.fringe=(1.-groundSmooth(.38,.85,p.humid))*(1.-p.crownVis);
-  vec2 bank=forestBankAt(standAt);p.galleryNear=bank.x>-16.?forestBankDensity(bank.y):0.;
+  vec2 bank=forestBankAt(standAt);p.galleryNear=!st.orchard&&bank.x>-16.?forestBankDensity(bank.y):0.;
   return p;
 }
 float forestPrepCover(ForestPrep p){
@@ -926,7 +949,8 @@ ForestCanopy forestCanopyNear(ForestPrep p,vec3 l){
   float dl=max(d,p.galleryNear),rho=forestRho(forestTau(dl));
   float level=clamp(2.*log2(p.radius/rho/2.),0.,5.999),l0=floor(level),w=level-l0;
   float s0=2.*exp2(l0*.5),s1=s0*1.41421356;
-  float d0=1.-pow(1.-dl,1.-w),d1=1.-pow(1.-dl,w);
+  if(st.orchard){l0=-1.;s0=8.;s1=8.;w=0.;}
+  float d0=st.orchard?1.:1.-pow(1.-dl,1.-w),d1=st.orchard?0.:1.-pow(1.-dl,w);
   float aa=p.fp*.75;
   ForestHit hit;hit.cover=0.;hit.top=-1e9;hit.second=-1e9;hit.slope=vec2(0.);hit.rel=1.;hit.local=vec2(0.);hit.r=1.;hit.needle=false;hit.riparian=false;hit.edge=0.;hit.id=0u;hit.level=-1;hit.near=9.;hit.ink=.5;
   // One call site per crown pass (a loop, not two calls): ANGLE/D3D11 (FXC) compiles each call's inlined copy.
@@ -967,10 +991,46 @@ float forestSnowGrain(vec2 w,float scale,float fp){
   vec2 g=w/scale;ivec2 c=ivec2(floor(g));
   return forestPerlin(g-vec2(c),forestGradient(c),forestGradient(c+ivec2(1,0)),forestGradient(c+ivec2(0,1)),forestGradient(c+ivec2(1,1))).x*(1.-groundSmooth(scale*.12,scale*.3,fp));
 }
+// Snow lying on a resolved crown (Render v2): a cap on its top and sunward flank, where the dome faces the sky
+// and the light, broken per crown by its bough rhythm and its own tint: no lattice, band or shared orientation.
+// Conifers hold a real load on their boughs; bare broadleaf limbs only a frost. The amount is the local ground
+// snow of the same fragment (v2GroundSnow), so crowns are white exactly where the floor is.
+float forestCrownSnow(ForestCanopy hit,vec2 sun,float bough){
+  float side=-dot(hit.slope,sun)/max(length(hit.slope),1e-3);
+  float cap=groundSmooth(.2,.8,.75*(1.-hit.rel)+.35*max(side,0.)+.3*(bough-.5)+.3*(fract(hit.tint*9.71)-.5));
+  float hold=hit.needle?.14+.46*cap:.16+.22*cap;
+  return v2GroundSnow*hold*(.7+.3*fract(hit.tint*4.37));
+}
+// Same forest hit, outline, dome normal, seasonal limbs and shadow for the planted grid.
+void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light){
+  ForestStand st=p.st;vec3 l=normalize(light),nGround=m.normal;
+  float leaf=uRenderV2>0?v2SeasonLeaf():1.,snow=uRenderV2>0?v2GroundSnow:0.;
+  vec3 crown=forestSnowed(mix(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.),vec3(.31,.27,.23),1.-leaf),snow*.3);
+  float cover=.31*mix(.35,1.,leaf)*forestHeightGate(forestField(st.p,0.).g*50.);
+  vec3 normal=nGround;float shade=cover*.45;
+  if(p.crownVis>0.&&uQuality==0){
+    ForestCanopy hit=forestCanopyAt(p,l);float tint=hit.tint;
+    float body=mix(forestBareCrown(hit.rel,hit.slope,tint,p.radius/max(p.fp,.01)),1.,leaf);
+    float resolved=hit.cover*body;
+    crown=forestCrownColor(st,forestGuide(),0.,vec2(tint*2.-1.,0.),0.);
+    vec3 kind=forestKind(st.trop,st.dry);float fall=forestSeason().x*(1.-kind.x-kind.y-kind.z);
+    crown=mix(crown,vec3(.47,.34,.12),fall*.65);
+    crown=forestSnowed(mix(crown,vec3(.31,.27,.23)*(.85+.3*tint),1.-leaf),snow*.3);
+    if(uForestTrees.w>0.)crown*=mix(1.,.6,1.-groundSmooth(uForestTrees.z,uForestTrees.w,distance(st.p,uForestTrees.xy)));
+    normal=normalize(vec3(-hit.slope.x,1.,-hit.slope.y));
+    cover=mix(cover,resolved,p.crownVis);shade=mix(shade,hit.shade*mix(.4,1.,leaf),p.crownVis);
+    forestResolvedCover=resolved*p.crownVis;
+  }
+  forestMapCover=cover;forestResolvedShade=shade;
+  m.albedo=mix(m.albedo*(1.-.28*shade*(1.-cover)),groundToLinear(crown),cover);
+  m.normal=normalize(mix(forestTilt(nGround,l,shade*.3),normal,cover));
+  m.occlusion*=1.-.18*cover;m.roughness=mix(m.roughness,.9,cover);
+}
 void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   forestResolvedCover=0.;forestResolvedShade=0.;forestMapCover=0.;
   ForestPrep p=forestPrep(world,footprint);
   if(!p.valid)return;
+  if(p.st.orchard){applyOrchard(m,p,light);return;}
   ForestStand st=p.st;float fp=p.fp,openA=p.openA,forcedA=p.forcedA,hedgeA=p.hedgeA,crownVis=p.crownVis,radius=p.radius,reveal=p.reveal;
   // Render reference. Its colour, macro woods included, stays authoritative
   // while the forest is unresolved; k carries the Render3D ground detail
@@ -988,7 +1048,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     if(uRenderV2>0)available*=1.-clamp(renderGuideBeach/.8,0.,1.);
     float leaf=uRenderV2>0?v2Foliage:1.;cover=clamp(cover*leaf*available,0.,1.);
     vec3 mean=forestCrownColor(st,forestGuide(),st.needle,vec2(0.),0.);
-    if(uRenderV2>0)mean=forestSnowed(mean,v2GroundSnow*mix(.62,.08,st.needle));
+    if(uRenderV2>0)mean=forestSnowed(mean,v2GroundSnow*mix(.62,.22,st.needle));
     vec3 floorColor=forestFloor(openGround,st,p.cold);
     float stand=forestClosure(st.cover)*(1.-openA)*available;
     m.albedo=mix(forestFloorAlbedo(mix(openGround,floorColor,stand)),groundToLinear(mean),cover);
@@ -1074,8 +1134,9 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   if(uRenderV2>0)groundShadow*=v2Foliage;
   vec3 litter=forestFloor(openGround,st,p.cold);
   // Render's canopy colour (its snow included) with the stand's tone residual.
-  // Conifers shed their snow (dark crowns over a white floor); bare limbs keep a heavier frost.
-  vec3 mean=forestSnowed(forestCrownColor(st,forestGuide(),st.needle,vec2(0.),0.),uRenderV2>0?v2GroundSnow*mix(.62,.08,st.needle):0.);
+  // Conifers keep a light load on their boughs (the mean of forestCrownSnow) and stay dark over the white floor;
+  // bare limbs keep a heavier frost.
+  vec3 mean=forestSnowed(forestCrownColor(st,forestGuide(),st.needle,vec2(0.),0.),uRenderV2>0?v2GroundSnow*mix(.62,.22,st.needle):0.);
   // Mean crown self-shading (normal tilt) and occlusion, matched to the crown band.
   float selfShade=mix(.24,.42,st.needle);
   vec3 albedo=mix(forestFloorAlbedo(mix(openGround,litter,stand)),groundToLinear(mean)*(1.+mix(.5,.9,st.needle)*grain)*(1.-.2*margin),canopy);
@@ -1145,8 +1206,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       }
       if(larch)crown=mix(crown,vec3(.70,.52,.17)*(.9+.2*tint),.85*forestSeason().x);
       crown=mix(crown,vec3(.31,.27,.23)*(.85+.3*tint),1.-leaf);
-      // Snow rests on the boughs of a spire, the gaps between them stay dark; a dusting on bare limbs.
-      crown=forestSnowed(crown,v2GroundSnow*(hit.needle?.06+.24*bough*bough*hit.rel:.3));
+      // Snow caps the top and lit flank of each crown, the gaps between boughs stay dark; a frost on bare limbs.
+      crown=forestSnowed(crown,forestCrownSnow(hit,sun,bough));
     }
     // Forest floor under and right around crowns; open ground beyond.
     float under=uForestBrushes==1?hit.cover:1.-groundSmooth(1.,1.8,hit.near);

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod site_options;
 #[path = "network_policy.rs"]
 mod policy;
-pub(super) use policy::wall_approaches;
+pub(super) use policy::{bank_dead_ends, junction_triangles, wall_approaches};
 pub(super) use site_options::{clean_options, narrow_options};
 
 type Key = (i64, i64);
@@ -3646,6 +3646,24 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
         .map(|b| (g::bbox(&b.shape), &b.shape)).collect();
     let mut served = vec![false; banks.length.len()];
     let mut frontage = vec![0.0; served.len()];
+    // `roadNetworkPrune`: metres of `s` lining a block (the samples below).
+    let lined = |s: &Street| -> f64 {
+        let reach = s.widths.iter().copied().fold(1.0, f64::max) * 0.5 + 12.0;
+        let mut metres = 0.0;
+        for w in s.path.windows(2) {
+            let length = distance(w[0], w[1]);
+            let n = (length / 10.0).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let p = lerp(w[0], w[1], (i as f64 + 0.5) / n as f64);
+                if blocks.iter().any(|&((x0, y0, x1, y1), b)| {
+                    p.x >= x0 - reach && p.x <= x1 + reach && p.y >= y0 - reach && p.y <= y1 + reach
+                        && (g::contains(b, p) || b.outer.iter().zip(b.outer.iter().cycle().skip(1)).take(b.outer.len())
+                            .any(|(&a, &b)| g::distance(p, a, b).0 <= reach))
+                }) { metres += length / n as f64; }
+            }
+        }
+        metres
+    };
     for s in &land {
         let Some(&c) = s.path.first().and_then(|p| banks.component.get(&key(*p))) else { continue; };
         let length: f64 = s.path.windows(2).map(|w| distance(w[0], w[1])).sum();
@@ -3667,9 +3685,24 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
         }
         served[c] |= frontage[c] >= 12.0;
     }
+    // `roadNetworkPrune`: built frontage of each bank network, whether or not
+    // an outbound road already serves it (a quota crossing must link two).
+    let prune = layout.config.as_ref().is_some_and(|c| c.road_network_prune);
+    let mut built = vec![false; served.len()];
+    if prune {
+        let mut metres = vec![0.0; served.len()];
+        for s in &land {
+            let Some(&c) = s.path.first().and_then(|p| banks.component.get(&key(*p))) else { continue; };
+            if built[c] || matches!(s.role.as_str(), "track" | "causeway" | "pier" | "mole" | "landing") { continue; }
+            metres[c] += lined(s);
+            built[c] |= metres[c] >= 12.0;
+        }
+    }
     // `villageBridgeBudget`: a place whose demand is one crossing counts the bank
     // networks the regional road joins on dry land as one bank.
-    let budget = layout.config.as_ref().is_some_and(|c| c.village_bridge_budget) && village_crossings(population);
+    // `roadNetworkPrune`: any place does (such networks are one bank: a meander
+    // the road already passes on land needs no road, bridge, road, bridge chain).
+    let budget = layout.config.as_ref().is_some_and(|c| c.village_bridge_budget) && village_crossings(population) || prune;
     let joined = if budget { regional_banks(&land, &banks, network, surface) } else { (0..served.len()).collect() };
     if supply && built_bank_crossings(streets, &land, &banks, &served, surface, max_grade, budget.then_some(joined.as_slice())) {
         select_bridges_inner(layout, population, surface, roads, false, max_grade, network);
@@ -3700,9 +3733,9 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
         select_bridges_inner(layout, population, surface, &[], false, max_grade, network);
         return;
     }
-    struct Candidate { parts: Vec<usize>, banks: BTreeSet<usize>, middle: Point, direction: (f64, f64), span: f64, rank: usize, width: f64, valid: bool }
+    struct Candidate { parts: Vec<usize>, banks: BTreeSet<usize>, built: BTreeSet<usize>, middle: Point, direction: (f64, f64), span: f64, rank: usize, width: f64, valid: bool }
     let mut candidates: Vec<_> = (0..bridges.length.len()).map(|_| Candidate {
-        parts: vec![], banks: BTreeSet::new(), middle: Point { x: 0.0, y: 0.0 }, direction: (0.0, 0.0),
+        parts: vec![], banks: BTreeSet::new(), built: BTreeSet::new(), middle: Point { x: 0.0, y: 0.0 }, direction: (0.0, 0.0),
         span: 0.0, rank: usize::MAX, width: 0.0, valid: true,
     }).collect();
     for (i, s) in streets.iter().enumerate().filter(|(_, s)| s.role == "bridge") {
@@ -3723,7 +3756,7 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
     for (&p, &i) in &bridges.component {
         let c = &mut candidates[i];
         let bank = banks.component.get(&p).copied().filter(|&b| served[b]);
-        if let Some(b) = bank { c.banks.insert(joined[b]); }
+        if let Some(b) = bank { c.banks.insert(joined[b]); if built[b] { c.built.insert(joined[b]); } }
         // Include split decks as one crossing, but never accept a free end.
         if bridges.neighbors[&p].len() == 1 && bank.is_none() { c.valid = false; }
     }
@@ -3768,7 +3801,9 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
         while group.iter().filter(|i| kept.contains(i)).count() < target {
             let separation = |i: usize| kept.iter().filter(|j| group.contains(j))
                 .map(|&j| distance(candidates[i].middle, candidates[j].middle)).fold(f64::INFINITY, f64::min);
-            let Some(i) = group.iter().copied().filter(|i| !kept.contains(i)).min_by(|&i, &j| {
+            // `roadNetworkPrune`: a quota crossing joins two built banks; a
+            // deck outside the houses stays only where the forest needs it.
+            let Some(i) = group.iter().copied().filter(|i| !kept.contains(i) && (!prune || candidates[*i].built.len() >= 2)).min_by(|&i, &j| {
                 let (a, b) = (separation(i), separation(j));
                 (a < spacing).cmp(&(b < spacing))
                     .then(candidates[i].rank.cmp(&candidates[j].rank))

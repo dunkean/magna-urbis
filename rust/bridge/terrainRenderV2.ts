@@ -91,24 +91,30 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
     float warmest=annual+amplitude,coldest=annual-amplitude-year.y,supply=clamp(rain/max(120.,10.*(warmest+coldest)+280.),0.,5.),slope=length(s.yz);
     e.snow=max(v2Snow(e.temperature+thaw,supply,slope,sstep(0.,-.10,tpi)),v2PerennialSnow(warmest+.65*(e.exposure-.5),supply,slope));
   }
-  // Snow lies in patches, not as a veil: drifts down to field size cross the melt threshold one by one.
-  // Altitude, aspect and hollows (already in e.snow) set where the melt runs; the drifts only fray its edge,
-  // so the landscape-scale octave stays weak: a strong one paints random white blobs across uniform ground.
-  vec3 ground=vec3(world,0.);
-  vec2 wind=mat2(.89,.46,-.46,.89)*world;
-  float drift=0.;
-  if(uQuality==0)drift=.12*v2Pattern(ground,700.,footprint,uMaterialSeed+722u)+.26*v2Pattern(ground,190.,footprint,uMaterialSeed+723u)+.34*v2Pattern(vec3(wind/vec2(4.,1.),0.),42.,footprint,uMaterialSeed+724u)+.28*v2Pattern(ground,18.,footprint,uMaterialSeed+725u);
-  // The drift octaves the footprint filters out widen the patch edge to their area mean: a crisp
-  // threshold of the smooth climate/slope field traces the facets of the height grid on snowy ranges.
-  float lost=.12*sstep(84.,210.,footprint)+.26*sstep(22.8,57.,footprint)+.34*sstep(5.04,12.6,footprint)+.28*sstep(2.16,5.4,footprint);
-  float edge=.03+.25*mix(.4,1.,v2SeasonSnowPatches())*lost;   // coarse footprints soften the edge even when the season has no patches
-  e.snow=sstep(.435-edge,.435+edge,e.snow+v2SeasonSnowPatches()*drift*sstep(0.,.25,e.snow)*(1.-sstep(.8,1.,e.snow)));
+  // Snow is a continuous coverage, not a mask: thin snow is a translucent dusting, then a full cover, with soft
+  // transitions. Relief draws its large-scale pattern at the terrain's own scale: altitude and season (e.snow),
+  // hollows and couloirs (300 m TPI) keep snow, ridges and spurs lose it, pole-facing slopes keep it, steep faces
+  // shed it (slope retention of v2Snow). Noise only shifts the limit a little, in three rotated isotropic octaves
+  // of 640, 300 and 140 m: on open flat ground partial snow reads as broad drifts, never as spots or bands.
+  float slope=length(s.yz),steep=sstep(.35,.9,slope);
+  float window=sstep(0.,.2,e.snow)*(1.-sstep(.85,1.,e.snow)),bend=0.;
+  if(window>0.){
+    float drift=0.;
+    if(uQuality==0)drift=.55*v2Pattern(vec3(mat2(.80,.60,-.60,.80)*world,0.),640.,footprint,uMaterialSeed+723u)
+      +.30*v2Pattern(vec3(mat2(.31,-.95,.95,.31)*world,0.),300.,footprint,uMaterialSeed+724u)
+      +.15*v2Pattern(vec3(mat2(-.70,.71,-.71,-.70)*world,0.),140.,footprint,uMaterialSeed+725u);
+    float relief=mix(.16,.24,steep)*(sstep(0.,-.10,tpi)-sstep(0.,.10,tpi))-.08*s.z/max(.2,slope)*(1.-sstep(.35,.8,slope));
+    bend=(mix(.12,.30,v2SeasonSnowPatches())*drift+relief)*window;
+  }
+  e.snow=sstep(.325,.575,e.snow+bend);   // a defined drift edge, soft over the relief's own scale
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
   // The zone's calendar sets leaf fall: a temperature proxy leaves oaks in leaf through a mild winter.
   if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);
   v2ZoneWet=0.;v2ZoneBare=0.;if(v2Zoned())v2ZoneEnv(e,s,world,tpi,footprint);
   // Construction excludes tree roots, not the surrounding soil/grass response: changing it made a pale pad per house.
-  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;}}
+  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;
+    // Towns, yards and lanes: trampled and cleared snow, thinner and darker, so the settlement stays readable.
+    if(cls==7||cls==8||cls==9||cls==11)e.snow*=.45;}}
   float water=forestWaterCoverage(world);e.woody*=1.-water;e.grass*=1.-water;
   // Preserve the retained physical beach footprint at every detail level.
   // Its 0.8 factor belongs to legacy colour blending, not vegetation cover.
@@ -144,10 +150,10 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   // A low alluvial plain is not necessarily exposed sediment. Potential
   // herbaceous cover recolonizes it; the physical beach remains separate.
   opened=mix(opened,renderGuideSediment*.9,renderGuideFlats*v2FlatSedimentExposure(e.grass,renderGuideShore,renderGuideOpenness));
-  // Wind-packed snow: narrow drift ridges and fine grain, resolved in metres and faded before aliasing.
-  vec2 snowWind=mat2(.89,.46,-.46,.89)*world;
+  // Snow surface: soft isotropic undulation and fine grain, resolved in metres and faded before aliasing
+  // (no stretched wind ridges: at map scale they read as parallel stripes).
   float snowDrift=0.,snowGrain=0.;
-  if(uQuality==0){snowDrift=v2Pattern(vec3(snowWind/vec2(5.,1.),0.),12.,footprint,uMaterialSeed+726u);snowGrain=v2Pattern(vec3(world,0.),3.2,footprint,uMaterialSeed+727u);}
+  if(uQuality==0&&e.snow>0.){snowDrift=v2Pattern(vec3(mat2(.80,.60,-.60,.80)*world,0.),11.,footprint,uMaterialSeed+726u);snowGrain=v2Pattern(vec3(world,0.),3.2,footprint,uMaterialSeed+727u);}
   vec3 snowColor=vec3(.88,.91,.91)*(1.+.035*clamp(snowDrift*1.7,-1.,1.)+.018*snowGrain);
   opened=mix(opened,snowColor,e.snow);
   opened=mix(opened,renderGuideSediment,clamp(renderGuideBeach/.8,0.,1.)*(1.-e.snow));
@@ -159,8 +165,8 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   v2CrownGuide=closed;
   // Integrate the intrinsic normals/AO of unresolved crowns. The guide for
   // actual resolved crowns below retains its original material, not this mean.
-  // Snow frosts bare limbs heavily; conifer crowns shed it and stay dark over the white floor (the floor carries the snow).
-  float frost=e.snow*mix(.62,.08,e.needle);
+  // Snow frosts bare limbs heavily; conifer crowns hold a light load and stay dark over the white floor.
+  float frost=e.snow*mix(.62,.22,e.needle);
   vec3 meanClosed=closed;
   if(uQuality==0)meanClosed=closed*mix(vec3(1.),v2CanopyMeanRatio(closed,e.needle,light,light2,strength),1.-e.snow*(1.-e.needle));
   closed=mix(closed,vec3(.72,.79,.77),frost);
@@ -197,7 +203,7 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
     // The progressive population profile supplies gradual stand edges; its
     // mean needs only the physical pixel footprint, not an extra blur mip.
     vec4 f=forestField(world,max(log2(max(footprint,.02)/cell),0.));
-    ForestStand st;st.p=world;st.cover=f.r;st.height=f.g*50.;st.needle=f.b;st.tone=f.a;
+    ForestStand st;st.orchard=false;st.rows=vec2(1.,0.);st.p=world;st.cover=f.r;st.height=f.g*50.;st.needle=f.b;st.tone=f.a;
     float T=uMaterialClimate.x,humid=uMaterialClimate.y/max(20.*T+280.,120.);
     st.trop=groundSmooth(13.,19.,T-6.);st.dry=1.-groundSmooth(.8,2.,humid);
     vec3 kind=forestKind(st.trop,st.dry);
@@ -212,7 +218,7 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
     vec3 bareGuide=baseClosed*v2Canopy(canopyPhase)/max(v2Canopy(leafOn),vec3(.02));
     vec3 crownBare=forestCrownColor(st,bareGuide,st.needle,vec2(0.),0.);
     vec3 crownMean=crownBare*mix(vec3(1.),v2CanopyMeanRatio(crownBare,st.needle,light,light2,strength),1.-e.snow*(1.-st.needle));
-    v2MeanCrown.albedo=groundToLinear(forestSnowed(crownMean,e.snow*mix(.62,.08,st.needle)));
+    v2MeanCrown.albedo=groundToLinear(forestSnowed(crownMean,e.snow*mix(.62,.22,st.needle)));
     v2MeanCrown.normal=v2MacroNormal;v2MeanCrown.roughness=.9;v2MeanCrown.occlusion=1.;
     v2MeanEnabled=1.;
   }
@@ -231,6 +237,28 @@ vec3 v2ShadeGround(GroundMaterial resolved,vec3 view,vec3 light,vec3 light2,floa
 GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,vec3 light2,float strength,vec3 macroOpen){
   return v2GroundEnv(v2Local(s,world,tpi,footprint),s,world,footprint,light,light2,strength,macroOpen);
 }
+// Shore ice on the sea of a local map. Offshore progress t, in depth: 0 is the solid shore-fast sheet (to half the
+// season's reach), 1 is open water, 40 m deeper than the reach.
+float v2ShoreIceProgress(float c,float depth){float reach=2.+24.*c*c;return clamp((depth-.5*reach)/(.5*reach+40.),0.,1.);}
+// Share of floes melted away at progress t (each floe decides at its own seed); a dense season keeps them longer.
+float v2ShoreIceDrop(float c,float t){return sstep(mix(.15,.45,c),1.,t);}
+// Area mean of the resolved pack (kept floes, minus leads and rounding) for footprints that cannot resolve floes.
+float v2ShoreIceMean(float c,float t){return (1.-v2ShoreIceDrop(c,t))*(1.-.25*sstep(.3,1.,t));}
+// Box-filtered share of a pixel (width pw, m) lying in a lead of half-width margin around a cell bisector.
+float v2IceLead(float x,float margin,float pw){return clamp((min(x+.5*pw,margin)-max(x-.5*pw,-margin))/pw,0.,1.);}
+// 2D jittered cells (9 taps): x is the metric distance to the nearest bisector, y the plate identity,
+// zw the metric offset from the fragment to the plate's seed.
+vec4 v2IcePlate(vec2 world,float scale,uint salt){
+  vec2 q=world/scale;ivec2 cell=ivec2(floor(q));vec2 local=q-floor(q);
+  float first=10.,second=10.,identity=0.;vec2 firstDelta=vec2(0.),secondDelta=vec2(0.);
+  for(int y=-1;y<=1;y++){for(int x=-1;x<=1;x++){
+    uint h=surfaceHash(ivec3(cell+ivec2(x,y),0),salt);
+    vec2 delta=vec2(float(x),float(y))+.1+.8*vec2(float(h&1023u),float((h>>10u)&1023u))/1023.-local;float d=dot(delta,delta);
+    if(d<first){second=first;secondDelta=firstDelta;first=d;firstDelta=delta;identity=float(h>>20u)/4095.;}
+    else if(d<second){second=d;secondDelta=delta;}
+  }}
+  return vec4((second-first)/max(2.*length(secondDelta-firstDelta),1e-5)*scale,identity,firstDelta*scale);
+}
 vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,float depth){
   if(uQuality>0){
     // Retain the bathymetric/seasonal palette without cellular ice or shore searches.
@@ -240,8 +268,7 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     vec3 deep=sea?mix(vec3(.045,.16,.27),vec3(.018,.065,.15),sstep(150.,3000.,depth)):vec3(.025,.12,.21);
     vec3 water=mix(shallow,deep,1.-exp(-max(depth,0.)*(sea?.035:.15)*max(.08,cover*cover)));
     float freeze=sea?(v2Zoned()?v2SeasonSeaIce():v2Freeze(kind,local)):v2Freeze(kind,local);
-    float reach=2.+24.*freeze*freeze;
-    float ice=sea?freeze*(1.-sstep(reach,reach+45.,depth)):freeze;
+    float ice=sea?v2ShoreIceMean(freeze,v2ShoreIceProgress(freeze,depth))*sstep(.05,.25,freeze):freeze;
     if(uRenderV2==5)return mix(vec3(.08,.17,.24),vec3(.85,.94,1.),ice);
     if(uRenderV2==4)return vec3(0.,0.,.13);
     return mix(water,vec3(.84,.89,.91),ice);
@@ -262,17 +289,49 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     water=mix(water,vec3(.03,.16,.33),arid*(1.-shelf)*.35);
     water=mix(water,water*vec3(.80,.90,1.)+vec3(0.,.01,.02),cold*.6);
     float c=v2Zoned()?v2SeasonSeaIce():v2Freeze(kind,local),reach=2.+24.*c*c;
-    // Bathymetric bands: continuous shore-fast ice, separated flat plates, open sea.
-    // Noise changes the ice tone only; it cannot move or blur the coastline.
-    float fast=(1.-sstep(reach-.6,reach+.6,depth))*sstep(.08,.3,c);
-    float offshore=sstep(reach,reach+45.,depth),concentration=.7*c*(1.-offshore);
-    vec4 plate=v2CellCore(vec3(world,0.),120.,uMaterialSeed+751u,true);
-    float aa=max(.001,footprint/120.),gap=.018;
-    float floe=sstep(gap-aa,gap+aa,plate.x)*step(1.-concentration,plate.z);
-    floe=mix(concentration*.92,floe,1.-sstep(30.,90.,footprint));
-    iceCover=max(fast,floe*sstep(reach-.6,reach+.6,depth));
-    float grain=.008*v2Pattern(vec3(world,0.),120.,footprint,uMaterialSeed+753u);
-    water=mix(water,vec3(.84,.89,.91)+grain,iceCover);
+    float raw=(depth-.5*reach)/(.5*reach+40.),t=clamp(raw,0.,1.);
+    // Gradient of the unclamped progress on the ground (screen derivatives, both map and 3D projections), so each
+    // plate reads its progress at its own seed: it shrinks evenly instead of tapering into a wedge.
+    vec2 dw1=dFdx(world),dw2=dFdy(world);float dt1=dFdx(raw),dt2=dFdy(raw),det=dw1.x*dw2.y-dw1.y*dw2.x;
+    vec2 gradT=abs(det)>1e-9?vec2(dw2.y*dt1-dw1.y*dt2,dw1.x*dt2-dw2.x*dt1)/det:vec2(0.);
+    gradT*=min(1.,.02/max(length(gradT),1e-6));   // a coastline kink or a quad edge must not throw a plate far
+    // From the coast out: one solid shore-fast sheet, then hairline leads open between big plates, plates break
+    // into smaller floes, which round off and melt away whole toward open water, with slush and brash between them
+    // near the sheet. Every decision (break, melt) is taken at a floe's seed, so no depth contour cuts a floe, and
+    // nothing blurs the coastline (the land/water cover draws it). Leads are box-filtered: crisp, never aliased.
+    if(c>.05&&raw<1.6){
+      float pw=max(footprint,.3),resolved=1.-sstep(25.,60.,footprint),gate=sstep(.05,.25,c);
+      vec3 g=vec3(world,0.);
+      // One gentle domain bend (displacement slope below 1) for both cell sets: curved edges, no straight lattice.
+      vec2 q=world;float erode=0.;
+      if(resolved>0.){q+=38.*vec2(v2Pattern(g,260.,footprint,uMaterialSeed+755u),v2Pattern(g+vec3(517.,-293.,0.),260.,footprint,uMaterialSeed+756u));erode=v2Pattern(g,16.,footprint,uMaterialSeed+757u);}
+      vec4 floe=v2IcePlate(q,140.,uMaterialSeed+751u);
+      float tf=clamp(raw+dot(gradT,floe.zw),0.,1.),scale=140.;
+      // Hairline leads whose width varies along the edge and grows a little offshore; none in the solid sheet.
+      float lead=sstep(0.,.15,tf)*(.3+(.6+1.6*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
+      float body=1.-v2IceLead(floe.x,lead,pw);
+      // Past its own threshold a big plate has broken: smaller floes replace it whole (no nested outline).
+      if(resolved>0.&&tf>.15+.55*floe.y){
+        floe=v2IcePlate(q,52.,uMaterialSeed+754u);tf=clamp(raw+dot(gradT,floe.zw),0.,1.);scale=52.;
+        lead=(.3+(.5+1.4*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
+        body*=1.-v2IceLead(floe.x,lead,pw);
+      }
+      float id2=fract(floe.y*7.13),id3=fract(floe.y*3.17);
+      // Offshore floes erode round: the cell is clipped by a ragged disc that shrinks with the progress.
+      float radius=scale*mix(1.3,.42,sstep(.25,1.,tf))*(1.+.12*erode);
+      body*=clamp((radius-length(floe.zw))/pw+.5,0.,1.)*step(v2ShoreIceDrop(c,tf),id2);
+      iceCover=mix(body,v2ShoreIceMean(c,t),1.-resolved)*gate;
+      // Between floes: grey slush and brash near the sheet, open dark water further out.
+      float slush=(1.-sstep(.1,.8,t))*gate;
+      water=mix(water,vec3(.40,.50,.56),.65*slush);
+      float brash=resolved>0.?sstep(.25,.6,v2Pattern(g,22.,footprint,uMaterialSeed+758u))*slush:0.;
+      // Shore-fast ice is a cooler grey-blue than the snow on land, so the coastline reads as one clean line;
+      // drifting floes are brighter, each with its own tone. The grain changes the tone only.
+      float grain=.008*v2Pattern(g,120.,footprint,uMaterialSeed+753u);
+      vec3 iceTone=mix(vec3(.75,.82,.87),vec3(.84,.89,.91)*(.96+.07*id3*resolved),sstep(.1,.45,t))+grain;
+      water=mix(water,iceTone*.92,.7*brash);
+      water=mix(water,iceTone,iceCover);
+    }
   }
   if(uRenderV2==5)water=mix(vec3(.08,.17,.24),vec3(.85,.94,1.),sea?iceCover:v2Ice(depth,kind,e,vec3(world*V2_ICE_ZOOM,0.),footprint*V2_ICE_ZOOM,uMaterialSeed).x);
   if(uRenderV2==4)water=vec3(0.,0.,.13);

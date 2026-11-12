@@ -1318,13 +1318,71 @@ pub(in super::super) fn open_gates(layout: &mut super::super::Layout) {
     }
 }
 
-/// Keep the entire apron between the quay street and the water, including
-/// the raster shore margin that is cut from building blocks by `seaward`.
+fn timber_port(culture: &str) -> bool {
+    let c = &super::super::catalogue()["cultures"][culture];
+    c["render"]["stilts"].as_bool() == Some(true)
+        || matches!(c["plan"]["harbour"]["material"].as_str(), Some("wood" | "timber"))
+}
+
+// Boundary contact counts too: flat pier caps often share only an edge with
+// their landing. Bounding boxes avoid polygon work for unrelated waterfronts.
+fn platforms_touch(a: &Shape, b: &Shape) -> bool {
+    let (ax0, ay0, ax1, ay1) = g::bbox(a);
+    let (bx0, by0, bx1, by1) = g::bbox(b);
+    if ax1 + 1e-6 < bx0 || bx1 + 1e-6 < ax0 || ay1 + 1e-6 < by0 || by1 + 1e-6 < ay0 { return false; }
+    a.outer.iter().any(|&p| g::contains(b, p)) || b.outer.iter().any(|&p| g::contains(a, p))
+        || (0..a.outer.len()).any(|i| (0..b.outer.len()).any(|j| {
+            let (p, q) = (a.outer[i], a.outer[(i + 1) % a.outer.len()]);
+            let (r, s) = (b.outer[j], b.outer[(j + 1) % b.outer.len()]);
+            g::segment_hit(p, q, r, s).is_some() || g::distance(p, r, s).0 < 1e-6 || g::distance(r, p, q).0 < 1e-6
+        }))
+}
+
+/// Keep only waterfront components rooted on physical dry ground. A pier
+/// or boardwalk can support an offshore landing, but an isolated deck cannot.
+fn retain_attached_platforms(platforms: &mut Vec<Quay>, streets: &[Street], surface: Surface<'_>) {
+    if platforms.is_empty() { return; }
+    let mut shapes: Vec<_> = platforms.iter().map(|q| q.shape.clone()).collect();
+    shapes.extend(streets.iter().filter(|s| s.role == "boardwalk")
+        .flat_map(|s| g::ribbon(&s.path, &s.widths)));
+    let mut attached: Vec<_> = shapes.iter().map(|s| s.outer.iter().any(|&p|
+        p.x >= 0.0 && p.y >= 0.0 && p.x <= surface.width && p.y <= surface.width && !surface.wet(p))
+        || g::dry_clip(&surface, s).iter().map(g::area).sum::<f64>() > 1e-6).collect();
+    let mut queue: Vec<_> = (0..shapes.len()).filter(|&i| attached[i]).collect();
+    while let Some(i) = queue.pop() {
+        for j in 0..shapes.len() {
+            if !attached[j] && platforms_touch(&shapes[i], &shapes[j]) {
+                attached[j] = true;
+                queue.push(j);
+            }
+        }
+    }
+    let mut i = 0;
+    platforms.retain(|_| { let keep = attached[i]; i += 1; keep });
+}
+
+/// Stone ports retain their shore apron; timber ports use narrow decks and
+/// small offshore landing stages. `surface` must be the physical water mask.
 pub(in super::super) fn platforms(layout: &mut super::super::Layout, surface: Surface<'_>) {
     let mut platforms = vec![];
-    let aprons = seaward(&layout.streets, surface);
+    let timber = timber_port(&layout.culture);
+    let aprons = if timber { vec![] } else { seaward(&layout.streets, surface) };
     let quay_ribbons: Vec<Shape> = layout.streets.iter().filter(|s| s.role == "quay")
-        .flat_map(|s| g::ribbon(&s.path, &s.widths)).chain(aprons.iter().flat_map(|(p, w)| g::ribbon(p, w))).collect();
+        .flat_map(|s| {
+            if !timber { return g::ribbon(&s.path, &s.widths); }
+            let offshore = !s.path.is_empty() && s.path.iter().all(|&p| surface.wet(p));
+            let path = if offshore {
+                // Centre the short stage on its nearest pier contact, not on
+                // the old quay midpoint (which can leave a gap at either end).
+                let anchor = layout.streets.iter().filter(|p| matches!(p.role.as_str(), "pier" | "landing" | "boardwalk"))
+                    .flat_map(|p| &p.path).min_by(|a, b| {
+                        let gap = |p: Point| s.path.windows(2).map(|w| g::distance(p, w[0], w[1]).0).fold(f64::INFINITY, f64::min);
+                        gap(**a).total_cmp(&gap(**b))
+                    }).copied().unwrap_or(layout.center);
+                centred(&s.path, anchor, 8.0)
+            } else { s.path.clone() };
+            g::ribbon(&path, &vec![4.0; path.len()])
+        }).chain(aprons.iter().flat_map(|(p, w)| g::ribbon(p, w))).collect();
     let mut add = |shape: Shape, kind: &str, material: &str| {
         // Local bank-height fallback; retained terrain replaces it with physical water levels.
         let wet: Vec<f64> = shape.outer.iter().filter(|&&p| surface.wet(p)).map(|&p| surface.height_at(p)).collect();
@@ -1335,6 +1393,7 @@ pub(in super::super) fn platforms(layout: &mut super::super::Layout, surface: Su
     for shape in g::union(&quay_ribbons) {
         let (lo, hi) = shape.outer.iter().filter(|&&p| surface.wet(p)).map(|&p| surface.height_at(p))
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), z| (lo.min(z), hi.max(z)));
+        if timber { add(shape, "landing", "timber"); continue; }
         if hi - lo <= 0.8 { add(shape, "quay", "stone"); continue; }
         // Long rivers descend: local slabs follow the water rather than one
         // level platform disappearing under the upstream bank.
@@ -1351,14 +1410,57 @@ pub(in super::super) fn platforms(layout: &mut super::super::Layout, surface: Su
         }
     }
     for st in layout.streets.iter().filter(|s| matches!(s.role.as_str(), "pier" | "landing" | "mole")) {
-        for shape in g::ribbon(&st.path, &st.widths) { add(shape, &st.role, if st.role == "mole" { "stone" } else { "timber" }); }
+        for shape in g::ribbon(&st.path, &st.widths) { add(shape, &st.role, if !timber && st.role == "mole" { "stone" } else { "timber" }); }
     }
+    retain_attached_platforms(&mut platforms, &layout.streets, surface);
     if let Some(structure) = layout.structure.as_mut() { structure.quays = platforms; }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timber_landings_are_small_and_all_platforms_need_a_bank_connection() {
+        let (height, water) = coast(256);
+        let surface = Surface { geometry: None, width: 256.0, n: 256, height: &height, water: &water, interpolation: Default::default() };
+        let street = |a, b, role: &str| Street { path: vec![a, b], widths: vec![6.0; 2], rank: 3, role: role.into() };
+        let streets = vec![
+            // A pier joins one offshore quay, a boardwalk joins the other.
+            street(Point { x: 140.0, y: 100.0 }, Point { x: 80.0, y: 100.0 }, "pier"),
+            street(Point { x: 80.0, y: 90.0 }, Point { x: 80.0, y: 120.0 }, "quay"),
+            street(Point { x: 140.0, y: 150.0 }, Point { x: 80.0, y: 150.0 }, "boardwalk"),
+            street(Point { x: 80.0, y: 145.0 }, Point { x: 80.0, y: 175.0 }, "quay"),
+            // This whole pier/quay component is isolated on the water.
+            street(Point { x: 50.0, y: 210.0 }, Point { x: 20.0, y: 210.0 }, "pier"),
+            street(Point { x: 20.0, y: 200.0 }, Point { x: 20.0, y: 230.0 }, "quay"),
+            street(Point { x: 130.0, y: 185.0 }, Point { x: 130.0, y: 230.0 }, "quay"),
+        ];
+        for culture in ["stilt-town", "hanseatic"] {
+            let mut layout: super::super::super::Layout = serde_json::from_value(serde_json::json!({
+                "key": "landing", "culture": culture, "center": {"x": 180.0, "y": 128.0},
+                "quarters": [], "streets": streets, "blocks": [], "warnings": [], "structure": {}
+            })).unwrap();
+            let original = serde_json::to_value(&layout.streets).unwrap();
+            platforms(&mut layout, surface);
+            assert_eq!(serde_json::to_value(&layout.streets).unwrap(), original, "platform construction preserves the network");
+            let quays = &layout.structure.as_ref().unwrap().quays;
+            assert_eq!(quays.len(), 4, "two attached stages, a pier and a bank quay; no isolated component: {culture}");
+            assert!(quays.iter().all(|q| g::bbox(&q.shape).0 > 60.0));
+            let stages: Vec<_> = quays.iter().filter(|q| g::bbox(&q.shape).2 < 100.0).collect();
+            assert_eq!(stages.len(), 2, "both pier and boardwalk support a stage");
+            if culture == "stilt-town" {
+                assert!(quays.iter().all(|q| q.material == "timber"));
+                assert!(stages.iter().all(|q| q.kind == "landing" && g::area(&q.shape) <= 32.001));
+            } else {
+                assert!(stages.iter().all(|q| q.material == "stone" && q.kind == "quay" && g::area(&q.shape) > 100.0));
+            }
+            // Removing the access decks must also remove their offshore stages.
+            layout.streets.retain(|s| s.role == "quay");
+            platforms(&mut layout, surface);
+            assert_eq!(layout.structure.as_ref().unwrap().quays.len(), 1, "only the bank quay survives without piers");
+        }
+    }
 
     #[test]
     fn review_quay_budget_keeps_villages_short_and_ports_larger() {

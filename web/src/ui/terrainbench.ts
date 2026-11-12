@@ -67,7 +67,7 @@ import type { ForestReply, ForestRequest } from './forestWorker';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
 import { copySurfaceGeologyQuery } from '../surface/adapters/geology';
 import { assertSurfaceLiveFrame } from '../surface/adapters/frame';
-import { clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
+import { MAX_SCALE, clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, DEFAULT_PYTHON_SERVER, neuralServerForSource, isNeuralSource, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 import { captureDecorData, downloadBytes } from './decorCapture';
 import type { Decor } from './decor';
@@ -1385,7 +1385,7 @@ function refreshUrbanPainting(): void {
 
 function updateView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
-  view = clampView(view, terrain?.width ?? settings.width, w, h, styleTraits(style).ground3d ? TERRAIN_GROUND_MAX_SCALE : 8);
+  view = clampView(view, terrain?.width ?? settings.width, w, h, styleTraits(style).ground3d ? TERRAIN_GROUND_MAX_SCALE : MAX_SCALE);
   const contourWidths = terrainContourWidths(style, view.scale);
   map.style.setProperty('--terrain-contour-width', `${contourWidths.thin}px`);
   map.style.setProperty('--terrain-contour-index-width', `${contourWidths.index}px`);
@@ -1416,7 +1416,7 @@ function local(event: MouseEvent | PointerEvent | WheelEvent): [number, number] 
 function point(event: MouseEvent): [number, number] { const [x, y] = local(event); return screenToWorld(view, viewport.clientWidth, viewport.clientHeight, x, y); }
 function zoom(factor: number, x = viewport.clientWidth / 2, y = viewport.clientHeight / 2): void {
   if (perspective && terrain3d) { terrain3d.zoom(factor); return; }
-  const limited = bounded(view.scale * factor, Math.min(viewport.clientWidth, viewport.clientHeight) / (terrain?.width ?? settings.width) * 0.5, styleTraits(style).ground3d ? TERRAIN_GROUND_MAX_SCALE : 8) / view.scale;
+  const limited = bounded(view.scale * factor, Math.min(viewport.clientWidth, viewport.clientHeight) / (terrain?.width ?? settings.width) * 0.5, styleTraits(style).ground3d ? TERRAIN_GROUND_MAX_SCALE : MAX_SCALE) / view.scale;
   setView(zoomAt(view, limited, x, y, viewport.clientWidth, viewport.clientHeight));
 }
 function showPins(): void {
@@ -2500,7 +2500,7 @@ installRecipeSharing({
   },
 });
 
-mountIllustration({ host: document.querySelector('header')!, capture: async () => {
+mountIllustration({ host: document.querySelector('header')!, navigation: { getView: () => ({ ...view }), setView }, capture: async () => {
   if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error(urbanText(['Attendez la fin de la génération avant de capturer la vue.','Wait for generation to finish before capturing the view.','请等待生成完成后再截取视图。','Espera a que termine la generación antes de capturar la vista.','Aguarde a geração terminar antes de capturar a visualização.']));
   const captured = perspective && terrain3d ? await terrain3d.captureIllustration() : undefined;
   if (captured && benchTextOverlay) captured.image = await benchTextOverlay.composite(captured.image);

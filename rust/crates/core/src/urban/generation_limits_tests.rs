@@ -78,11 +78,18 @@ fn celtic_mu3_choices_keep_real_deficit_requests_compatible_with_allocations() {
     // TODO's second MU3: magna-urbis-v2, Celtic oppidum, tundra, high mountains,
     // 8000 inhabitants, 40 km. The neural raster is not embedded in the code;
     // this sloping raster exercises its native foothold/deficit transport.
-    let (_, parts, requests) = town("celtic-oppidum", 8000, 40_000.0, 0.04, None);
-    let opens: Vec<_> = requests.iter().filter(|r| r["function"] == "open_space"
-        && r["programme"]["deficit"].is_object()).map(|r| json!({
-            "id": r["id"], "parcel_id": r["parcel_id"], "surface": r["cadastral"],
-        })).collect();
+    // Walled towns now fill their enclosure to the wall (round 22), so take the
+    // first slope of the ladder that still leaves architectural deficits to carry.
+    let pick = |slope: f64| {
+        let (_, parts, requests) = town("celtic-oppidum", 8000, 40_000.0, slope, None);
+        let opens: Vec<_> = requests.iter().filter(|r| r["function"] == "open_space"
+            && r["programme"]["deficit"].is_object()).map(|r| json!({
+                "id": r["id"], "parcel_id": r["parcel_id"], "surface": r["cadastral"],
+            })).collect();
+        (parts, requests, opens)
+    };
+    let (parts, requests, opens) = [0.04, 0.07, 0.1, 0.14].into_iter().map(pick)
+        .find(|(_, _, opens)| !opens.is_empty()).unwrap_or_else(|| pick(0.04));
     assert!(!opens.is_empty(), "Replay must exercise native architectural deficits");
     assert!(requests.iter().any(|r| r["function"] != "open_space"), "Replay keeps buildable town lots too");
     let scene: programme::BuiltScene = serde_json::from_value(json!({"buildings":[],"refusals":[],"open_spaces":opens})).unwrap();

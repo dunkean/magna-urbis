@@ -1160,21 +1160,40 @@ fn off_water(trace: Shape, base: &Shape, surface: Surface<'_>) -> Option<Shape> 
     }
     (trace.outer.len() >= 3 && g::simple(&trace) && wt <= wb + 20.0).then_some(trace)
 }
-/// Square trace of a planned (Chinese) city: the rectangle aligned on the map
-/// axes around the founding outline, kept when it encloses at most 1.5 times
-/// the founding land and stays out of the water (`off_water`).
-pub(super) fn square_trace(shape: &Shape, surface: Surface<'_>, cardinal: bool, force: bool) -> Option<Shape> {
+/// Box of `shape` in the frame turned by `angle`: its four corners and area.
+fn framed_box(shape: &Shape, angle: f64) -> (Vec<Point>, f64) {
+    let (u, v) = ((angle.cos(), angle.sin()), (-angle.sin(), angle.cos()));
+    let (mut a0, mut a1, mut b0, mut b1) = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    for p in &shape.outer {
+        let (a, b) = (p.x * u.0 + p.y * u.1, p.x * v.0 + p.y * v.1);
+        (a0, a1, b0, b1) = (a0.min(a), a1.max(a), b0.min(b), b1.max(b));
+    }
+    let at = |a: f64, b: f64| pt(a * u.0 + b * v.0, a * u.1 + b * v.1);
+    (vec![at(a0, b0), at(a1, b0), at(a1, b1), at(a0, b1)], (a1 - a0).max(0.0) * (b1 - b0).max(0.0))
+}
+/// Square trace of a planned (Chinese) city: the rectangle around the founding
+/// outline in the axes of its street grid (`grid`, the macro plan's frame), else
+/// on the compass (`cardinal`) or the outline's tightest box; kept when it
+/// encloses at most 1.5 times the founding land and stays out of the water
+/// (`off_water`).
+pub(super) fn square_trace(shape: &Shape, surface: Surface<'_>, cardinal: bool, force: bool, grid: Option<f64>) -> Option<Shape> {
     use geo::MinimumRotatedRect;
     let plain = Shape {
         outer: shape.outer.clone(),
         holes: vec![],
     };
-    // The plan's own axes: a founding grid turned to the river or the road keeps
-    // its rectangle (an axis-aligned box of a turned plan encloses 1.5× its land).
-    // A cardinal culture keeps the compass while its box stays nearly as tight.
+    // The wall runs on the axes of the grid it encloses: a wall turned against
+    // its street plan leaves empty wedges along every front. The grid's box is
+    // taken while it stays nearly as tight as the outline's tightest box; else a
+    // cardinal culture keeps the compass while its box stays nearly as tight, and
+    // any other plan its tightest box.
     let turned = g::polygon(&plain).minimum_rotated_rect()?;
+    let tight = g::area(&g::shapes(geo::MultiPolygon(vec![turned.clone()]))[0]);
+    let gridded = grid.map(|a| framed_box(&plain, a)).filter(|b| b.1 <= 1.15 * tight);
     let (x0, y0, x1, y1) = g::bbox(&plain);
-    let c: Vec<Point> = if cardinal && (x1 - x0) * (y1 - y0) <= 1.15 * g::area(&g::shapes(geo::MultiPolygon(vec![turned.clone()]))[0]) {
+    let c: Vec<Point> = if let Some((c, _)) = gridded {
+        c
+    } else if cardinal && (x1 - x0) * (y1 - y0) <= 1.15 * tight {
         vec![pt(x0, y0), pt(x1, y0), pt(x1, y1), pt(x0, y1)]
     } else {
         turned.exterior().0.iter().take(4).map(|p| pt(p.x, p.y)).collect()

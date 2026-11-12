@@ -260,6 +260,101 @@ pub(crate) fn yard_step(yard: &[crate::settlements::activities::ActivityBuilding
     }).fold(0.0, f64::max)
 }
 
+/// Steepest steady ground (rise over run) an isolated body stands on with a stepped plinth:
+/// 45°, the 3D view's cliff slope (`CITY3D_CLIFF_SLOPE`). Terracing cultures go to `2 × TERRACE_SLOPE`.
+const STEADY_SLOPE: f64 = 1.0;
+/// A break in the ground: the grade between neighbouring samples jumps by this much
+/// (rise over run) where one side is steeper than `BREAK_SLOPE`. A uniform slope has none.
+const BREAK_JUMP: f64 = 0.35;
+const BREAK_SLOPE: f64 = 0.5;
+/// Highest stepped plinth across the footprint's short side (two terraced-town steps), m.
+const ISOLATED_PLINTH_M: f64 = 12.0;
+
+/// Invariant for every isolated building (activity yards, farms, worship sites, network
+/// nodes): it never stands across a cliff. A steady slope is normal ground (a stepped,
+/// terraced plinth) up to `STEADY_SLOPE` (twice the town terrace limit for cultures that cut
+/// terraces). Refused: a break under the footprint (the grade between neighbouring samples
+/// jumps, a cliff edge or foot), a steady grade beyond the limit, or a plinth above
+/// `ISOLATED_PLINTH_M` even with the body turned along the contour (its short side).
+pub(crate) fn ground_fits(ring: &[super::Point], culture: &str, ground: &dyn crate::settlements::installations::Ground) -> bool {
+    if ring.len() < 3 {
+        return true;
+    }
+    let profile = super::profiles::profile(culture);
+    let limit = if profile.stairs || profile.pattern == "terraces" { (2.0 * super::profiles::TERRACE_SLOPE).max(STEADY_SLOPE) } else { STEADY_SLOPE };
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in ring {
+        (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
+    }
+    let inside = |p: super::Point| {
+        let mut odd = false;
+        for (i, a) in ring.iter().enumerate() {
+            let b = ring[(i + 1) % ring.len()];
+            if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y) {
+                odd = !odd;
+            }
+        }
+        odd
+    };
+    // About 1 m apart on a house, 8 cells across a large barn, inside the ring only.
+    let step = ((x1 - x0).max(y1 - y0) / 8.0).max(1.0);
+    let (nx, ny) = (((x1 - x0) / step).ceil().max(1.0) as usize, ((y1 - y0) / step).ceil().max(1.0) as usize);
+    let (dx, dy) = ((x1 - x0) / nx as f64, (y1 - y0) / ny as f64);
+    let h: Vec<Option<f64>> = (0..=ny)
+        .flat_map(|j| (0..=nx).map(move |i| super::Point { x: x0 + dx * i as f64, y: y0 + dy * j as f64 }))
+        .map(|p| inside(p).then(|| ground.height_at(p)))
+        .collect();
+    let at = |i: usize, j: usize| h[j * (nx + 1) + i];
+    // Signed grades between neighbouring samples, along rows (x) and columns (y).
+    let gx = |i: usize, j: usize| match (at(i, j), at(i + 1, j)) { (Some(a), Some(b)) if dx > 1e-6 => Some((b - a) / dx), _ => None };
+    let gy = |i: usize, j: usize| match (at(i, j), at(i, j + 1)) { (Some(a), Some(b)) if dy > 1e-6 => Some((b - a) / dy), _ => None };
+    let broken = |a: Option<f64>, b: Option<f64>| matches!((a, b), (Some(a), Some(b)) if (a - b).abs() > BREAK_JUMP && a.abs().max(b.abs()) > BREAK_SLOPE);
+    let mut steady = 0.0_f64;
+    for j in 0..=ny {
+        for i in 0..=nx {
+            if at(i, j).is_none() {
+                continue;
+            }
+            if i < nx {
+                let g = gx(i, j);
+                steady = steady.max(g.map_or(0.0, f64::abs));
+                if i + 1 < nx && broken(g, gx(i + 1, j)) {
+                    return false;
+                }
+            }
+            if j < ny {
+                let g = gy(i, j);
+                steady = steady.max(g.map_or(0.0, f64::abs));
+                if j + 1 < ny && broken(g, gy(i, j + 1)) {
+                    return false;
+                }
+            }
+        }
+    }
+    // The outline too, sampled every `step`: a cliff crossing only a corner of the body.
+    for (k, a) in ring.iter().enumerate() {
+        let b = ring[(k + 1) % ring.len()];
+        let run = (b.x - a.x).hypot(b.y - a.y);
+        let n = (run / step).ceil().max(1.0) as usize;
+        let mut last = ground.height_at(*a);
+        let mut grade: Option<f64> = None;
+        for t in 1..=n {
+            let p = super::Point { x: a.x + (b.x - a.x) * t as f64 / n as f64, y: a.y + (b.y - a.y) * t as f64 / n as f64 };
+            let v = ground.height_at(p);
+            let g = if run > 1e-6 { Some((v - last) * n as f64 / run) } else { None };
+            steady = steady.max(g.map_or(0.0, f64::abs));
+            if broken(grade, g) {
+                return false;
+            }
+            (last, grade) = (v, g);
+        }
+    }
+    let short = ring.iter().enumerate().map(|(i, a)| { let b = ring[(i + 1) % ring.len()]; (b.x - a.x).hypot(b.y - a.y) }).fold(f64::INFINITY, f64::min);
+    // A round body (16-gon) has short edges: its short side is its whole extent.
+    let short = if ring.len() > 4 { (x1 - x0).min(y1 - y0) } else { short };
+    steady <= limit && steady * short <= ISOLATED_PLINTH_M
+}
+
 /// Dispersed-farm density of a culture (farmsteads.rs).
 pub(crate) fn farm_density(culture: &str) -> f64 { super::farmsteads::density(culture) }
 
@@ -269,7 +364,8 @@ pub(crate) fn is_farm(template: &str) -> bool { matches!(template, "small_farm" 
 /// A working farm on its own lot at `centre`: the farmhouse on the lot's front (towards
 /// `-v`, v = `angle` + 90°), its culture's farm type of outbuildings round the yard
 /// (farmsteads.rs, the city farms' generator) and the city massing of every body.
-/// Bodies on water are dropped; no farm when the house is. Keyed by `id`.
+/// Bodies on water are dropped; no farm when the house is. Bodies on ground the culture
+/// does not build on (a cliff, `ground_fits`) are dropped; a house there tries the next seed. Keyed by `id`.
 pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f64, wealth: f64, ground: &dyn crate::settlements::installations::Ground) -> Vec<crate::settlements::activities::ActivityBuilding> {
     use super::Point;
     let (u, v) = (Point { x: angle.cos(), y: angle.sin() }, Point { x: -angle.sin(), y: angle.cos() });
@@ -290,11 +386,14 @@ pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f6
         if wet(&house.outer) {
             return vec![];
         }
+        if !ground_fits(&house.outer, culture, ground) {
+            continue;
+        }
         let mut parts = vec![(house, "building")];
         if super::farmsteads::build(&mut parts, &lot, culture, true, true, wealth, &seed).is_none() {
             continue;
         }
-        parts.retain(|(p, _)| !wet(&p.outer));
+        parts.retain(|(p, _)| !wet(&p.outer) && ground_fits(&p.outer, culture, ground));
         if parts.len() > best.len() {
             best = parts;
             best_seed = seed;
@@ -400,5 +499,37 @@ mod tests {
             assert!(specialisations(r).any(|a| cultures.iter().any(|c| allowed(c, &a.id))), "role {r}: no archetype allowed anywhere");
         }
         eprintln!("activities: {} archetypes, {} sites, {} families, {} overrides", d.archetypes.len(), d.sites.len(), d.cultures.families.len(), d.cultures.overrides.len());
+    }
+
+    /// A 1 km test ground: dry, `h` gives the height.
+    struct Relief(fn(f64, f64) -> f64);
+    impl crate::settlements::installations::Ground for Relief {
+        fn width(&self) -> f64 { 1000.0 }
+        fn n(&self) -> usize { 100 }
+        fn water_at(&self, _: usize) -> u8 { 0 }
+        fn river_width_at(&self, _: usize) -> f32 { 0.0 }
+        fn height_at(&self, p: super::super::Point) -> f64 { (self.0)(p.x, p.y) }
+    }
+
+    #[test]
+    fn isolated_buildings_never_straddle_a_cliff() {
+        use super::super::Point;
+        let square = |x: f64, y: f64, r: f64| vec![Point { x: x - r, y: y - r }, Point { x: x + r, y: y - r }, Point { x: x + r, y: y + r }, Point { x: x - r, y: y + r }];
+        // A 30 m vertical cliff along x = 500 (rising over 1 m), a 20 % hillside elsewhere.
+        let cliff = Relief(|x, y| 0.2 * y + 30.0 * ((x - 500.0).clamp(0.0, 1.0)));
+        let culture = "european-organic";
+        assert!(ground_fits(&square(300.0, 300.0, 6.0), culture, &cliff), "a hillside house stands");
+        assert!(!ground_fits(&square(500.0, 300.0, 6.0), culture, &cliff), "a house across the cliff is refused");
+        // A steady 0.8 grade (39°) is a slope, not a cliff: a stepped plinth carries it.
+        let steady = Relief(|x, y| 0.8 * x + 0.1 * y);
+        assert!(ground_fits(&square(300.0, 300.0, 6.0), culture, &steady), "a steady slope is buildable");
+        // A farm laid on the cliff line keeps only bodies on buildable ground.
+        for x in [480.0, 495.0, 500.0, 505.0, 520.0] {
+            for b in farm_yard(&format!("cliff-farm-{x}"), culture, Point { x, y: 300.0 }, 0.3, 0.5, &cliff) {
+                assert!(ground_fits(&b.ring, culture, &cliff), "farm body on the cliff at x = {x}");
+                let (lo, hi) = b.ring.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), p| (l.min(p.x), h.max(p.x)));
+                assert!(hi <= 500.1 || lo >= 500.9, "farm body straddles the cliff at x = {x}");
+            }
+        }
     }
 }

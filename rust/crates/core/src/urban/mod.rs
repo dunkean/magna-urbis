@@ -697,6 +697,14 @@ pub struct LayoutConfig {
     /// across a camp's tent rows to its centre.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub links_join_roads: bool,
+    /// V7 (round 22): prune useless roads. After the bridge choice, any place
+    /// re-runs the door-based bridgehead pass when a street still ends on a
+    /// bank (dead ends to the river that serve no door go); bank networks the
+    /// regional road joins on land are one bank, and a quota crossing must join
+    /// two built banks; before the blocks are cut, small junction triangles and
+    /// doubled runs lose their least important side.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub road_network_prune: bool,
     #[serde(skip_serializing_if = "is_zero")]
     pub organic_branch_variation: f64,
     #[serde(skip_serializing_if = "is_zero")]
@@ -852,6 +860,7 @@ impl Default for LayoutConfig {
             deep_block_lanes: false,
             village_bridge_budget: false,
             links_join_roads: false,
+            road_network_prune: false,
             organic_branch_variation: 0.0,
             ribbon_width_variation: 0.0,
             camp_growth: "ring".into(),
@@ -1679,9 +1688,11 @@ pub fn generate_quarters(
                 network::tie_banks_to_road(layout, roads, physical_surface, config);
             }
             network::select_bridges_graded(layout, site.population, physical_surface, roads, config.max_street_grade);
-            if config.village_bridge_budget && network::village_crossings(site.population)
-                && layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy")
-                && layout.streets.iter().any(|s| matches!(s.role.as_str(), "bridge" | "approach")) {
+            // `roadNetworkPrune`: any place whose bank keeps a loose street end.
+            if (config.village_bridge_budget && network::village_crossings(site.population)
+                    && layout.streets.iter().any(|s| matches!(s.role.as_str(), "bridge" | "approach"))
+                || config.road_network_prune && network::bank_dead_ends(&layout.streets, physical_surface))
+                && layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
                 let reserved = network::reserved_streets(layout);
                 trim::bridgeheads(seed, layout, physical_surface, roads);
                 network::remap_reservations(layout, &reserved);
@@ -1692,8 +1703,8 @@ pub fn generate_quarters(
             fortification::sync_gates(layout, surface);
             network::ensure_regional_access(layout, roads, physical_surface, config);
             trim::footprint(layout);
-            macroplan::harbour::platforms(layout, surface);
             if let Some(ground) = &stilt { ground.land_links(&mut layout.streets,physical_surface); }
+            macroplan::harbour::platforms(layout, physical_surface);
             lagoon::apply(layout,config,physical_surface);
             // Reserve against the final network, after trim and water works.
             // Recompute block indices/environments after the source-site cuts.

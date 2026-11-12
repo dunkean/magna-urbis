@@ -8,6 +8,7 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 //                            autoPosition: true, site: 'plain', options: ['townMainRoad'], params: { density: '1.2' } })
 //   await __v2Test.run()                       // the decor as the whole world -> placement and roads -> the town
 //   await __v2Test.view('2d' | '2d-core' | '2d-b')   // frame the town as City Bench's "City" button does, in the real viewport
+//   await __v2Test.code()                      // the MU3 generation code of the prepared town (V2 Share dialog)
 //   __v2Test.summary()                         // town, site scores, shore distances, camp extent, activity yard
 //   __v2Test.camera3d() / __v2Test.setCamera3d(camera)   // the 3D view's camera, once opened with #view3d
 //
@@ -32,7 +33,7 @@ export interface V2TestBindings {
   load(project: { settings: V2Settings; mods: unknown[] }): Promise<void>;
   run(): Promise<void>;
   getViewer(): { getView(): View; setView(view: View): void };
-  get3d(): { getCamera(): unknown; setCamera(camera: any): void } | undefined;
+  get3d(): { getCamera(): unknown; setCamera(camera: any): void; stats?(): unknown } | undefined;
   prepareCapture?(): void;
   /** Rerolls one town's composition seed and rebuilds that town alone (the "Build town" path). */
   rerollTown?(key: string): void;
@@ -177,6 +178,11 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       if (2 * hh < world.mapSize) view.cy = Math.max(hh, Math.min(world.mapSize - hh, view.cy));
       bindings.getViewer().setView(view); return bindings.getViewer().getView();
     },
+    /** The V2 generation code (MU3) of the prepared town: paste it in the V2 Share dialog to generate it again. */
+    async code(): Promise<string> {
+      const { encodeCityCode } = await import('./cityCode');
+      return encodeCityCode(bindings.getSettings(), []);
+    },
     /** The current world, for capture scripts (engine request replays). */
     world: () => bindings.getWorld(),
     summary() {
@@ -233,6 +239,8 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
     prepareCapture: () => bindings.prepareCapture?.(),
     camera3d: () => bindings.get3d()?.getCamera(),
     setCamera3d: (camera: unknown) => bindings.get3d()?.setCamera(camera),
+    /** The 3D view's stats (buildings shown, terrain tile loading: lod.tiles / ready / pending), for the sheet's settle wait. */
+    stats3d: () => bindings.get3d()?.stats?.(),
   };
   (window as any).__v2Test = api;
 }

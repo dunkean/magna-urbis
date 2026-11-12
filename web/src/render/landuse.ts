@@ -56,7 +56,7 @@ function patterns(world: Pick<World, 'options' | 'mapSize' | 'landuse'> & { seed
   }
   // orchard: regular dot grid with a small stem mark
   {
-    const W = 11 * s;
+    const W = 8 * s;
     const R = (pal.treeShape === 'dot' ? 1.5 : 2.3) * s;
     pat('p-orchard', W, W, `<circle cx="${f1(W / 2)}" cy="${f1(W / 2)}" r="${f1(R)}" fill="${pal.treeFill}" stroke="${pal.orchardDot}" stroke-width="${f1(0.5 * s)}"/><circle cx="${f1(W / 2)}" cy="${f1(W / 2)}" r="${f1(0.45 * s)}" fill="${pal.orchardDot}"/>` +
       (pal.treeShape === 'crown' ? `<path d="M${f1(W / 2 + R * 0.5)} ${f1(W / 2 - R * 0.5)}A${f1(R * 0.75)} ${f1(R * 0.75)} 0 0 1 ${f1(W / 2 - R * 0.5)} ${f1(W / 2 + R * 0.5)}" fill="none" stroke="${pal.orchardDot}" stroke-width="${f1(0.4 * s)}"/>` : ''));
@@ -108,14 +108,17 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
   const lu = world.landuse;
   if (!lu) return '';
   const s = Math.max(1, u);
+  const orchards = lu.areas.filter(a => a.kind === 'orchard');
+  const orchardClip = orchards.length ? ' clip-path="url(#lu-forest-orchards)"' : '';
   let out = patterns(world, pal, s, scale);
+  if (orchards.length) out += `<defs><clipPath id="lu-forest-orchards"><path clip-rule="evenodd" d="M0 0H${world.mapSize}V${world.mapSize}H0Z${orchards.map(ringsD).join('')}"/></clipPath></defs>`;
   const individualTrees = scale >= .7 && (vegetation === 'canopy' || !!brushes) && !isUnderdarkBiome(world.options.biome);
   const order: LandKind[] = ['meadow', 'marsh', 'pasture', 'commons', 'forest', 'garden', 'orchard', 'field'];
   out += `<g class="layer-landuse" stroke-linejoin="round">`;
   for (const kind of order) {
     const list = lu.areas.filter((a) => a.kind === kind);
     if (!list.length) continue;
-    out += `<g class="lu-${kind}"${kind === 'forest' ? forestMask : ''}>`;
+    out += `<g class="lu-${kind}"${kind === 'forest' ? forestMask + orchardClip : ''}>`;
     if (kind === 'field' && !isUnderdarkBiome(world.options.biome)) {
       out += `<g fill="${pal.land.field}" fill-opacity="${pal.landOpacity}" fill-rule="evenodd"${mul(pal)}>${list.map((a) => `<path d="${ringsD(a)}"/>`).join('')}</g>`;
       // strips: each holder's strip has its own tone; one furrow-textured path per furlong (its own direction)
@@ -148,11 +151,11 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
   if (individualTrees && scale >= .7) for (const kind of ['forest', 'orchard'] as const) {
     if (!pal.tex[kind]) continue;
     const marks = canopyAreaMarks(lu.areas.filter(a => a.kind === kind), kind, world.mapSize, world.seed ?? '')
-      .filter(m => kind !== 'forest' || !clearings.some(p => insideArea({ kind, poly: p.outer, holes: p.holes }, m.x, m.y)));
+      .filter(m => kind !== 'forest' || !orchards.some(a => insideArea(a, m.x, m.y)) && !clearings.some(p => insideArea({ kind, poly: p.outer, holes: p.holes }, m.x, m.y)));
     if (!marks.length) continue;
     const stamps = (brushes ? marks.map(m => `<g opacity="${.88 + .12 * m.k}">${brushes.tree(m.x, m.y, (kind === 'orchard' ? 3.5 : 4.75) * m.r, kind === 'orchard')}</g>`).join('')
       : canopySvg(marks, kind, world.seed ?? '', pal));
-    out += `<g class="lu-${kind}-stamps">${stamps}</g>`;
+    out += `<g class="lu-${kind}-stamps"${kind === 'forest' ? orchardClip : ''}>${stamps}</g>`;
   }
   out += '</g>';
   return out;

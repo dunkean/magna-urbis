@@ -3,6 +3,7 @@ import { hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
 import { lakeMaterialSvg, decodeWaterField } from '../render/terrainWater';
 import type { Decor } from './decor';
+import { taperSpringBank } from '../render/riverHeadwaters';
 
 export interface RetainedWaterMaterial {
   field: string;
@@ -12,6 +13,7 @@ export interface RetainedWaterMaterial {
   x?: number; y?: number; extent?: number;
 }
 const fields = new WeakMap<RetainedWaterMaterial, Float32Array>();
+const tapered = new WeakMap<Decor, string>();
 /** Water material is produced by the water chain and retained during capture. */
 export function retainedWaterMaterial(decor: Decor): RetainedWaterMaterial {
   const material = decor.meta.waterMaterial;
@@ -21,7 +23,13 @@ export function retainedWaterMaterial(decor: Decor): RetainedWaterMaterial {
 
 /** Retained geometry uses the live style at every stage, including nested crops. */
 export function decorWaterSvg(decor: Decor, style: TerrainStyle, showLakes = true, colors?: RenderColors): string {
-  return waterAppearanceSvg(decor.meta.waterSvg, showLakes ? retainedWaterMaterial(decor) : undefined, style, showLakes, colors);
+  let geometry = tapered.get(decor);
+  if (geometry === undefined) {
+    const material = decor.meta.waterMaterial, springs = (decor.raster.geometry?.springs ?? []).map(p => ({ x: p.x + (material?.x ?? 0), y: p.y + (material?.y ?? 0) }));
+    geometry = decor.meta.waterSvg.replace(/(<path\b[^>]*\bd=")([^"]*)(")/g, (_, before, d, after) => before + taperSpringBank(d, springs) + after);
+    tapered.set(decor, geometry);
+  }
+  return waterAppearanceSvg(geometry, showLakes ? retainedWaterMaterial(decor) : undefined, style, showLakes, colors);
 }
 
 export function waterAppearanceSvg(geometry: string, source: RetainedWaterMaterial | undefined, style: TerrainStyle, showLakes = true, colors?: RenderColors): string {

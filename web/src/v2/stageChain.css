@@ -196,7 +196,6 @@
 .places-panel[data-collapsed=true]>.settlement-list,.places-panel[data-collapsed=true]>.inspector{display:none}
 .places-panel[data-collapsed=true]{bottom:auto}
 .map-area:has(.places-panel:not([hidden])) .map-topbar{right:330px}
-.map-area:has(.places-panel:not([hidden])) .map-tools{right:330px}
 @media(max-width:1100px){.places-panel{width:250px}.map-area:has(.places-panel:not([hidden])) .map-topbar{right:280px}}
 @media(max-width:720px){.places-panel{left:12px;right:12px;width:auto;top:auto;bottom:12px;max-height:45%}.map-area:has(.places-panel:not([hidden])) .map-topbar{right:22px}}
 

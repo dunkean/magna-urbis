@@ -15,10 +15,28 @@ export const ROAD_MARGIN = 2.5, RIVER_MARGIN = 1.5, EDGE_JITTER = 1.5, FARM_MARG
 
 export interface ForestCorridor { path: Polyline; half: number | number[] }
 
+/** Clear yard (m, beyond the walls) kept free of rooted crowns around the buildings of an isolated activity site (chapel,
+ * quarry, mill, fishing hut): their crowns still overhang it from the edge, so the site reads as a clearing, not as a
+ * building lost in the canopy. */
+export const YARD_MARGIN = 8;
+/** Logging, charcoal and resin sites work inside the forest and keep their trees. */
+const WOODLAND_SITE = /^(forest_|resin_)/;
+type RegionSites = { placement?: { activities?: ActivitySiteRings[] }; roads?: { nodes?: ActivitySiteRings[] } | null };
+type ActivitySiteRings = { template: string; buildings: { ring: Vec2[] }[] };
+/** One closed corridor along each building outline of the retained regional activity sites and network nodes. */
+function yardCorridors(region: RegionSites | undefined): ForestCorridor[] {
+  const out: ForestCorridor[] = [];
+  for (const site of [...region?.placement?.activities ?? [], ...region?.roads?.nodes ?? []]) {
+    if (WOODLAND_SITE.test(site.template)) continue;
+    for (const building of site.buildings ?? []) if (building.ring?.length > 2) out.push({ path: [...building.ring, building.ring[0]], half: YARD_MARGIN });
+  }
+  return out;
+}
+
 /** Road and river corridors of a world, as centre lines with their cleared half widths (m). The satellite
  * ground leaves rivers out: its water mask already keeps trunks off the water and lets crowns overhang it. */
-export function forestCorridors(world: Pick<World, 'roads' | 'terrain'>, rivers = true): ForestCorridor[] {
-  const out: ForestCorridor[] = [];
+export function forestCorridors(world: Pick<World, 'roads' | 'terrain'> & Partial<Pick<World, 'debug'>>, rivers = true): ForestCorridor[] {
+  const out: ForestCorridor[] = yardCorridors(world.debug?.v2RustRegion as RegionSites | undefined);
   for (const road of world.roads ?? []) if (road.path.length > 1) {
     // The drawn width (render/scene.ts) where the network carries none.
     const width = road.width > 0 ? road.width : ROAD_WIDTH[road.kind] ?? 3;
@@ -58,18 +76,19 @@ export function farmClearings(landuse: Pick<LandUseLayer, 'farmsteads'> | undefi
 export class ForestRoom {
   private readonly cells = new Map<number, number[]>();
   private readonly segs: number[] = [];   // ax, ay, bx, by, ha, hb
-  private readonly farms: { ring: Polygon; minX: number; minY: number; maxX: number; maxY: number }[] = [];
+  private readonly farms: { ring: Polygon; holes?: Polygon[]; minX: number; minY: number; maxX: number; maxY: number }[] = [];
   private readonly farmCells = new Map<number, number[]>();
-  constructor(corridors: readonly ForestCorridor[], farms: readonly Polygon[], private readonly cell = 64) {
+  constructor(corridors: readonly ForestCorridor[], farms: readonly (Polygon | { poly: Polygon; holes?: Polygon[] })[], private readonly cell = 64) {
     for (const c of corridors) for (let i = 1; i < c.path.length; i++) {
       const a = c.path[i - 1], b = c.path[i], ha = typeof c.half === 'number' ? c.half : c.half[i - 1], hb = typeof c.half === 'number' ? c.half : c.half[i];
       const id = this.segs.length / 6; this.segs.push(a.x, a.y, b.x, b.y, ha, hb);
       const r = Math.max(ha, hb) + EDGE_JITTER;
       this.addBox(this.cells, id, Math.min(a.x, b.x) - r, Math.min(a.y, b.y) - r, Math.max(a.x, b.x) + r, Math.max(a.y, b.y) + r);
     }
-    for (const ring of farms) {
+    for (const shape of farms) {
+      const ring = Array.isArray(shape) ? shape : shape.poly, holes = Array.isArray(shape) ? undefined : shape.holes;
       const xs = ring.map(p => p.x), ys = ring.map(p => p.y);
-      const box = { ring, minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+      const box = { ring, holes, minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
       this.addBox(this.farmCells, this.farms.length, box.minX, box.minY, box.maxX, box.maxY); this.farms.push(box);
     }
   }
@@ -89,7 +108,7 @@ export class ForestRoom {
     }
     for (const id of this.farmCells.get(key) ?? []) {
       const f = this.farms[id];
-      if (x >= f.minX && x <= f.maxX && y >= f.minY && y <= f.maxY && inside(f.ring, x, y)) return false;
+      if (x >= f.minX && x <= f.maxX && y >= f.minY && y <= f.maxY && inside(f.ring, x, y) && !f.holes?.some(h => inside(h, x, y))) return false;
     }
     return true;
   }

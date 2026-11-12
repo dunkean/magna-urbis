@@ -13,6 +13,8 @@ export interface RuralPlan {
   footprint: PolyH[]; population: number; farmsteads?: boolean; naturalForest?: Float32Array;
   settlementFootprints?: Record<string, PolyH[]>; streetAlignedHomes?: boolean; denserSmallholdings?: boolean;
   fieldEnclosure?: number; fieldMaterial?: 'hedge' | 'wall' | 'fence'; outbuildings?: number;
+  /** Cultivated budget = settled people x base ha per head x (1 + cropSurplus); 0 = subsistence (Rust default 0.2). */
+  cropSurplus?: number;
 }
 export interface SoilGrid { w: number; h: number; cell: number; x0: number; y0: number; data: Float32Array }
 export type RuralSoil = ((x: number, y: number) => number) & { landuseGrid?: SoilGrid };

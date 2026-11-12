@@ -168,8 +168,8 @@ export function resolveComposition(recipe: CompositionRecipe | undefined, traits
   const look = c.vegetation.look;
   const buildingLook: BuildingLook = target !== 'view3d'
     ? c.ground.variant === 'cadastre' || c.ground.variant === 'topographic' ? 'footprints' : 'detailed-volumes'
-    // Flat map tiers never suppress architecture in a perspective view.
-    : c.buildings.look === 'footprints' ? 'detailed-volumes' : c.buildings.look;
+    // Cadastre is a ground diagram in perspective too; other map tiers retain their 3D architecture.
+    : c.ground.variant === 'cadastre' ? 'footprints' : c.buildings.look === 'footprints' ? 'detailed-volumes' : c.buildings.look;
   return Object.freeze({ recipe: c, variant: recipe ? effectiveVariant(c) : c.ground.variant,
     vegetation: recipe ? { look, forestTone: c.vegetation.forestTone, procedural: look === 'procedural-canopy', cartographic: vectorVegetation(look, traits), painted: overlayPainted(look, traits), groundForests: look === 'painted' }
       : { look, forestTone: c.vegetation.forestTone, procedural: traits.ground3d, cartographic: traits.cartographicVegetation, painted: false, groundForests: true },

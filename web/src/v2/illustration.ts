@@ -16,6 +16,7 @@ export interface V2IllustrationOptions {
   /** The same DOM viewport and camera used by the V2 viewer. */
   getViewport(): { element: HTMLElement; view: View };
   beforeCapture2d?(): void;
+  navigation?: import('../../../illustration/web/index.mjs').IllustrationNavigation;
 }
 
 registerMessages({
@@ -25,7 +26,7 @@ registerMessages({
 });
 
 export function mountV2Illustration(options: V2IllustrationOptions) {
-  const mounted = mountIllustration({ host: options.host, capture: async () => {
+  const mounted = mountIllustration({ host: options.host, navigation: options.navigation, capture: async () => {
     const world = options.getWorld();
     if (!world) throw new Error(translate('Créez d’abord une carte avant de capturer la vue.'));
     const settings = options.getSettings(), { element, view } = options.getViewport(), city3d = options.get3d();
@@ -36,8 +37,11 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
       seed: world.seed, view: { ...view }, camera: captured?.camera,
       width: element.clientWidth, height: element.clientHeight,
       terrain: { relief: settings.terrain?.relief ?? settings.options.relief, climate: settings.terrain?.climate,
-        environment: settings.terrain?.environment, biome: settings.options.biome },
+        environment: settings.terrain?.environment, biome: settings.options.biome,
+        temperature: settings.terrain?.climateValues?.temperature, precipitation: settings.terrain?.climateValues?.precipitation,
+        ambience: settings.appearance?.composition?.effects.ambience },
       settlements: world.settlements,
+      terrainLayer: world.terrain,
       buildings: { buildings: scenes.flatMap(scene => scene.buildings), materials: scenes.flatMap(scene => scene.materials ?? []) },
       architecture: settings.urban?.houses,
       generation: { culture: settings.options.culture, population: settings.options.population, size: settings.options.size,

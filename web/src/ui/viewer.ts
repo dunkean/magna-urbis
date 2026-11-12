@@ -52,6 +52,8 @@ export interface Viewer {
   zoomBy(factor: number): void;
   invalidate(): void;
   getView(): View;
+  /** Wait until the displayed pixels represent the current camera, including worker replies. */
+  waitForFrame(): Promise<void>;
   clear(): void;
   destroy(): void;
 }
@@ -309,6 +311,14 @@ export function createViewer(o: ViewerOptions): Viewer {
     },
     fit, setView: set, zoomBy: (f) => zoomBy(f), invalidate,
     getView: () => view,
+    async waitForFrame() {
+      const started = performance.now();
+      for (;;) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        if (!dirty && !raf && (!source || (!inflight && shown && sameView(shown.view, view)))) return;
+        if (performance.now() - started > 15000) throw new Error('La vue voisine n’a pas terminé son rendu. Réessayez après le chargement de la carte.');
+      }
+    },
     clear() {
       detachDirect(); source = null; renderer = null; resetRequests(); closeMini();
       dirty = false; if (raf) cancelAnimationFrame(raf); raf = 0;

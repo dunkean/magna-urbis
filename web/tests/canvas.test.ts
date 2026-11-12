@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { TileIndex, boxesOf, chunkPolyline } from '../src/render/tileindex';
 import { selectLod, lodBand, NEAR_SCALE, MID_SCALE } from '../src/render/lod';
-import { fitView, zoomAt, panBy, screenToWorld, worldToScreen, clampView, viewRect } from '../src/render/view';
+import { MAX_SCALE, fitView, zoomAt, panBy, screenToWorld, worldToScreen, clampView, viewRect } from '../src/render/view';
 import { placeLabels } from '../src/render/labels';
 import { buildScene, textureMarks, hash3 } from '../src/render/scene';
 import { createCanvasRenderer } from '../src/render/canvas';
@@ -106,7 +106,7 @@ describe('LOD + view', () => {
     const p = panBy(v, 20, -10);
     expect(p.cx).toBe(90); expect(p.cy).toBe(105);
     const c = clampView({ cx: -500, cy: 9e9, scale: 1e6 }, 1000, 800, 600);
-    expect(c.cx).toBe(0); expect(c.cy).toBe(1000); expect(c.scale).toBeLessThanOrEqual(8);
+    expect(c.cx).toBe(0); expect(c.cy).toBe(1000); expect(c.scale).toBe(MAX_SCALE);
     const r = viewRect(v, 400, 200);
     expect(r.maxX - r.minX).toBeCloseTo(200, 9);
   });

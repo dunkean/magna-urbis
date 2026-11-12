@@ -3,7 +3,7 @@
 import { chromium } from 'playwright';
 import { forestBeachCoverageAt } from '../../rust/bridge/terrainForestBeach.ts';
 
-const N = 256, WIDTH = 4000, X0 = -2000, Y0 = -2000, SEED = 123456789;
+const N = 256, WIDTH = 4000, X0 = -2000, Y0 = -2000, SEED = 123456789, TEMPERATURE = 18;
 
 // Synthetic coast: sea in the west, gentle shelf and low beaches, hills inland, bays and islets.
 function makeLayer() {
@@ -37,7 +37,7 @@ for (let q = 0; q < RAND; q++) { pts[k++] = X0 + rnd() * WIDTH; pts[k++] = Y0 + 
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 uniform sampler2D uField; uniform sampler2D uPts; uniform int uFieldN; uniform vec2 uFieldOrigin; uniform float uFieldCell;
-uniform uint uMaterialSeed;
+uniform uint uMaterialSeed; uniform vec2 uMaterialClimate;
 out vec4 o;
 float sstep(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
 vec4 bw(float t) { float t2 = t * t, t3 = t2 * t, u = 1.0 - t; return vec4(u * u * u, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0; }
@@ -94,7 +94,9 @@ float forestRootCell(){return uFieldCell;}
       return vec2(value,kept/total);
     }
     float surfaceBeachWidth(vec2 reach,vec2 grove,vec2 fine,float openness){
-      return 140.*sstep(-.15,.75,.65*reach.x*sqrt(reach.y)+.5*grove.x*sqrt(grove.y))*sstep(.15,.4,openness)*(1.+.35*fine.x*sqrt(fine.y));
+      float supply=40.+80.*sstep(8.,22.,uMaterialClimate.x);
+      float along=sstep(-.8,.8,.65*reach.x*sqrt(reach.y)+.5*grove.x*sqrt(grove.y));
+      return supply*(.4+.8*along)*sstep(.15,.4,openness)*(1.+.35*fine.x*sqrt(fine.y));
     }
     float surfaceRootBeach(vec3 s,vec2 world,float shore,float openness){
       vec3 point=vec3(world,0.);float fp=30.;
@@ -142,7 +144,7 @@ const out = await page.evaluate(({ FS, layerData, pts, N, W, H, X0, Y0, WIDTH, S
   tex(1, gl.RG32F, gl.RG, W, H, new Float32Array(pts));
   gl.uniform1i(gl.getUniformLocation(p, 'uField'), 0); gl.uniform1i(gl.getUniformLocation(p, 'uPts'), 1);
   gl.uniform1i(gl.getUniformLocation(p, 'uFieldN'), N); gl.uniform2f(gl.getUniformLocation(p, 'uFieldOrigin'), X0, Y0);
-  gl.uniform1f(gl.getUniformLocation(p, 'uFieldCell'), WIDTH / N); gl.uniform1ui(gl.getUniformLocation(p, 'uMaterialSeed'), SEED);
+  gl.uniform1f(gl.getUniformLocation(p, 'uFieldCell'), WIDTH / N); gl.uniform1ui(gl.getUniformLocation(p, 'uMaterialSeed'), SEED); gl.uniform2f(gl.getUniformLocation(p, 'uMaterialClimate'), TEMPERATURE, 1500);
   gl.activeTexture(gl.TEXTURE2);
   const rt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, rt);
   gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, W, H);
@@ -158,12 +160,12 @@ await browser.close();
 let max = 0, sum = 0, bad = 0, nonzero = 0, worst = -1;
 const total = W * H;
 for (let i = 0; i < total; i++) {
-  const ts = forestBeachCoverageAt(layer, SEED, pts[i * 2], pts[i * 2 + 1]);
+  const ts = forestBeachCoverageAt(layer, SEED, pts[i * 2], pts[i * 2 + 1], TEMPERATURE);
   const d = Math.abs(ts - out[i]);
   if (out[i] > 0 || ts > 0) nonzero++;
   sum += d; if (d > max) { max = d; worst = i; } if (d > 1 / 255) bad++;
 }
 console.log(`points ${total}, nonzero ${nonzero}, max diff ${max.toFixed(5)} (${(max * 255).toFixed(2)}/255), mean ${(sum / total).toExponential(3)}, > 1/255: ${bad}`);
-if (worst >= 0) console.log(`worst at (${pts[worst * 2]}, ${pts[worst * 2 + 1]}): glsl ${out[worst]} ts ${forestBeachCoverageAt(layer, SEED, pts[worst * 2], pts[worst * 2 + 1])}`);
+if (worst >= 0) console.log(`worst at (${pts[worst * 2]}, ${pts[worst * 2 + 1]}): glsl ${out[worst]} ts ${forestBeachCoverageAt(layer, SEED, pts[worst * 2], pts[worst * 2 + 1], TEMPERATURE)}`);
 if (max > 2 / 255) { console.error('FAIL'); process.exit(1); }
 console.log('OK');

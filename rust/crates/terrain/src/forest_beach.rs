@@ -92,8 +92,8 @@ fn fbm(x: f64, y: f64, scale: f64, octaves: u32, footprint: f64, salt: u32) -> f
 
 const FP: f64 = 30.0;
 
-/// forestBeachCoverage(world) in 0..1.
-fn coverage_at(layer: &Layer, dirs: &[(f64, f64); 12], seed: u32, wxm: f64, wym: f64) -> f64 {
+/// forestBeachCoverage(world) in 0..1; `temperature` is the sea-level climate temperature (uMaterialClimate.x).
+fn coverage_at(layer: &Layer, dirs: &[(f64, f64); 12], seed: u32, temperature: f64, wxm: f64, wym: f64) -> f64 {
     let (h, gx, gy) = layer.surface(wxm, wym);
     let slope = f64::hypot(gx, gy);
     if h < 0.0 || h >= 12.0 || slope >= 0.5 {
@@ -117,12 +117,16 @@ fn coverage_at(layer: &Layer, dirs: &[(f64, f64); 12], seed: u32, wxm: f64, wym:
     let reach = fbm(wxm, wym, 20000.0, 3, FP, seed.wrapping_add(7));
     let grove = fbm(wxm, wym, 4800.0, 4, FP, seed.wrapping_add(3));
     let fine = fbm(wxm, wym, 240.0, 4, FP, seed.wrapping_add(5));
-    let width = 140.0 * sstep(-0.15, 0.75, 0.65 * reach + 0.5 * grove) * sstep(0.15, 0.4, openness) * (1.0 + 0.35 * fine);
+    // surfaceBeachWidth: the climate sets the sand supply, noise only varies it along the coast around that mean.
+    let supply = 40.0 + 80.0 * sstep(8.0, 22.0, temperature);
+    let along = sstep(-0.8, 0.8, 0.65 * reach + 0.5 * grove);
+    let width = supply * (0.4 + 0.8 * along) * sstep(0.15, 0.4, openness) * (1.0 + 0.35 * fine);
     f64::min(1.0, f64::max(0.0, (f64::min(width, 20.0 * FP) - shore + FP) / FP)) * (1.0 - sstep(4.0, 12.0, h)) * (1.0 - sstep(0.2, 0.5, slope))
 }
 
 /// Bakes the coverage on a `resolution`² grid of texel centres (row j = increasing world y), as bytes.
-pub(crate) fn beach_grid(heights: &Heights, x: f64, y: f64, width: f64, n: usize, seed: u32, resolution: usize) -> Vec<u8> {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn beach_grid(heights: &Heights, x: f64, y: f64, width: f64, n: usize, seed: u32, temperature: f64, resolution: usize) -> Vec<u8> {
     let layer = Layer { heights, x, y, n, cell: width / n as f64 };
     let c = width / resolution as f64;
     let mut dirs = [(0.0, 0.0); 12];
@@ -133,7 +137,7 @@ pub(crate) fn beach_grid(heights: &Heights, x: f64, y: f64, width: f64, n: usize
     rows(&mut data, resolution, |j, row| {
         let wy0 = y + (j as f64 + 0.5) * c;
         for (i, out) in row.iter_mut().enumerate() {
-            *out = (coverage_at(&layer, &dirs, seed, x + (i as f64 + 0.5) * c, wy0) * 255.0 + 0.5).floor() as u8;
+            *out = (coverage_at(&layer, &dirs, seed, temperature, x + (i as f64 + 0.5) * c, wy0) * 255.0 + 0.5).floor() as u8;
         }
     });
     data

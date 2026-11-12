@@ -465,7 +465,10 @@ void main() {
           vec3 painted=water.rgb/max(water.a,1e-3);
           // Sandy beds lean red; ice, its bank lines and foam are far lighter than any painted open water (luminance < .3).
           float solid=max(smoothstep(.05,.15,painted.r-painted.b),smoothstep(.33,.42,dot(painted,vec3(.3,.45,.25))));
-          bed=mix(bed,water.a,solid);
+          // A frozen or dry course shows through the bank crowns; whitewater stays under them, otherwise a forest
+          // stream hidden by its canopy left pale foam specks on the crowns that read as ice in summer.
+          float through=uMaterialZone>0?max(step(.5,waterFreshIce()),step(.001,V2_WATER_ARIDITY[waterZone()])):0.;
+          bed=mix(bed,water.a,solid*through);
           wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
           // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii), and the season's

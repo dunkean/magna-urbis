@@ -14,6 +14,7 @@ import type { RenderColors } from './customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { mapGroundSnow } from './seasonPalette';
+import { quayFill } from './roadStyle';
 import { funeraryLandFill } from './cityRoles';
 
 export interface CityGlStyleState {
@@ -47,7 +48,7 @@ const PAPER = '#f2ead8';
 const PARCH = {
   ink: '#4e3b28', inkSoft: '#5a4530', block: '#e2cf9f', lot: '#ece0bf', yard: '#e6d6a8',
   garden: '#d3cf98', place: '#d5cdb7', market: '#d9c9a1', common: '#cdd097', reserve: '#d8c79a', footprint: '#d9c393',
-  street: '#f4ead0', streetEdge: '#3f2f1f', bridge: '#f6edd0', ford: '#bccbc8', quay: '#e9dfc4',
+  street: '#ebdeba', streetEdge: '#5e4a34', bridge: '#ece0bc', ford: '#bccbc8', quay: '#dccfa8',
   mass: '#4a3826', landmark: '#7d5f40', wall: '#3b2c1c', wallFill: '#6b5540', tower: '#4e3b28',
 };
 
@@ -84,7 +85,7 @@ const YARD_EARTH = '#b3a27c';
 function paintedYard(d: CityDistrict | undefined, fallback: string): string { return mix(districtColor(d, fallback), YARD_EARTH, 0.45); }
 export function streetPaint(role: string, rank: number, palette: CityPalette): { fill: string; casing: string } {
   if (role === 'track') { const ink = palette === 'ink' ? '#776348' : '#a58e65'; return { fill: ink, casing: ink }; }
-  if (role === 'mole') return { fill: '#d3cab0', casing: '#2b2015' };   // stone port works: dark outline, legible zoomed out
+  if (role === 'mole') return { fill: quayFill('stone'), casing: '#2b2015' };   // stone port works: dark outline, legible zoomed out
   if (palette === 'ink') return { fill: '#6b5640', casing: '#3c3024' };
   if (isBoardwalk(role)) return { fill: '#b49a6d', casing: '#514431' };
   if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink } : role === 'bridge' ? { fill: PARCH.bridge, casing: PARCH.wall }
@@ -93,7 +94,7 @@ export function streetPaint(role: string, rank: number, palette: CityPalette): {
     case 'bridge': return { fill: '#ddd3c2', casing: '#4d4740' };
     case 'causeway': return { fill: '#dccaa0', casing: '#76664f' };
     case 'ford': return { fill: '#b9d0d6', casing: '#6f8f9a' };
-    case 'quay': return { fill: '#ddd4c2', casing: '#57534b' };
+    case 'quay': return { fill: '#bdb4a0', casing: '#57534b' };
     case 'port-stairs': case 'stairs': return { fill: '#e6d5b2', casing: '#705d45' };
     case 'market': return { fill: '#f5d98f', casing: '#9a7d4f' };
     case 'collective': return { fill: '#ccdacf', casing: '#8a9a8d' };
@@ -121,7 +122,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     buildings: false, buildingLines: false };
   if (layers.streets && mesh.layers.quays) (scene.quays ?? []).forEach((q, i) => {
     const f = mesh.layers.quays.features[0] + i;
-    put(fill, f, q.material === 'timber' ? '#b49a6d' : '#d3cab0');
+    put(fill, f, quayFill(q.material, parchment));
     put(line, f, q.kind === 'mole' ? '#2b2015' : parchment ? PARCH.ink : '#57534b');
   });
   if (lod === 'far') {

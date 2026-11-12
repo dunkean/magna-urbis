@@ -611,7 +611,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       metrics.lod[lod]++;
       const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
       const landmark = painted && isLandmark(building);
-      const color = options.appearance.style === 'silhouette' || options.appearance.diagnostic !== 'none' ? paint.roof : snowHex(paint.roof, mapGroundSnow(building.ground_z_m) * .72, 0);
+      const color = options.appearance.style === 'silhouette' || options.appearance.diagnostic !== 'none' ? paint.roof : snowHex(paint.roof, mapGroundSnow(building.ground_z_m) * .72, 0, night, ink);
       const group = fills.get(color) ?? []; group.push(geometry.outline); fills.set(color, group);
       if (painted) {
         const height = visualHeight(building);
@@ -656,7 +656,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
         if (relief.length) {
           const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
           for (const face of relief) {
-            ctx.fillStyle = snowHex(planShade(paint.roof, face.light), face.snow * mapGroundSnow(building.ground_z_m), face.light);
+            ctx.fillStyle = snowHex(planShade(paint.roof, face.light), face.snow * mapGroundSnow(building.ground_z_m), face.light, night, ink);
             paintGeometry(ctx, face.geometry, metrics);
             if (!face.snow) { ctx.strokeStyle = 'rgba(35,28,21,.55)'; ctx.lineWidth = .45 * mpp; paintGeometry(ctx, face.geometry, metrics, true); }
           }
@@ -668,7 +668,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
             ctx.save(); clipGeometry(ctx, geometry.outline);
             for (const layer of facets) for (const group of layer.groups) {
               const color = options.appearance.colors?.building ? shadeMaterial(options.appearance.colors.building, group.darkness) : night ? nightRoof(group.color, ink) : group.color;
-              ctx.fillStyle = options.appearance.diagnostic === 'none' ? snowHex(color, mapGroundSnow(building.ground_z_m) * .8, -group.darkness) : color; paintGeometry(ctx, group.geometry, metrics);
+              ctx.fillStyle = options.appearance.diagnostic === 'none' ? snowHex(color, mapGroundSnow(building.ground_z_m) * .8, -group.darkness, night, ink) : color; paintGeometry(ctx, group.geometry, metrics);
             }
             ctx.restore();
           }
@@ -857,8 +857,9 @@ function shadeMaterial(color: string, darkness: number): string {
   return `rgb(${Math.round(((value >> 16) & 255) * (1 - shade) + 41 * shade)},${Math.round(((value >> 8) & 255) * (1 - shade) + 51 * shade)},${Math.round((value & 255) * (1 - shade) + 45 * shade)})`;
 }
 
-function snowHex(color: string, amount: number, light: number): string {
+function snowHex(color: string, amount: number, light: number, night = false, ink = false): string {
   if (!amount) return color;
   const c = color.startsWith('rgb') ? color.match(/[\d.]+/g)!.slice(0, 3).map(v => Number(v) / 255) : [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255);
-  return '#' + snowRoofTint(c as [number, number, number], amount, light).map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+  const snow = '#' + snowRoofTint(c as [number, number, number], amount, light).map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+  return night ? nightRoof(snow, ink) : snow;
 }

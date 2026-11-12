@@ -8,9 +8,12 @@ export interface V2RegionSettings {
   /** null disables regional roads. */
   roads?: Partial<RoadConfig> | null;
   resolution?: number;
+  /** Farmland beyond subsistence: cultivated budget = settled people x base ha per head x (1 + cropSurplus). 0 = subsistence, ~2 = export farming. */
+  cropSurplus?: number;
 }
 export const regionSpec = (key='main',population=300):SettlementSpec => ({key,name:'',population,culture:'european-organic',siteType:'auto',sitePrefs:{}});
-export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig;roads:RoadConfig|null;resolution:number}{
+export const DEFAULT_CROP_SURPLUS = 0.2;
+export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig;roads:RoadConfig|null;resolution:number;cropSurplus:number}{
   const o=settings.options, p=settings.region?.placement, local=settings.local.main??{};
   const secondary=Math.max(0,settings.settlementCount-1),village=Math.ceil(secondary*2/3);
   const placement:SettlementConfig={
@@ -38,7 +41,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
       ...(overrides.sitePrefs?{sitePrefs:{...spec.sitePrefs,...overrides.sitePrefs,weights:{...spec.sitePrefs?.weights,...overrides.sitePrefs.weights}}}:{})};
   });
   const roads=settings.region?.roads===null?null:{level:'rural',surface:'auto',culture:'auto',density:.5,gradeWeight:1,maxGrade:0,crossingCost:1,wobble:1,sharing:.7,exits:o.roads??2,...settings.region?.roads} as RoadConfig;
-  return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512)};
+  return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512),cropSurplus:settings.region?.cropSurplus??DEFAULT_CROP_SURPLUS};
 }
 /** Mirrors core/settlements/mod.rs::validate and roads/mod.rs::validate. */
 export function validateRegionSettings(value: unknown, width = 100000): void {
@@ -77,8 +80,9 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
       if (prefs.weights !== undefined) weights(prefs.weights, `${name}.sitePrefs.weights`);
     }
   };
-  const region = object(value, 'regional settings'); fields(region, ['placement', 'roads', 'resolution'], 'region');
+  const region = object(value, 'regional settings'); fields(region, ['placement', 'roads', 'resolution', 'cropSurplus'], 'region');
   if (region.resolution !== undefined) number(region.resolution, 'Regional raster resolution', 64, 1024, true);
+  if (region.cropSurplus !== undefined) number(region.cropSurplus, 'Crop surplus', 0, 3);
   if (region.placement !== undefined) {
     const p = object(region.placement, 'placement settings');
     const limits: Record<string, readonly [number, number]> = { density: [0, 10], zipfExponent: [.3, 3], minPopulation: [1, 100000], populationJitter: [0, 1], spread: [.1, 100], smallTop: [0, 1], mainClear: [0, 100], clustering: [0, 100], edgeMargin: [0, .3], flatnessWeight: [0, 100], buildableWeight: [0, 100], freshWaterWeight: [0, 100], riverWeight: [0, 100], coastWeight: [0, 100], floodWeight: [0, 100], defenseWeight: [0, 100], elevation: [-1, 1], variationWeight: [0, 100], farmDensity: [0, 10] };

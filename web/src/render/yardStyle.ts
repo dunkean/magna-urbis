@@ -46,10 +46,11 @@ export function yardStyle(material: YardMaterial, culture = '', palette: CityPal
   STYLES.set(key, style);
   return style;
 }
-/** Light of the building shader (.55 + .45 |n.l|) on the sides of a boundary, on average, and on its top. */
-const SIDE_LIGHT = .72;
-export const TOP_LIGHT = .94;
-/** Tint (6 hex digits) that shows `color` once lit: without it, the same material reads far darker in 3D than on the plan. */
+/** Do not over-expose narrow walls to compensate for their shaded side: the lit
+ * side otherwise clips to white and reads as a parcel selection outline. */
+const SIDE_LIGHT = 1;
+export const TOP_LIGHT = 1;
+/** Matte yard albedo (six hex digits); its directional shade belongs to the mesh. */
 export const yardMeshTint = (color: string, light = SIDE_LIGHT): string => hex(shade(rgb(color), 1 / light)).slice(1);
 
 export interface YardRun { path: Point[]; closed: boolean; source: YardBoundary }

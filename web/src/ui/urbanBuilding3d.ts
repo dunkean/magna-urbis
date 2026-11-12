@@ -3,10 +3,11 @@ import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, buildingRa
 import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
 import { mapGroundSnow, roofSeasonKey } from '../render/seasonPalette';
-import { roofSnowPatches, snowRoofTint, townRoofAltitudes } from '../render/roofSnow';
+import { roofSnowCover, snowRoofTint, townRoofAltitudes } from '../render/roofSnow';
 import type { BuildingTriangle } from '../render/urbanBuildingGeometry';
 import { buildingTint } from '../render/buildingPalette';
 import { MOONLIGHT_GLSL } from '../render/materialLook';
+import { ROOF_PLANE_LIGHT_GLSL } from '../render/roofPlaneLight';
 
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
@@ -27,6 +28,7 @@ float baseOcclusion(vec3 normal,vec3 p){
 }
 uniform int uNight;
 ${MOONLIGHT_GLSL}
+${ROOF_PLANE_LIGHT_GLSL}
 vec3 buildingNight(vec3 color,vec3 p,vec3 normal){
   if(uNight==0)return color;
   vec3 N=normalize(normal);color=moonlight(color);
@@ -57,7 +59,7 @@ precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition;
 out vec4 color;
 ${nightWindows}
-void main(){float light=.55+.45*abs(dot(normalize(n),normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);}`;
+void main(){vec3 N=normalize(n);float light=buildingLight(N,N);color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -111,7 +113,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);
+  float light=buildingLight(N,normalize(n));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));
@@ -259,7 +261,10 @@ export class UrbanBuildingPass {
         const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(raw ?? '');
         const id = tm ? raw.slice(0, tm.index) : raw;
         const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, {materials: this.source?.materials ?? []});
-        const layer = textured && !snow ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
+        // Thin enclosures already carry their final yard colours. A roof/wall
+        // atlas and its normal-map highlights turn subpixel copings into white
+        // parcel outlines; retain the same matte material at every yard LOD.
+        const layer = textured && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
         const base = face.surface === 'roof' ? paint.roof : paint.wall, key = `${raw}|${face.surface}`;
         let c = colors.get(key);
         if (!c) {
@@ -285,7 +290,7 @@ export class UrbanBuildingPass {
         const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : `vertex-colour|${!!snow}`, mean = MATERIALS.layers[layer]?.mean_rgb;
         const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
           : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
-        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, snow: !!snow, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
+        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
         if (batch.palette && !batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
         for (const [i, p] of face.points.entries()) {
           batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
@@ -295,14 +300,12 @@ export class UrbanBuildingPass {
       };
       const snow = this.appearance.style !== 'silhouette' && this.appearance.diagnostic === 'none' ? mapGroundSnow(this.snowAltitudes.get(building.id) ?? building.ground_z_m, this.appearance.roofSnow) : 0;
       eachBuildingTriangle(building, face => {
-        paintFace(face);
-        // Cover-only geometry: chimneys, parapets, walls, trees and civil works keep their material.
+        // Snow whitens the roof triangle itself: no inset overlay per triangle, so neither triangulation seams nor
+        // a border draw stripes, and nothing needs a depth bias. Walls, steep faces and cover-only geometry
+        // (chimneys, parapets, walls, trees, civil works) keep their material.
         const material = face.material ?? face.materials.cladding;
-        if (!snow || face.surface !== 'roof' || /^city3d:(wall|tree|road|water)/.test(material) || building.id.startsWith('city3d-')) return;
-        for (const patch of roofSnowPatches(face.points.map(([x, y, z]) => ({ x, y, z })), face.normal, .025)) {
-          const points = patch.points.map(p => [p.x, p.y, p.z + .018] as [number, number, number]);
-          for (let i = 1; i + 1 < points.length; i++) paintFace({ ...face, points: [points[0], points[i], points[i + 1]] }, snow * patch.weight);
-        }
+        const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
+        paintFace(face, covered ? snow * roofSnowCover(face.normal) : 0);
       }, overview, featureLod, yardLevel);
     }
     const batches: Batch[] = [];

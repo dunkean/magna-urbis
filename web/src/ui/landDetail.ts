@@ -98,9 +98,16 @@ export function landDetail(landuse: LandUseLayer, maxN = 3072, minCell = 1): Lan
     const id = owner[i]; if (!id) continue;
     const other = (under.has(id) || edge[i] < cell) && i > n && i < n * n - n - 1 ? across(i, id) : 0;
     rgba[o] = !other ? tone[id] : under.has(id) ? tone[other] : Math.round(tone[id] + (under.has(other) ? 0 : (tone[other] - tone[id]) * .5 * (1 - edge[i] / cell))); rgba[o + 1] = cos2[id]; rgba[o + 2] = sin2[id]; rgba[o + 3] = Math.max(1, Math.min(255, Math.round(edge[i] * scale)));
-    hash = Math.imul(hash ^ id ^ i, 0x01000193);
+    hash = Math.imul(hash ^ id ^ i ^ (rgba[o + 1] << 8) ^ (rgba[o + 2] << 16), 0x01000193);
   }
-  return { x, y, width: n * cell, n, rgba, key: `land:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
+  const orchards = areas.filter(a => a.kind === 'orchard').map(a => {
+    const direction = a.stripAngle ?? longestEdge(a.poly);
+    const co = Math.round((Math.cos(2 * direction) * .5 + .5) * 255) / 255 * 2 - 1;
+    const si = Math.round((Math.sin(2 * direction) * .5 + .5) * 255) / 255 * 2 - 1;
+    const angle = .5 * Math.atan2(si, co);
+    return { poly: a.poly, holes: a.holes, along: [Math.cos(angle), Math.sin(angle)] as [number, number] };
+  });
+  return { x, y, width: n * cell, n, rgba, orchards, key: `land:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
 }
 
 /** The occupation of a land use with its holdings attached. */

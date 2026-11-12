@@ -226,6 +226,8 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         u_dist.fill(1e5);
     }
     let mut cover_footprints = foot.clone();
+    // Cells of farmstead settlements: their households farm the land around them.
+    let mut farm_src = vec![0_u8; total];
     if !secondary.is_empty() {
         let mut src = vec![0; total];
         let mut res_sec = vec![0; total];
@@ -291,6 +293,8 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                     scale[i] = k as f32;
                     if s(&st["detail"]) != "farmstead" {
                         res_sec[i] = 1;
+                    } else {
+                        farm_src[i] = 1;
                     }
                 }
             }
@@ -368,7 +372,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         (field_max * 1000.0 + 0.5).floor() / 1000.0,
     );
     let farm_clock = timing::Clock::new();
-    let (farmsteads, farm_mask) = super::rural_farms::generate(
+    let (mut farmsteads, farm_mask) = super::rural_farms::generate(
         input,
         &rr,
         &soil,
@@ -859,6 +863,160 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
     }
+    // Invariants on cultivated land (fields, enclosed fields, orchards, gardens):
+    // - it is worked by people living within walking distance: a village works its open fields
+    //   up to ~2.5 km, a farmstead its land up to ~1.5 km;
+    // - its area follows the settled population (towns, villages, hamlets, placed farmsteads):
+    //   budget = people x BASE_HA_PER_HEAD x (1 + plan.cropSurplus); 0 = subsistence, ~2 = export.
+    // Within the budget, the cells nearest to their farmers are kept. Suited land that no farmer
+    // reaches gets new farmsteads (they do not raise the budget); unsuited out-of-reach land
+    // returns to forest or pasture, and the surplus becomes pasture.
+    {
+        const VILLAGE_REACH: f64 = 2500.0;
+        const FARM_REACH: f64 = 1500.0;
+        const BASE_HA_PER_HEAD: f64 = 0.7;
+        let crop_surplus = pl["cropSurplus"].as_f64().unwrap_or(0.2).clamp(0.0, 3.0);
+        let crop = |k: u8| [1, 5, 6, 9].contains(&k);
+        let mut farm_m = farm_src;
+        for i in 0..total {
+            if farm_mask[i] == 1 {
+                farm_m[i] = 1;
+            }
+        }
+        let (d_village, _) = distance_field(&reserve, n, n, cell, None);
+        let (d_farmer, _) = distance_field(&farm_m, n, n, cell, None);
+        let main_pop = if planned {
+            num(&pl["population"])
+        } else if empty_main {
+            0.0
+        } else {
+            urban["population"].as_f64().unwrap_or(100.0)
+        };
+        let people = main_pop + secondary.iter().map(|st| num(&st["population"])).sum::<f64>();
+        let budget =
+            (people * BASE_HA_PER_HEAD * (1.0 + crop_surplus) * 1e4 / (cell * cell)).ceil() as usize;
+        let (mut worked, mut far) = (vec![], vec![]);
+        for i in 0..total {
+            if !crop(cls[i]) {
+                continue;
+            }
+            let reach = (d_village[i] as f64 / VILLAGE_REACH).min(d_farmer[i] as f64 / FARM_REACH);
+            if reach <= 1.0 {
+                worked.push((reach as f32, i));
+            } else {
+                far.push(i);
+            }
+        }
+        worked.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let keep = worked.len().min(budget);
+        let mut surplus = worked.len() - keep;
+        for &(_, i) in &worked[keep..] {
+            cls[i] = 3;
+        }
+        let mut left = budget - keep;
+        // Out of reach: suited land (good soil, gentle slope, dry, habitable) gets farmers while
+        // the budget lasts, nearest to the market first; each new farm claims its working radius.
+        let suited = |i: usize| {
+            input.water[i] == 0
+                && input.d_water[i] >= 40.0
+                && input.hab[i] >= 0.8
+                && (slope_l[i] as f64) < 0.8 * field_max
+                && soil_at((i % n) as f64, (i / n) as f64) > -0.05
+        };
+        let mut state = vec![0_u8; total];
+        let mut cand = vec![];
+        for &i in &far {
+            if suited(i) {
+                state[i] = 1;
+                cand.push((u_dist[i], i));
+            }
+        }
+        cand.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let r = (FARM_REACH / cell).ceil() as isize;
+        let mut sites = vec![];
+        let mut ring = vec![];
+        for &(_, c) in &cand {
+            if left == 0 {
+                break;
+            }
+            if state[c] != 1 {
+                continue;
+            }
+            let (cx, cy) = ((c % n) as isize, (c / n) as isize);
+            sites.push(p((cx as f64 + 0.5) * cell, (cy as f64 + 0.5) * cell));
+            ring.clear();
+            for y in (cy - r).max(0)..=(cy + r).min(n as isize - 1) {
+                for x in (cx - r).max(0)..=(cx + r).min(n as isize - 1) {
+                    let j = y as usize * n + x as usize;
+                    let d = ((x - cx) as f64).hypot((y - cy) as f64) * cell;
+                    if state[j] == 1 && d <= FARM_REACH {
+                        ring.push((d, j));
+                    }
+                }
+            }
+            ring.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            for &(_, j) in ring.iter().take(left) {
+                state[j] = 2;
+            }
+            left -= ring.len().min(left);
+        }
+        let mut unreached = 0;
+        for &i in &far {
+            match state[i] {
+                2 => {}
+                1 => {
+                    cls[i] = 3;
+                    surplus += 1;
+                }
+                _ => {
+                    cls[i] = if soil_at((i % n) as f64, (i / n) as f64) > 0.0 { 4 } else { 3 };
+                    unreached += 1;
+                }
+            }
+        }
+        let added = if sites.is_empty() {
+            vec![]
+        } else {
+            super::rural_farms::add_for_demand(
+                input,
+                &rr,
+                &soil,
+                &roads,
+                &slope_l,
+                &farm_reserve,
+                &u_dist,
+                lm,
+                &farmsteads,
+                &sites,
+            )
+        };
+        if !added.is_empty() {
+            let mut mask = vec![0_u8; total];
+            let lots: Vec<_> = added.iter().map(|f| poly(&f["lot"])).collect();
+            rasterize(&lots, n, n, cell, &mut mask);
+            for fm in &added {
+                near_line(&closed(&poly(&fm["lot"])), n, n, cell, 0.75 * cell, |i| mask[i] = 1);
+                let drive = poly(&fm["drive"]);
+                if drive.first().zip(drive.last()).is_some_and(|(&a, &b)| dist(a, b) > 0.5) {
+                    near_line(&drive, n, n, cell, 3.0 + 0.75 * cell, |i| mask[i] = 1);
+                }
+            }
+            for i in 0..total {
+                if mask[i] == 1 {
+                    cls[i] = 0;
+                }
+            }
+        }
+        let ha = cell * cell / 1e4;
+        stats.insert("field.people".into(), people.round());
+        stats.insert("field.cropSurplus".into(), crop_surplus);
+        stats.insert("field.budgetHa".into(), (budget as f64 * ha).round());
+        stats.insert("field.unreachedHa".into(), (unreached as f64 * ha).round());
+        stats.insert("field.surplusHa".into(), (surplus as f64 * ha).round());
+        stats.insert("field.demandSites".into(), sites.len() as f64);
+        stats.insert("field.demandFarms".into(), added.len() as f64);
+        farmsteads.extend(added);
+    }
     stats.insert("ms.lu.classes".into(), class_clock.ms());
     let vector_clock = timing::Clock::new();
     let min_area = 1200.0_f64.max(2.2 * cell * cell);
@@ -1277,7 +1435,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             continue;
         }
         if planned {
-            fields::cut_strips(&mut fl, &mut strip_rng, None);
+            fields::cut_strips(&mut fl, &mut strip_rng, None, Some(&mk_ctx(false)));
         }
         strip_count += fl.strips.len();
         furlong_count += 1;

@@ -1,5 +1,6 @@
 """Deterministic scene descriptions; the procedural world remains authoritative."""
 import math
+from .battlemap import ground_frame, validate as validate_output
 
 STYLES = {
     "parchment": "hand-drawn cartography on warm aged parchment, fine ink lines, restrained earth pigments, consistent paper texture",
@@ -10,6 +11,9 @@ STYLES = {
     "watercolor": "fine-art watercolor, translucent washes, textured paper, delicate architectural details",
     "fineart": "architectural oil painting, fine brushwork, rich restrained pigments, carefully resolved buildings, coherent natural light and soft atmospheric depth",
     "photorealistic": "photorealistic landscape and architectural visualization, physically plausible materials, natural light",
+    "fineart-photo": "fine-art photorealistic photography, exquisite physically plausible material textures, carefully composed natural light, restrained cinematic color grading, realistic optics; deep focus for aerial views, no miniature or tilt-shift effect",
+    "rpg": "premium tabletop role-playing game environment illustration, hand-painted digital art, detailed culturally appropriate architecture, rich readable materials, controlled atmospheric light and clear environmental storytelling; fantasy follows the supplied world rather than adding invented castles or creatures",
+    "pencil": "black graphite pencil drawing on ivory paper, confident fine architectural linework, varied pencil pressure, layered cross-hatching and subtle tonal shading, monochrome, no colored pigments",
     "atlas": "finely illustrated geographic atlas, clear terrain and settlement hierarchy, restrained natural colors",
 }
 VISUAL_TRADITIONS = {
@@ -229,8 +233,9 @@ def describe_scene(context):
         terrain = "snow-covered mountains"
     setting = " ".join(filter(None, [climate, terrain]))
     primary = max(settlements, key=lambda s: number(s.get("population")) or 0) if settlements else {}
-    configured_city = generation.get("workflow") != "environment" and bool(generation.get("culture"))
-    has_city = bool(settlements or configured_city or architecture.get("traditions"))
+    measured = record(context.get('visibleScene')).get('measured') is True
+    configured_city = not measured and generation.get("workflow") != "environment" and bool(generation.get("culture"))
+    has_city = bool(settlements or configured_city or architecture.get("traditions") or record(context.get('visibleScene')).get('sampledBuildings'))
     traditions = [c for c in architecture.get("traditions", []) if isinstance(c, str)]
     culture_id = primary.get("urbanCulture") or primary.get("culture") or generation.get("culture") or next(iter(traditions), None) or record(architecture.get("settings")).get("culture")
     house_config = record(record(architecture.get("settings")).get("house_config"))
@@ -242,6 +247,10 @@ def describe_scene(context):
     subject = f"{'an' if city[:1].lower() in 'aeiou' and not city.startswith('European') else 'a'} {city}" if has_city else "a natural terrain landscape"
     if has_city and population is not None and population > 0:
         subject += f" of approximately {population:,.0f} inhabitants"
+    extent = record(context.get('extentMetres'))
+    diameter = 2 * (number(primary.get('radiusMetres')) or 0)
+    if diameter and number(extent.get('width')) and extent['width'] < diameter * 1.2:
+        subject = 'a visible local section of ' + subject
     if len(settlements) > 1:
         subject = f"a regional landscape with {len(settlements)} visible settlements, including {subject}"
     camera, camera_details = describe_camera(context)
@@ -249,6 +258,8 @@ def describe_scene(context):
     summary = f"{camera} of {subject}" + (f" in {article}{setting}" if setting else "") + "."
     if biome:
         summary += f" Biome: {biome}."
+    if environment.get('ambience') == 'night':
+        summary += ' The captured scene is at night.'
     sentences = [summary] + ([camera_details] if camera_details else [])
     if biome:
         sentences.append(f"The available biome estimate is {biome}." if environment.get("biomeEvidence") else f"The landscape biome is {biome}.")
@@ -300,20 +311,51 @@ def describe_scene(context):
     storeys = [n for n in architecture.get("storeys", []) if number(n) is not None]
     if storeys:
         sentences.append(f"The sampled visible buildings have between {min(storeys):g} and {max(storeys):g} storeys.")
-    if generation.get("river") and generation["river"] not in ("none", "0"):
+    visible_scene = record(context.get('visibleScene'))
+    water = record(visible_scene.get('water'))
+    if water.get('river') or (not visible_scene.get('sampledTerrainCells') and generation.get("river") and generation["river"] not in ("none", "0")):
         sentences.append("The map contains a river; reproduce its visible course from the image rather than adding a new channel.")
-    if generation.get("coast") and generation["coast"] not in ("none", "0"):
+    if water.get('sea') or (not visible_scene.get('sampledTerrainCells') and generation.get("coast") and generation["coast"] not in ("none", "0")):
         sentences.append("The map includes a coast; retain the shoreline exactly where it is visible in the image.")
     extent = record(context.get("extentMetres"))
     if number(extent.get("width")) and number(extent.get("height")):
         sentences.append(f"The captured extent is approximately {extent['width']:,.0f} by {extent['height']:,.0f} metres.")
     if not has_city:
         sentences.append("No settlement is identified in the supplied scene context; do not invent urban development.")
+    if water.get('lake'):
+        sentences.append('Lake water is identified within the visible crop; retain its visible boundaries.')
+    elevation = record(visible_scene.get('elevationMetres'))
+    if number(elevation.get('min')) is not None and number(elevation.get('max')) is not None:
+        sentences.append(f"Sampled visible terrain elevations range from {elevation['min']:.0f} to {elevation['max']:.0f} metres above the map datum.")
     return summary, " ".join(sentences)
+
+
+def scale_direction(context):
+    frame = ground_frame(context)
+    extent = frame or record(context.get('extentMetres'))
+    width, height = number(extent.get('width')), number(extent.get('height'))
+    parts = []
+    if width and height:
+        qualifier = 'approximate horizontal target-plane footprint' if context.get('projection') == 'perspective' else 'visible ground rectangle'
+        parts.append(f"Real-world scale: the {qualifier} is {width:,.1f} m wide by {height:,.1f} m high, edge to edge; these are metres, not kilometres.")
+        if frame and frame.get('perspective'):
+            parts.append('Perspective scale varies with depth; the footprint is not a constant metres-per-pixel scale. Preserve the source foreshortening.')
+        else:
+            parts.append(f"A 1.50 m ground length occupies {150/width:.2f}% of the image width and {150/height:.2f}% of its height.")
+        span = max(width, height)
+        parts.append('This is an encounter-scale crop: depict only these few buildings or pieces of terrain, never squeeze a whole town into it.' if span <= 180 else
+                     'This is a district-scale crop: retain the actual density and building footprint sizes.' if span <= 2000 else
+                     'This is a broad landscape view: individual small objects must remain proportionally tiny or unresolved.')
+    typical = number(record(context.get('visibleScene')).get('medianBuildingSpanMetres'))
+    if typical and typical > 0:
+        parts.append(f"Measured reference: a typical sampled visible building spans approximately {typical:.1f} m across its footprint.")
+    parts.append('Where buildings are present, use human-scale details as secondary anchors: ordinary doorways around 2 m high and storeys around 3 m high, unless the source architecture indicates otherwise. Do not add people as scale markers. Buildings must not become miniature models, giant blocks or mountain-sized structures. Whole-settlement population is context, not the number of buildings to fit inside this crop.')
+    return ' '.join(parts)
 
 
 def compile_prompt(context, settings):
     context = clean(context)
+    battlemap = validate_output(context, settings)
     style = resolve_style(settings.get("style", "auto"), context.get("sourceStyle", ""))
     fidelity = settings.get("fidelity", "strong")
     if fidelity not in FIDELITY:
@@ -322,12 +364,25 @@ def compile_prompt(context, settings):
     camera = ("Keep a strictly top-down orthographic map; do not introduce a horizon or perspective."
               if projection == "orthographic" else "Keep the source camera angle and projection.")
     summary, description = describe_scene(context)
+    scale = scale_direction(context)
+    tactical = settings.get('output', 'illustration') == 'battlemap'
+    cell_metres = battlemap['cellMetres']
+    grid_measure = f'{cell_metres:.2f} m'
+    grid_kind = 'hexagonal' if settings.get('grid') == 'hex' else 'square'
+    grid_direction = (f'Tactical scale: {grid_measure} per {grid_kind} cell. '
+                      + ('For hexagons this is the distance between opposite faces and between neighbouring cell centres. ' if grid_kind == 'hexagonal' else '')
+                      + 'Generate gridless artwork: never paint grid lines, cell outlines or coordinate marks into the image. '
+                      + ('The application overlays a single measured grid after generation. ' if settings.get('grid', 'square') != 'none' else 'No grid will be drawn. '))
+    purpose = ('Create a playable tabletop RPG battlemap of precisely the captured area. Preserve the source camera and ground footprint, with readable walkable ground, doorways, paths, cover and obstacles at human encounter scale. '
+               'Keep roofs, walls and courtyards where shown; do not invent interiors, remove roofs or change street widths. Use clear restrained lighting, crisp ground detail and minimal atmospheric occlusion. '
+               f'No tokens, characters, UI, coordinates, labels, decorative borders or drawn grid. {grid_direction}'
+               if tactical else 'Create a finished environment illustration of precisely the captured area. ')
     instruction = str(settings.get("instruction", "")).strip()[:3000]
     details = ("Preserve the relative positions and connectivity of street intersections, parcels, urban blocks, open spaces, terrain contours and water boundaries. "
                "Within that layout, create convincing complete architecture and freely develop materials, facades, roofs, vegetation and fine details appropriate to the culture and period. ")
     prompt = ("Edit the supplied source image itself, using it as the authoritative visual reference. "
               "Reproduce this same place in the requested artistic style; do not create a different scene merely inspired by the description. "
-              f"\n\nScene description: {description[:18000]}\n\n"
+              f"\n\nScene description: {description[:18000]}\n\n{scale}\n\n{purpose}\n\n"
               f"Requested style: {STYLES[style]}.\n\n"
               f"{camera} {FIDELITY[fidelity]} "
               f"{details}"
@@ -342,19 +397,19 @@ def compile_prompt(context, settings):
     roofs = ", ".join(words(r) for r in architecture.get("roofSystems", [])[:2])
     materials = ", ".join(name for m in architecture.get("materials", [])[:2] if isinstance(m, dict) and (name := material_name(m)))
     short_architecture = (f" Roof forms: {roofs}." if roofs else "") + (f" Materials: {materials}." if materials else "")
-    fast_prompt = f"{summary} {STYLES[style]}.{short_architecture} Preserve the source layout, roads, rivers and buildings. No labels. {instruction}"
     generation = record(context.get("generation"))
     settlements = [s for s in context.get("settlements", []) if isinstance(s, dict)]
     primary = max(settlements, key=lambda s: number(s.get("population")) or 0) if settlements else {}
     culture_id = (primary.get("urbanCulture") or primary.get("culture") or generation.get("culture")
                   or next(iter(architecture.get("traditions", [])), None))
-    visual_tradition = VISUAL_TRADITIONS.get(culture_id, "")
     natural = "natural terrain landscape" in summary
+    visual_tradition = '' if natural else VISUAL_TRADITIONS.get(culture_id, "")
     geometry = ("Keep the reference framing, terrain forms, shorelines, water courses and vegetation zones. "
                 "Resolve natural ground textures, coherent shadows and readable relief. " if natural else
                 "Keep the reference street topology, urban blocks, open squares, bridge positions, water courses and camera framing. "
                 "Within that fixed plan, freely turn the placeholder masses into convincing complete buildings, with richly detailed materials, facades, roofs, gardens and coherent shadows. ")
-    local_prompt = (f"Transform the supplied reference image into a finished, high-quality image in this style: {STYLES[style]}. {summary} "
+    _, camera_details = describe_camera(context)
+    local_prompt = (f"Transform the supplied reference image into a finished, high-quality image in this style: {STYLES[style]}. {summary} {scale} {purpose} {camera} {camera_details} "
                     f"{visual_tradition + '. ' if visual_tradition else ''}{short_architecture} "
                     "Depict only the visible crop of this place, not the entire settlement or a new panorama. "
                     f"{geometry}"
@@ -371,8 +426,8 @@ def compile_prompt(context, settings):
         local_prompt += " The reference image contains structural contours only: preserve their plan and camera framing while freely creating complete architecture in the requested style."
     # SDXL's complete caption is chunked through both CLIP encoders in local.py.
     # Put style/culture before generic preservation instructions.
-    fast_prompt = (f"{STYLES[style]}. {summary} {visual_tradition + '. ' if visual_tradition else ''}{short_architecture} "
-                   f"{geometry} {instruction}")
+    fast_prompt = (f"{STYLES[style]}. {summary} {scale} {purpose} {camera} {camera_details} {visual_tradition + '. ' if visual_tradition else ''}{short_architecture} "
+                   f"{geometry} No text or labels. {instruction}")
     customized = "promptOverride" in settings
     if customized:
         override = settings["promptOverride"]
@@ -383,7 +438,7 @@ def compile_prompt(context, settings):
             raise ValueError(f"Le prompt personnalisé est limité à {limit} caractères pour ce moteur.")
         prompt = fast_prompt = local_prompt = override.strip()
     return {"description": description, "prompt": prompt[:28000], "fastPrompt": fast_prompt, "localPrompt": local_prompt[:6000], "style": style,
-            "customized": customized,
+            "customized": customized, "battlemap": battlemap,
             "negativePrompt": "text, labels, user interface, distorted geography, misplaced bridges, redesigned street plan"}
 
 

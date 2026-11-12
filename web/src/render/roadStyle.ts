@@ -25,15 +25,17 @@ interface RankStyle {
 }
 const GRAVEL: Rgb = [170, 160, 140], EARTH: Rgb = [170, 148, 110], DIRT: Rgb = [156, 130, 94];
 export const ROAD_RANK_STYLE: Readonly<Record<RoadRank, RankStyle>> = {
-  major: { floor: 2.4, ceil: 9, alpha: .96, contrast: .2, earth: .82, shoulder: .2, surface: GRAVEL },
-  minor: { floor: 1.6, ceil: 7, alpha: .92, contrast: .17, earth: .74, shoulder: .16, surface: GRAVEL },
-  street: { floor: 1.5, ceil: 6, alpha: .92, contrast: .12, earth: .74, shoulder: .14, surface: EARTH },
-  lane: { floor: 1.1, ceil: 5, alpha: .84, contrast: .1, earth: .62, shoulder: .1, surface: EARTH },
-  track: { floor: .95, ceil: 4, alpha: .72, contrast: .095, earth: .5, shoulder: .06, surface: DIRT },
-  path: { floor: .75, ceil: 2.6, alpha: .54, contrast: .06, earth: .38, shoulder: 0, surface: DIRT },
+  major: { floor: 2.4, ceil: 9, alpha: .9, contrast: .15, earth: .86, shoulder: .15, surface: GRAVEL },
+  minor: { floor: 1.6, ceil: 7, alpha: .86, contrast: .13, earth: .8, shoulder: .12, surface: GRAVEL },
+  street: { floor: 1.5, ceil: 6, alpha: .86, contrast: .095, earth: .8, shoulder: .1, surface: EARTH },
+  lane: { floor: 1.1, ceil: 5, alpha: .78, contrast: .08, earth: .7, shoulder: .075, surface: EARTH },
+  track: { floor: .95, ceil: 4, alpha: .66, contrast: .075, earth: .58, shoulder: .045, surface: DIRT },
+  path: { floor: .75, ceil: 2.6, alpha: .5, contrast: .05, earth: .44, shoulder: 0, surface: DIRT },
 };
 /** Screen floor by urban street rank (0 = main street … 4 = lane), any look. */
 export const STREET_MIN_PX: readonly number[] = [3, 2.4, 1.7, 1.2, .9];
+/** Harbour platforms and moles seen from above: weathered stone or timber, never near-white (parchment sits a little lighter, on its paper). */
+export const quayFill = (material: string, parchment = false): string => material === 'timber' ? (parchment ? '#a08758' : '#7d6643') : parchment ? '#b9ac86' : '#8d836c';
 export const regionalRank = (kind: string): RoadRank => kind === 'major' ? 'major' : kind === 'track' ? 'track' : 'minor';
 /** 3D regional streets carry a rank, not a kind. */
 export const regionalStreetRank = (rank: number): RoadRank => rank <= 1 ? 'major' : rank === 2 ? 'minor' : 'track';
@@ -169,6 +171,8 @@ function pattern(ctx: CanvasRenderingContext2D, surface: Surface): CanvasPattern
   return p;
 }
 const GRAIN = 128, GRAIN_METRES = 40;
+/** Share of the grain shown at `scale` px per metre: 0 below one screen pixel per grain texel, 1 from two. */
+const grainVisibility = (scale: number): number => { const t = clamp(scale * GRAIN_METRES / GRAIN - 1, 0, 1); return t * t * (3 - 2 * t); };
 let grainSurface: Surface | undefined;
 /** Gravel and earth grain up close: a seamless tile, stones and stains in transparent ink, anchored to the world. */
 function grainTile(): Surface | undefined {
@@ -215,7 +219,9 @@ export function naturalMarks(rank: RoadRank, width: number, scale: number, style
   return { shadow: s.shoulder > 0 || snow ? { color: snow ? 'rgb(116,139,158)' : SHADOW, alpha: clamp((snow ? .2 : s.shoulder) * e, 0, .4), extra: Math.max(1.4 / scale, width * .34) } : undefined,
     bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) },
     wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? .07 : .13) * e, share: .56, dash: WEAR_DASH } : undefined,
-    grain: px >= 7 ? (style.night ? .3 : .5) * Math.min(1, e) * (1 - Number(snow)) : 0 };
+    // The grain tile is per-texel noise: below about one screen pixel per texel the unfiltered pattern aliases into
+    // pixel speckle (a grainy, "pixelated" street at town zoom). It fades in between 1 and 2 px per texel.
+    grain: px >= 7 ? (style.night ? .3 : .5) * Math.min(1, e) * (1 - Number(snow)) * grainVisibility(scale) : 0 };
 }
 /** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. */
 export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle): void {

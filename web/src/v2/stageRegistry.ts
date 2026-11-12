@@ -187,7 +187,7 @@ export const STAGES: readonly StageDef[] = [
     label: { en: 'Sites and urban reserves', fr: 'Sites et réserves urbaines' }, summary: { en: 'Where places settle, spacing and site scoring', fr: 'Où s’installent les lieux, espacement et critères' },
     controls: ['main:town-count', 'main:culture', 'region.placement.main.name', 'region.placement.main.siteType', 'region.placement.main.position.x', 'region.placement.main.position.y',
       'region.placement.main.sitePrefs.mountainFace', 'region.placement.main.sitePrefs.woodland', MAIN_SITE_WEIGHTS, 'region.placement.density', 'region.placement.spread', 'region.placement.mainClear', 'region.placement.clustering', 'region.placement.edgeMargin',
-      'region.placement.*Weight', 'region.placement.elevation', 'region.placement.farmDensity', SITE_ARCHETYPE_WEIGHTS, 'region.resolution', 'widget:region-list'],
+      'region.placement.*Weight', 'region.placement.elevation', 'region.placement.farmDensity', 'region.cropSurplus', SITE_ARCHETYPE_WEIGHTS, 'region.resolution', 'widget:region-list'],
     quick: ['main:town-count', 'region.placement.density'], progress: ['sites'] },
   { id: 'settle-hierarchy', family: 'settlements', optional: false, when: always, unavailable: rustRegion, run: { action: 'region' },
     label: { en: 'Place hierarchy', fr: 'Hiérarchie des lieux' }, summary: { en: 'Composition, population law, classes', fr: 'Composition, loi des populations, classes' },

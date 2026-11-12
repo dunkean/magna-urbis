@@ -335,6 +335,198 @@ pub(super) fn small_loops(streets: &mut Vec<Street>, grid: bool) {
     remove_edges(streets, &gone);
 }
 
+/// `roadNetworkPrune`: whether an ordinary street still ends on a bank (within
+/// 16 m of water) after the bridge choice, i.e. whether the door-based
+/// bridgehead pass has anything to settle. Crossing structures, quays and
+/// private ways are not loose ends.
+pub(in crate::urban) fn bank_dead_ends(streets: &[Street], surface: Surface<'_>) -> bool {
+    let mut degree: BTreeMap<Key, usize> = BTreeMap::new();
+    for s in streets {
+        for w in s.path.windows(2) {
+            if key(w[0]) != key(w[1]) {
+                *degree.entry(key(w[0])).or_default() += 1;
+                *degree.entry(key(w[1])).or_default() += 1;
+            }
+        }
+    }
+    let bank = |p: Point| {
+        surface.wet(p)
+            || [8.0, 16.0].iter().any(|&r| {
+                (0..8).any(|i| {
+                    let a = i as f64 * std::f64::consts::FRAC_PI_4;
+                    surface.wet(Point { x: p.x + r * a.cos(), y: p.y + r * a.sin() })
+                })
+            })
+    };
+    streets
+        .iter()
+        .filter(|s| s.path.len() >= 2 && !CROSSINGS.contains(&s.role.as_str()) && !private(s))
+        .flat_map(|s| [s.path[0], *s.path.last().unwrap()])
+        .any(|p| degree.get(&key(p)).copied().unwrap_or(0) == 1 && bank(p))
+}
+
+/// `roadNetworkPrune`: three nearly straight junction-to-junction runs that
+/// close a small triangle (a diagonal shortcut cutting the corner of two
+/// streets), or two nearly straight runs doubling each other between the same
+/// junctions, lose a run: the triangle its longest side (the diagonal) when
+/// that is no more important than the other two, the double its least
+/// important (then longest) run. Runs follow the street graph through plain
+/// vertices, so a side split by a street joint is still one side. A run goes
+/// only when both its junctions keep at least two ways (no new dead end),
+/// and `remove_edges` refuses any change that would split a
+/// component. Crossings, access ways, tracks and protected roads stay.
+/// Grids use larger cells (a diagonal across a planned block); other tissues
+/// only lose tight tangles of short links.
+pub(in crate::urban) fn junction_triangles(streets: &mut Vec<Street>, grid: bool) {
+    let (max_side, max_area) = if grid { (200.0, 8000.0) } else { (90.0, 1600.0) };
+    const STRAIGHT: f64 = 1.15;
+    struct Run {
+        a: Key,
+        b: Key,
+        segments: Vec<(usize, usize)>,
+        length: f64,
+        chord: f64,
+        rank: usize,
+        removable: bool,
+    }
+    let mut incident: BTreeMap<Key, Vec<(usize, usize)>> = BTreeMap::new();
+    let mut points: BTreeMap<Key, Point> = BTreeMap::new();
+    for (i, s) in streets.iter().enumerate() {
+        for (j, w) in s.path.windows(2).enumerate() {
+            let (a, b) = (key(w[0]), key(w[1]));
+            if a == b {
+                continue;
+            }
+            incident.entry(a).or_default().push((i, j));
+            incident.entry(b).or_default().push((i, j));
+            points.insert(a, w[0]);
+            points.insert(b, w[1]);
+        }
+    }
+    let ends = |(i, j): (usize, usize)| (key(streets[i].path[j]), key(streets[i].path[j + 1]));
+    let removable = |s: &Street| {
+        !protected(s)
+            && !private(s)
+            && !CROSSINGS.contains(&s.role.as_str())
+            && !matches!(s.role.as_str(), "track" | "trail" | "mill")
+    };
+    // Walk every run from a junction (degree other than 2) to the next one.
+    let mut runs: Vec<Run> = vec![];
+    let mut visited: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for (&start, list) in &incident {
+        if list.len() == 2 {
+            continue;
+        }
+        for &first in list {
+            if visited.contains(&first) {
+                continue;
+            }
+            let mut segments = vec![];
+            let (mut at, mut edge) = (start, first);
+            loop {
+                visited.insert(edge);
+                segments.push(edge);
+                let (p, q) = ends(edge);
+                at = if p == at { q } else { p };
+                let next = &incident[&at];
+                if next.len() != 2 || at == start {
+                    break;
+                }
+                let Some(&other) = next.iter().find(|&&e| e != edge && !visited.contains(&e)) else { break };
+                edge = other;
+            }
+            if at == start {
+                continue;
+            }
+            let length = segments
+                .iter()
+                .map(|&(i, j)| distance(streets[i].path[j], streets[i].path[j + 1]))
+                .sum();
+            runs.push(Run {
+                a: start.min(at),
+                b: start.max(at),
+                chord: distance(points[&start], points[&at]),
+                rank: segments.iter().map(|&(i, _)| streets[i].rank).max().unwrap_or(0),
+                removable: segments.iter().all(|&(i, _)| removable(&streets[i])),
+                segments,
+                length,
+            });
+        }
+    }
+    let mut degree: BTreeMap<Key, usize> = incident.iter().map(|(&k, v)| (k, v.len())).collect();
+    let mut by_pair: BTreeMap<(Key, Key), Vec<usize>> = BTreeMap::new();
+    let mut links: BTreeMap<Key, BTreeSet<Key>> = BTreeMap::new();
+    for (r, run) in runs.iter().enumerate() {
+        if run.length > run.chord * STRAIGHT + 1.0 || run.chord > max_side {
+            continue;
+        }
+        by_pair.entry((run.a, run.b)).or_default().push(r);
+        links.entry(run.a).or_default().insert(run.b);
+        links.entry(run.b).or_default().insert(run.a);
+    }
+    let mut gone_runs: BTreeSet<usize> = BTreeSet::new();
+    let worst = |candidates: &[usize]| {
+        candidates
+            .iter()
+            .copied()
+            .filter(|&r| runs[r].removable)
+            .max_by(|&x, &y| {
+                runs[x]
+                    .rank
+                    .cmp(&runs[y].rank)
+                    .then_with(|| runs[x].length.total_cmp(&runs[y].length))
+                    .then(y.cmp(&x))
+            })
+    };
+    let cut = |r: usize, degree: &mut BTreeMap<Key, usize>, gone: &mut BTreeSet<usize>| {
+        let (a, b) = (runs[r].a, runs[r].b);
+        if degree[&a] < 3 || degree[&b] < 3 {
+            return false;
+        }
+        *degree.get_mut(&a).unwrap() -= 1;
+        *degree.get_mut(&b).unwrap() -= 1;
+        gone.insert(r);
+        true
+    };
+    // Doubled runs between the same two junctions.
+    for list in by_pair.values().filter(|l| l.len() >= 2) {
+        let mut alive: Vec<usize> = list.clone();
+        while alive.len() >= 2 {
+            let Some(r) = worst(&alive) else { break };
+            if !cut(r, &mut degree, &mut gone_runs) {
+                break;
+            }
+            alive.retain(|&x| x != r);
+        }
+    }
+    let shortest = |a: Key, b: Key, gone: &BTreeSet<usize>| {
+        by_pair
+            .get(&(a.min(b), a.max(b)))
+            .and_then(|l| l.iter().copied().filter(|r| !gone.contains(r)).min_by(|&x, &y| runs[x].length.total_cmp(&runs[y].length)))
+    };
+    for (&a, around) in &links {
+        for &b in around.range(a..) {
+            for &c in around.intersection(&links[&b]).filter(|&&c| c > b) {
+                let (Some(ab), Some(ac), Some(bc)) = (shortest(a, b, &gone_runs), shortest(a, c, &gone_runs), shortest(b, c, &gone_runs)) else { continue };
+                let (p, q, s) = (points[&a], points[&b], points[&c]);
+                let area = ((q.x - p.x) * (s.y - p.y) - (q.y - p.y) * (s.x - p.x)).abs() * 0.5;
+                if area > max_area {
+                    continue;
+                }
+                // The diagonal is the longest side; it goes only when it is
+                // no more important than the two streets whose corner it cuts.
+                let sides = [ab, ac, bc];
+                let r = sides.iter().copied().max_by(|&x, &y| runs[x].length.total_cmp(&runs[y].length).then(y.cmp(&x))).unwrap();
+                if runs[r].removable && sides.iter().all(|&o| runs[o].rank <= runs[r].rank) {
+                    cut(r, &mut degree, &mut gone_runs);
+                }
+            }
+        }
+    }
+    let gone: BTreeSet<(usize, usize)> = gone_runs.iter().flat_map(|&r| runs[r].segments.iter().copied()).collect();
+    remove_edges(streets, &gone);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,6 +564,68 @@ mod tests {
             .flat_map(|s| s.path.windows(2))
             .map(|w| distance(w[0], w[1]))
             .sum()
+    }
+    fn grid_cells(diagonal: &str) -> Vec<Street> {
+        vec![
+            road(&[(-60., 0.), (0., 0.), (60., 0.), (120., 0.)], "street"),
+            road(&[(-60., 60.), (0., 60.), (60., 60.), (120., 60.)], "street"),
+            road(&[(0., -60.), (0., 0.), (0., 60.), (0., 120.)], "street"),
+            road(&[(60., -60.), (60., 0.), (60., 60.), (60., 120.)], "street"),
+            road(&[(0., 0.), (60., 60.)], diagonal),
+        ]
+    }
+    #[test]
+    fn grid_diagonal_closing_two_triangles_goes_and_the_grid_stays_connected() {
+        let mut streets = grid_cells("street");
+        let grid = length(&streets) - 60. * 2f64.sqrt();
+        junction_triangles(&mut streets, true);
+        assert!((length(&streets) - grid).abs() < 1e-6, "diagonal remains: {streets:?}");
+        assert_eq!(Graph::new(&streets).length.len(), 1);
+        let before = serde_json::to_vec(&streets).unwrap();
+        junction_triangles(&mut streets, true);
+        assert_eq!(serde_json::to_vec(&streets).unwrap(), before);
+        // Organic tissue keeps a cell of this size; a protected road always stays.
+        let mut organic = grid_cells("street");
+        let all = length(&organic);
+        junction_triangles(&mut organic, false);
+        assert!((length(&organic) - all).abs() < 1e-6);
+        let mut regional = grid_cells("regional");
+        junction_triangles(&mut regional, true);
+        assert!((length(&regional) - all).abs() < 1e-6);
+        // A lone triangle has no spare way at its corners: nothing goes.
+        let mut lone = vec![
+            road(&[(20., 20.), (50., 20.)], "street"),
+            road(&[(50., 20.), (50., 50.)], "street"),
+            road(&[(20., 20.), (50., 50.)], "street"),
+        ];
+        junction_triangles(&mut lone, true);
+        assert_eq!(lone.len(), 3);
+    }
+    #[test]
+    fn doubled_run_between_two_junctions_loses_the_longer_one() {
+        let mut streets = vec![
+            road(&[(0., 0.), (50., 0.)], "street"),
+            road(&[(0., 0.), (25., 4.), (50., 0.)], "lane"),
+            road(&[(-40., 0.), (0., 0.)], "street"),
+            road(&[(0., 0.), (0., -40.)], "street"),
+            road(&[(50., 0.), (90., 0.)], "street"),
+            road(&[(50., 0.), (50., -40.)], "street"),
+        ];
+        junction_triangles(&mut streets, false);
+        assert!(streets.iter().all(|s| s.role != "lane"), "double remains: {streets:?}");
+        assert_eq!(Graph::new(&streets).length.len(), 1);
+    }
+    #[test]
+    fn loose_street_end_on_a_bank_is_detected() {
+        let h = vec![10.; 10000];
+        let water: Vec<_> = (0..10000)
+            .map(|i| if (50..55).contains(&(i % 100)) { 3 } else { 0 })
+            .collect();
+        let surf = surface(&h, &water);
+        assert!(bank_dead_ends(&[road(&[(100., 100.), (192., 100.)], "street")], surf));
+        assert!(!bank_dead_ends(&[road(&[(100., 100.), (150., 100.)], "street")], surf));
+        // A crossing landing is no loose end.
+        assert!(!bank_dead_ends(&[road(&[(192., 100.), (228., 100.)], "bridge")], surf));
     }
     #[test]
     fn bank_fans_of_rejected_bridges_go_but_tracks_and_landings_stay() {

@@ -457,15 +457,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   /** Quarter masks preserve explicit park/garden holes; their union remains exact across retained parts. */
   function forestClip(rect: Rect4): Path2D | null {
     const l = polyL('u-forest-clearings');
-    if (!l) return null;
+    const orchard = scene.textures.find(t => t.kind === 'orchard');
+    if (!l && !orchard) return null;
     const view = { minX: rect.minX - 20, minY: rect.minY - 20, maxX: rect.maxX + 20, maxY: rect.maxY + 20 };
-    const tiles = l.index.tilesInRect(view), big = l.index.bigInRect(view);
-    const stamp = tiles.map((t) => `${t}:${l.tileKeys?.[t] ?? ''}`).join(';') + '|' + big.map((i) =>
-      `${i}:${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`).join(';');
-    return cached(`u-forest-clearings|clip|${stamp}`, () => {
+    const tiles = l?.index.tilesInRect(view) ?? [], big = l?.index.bigInRect(view) ?? [];
+    const orchards = orchard?.index.query(view) ?? [];
+    const stamp = tiles.map((t) => `${t}:${l!.tileKeys?.[t] ?? ''}`).join(';') + '|' + big.map((i) =>
+      `${i}:${l!.bigKeys?.[Array.prototype.indexOf.call(l!.index.big, i)] ?? ''}`).join(';');
+    return cached(`u-forest-clearings|clip|${stamp}|orchards:${orchards.join(',')}`, () => {
       const ids = new Set<number>(big);
-      for (const t of tiles) for (const i of l.index.itemsOf(t)) ids.add(i);
-      const excluded = unionMany([...ids].map((i) => ({ outer: l.polys[i], holes: l.holes?.[i] ?? [] })), 24, true);
+      for (const t of tiles) for (const i of l!.index.itemsOf(t)) ids.add(i);
+      const excluded = unionMany([...ids].map((i) => ({ outer: l!.polys[i], holes: l!.holes?.[i] ?? [] })).concat(orchards.map(i => ({ outer: orchard!.areas[i].poly, holes: orchard!.areas[i].holes ?? [] }))), 24, true);
       const p = new P();
       addRing(p, [{ x: 0, y: 0 }, { x: S, y: 0 }, { x: S, y: S }, { x: 0, y: S }]);
       for (const shape of excluded) {
@@ -1287,8 +1289,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       // 3D drape tiles come at many scales side by side: a scale-dependent choice of marks shows each tile as a rectangle.
       // Woods are drawn from world-space tree positions at every scale.
       if (luOn) for (const tl of scene.textures) {
-        // Small symbols would appear on the closest tiles only (a visible tile edge): the drape keeps the woods alone.
         if (tl.kind === 'forest') fs.textureTiles += drawDrapeCanopy(ctx, tl, rect, trueScale * dpr);
+        // Orchards and open-land symbols follow the 2D map's own scale rule: the moving 3D preview reuses the 2D raster
+        // tiles, so a refined drape tile must keep every symbol its preview showed (never a uniform fill over them).
+        else if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
       }
     } else if (luOn) {
       for (const tl of scene.textures) if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
@@ -1884,7 +1888,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
 
   /** Woods leave room for roads, rivers and farmsteads; crowns rooted at the edge overhang them a little. */
-  const roomOf = (): ForestRoom => forestRoom ??= new ForestRoom(forestCorridors(world), [...farmClearings(world.landuse), ...(deps.buildingClearings?.() ?? []).map(r => growRing(r, FARM_MARGIN))]);
+  const roomOf = (): ForestRoom => forestRoom ??= new ForestRoom(forestCorridors(world), [...farmClearings(world.landuse), ...(world.landuse?.areas ?? []).filter(a => a.kind === 'orchard'), ...(deps.buildingClearings?.() ?? []).map(r => growRing(r, FARM_MARGIN))]);
 
   /** Tree centres of a wood or orchard layer within `area`, in draw order (cached per index tile). */
   function treeMarksIn(tl: TextureLayer, area: Rect4): Mark[] {
@@ -1996,9 +2000,12 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if ((canopy || brushes) && (tl.kind === 'forest' || tl.kind === 'orchard')) {
       // Select centres inside the cover, then draw whole trees, including overhanging crowns.
       const expanded = growRect(rect, CANOPY_MARGIN), count = tl.index.tilesInRect(expanded).length;
+      ctx.save();
+      if (tl.kind === 'forest') { const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
       // Thousands of sprites per view: stamp them once per density and tile, then reuse the bitmaps while panning and zooming.
       if (!drawLayerTiles(ctx, tl, 'trees', rect, (target, area, pxPerMetre) => paintTrees(target, tl, treeMarksIn(tl, growRect(area, LAYER_TILE_REACH)), pxPerMetre)))
         paintTrees(ctx, tl, treeMarksIn(tl, expanded), ctx.getTransform().a);
+      ctx.restore();
       return count;
     }
     if (tl.kind !== 'forest') return drawTextureMarks(ctx, tl, rect, band, lw, budgetRect);
@@ -2163,7 +2170,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (!marks.length) return null;
         const path = new P();
         for (const m of marks) {
-          if (tl.kind === 'forest' && !underground && m.k >= forestWeight(m.x, m.y)) continue;
+          if (tl.kind === 'forest' && (m.k >= forestWeight(m.x, m.y) || !roomOf().keeps(m.x, m.y, m.k))) continue;
           const r = spec.r * m.r;
           if (underground) appendUnderdarkMark(path, tl.kind, m.x, m.y, r, pal);
           else if (pen && spec.shape !== 'circle') appendPenMark(path, spec.shape, m.x, m.y, r, m.k);

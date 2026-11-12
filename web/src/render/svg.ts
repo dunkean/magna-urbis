@@ -115,7 +115,7 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   if (landuse) parts.push(landuseLayer(world, pal, u, scale, painted?.brushes, forestMask, opts.vegetation, clearings));
   if (layers.landuse !== false && opts.fieldOutlines && world.landuse) {
     const paths = world.landuse.areas.filter(area => area.kind === 'field').map(area => pathD(area.poly, true) + (area.holes ?? []).map(hole => pathD(hole, true)).join('') + (area.strips ?? []).map(strip => pathD(strip, true)).join(''));
-    if (paths.length) parts.push(`<g class="layer-field-outlines" fill="none" stroke="rgb(184,131,26)" stroke-opacity="0.88" stroke-width="${f1(1.7 / scale)}" stroke-linejoin="round">${paths.map(d => `<path d="${d}"/>`).join('')}</g>`);
+    if (paths.length) parts.push(`<g class="layer-field-outlines" fill="none" stroke="rgb(184,131,26)" stroke-opacity="0.55" stroke-width="${+(0.6 / scale).toPrecision(3)}" stroke-linejoin="round">${paths.map(d => `<path d="${d}"/>`).join('')}</g>`);
   }
 
   // rivers: casing first, then fill so confluences merge cleanly

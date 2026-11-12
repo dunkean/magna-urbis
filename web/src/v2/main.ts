@@ -174,6 +174,7 @@ setHTML($('#app'), `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>L’atelier des régions</p></div><span class="version">V2 · ALPHA</span>
   <span class="header-divider"></span><span class="header-caption">Du relief à la dernière maison.</span>
+  <nav class="header-menu" id="header-menu" aria-label="Map tools"><div class="glass style-control"><span class="style-label">RENDU</span><select id="map-style" aria-label="Style de carte">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div><label class="glass inspector-mode"><input id="inspect-mode" type="checkbox"> Modifier villes, quartiers et bâtiments</label></nav>
   <div class="header-tools"><span class="edition">${localEdition ? 'Édition locale' : 'Édition web'}</span><a class="science-link" href="./scientific/index.html" target="_blank" rel="noopener">L’atlas scientifique ↗</a><button id="hardware-open" title="Réglages, moteurs et activité">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Réglages</span></button><button id="import-open">Ouvrir</button><button id="export-open">Exporter ↗</button></div>
 </header>
 <button class="mobile-toggle" id="mobile-toggle" aria-expanded="false" aria-controls="sidebar">☰ Atelier</button>
@@ -199,14 +200,12 @@ setHTML($('#app'), `
   <section class="map-area" aria-label="Carte interactive">
     <div class="canvas-wrap" id="map"><canvas id="map-canvas" aria-label="Carte générée : glisser pour déplacer, molette pour zoomer"></canvas></div>
     <div class="empty-map" id="empty-map"><div class="serif">Terra incognita</div><p>Votre prochaine région commence ici.</p></div>
-    <div class="map-topbar"><div class="glass map-title"><div><div class="serif" id="map-name">Un nouveau territoire</div><p id="map-subtitle">Topographie · relief & milieux naturels</p></div><span class="tiny-divider"></span><span class="metric" id="map-size">—</span></div><div class="glass style-control"><span class="style-label">RENDU</span><select id="map-style" aria-label="Style de carte">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div></div>
     <div class="map-compass" aria-hidden="true"><small>N</small><b>✧</b></div>
-    <label class="glass inspector-mode"><input id="inspect-mode" type="checkbox"> Modifier villes, quartiers et bâtiments</label>
     <div class="glass map-tools"><button id="zoom-in" aria-label="Zoom avant">+</button><button id="zoom-out" aria-label="Zoom arrière">−</button><button id="fit-map" aria-label="Recentrer la carte" title="Recentrer">⛶</button></div>
     <aside class="glass places-panel" id="places-panel" hidden aria-labelledby="places-title"><header><h2 class="serif" id="places-title">Les lieux</h2><span class="count-badge" id="towns-count">0</span><button id="towns-only">Build targeted cities</button><button id="places-collapse" class="quiet small" aria-expanded="true" aria-controls="settlement-list" title="Replier la liste">–</button></header><div class="places-selection"><button id="cities-select-all" class="small">Select all</button><button id="cities-select-none" class="small">Clear selection</button><output id="cities-selected-count" aria-live="polite"></output></div><div class="settlement-list" id="settlement-list"><p class="hint">Créez les implantations pour sélectionner un lieu.</p></div><aside id="inspector" class="inspector" hidden aria-label="Inspecteur du lieu"></aside></aside>
     <div class="map-hint" id="map-hint">Glissez pour explorer · Molette pour zoomer</div>
     <div class="glass progress-card" id="progress-card" hidden role="status" aria-live="polite"><div class="row"><i class="spinner"></i><strong class="grow small" id="progress-label">Préparation de la région…</strong><button id="cancel-job" class="quiet small">Annuler</button></div><progress id="progress" max="100" value="0"></progress><div class="row spread"><p id="progress-detail">CPU · worker de génération</p><p id="progress-time">0 s</p></div></div>
-    <div class="map-bottom"><div class="glass map-caption"><span class="eyebrow" id="caption-title">La région avant les villes</span><p id="caption-text">Dessinez d’abord le paysage. Les routes et les villes viendront s’y inscrire, sans effacer votre terrain.</p></div><div class="glass mini-card"><canvas id="minimap" aria-label="Vue d’ensemble"></canvas><div class="map-scale"><span id="scale-label">—</span><div class="scale-line"></div><p id="map-metrics">Aucune carte</p></div></div></div><div class="legend-strip"></div>
+    <div class="map-bottom"><div class="glass mini-card"><canvas id="minimap" aria-label="Vue d’ensemble"></canvas><div class="map-scale"><span id="scale-label">—</span><div class="scale-line"></div><p id="map-metrics">Aucune carte</p></div></div></div><div class="legend-strip"></div>
   </section>
 </main>
 <dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">Reprendre une région</span><h2>Ouvrir & combiner</h2></div><button data-close="import-dialog" aria-label="Fermer">×</button></div><p class="hint">Un projet contient la carte, les paramètres et les modifications. Une recette permet de retrouver la même région avec la même version du moteur.</p><div class="file-card"><h3>Projet ou recette Magna Urbis V2</h3><p class="hint">JSON complet ou graines + paramètres. Les grilles d’altitude sont conservées dans les projets.</p><input id="project-file" type="file" accept=".json,application/json" aria-label="Importer un projet ou une recette V2"></div><div class="file-card"><h3>Heightmap → territoire</h3><p class="hint">PNG, JPEG ou WebP en niveaux de gris, cadrés au carré. Ajustez l’altitude et le niveau de mer avant de créer le terrain. Le relief importé remplace le relief actuel.</p><input id="heightmap-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Importer une heightmap"><button id="clear-heightmap" class="quiet small">Retirer le relief importé</button><p class="hint" id="import-height-info">Aucune heightmap importée.</p></div><div class="dialog-actions"><button data-close="import-dialog">Fermer</button></div></dialog>
@@ -260,7 +259,7 @@ function syncDisplayWidgets():void{
 function writeRecipe(path:string,value:unknown):void{writeAppearanceControl(settings,`appearance.composition.${path}`,value);projectRevision++;void refreshAppearance();}
 setText($('#export-format option[value="svg"]'),'SVG · map / embedded render');
 insertHTML($('.style-control'),'beforeend','<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG 3D ↗</button>');
-insertHTML($('.map-title'),'beforeend','<button id="preview-close" type="button" class="quiet small" hidden></button>');
+insertHTML($('#header-menu'),'beforeend','<button id="preview-close" type="button" class="quiet small" hidden></button>');
 setDynamicText($('#preview-close'), () => getLanguage() === 'fr' ? 'Fermer l’aperçu' : 'Close preview');
 $('#preview-close').onclick = async () => {
   if (!previewBase?.world || busy) return;
@@ -310,7 +309,7 @@ mountSettingsPanel($('#hardware-details'),backendBindings);
 const desktopModulesHost=document.createElement('div');$('#hardware-details').after(desktopModulesHost);
 mountDesktopModules(desktopModulesHost,()=>void inspectHardware());
 mountDesktopUpdates($('.header-tools'),desktopModulesHost);
-mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()}),beforeCapture2d:()=>client.prepareViewportCapture()});
+mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()}),beforeCapture2d:()=>client.prepareViewportCapture(),navigation:{getView:()=>client.viewer.getView(),setView:view=>client.viewer.setView(view),ready:()=>client.viewer.waitForFrame()}});
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
 const familyActions:Record<StageFamily,[string,()=>void]>={
@@ -378,6 +377,7 @@ const riverEditorHost=document.createElement('div');riverEditorHost.id='river-ed
 const networkHost={map:$('#map'),getWorld:()=>previewBase?undefined:world,setWorld:applyDirectMapEdit,getView:()=>client.viewer.getView(),busy:()=>busy,toast};
 const riverEditor=mountNetworkEditor({...networkHost,panel:riverEditorHost,tools:['rivers']});
 const roadEditor=mountNetworkEditor({...networkHost,panel:$('#family-settlements .family-general'),tools:['roads','draw'],getSettings:()=>settings});
+$('#header-menu').prepend($('.v2-network-shortcuts'));
 const townMover=mountTownMoveEditor({map:$('#map'),toolbar:$('.v2-network-shortcuts'),getWorld:networkHost.getWorld,getView:networkHost.getView,busy:()=>busy,error:reportAppearanceError,
   commit:async(next,key,dx,dy)=>{
     const scope=settings.urban?.local?.[key];
@@ -529,25 +529,10 @@ function updateWorld(): void {
   riverEditor.sync();roadEditor.sync();townMover.sync();
   mapControls.sync();
   disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
-  setUserText($('#map-name'), world.names?.town, 'Le territoire des possibles');
-  const towns = world.settlements ?? [], detailed = towns.filter(s=>s.main ? !!world?.urban : !!s.urban).length;
-  setText($('#map-subtitle'), towns.length ? `${towns.length} lieux implantés · ${detailed} construits` : 'Topographie · relief & milieux naturels');
-  setDynamicText($('#map-size'), () => { const size=formatDistance(world!.mapSize,getDistanceUnit(),numberLocale(),true);return `${size} × ${size}`; });
+  const towns = world.settlements ?? [];
   setText($('#map-metrics'), `${world.terrain.rivers.length} cours d’eau\n${towns.length} peuplements`);
-  setText($('#caption-title'), towns.length ? 'Du territoire à ses habitants' : 'La région avant les villes');
-  setText($('#caption-text'), towns.length ? 'Sélectionnez un lieu pour le construire ou affiner ses paramètres. Activez l’inspection et zoomez pour choisir une maison.' : 'Le paysage est prêt. Passez aux peuplements pour implanter les lieux et tracer leurs routes.');
   const preview = stageById.get(String(world.stats['v2.previewStage'] ?? ''));
-  const cityPreview = stageById.get(String(world.stats['v2.cityOutput'] ?? ''));
-  if (cityPreview) {
-    setText($('#map-subtitle'), cityPreview.label.en);
-    setText($('#caption-title'), 'Stage output'); setText($('#caption-text'), cityPreview.summary.en);
-  }
   $('#preview-close').hidden = !preview || !previewBase?.world;
-  if (preview) {
-    setText($('#map-subtitle'), preview.label.en);
-    setText($('#caption-title'), 'Stage output');
-    setText($('#caption-text'), 'Elevations from this stage. Later stages remain to be run.');
-  }
   setText($('#towns-count'), String(towns.length));
   setHTML($('#settlement-list'), towns.length ? towns.map(s=>`<div class="settlement-choice"><input type="checkbox" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}',s.name??s.key))}" ${selectedCities.has(s.key)?'checked':''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${selectedTown===s.key}"><span class="settlement-dot ${(s.main ? world?.urban : s.urban)?'ready':''}"></span><span class="grow"><strong>${nameHTML(s.name,s.main?'Ville principale':s.key)}</strong><small>${populationMarkup(s.key,s.population)} · <span>${esc(s.archetype)}</span></small>${reachedPopulation(s.key,s.population)?.shortfallHouseholds?`<small class="warning" title="${esc(populationShortfallText(reachedPopulation(s.key,s.population),popFormat()))}">⚠ ${esc(populationShortfallText(reachedPopulation(s.key,s.population),popFormat()))}</small>`:''}<small class="settlement-stage">${cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? world?.urban : s.urban)?'↗':'＋'}</span></button></div>`).join('') : '<p class="hint">Créez les implantations pour sélectionner un lieu.</p>');
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(b=>b.onclick=()=>showInspector(b.dataset.town!,true));
@@ -710,7 +695,7 @@ async function loadProject(project: { settings: V2Settings; mods: unknown[]; wor
   if(world)applyLabelEdits(world,settings.naming?.labels);
   touchRecipe();await syncControls();
   if(world){await client.show(world);canvas.hidden=false;$('#empty-map').hidden=true;updateWorld();const notice=world.stats['v2.compositionNotice'];if(notice)toast(String(notice));}
-  else {await client.clear();city3d?.dispose();city3d=undefined;setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;canvas.hidden=true;$('#empty-map').hidden=false;setText($('#map-name'), 'Une nouvelle recette');setText($('#map-subtitle'), 'Génération du territoire à lancer');setText($('#map-size'), '—');setHTML($('#settlement-list'), '<p class="hint">Créez la région pour retrouver les lieux de cette recette.</p>');$('#inspector').hidden=true;toast('Recette chargée. Créez la région pour la reconstruire.');}
+  else {await client.clear();city3d?.dispose();city3d=undefined;setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;canvas.hidden=true;$('#empty-map').hidden=false;setHTML($('#settlement-list'), '<p class="hint">Créez la région pour retrouver les lieux de cette recette.</p>');$('#inspector').hidden=true;toast('Recette chargée. Créez la région pour la reconstruire.');}
 }
 const cityCodeSharing = mountCityCodeSharing({
   getRecipe: () => ({ settings, mods }), busy: () => busy,

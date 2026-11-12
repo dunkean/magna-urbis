@@ -7,6 +7,11 @@ import { TileIndex, boxesOf } from '../src/render/tileindex';
 import { insideArea, type TextureLayer } from '../src/render/scene';
 import { fakeWorld } from '../scripts/fakeworld';
 
+import { buildNearTrees, buildNearTreesSteps, TREE_MAX, TREE_STRIDE, type TreeInputs } from '../src/ui/terrain3dTrees';
+import { forestOccupation } from '../src/ui/forestOccupation';
+import { withLandDetail } from '../src/ui/landDetail';
+import { ForestRoom } from '../src/render/forestRoom';
+
 const pal = biomePalette('parchment', 'temperate');
 const rect = (x: number, y: number, size: number) => [{ x, y }, { x: x + size, y }, { x: x + size, y: y + size }, { x, y: y + size }];
 
@@ -23,8 +28,43 @@ describe('individual canopy stamps', () => {
     expect(marks.length).toBeGreaterThan(100);
     const rows = marks.map(m => -m.x*sa+m.y*ca);
     const phase = rows[0];
-    for (const row of rows) expect((row-phase)/11).toBeCloseTo(Math.round((row-phase)/11),8);
+    for (const row of rows) expect((row-phase)/8).toBeCloseTo(Math.round((row-phase)/8),8);
     for (const m of marks) for (const [dx,dy] of [[4.5,0],[-4.5,0],[0,4.5],[0,-4.5]]) expect(insideArea(areas[0],m.x+dx,m.y+dy)).toBe(true);
+  });
+
+  it('uses the same bounded tree stream for fruit rows and excludes natural trees inside the parcel', () => {
+    const angle = .58, ca = Math.cos(angle), sa = Math.sin(angle);
+    const rotate = (ring: { x: number; y: number }[]) => ring.map(p => ({ x: 180 + p.x * ca - p.y * sa, y: 90 + p.x * sa + p.y * ca }));
+    const orchard = { kind: 'orchard' as const, poly: rotate(rect(0, 0, 128)), holes: [rotate(rect(48, 48, 32))] };
+    const landuse = { areas: [orchard], reserve: [], farmsteads: [] };
+    const occupation = withLandDetail(forestOccupation(landuse), landuse)!;
+    const rgba = new Uint8Array(32 * 32 * 4);
+    for (let i = 0; i < rgba.length; i += 4) rgba.set([230, 110, 180, 128], i); // dense, tall, conifer-biased forest
+    const inputs: TreeInputs = { field: { x: 0, y: 0, width: 640, n: 32, rgba, key: 'dense' }, occupation,
+      seed: 98, climate: { temperature: 16, precipitation: 1200 }, renderV2: 1, zone: 1, season: .5,
+      water: () => 0, height: () => 20 };
+    const view = { x: 250, y: 0, forwardX: 0, forwardY: 1 }, trees = buildNearTrees(inputs, view);
+    const rows = occupation.detail!.orchards![0].along;
+    let fruit = 0;
+    for (let i = 0; i < trees.length; i += TREE_STRIDE) {
+      const [x, y] = trees.slice(i, i + 2);
+      if (!insideArea(orchard, x, y)) continue;
+      fruit++;
+      expect(trees[i + 6]).toBe(0); // broadleaf fruit, never a forest conifer
+      expect(trees[i + 4]).toBeGreaterThanOrEqual(6); expect(trees[i + 4]).toBeLessThanOrEqual(7.2);
+      expect(trees[i + 3]).toBeGreaterThanOrEqual(2.3); expect(trees[i + 3]).toBeLessThanOrEqual(2.7);
+      const u = (x * rows[0] + y * rows[1]) / 8 - .5, v = (-x * rows[1] + y * rows[0]) / 8 - .5;
+      expect(Math.abs(u - Math.round(u))).toBeLessThan(.061); expect(Math.abs(v - Math.round(v))).toBeLessThan(.061);
+    }
+    expect(fruit).toBeGreaterThan(120);
+    expect(trees.length / TREE_STRIDE).toBeLessThanOrEqual(TREE_MAX);
+    expect(new Set(Array.from({ length: trees.length / TREE_STRIDE }, (_, i) => `${trees[i * TREE_STRIDE]},${trees[i * TREE_STRIDE + 1]}`)).size).toBe(trees.length / TREE_STRIDE);
+    const work = buildNearTreesSteps(inputs, view); let step = work.next(); while (!step.done) step = work.next();
+    expect(step.value).toEqual(trees);
+    // Vector forest brush/symbol roots obey the same exclusion and preserve the parcel's hole.
+    const room = new ForestRoom([], [orchard]);
+    const centre = rotate([{ x: 24, y: 24 }])[0], hole = rotate([{ x: 60, y: 60 }])[0];
+    expect(room.keeps(centre.x, centre.y, .5)).toBe(false); expect(room.keeps(hole.x, hole.y, .5)).toBe(true);
   });
 
   it('varies colour and placement deterministically without repeating the old 64m motif', () => {

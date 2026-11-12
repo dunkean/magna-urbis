@@ -1,7 +1,5 @@
 # Local SurfaceWorld preview
 
-[French original](README_FR.md).
-
 Godot is a candidate renderer for Magna Urbis 2D/3D RPG maps and plans. Data contracts remain engine-independent; existing palettes, orthographic views and map exports guide its evaluation. SVG/Canvas output currently retains labels and final composition that are not reproduced here. This project generates no terrain and changes neither source heights, native urban volumes nor their material IDs.
 
 ## Install and launch
@@ -21,7 +19,7 @@ The viewer accepts `magna-surface-packet` v1 JSON, `SurfaceWorld` JSON, and **MU
 
 `resolved.json` comes from `web/scripts/surface_assets.mjs`. Its maps are local: offline rendering performs no downloads. The current catalog has fifteen CC0 PBR sets; `recipeIds` takes priority over family fallback. Without a catalog, the analytical fallback material is explicit. A missing height map becomes flat texture relief with a warning. `SurfaceMaterialLibrary.asset_version` and `asset_digest` identify actually loaded assets, their bindings, physical sizes, amplitudes, and declared and observed SHA-256 values. Absolute paths and key order do not enter the digest. `loaded_asset_bindings` exposes layers and their linear means. This render provenance is distinct from `World.versions.materialLibrary`, which describes canonical-model recipes.
 
-Vegetation assets have separate manifests: `--vegetation-assets C:/data/grass/resolved.json` enables CC0 tufts in aerial view; `--tree-assets C:/data/tree/resolved.json` enables the experimental tree path with near meshes, impostors and a shared optical mask. Map glyphs retain their presentation. These options change no height, candidate identity, rock or river. See [tree preparation](../docs/surface/TREE_ASSET_EXPERIMENT.md) and [grass evidence](../docs/surface/evidence/vegetation-grass-v13/README.md). The campaign driver passes `--viewer-vegetation-assets` and `--viewer-tree-assets` respectively and checks manifests at the beginning and end.
+Vegetation assets have separate manifests: `--vegetation-assets C:/data/grass/resolved.json` enables CC0 tufts in aerial view; `--tree-assets C:/data/tree/resolved.json` enables the experimental tree path with near meshes, impostors and a shared optical mask. Map glyphs retain their presentation. These options change no height, candidate identity, rock or river. See [tree preparation](../docs/surface/TREE_ASSET_EXPERIMENT.md) and grass evidence (historical validation, archived locally). The campaign driver passes `--viewer-vegetation-assets` and `--viewer-tree-assets` respectively and checks manifests at the beginning and end.
 
 The `surface-1.6.0` compiler provides [continuous ground response](../docs/surface/GROUND_RESPONSE.md): physical parameters are interpolated before the recipe. Older packets retain their previous rendering; the viewer does not reconstruct fine soils from their colors. Ground, grass/litter and trees remain three independent layers.
 
