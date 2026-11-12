@@ -240,6 +240,10 @@ their original pixel density, with overlaps counted once and ungenerated holes
 left transparent. The connector composes strips and streams the PNG to disk and
 the browser; it does not require a browser canvas large enough for the full map.
 Exporting and reopening existing tiles do not generate another image.
+In V2's 3D view, **Cadrer la vue 3D pour une battlemap** points the camera at
+least 80° down, adjusts the distance when needed for the selected cell size and
+generation resolution, then recaptures and selects Battlemap. It keeps the same
+target and azimuth. This framing action does not start image generation.
 Strong fidelity remains a generative constraint, not a
 guarantee of geometrically exact output. Seed reproducibility also depends on
 runtime, hardware and model versions. Cloud output may use the provider's nearest

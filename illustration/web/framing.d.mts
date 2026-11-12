@@ -3,6 +3,7 @@ export interface GroundFrame {
   perspective: boolean; distance?: number; sin?: number; cos?: number; tan?: number; aspect?: number; angle?: number;
 }
 export function groundFrame(context: Record<string, unknown>): GroundFrame | undefined;
+export function battlemapCamera<T extends { distance: number; pitch: number }>(camera: T, viewport: { width: number; height: number }, pixels?: number, cellMetres?: number): T;
 export function battlemapAvailability(context: Record<string, unknown>, pixels?: number, cellMetres?: number): {
   eligible: boolean; reason: string; warning?: string; cellMetres: number; cellPixels?: number; columns?: number; rows?: number; approximate?: boolean;
 };

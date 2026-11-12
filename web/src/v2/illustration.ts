@@ -1,5 +1,6 @@
 /** Connect the existing illustration client to the current V2 view. */
 import { captureViewport, mountIllustration } from '../../../illustration/web/index.mjs';
+import { battlemapCamera } from '../../../illustration/web/framing.mjs';
 import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import { illustrationContext } from '../ui/illustrationContext';
@@ -26,7 +27,12 @@ registerMessages({
 });
 
 export function mountV2Illustration(options: V2IllustrationOptions) {
-  const mounted = mountIllustration({ host: options.host, navigation: options.navigation, capture: async () => {
+  const mounted = mountIllustration({ host: options.host, navigation: options.navigation,
+    prepareBattlemap: ({ pixels, cellMetres }) => {
+      const view = options.get3d(), camera = view?.getCamera(), { element } = options.getViewport();
+      if (!view?.active || !camera) throw new Error('Ouvrez la vue 3D avant de la cadrer.');
+      view.setCamera(battlemapCamera(camera, { width: element.clientWidth, height: element.clientHeight }, pixels, cellMetres));
+    }, capture: async () => {
     const world = options.getWorld();
     if (!world) throw new Error(translate('Créez d’abord une carte avant de capturer la vue.'));
     const settings = options.getSettings(), { element, view } = options.getViewport(), city3d = options.get3d();

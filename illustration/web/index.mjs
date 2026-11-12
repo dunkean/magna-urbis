@@ -137,7 +137,7 @@ export async function saveIllustrationFile(blob, name, fallbackUrl) {
   return `Téléchargement demandé : ${filename}. Ouvrez les téléchargements du navigateur (Ctrl+J) pour trouver le fichier et son emplacement.`;
 }
 
-export function mountIllustration({ host, capture, navigation, defaultService = 'http://127.0.0.1:8794' }) {
+export function mountIllustration({ host, capture, prepareBattlemap, navigation, defaultService = 'http://127.0.0.1:8794' }) {
   if (!document.getElementById('illustration-css')) { const sheet = document.createElement('style'); sheet.id = 'illustration-css'; sheet.textContent = css + resetCss; document.head.append(sheet); }
   const button = document.createElement('button'); button.type = 'button'; button.className = 'illustration-trigger'; button.textContent = '✦ Illustrer'; button.title = 'Créer une illustration de cette vue'; host.append(button);
   const dialog = document.createElement('dialog'); dialog.className = 'illustration-dialog'; dialog.setAttribute('aria-label', 'Illustrer cette vue');
@@ -146,6 +146,7 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
     <label>Style artistique<select name="style"></select></label>
     <label>Usage<select name="output"><option value="illustration">Illustration de la vue</option><option value="battlemap">Battlemap</option></select></label>
     <small class="illustration-full" data-framing></small><small class="illustration-full" data-battlemap-hint></small>
+    <button type="button" class="illustration-full" data-prepare-battlemap hidden>Cadrer la vue 3D pour une battlemap</button>
     <label data-grid>Grille de battlemap<select name="grid"><option value="square">Carrée · trait simple</option><option value="hex">Hexagonale · trait simple</option><option value="none">Sans grille</option></select></label>
     <label>Taille d’une case · mètres<input name="cellMetres" type="number" min="0.5" max="100" step="0.5" value="1.5"><small data-cell-hint>1,50 m par défaut. Augmentez cette valeur pour couvrir une zone plus large.</small></label>
     <label>Résolution de génération<select name="pixels"><option value="393216">0,4 MP · petit aperçu</option><option value="786432">0,8 MP · aperçu</option><option value="1048576" selected>1 MP</option><option value="2097152">2 MP · détaillé</option><option value="4194304">4 MP · haute résolution</option><option value="8294400">Jusqu’à 4K · OpenAI · expérimental</option></select></label>
@@ -288,7 +289,10 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
     field('output').querySelector('[value="battlemap"]').disabled = !battlemap.eligible;
     $('[data-cell-hint]').textContent = field('grid').value === 'hex' ? 'Hexagones : distance entre deux faces opposées, également égale à la distance entre centres voisins.' : '1,50 m par défaut. Augmentez cette valeur pour couvrir une zone plus large.';
     const frame = snapshot && groundFrame(snapshot.context);
-    $('[data-framing]').textContent = frame ? `Vue capturée : ${frame.width.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} × ${frame.height.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m${frame.perspective ? ' · emprise horizontale estimée' : ''}.` : '';
+    $('[data-framing]').textContent = frame ? `Vue capturée : ${frame.width.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} × ${frame.height.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m${frame.perspective ? ` · inclinaison ${frame.angle.toFixed(1)}° · emprise horizontale estimée` : ''}.` : '';
+    $('[data-prepare-battlemap]').hidden = !prepareBattlemap || snapshot?.context.projection !== 'perspective';
+    $('[data-prepare-battlemap]').disabled = busy;
+    $('[data-prepare-battlemap]').title = 'Redresser la caméra vers le sol et ajuster le zoom autour du même point, puis recapturer. Aucune génération automatique.';
     $('[data-battlemap-hint]').textContent = battlemap.eligible ? `Battlemap disponible · ${battlemap.cellMetres.toLocaleString('fr-FR')} m par case · ${battlemap.cellPixels.toFixed(1)} px par case à la génération. ${battlemap.warning || ''}${battlemap.approximate ? ' En 3D, la grille est projetée sur le plan horizontal de la cible ; les pentes ne sont pas mesurées.' : ''}` : `Battlemap : ${battlemap.reason} Après déplacement ou zoom, capturez à nouveau la vue.`;
     if (frame) {
       const aspect = snapshot.context.viewport?.width / snapshot.context.viewport?.height || frame.width / frame.height;
@@ -408,6 +412,20 @@ export function mountIllustration({ host, capture, navigation, defaultService = 
   button.onclick = () => { dialog.showModal(); if (!busy) { void recapture(); void connection().then(history).catch(() => {}); } };
   $('[data-illustration-close]').onclick = () => dialog.close(); dialog.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); dialog.close(); } }); $('[data-recapture]').onclick = () => void recapture(); $('[data-generate]').onclick = () => void generate();
   $('[data-prompt-preview]').onclick = () => void previewPrompt();
+  $('[data-prepare-battlemap]').onclick = async () => {
+    if (busy || !prepareBattlemap) return;
+    busy=true;sync();status('Cadrage de la vue 3D pour une battlemap…');
+    try {
+      await prepareBattlemap({pixels:+field('pixels').value,cellMetres:+field('cellMetres').value});
+      await recapture();
+      if (snapshot) {
+        const availability=battlemapAvailability(snapshot.context,+field('pixels').value,+field('cellMetres').value);
+        if (availability.eligible) {field('output').value='battlemap';status('Vue 3D cadrée · Battlemap sélectionnée. Vous pouvez lancer la génération.');}
+        else status(`Battlemap : ${availability.reason}`,true);
+      }
+    } catch(error) {status(error.message,true);}
+    finally {busy=false;sync();void previewPrompt();}
+  };
   async function openAtlas() {
     if (!metadata || !resultBlob) return;
     $('[data-atlas]').hidden = false; $('.illustration-preview').hidden = true; $('[data-compare]').hidden = true; $('[data-current-neighbours]').hidden = true;

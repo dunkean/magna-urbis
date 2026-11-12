@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { saveIllustrationFile, serviceUrl, targetSize } from '../../illustration/web/index.mjs';
 import { illustrationContext, illustrationTerrainFromDecor } from '../src/ui/illustrationContext';
-import { groundFrame, battlemapAvailability } from '../../illustration/web/framing.mjs';
+import { groundFrame, battlemapAvailability, battlemapCamera } from '../../illustration/web/framing.mjs';
 import { neighbourView } from '../../illustration/web/atlas.mjs';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -86,6 +86,22 @@ describe('shared illustration capture', () => {
     expect(neighbourView(job, 'east')).toEqual({ cx: 548, cy: 500, scale: 3 });
     expect(neighbourView(job, 'north')).toEqual({ cx: 500, cy: 468, scale: 3 });
     expect(() => neighbourView({ ...job, context: { projection: 'perspective' } }, 'east')).toThrow('2D');
+  });
+  it('frames a 3D battlemap from oblique, distant, walking and excessively close cameras', () => {
+    for (const viewport of [{ width: 1920, height: 1080 }, { width: 390, height: 844 }]) {
+      for (const distance of [2.5, 80, 10000]) for (const cellMetres of [.5, 1.5, 6, 100]) for (const pixels of [393216, 1048576, 8294400]) {
+        const camera = { x: 1000, y: 2000, distance, yaw: .7, pitch: .6, exaggeration: 3, navigation: 'walk' as const,
+          heightAboveTargetMetres: 99999, altitudeMetres: 99999, viewAngleDegrees: 20, verticalFovDegrees: 180 / 3.7 };
+        const prepared = battlemapCamera(camera,viewport,pixels,cellMetres);
+        expect(prepared).toMatchObject({ x: camera.x, y: camera.y, yaw: camera.yaw, exaggeration: camera.exaggeration, navigation: 'orbit' });
+        expect(prepared.heightAboveTargetMetres).toBeUndefined();
+        expect(prepared.viewAngleDegrees).toBeUndefined();
+        expect(battlemapAvailability({ projection: 'perspective', camera: prepared, viewport },pixels,cellMetres).eligible).toBe(true);
+        expect(camera.distance).toBe(distance);
+      }
+    }
+    const camera = { x: 1000, y: 2000, distance: 80, yaw: .7, pitch: 1.48, exaggeration: 1 };
+    expect(battlemapCamera(camera,{ width: 1200, height: 800 })).toMatchObject(camera);
   });
   it('samples a close crop without importing distant terrain and building materials', () => {
     const layer = { height: { w: 100, h: 100, cell: 10, data: new Float32Array(10000).fill(50) }, water: new Uint8Array(10000).fill(1) } as unknown as Parameters<typeof illustrationContext>[0]['terrainLayer'];
