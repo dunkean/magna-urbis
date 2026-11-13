@@ -221,18 +221,22 @@ pub fn farm_type(c: &Context, si: usize, r: &mut Rng) -> String {
         }
         .into();
     }
+    // The culture's weighted draw (as urban/farmsteads.rs `farm_type`), each weight scaled
+    // by the site rules of the type (slope, wet ground, exposure, soil, farm size), so a
+    // culture's minor types appear at their share.
     let regime = arr(&culture(&c.culture)["types"]);
-    let mut best = s(&regime[0][0]);
-    let mut bs = -1.0;
-    for v in regime {
-        let t = s(&v[0]);
-        let score = num(&v[1]) * affinity(t, c, si) * (0.45 + r.float());
-        if score > bs {
-            bs = score;
-            best = t;
+    let weights: Vec<f64> = regime
+        .iter()
+        .map(|v| num(&v[1]) * affinity(s(&v[0]), c, si))
+        .collect();
+    let mut x = r.float() * weights.iter().sum::<f64>();
+    for (v, w) in regime.iter().zip(&weights) {
+        if x < *w {
+            return s(&v[0]).into();
         }
+        x -= w;
     }
-    best.into()
+    regime.last().map_or("haufenhof", |v| s(&v[0])).into()
 }
 fn dims(use_: &str, si: usize, r: &mut Rng) -> (f64, f64) {
     let ranges = match use_ {
@@ -1257,19 +1261,6 @@ fn ksar(x: &mut Ctx) -> Zone {
 }
 fn zone_of(x: &mut Ctx, t: &str, tags: &mut Vec<String>, plots: &mut Vec<Plot>) -> Zone {
     let si = x.si;
-    // Farm types without a constructor of their own take the one of their layout family.
-    let t = match t {
-        "cascina" | "villa-rustica" | "cortijo" | "gnome-croft" => "vierkanthof",
-        "bustan" | "agbo-ile" => "indian-court",
-        "izbah" | "tower-farm" => "ksar",
-        "newar-farm" | "mage-steading" | "giant-steading" => "l-yard",
-        "calli-court" | "joglo" | "nha-ba-gian" => "u-yard",
-        "thinnai" => "longere",
-        "plank-house" => "native-longhouse",
-        "smial-garden" | "elven-glade" | "goblin-burrow" => "haufenhof",
-        "shamba" | "wattle-homestead" | "kainga" | "winter-house" | "chum-camp" | "stone-huts" => "solar",
-        _ => t,
-    };
     match t {
         "fungal-farm" => court(
             x,
@@ -1517,7 +1508,317 @@ fn zone_of(x: &mut Ctx, t: &str, tags: &mut Vec<String>, plots: &mut Vec<Plot>) 
         "einhaus" => hall(x, tags),
         "dvor" => dvor(x),
         "ksar" => ksar(x),
+        "roundhouse" | "kraal" | "ail" | "sahel-compound" => ring(x, t, plots),
+        // Every other type of the catalogue builds its own programme in its own layout.
+        _ if data()["types"][t].is_object() => steading(x, t),
         _ => ring(x, t, plots),
+    }
+}
+/// Footprint of a catalogue body at `c`, its long side along `ang`.
+fn body(it: &Item, c: Point, ang: f64) -> Polygon {
+    match it.shape {
+        "circle" => circle(c, it.len / 2.0, 12),
+        "bow" | "round" => longhouse(c, it.len.max(it.dep), it.dep, ang, it.shape == "bow"),
+        _ => rect(c.x, c.y, it.len, it.dep, ang),
+    }
+}
+fn body_part(it: &Item, poly: Polygon) -> Part {
+    Part {
+        round: it.shape == "circle",
+        ..part(it.u, poly)
+    }
+}
+/// Yard wall of a rectangular steading, open at the gate.
+fn yard_wall(gate_u: f64, half: f64, d: f64) -> Polygon {
+    vec![
+        p(gate_u - 2.2, 0.9),
+        p(-half - 0.9, 0.9),
+        p(-half - 0.9, d - 0.6),
+        p(half + 0.9, d - 0.6),
+        p(half + 0.9, 0.9),
+        p(gate_u + 2.2, 0.9),
+    ]
+}
+/// Plan of a farm type from its catalogue record (`farmstead.types`, the record the
+/// settlement farmsteads of urban/farmsteads.rs read): the house of the type's size,
+/// its core buildings and a draw of its ancillary ones (more on a larger farm), at the
+/// catalogue's footprints and the culture's body scale, laid out by the type's layout:
+/// a court (closed, U, L), a row (linear, terraced), a round compound or a scatter.
+fn steading(x: &mut Ctx, t: &str) -> Zone {
+    let ty = &data()["types"][t];
+    let table = &data()["buildings"];
+    let si = x.si;
+    let scale = crate::urban::activities::farm_scale(&x.c.culture);
+    let layout = s(&ty["layout"]);
+    let r = &mut x.r;
+    let span = |v: &Value, lo: f64, hi: f64| {
+        let a = v[0].as_f64().unwrap_or(lo);
+        (a, v[1].as_f64().unwrap_or(hi).max(a))
+    };
+    // The house: its length grows with the farm's size inside the type's range.
+    let hs = |k: usize, d: f64| ty["houseSize"][k].as_f64().unwrap_or(d);
+    let hl = (hs(0, 8.0) + (hs(1, 13.0) - hs(0, 8.0)).max(0.0) * (si as f64 + r.float()) / 4.0) * scale;
+    let hd = (hs(2, 6.0) + (hs(3, 9.0) - hs(2, 6.0)).max(0.0) * r.float()) * scale;
+    // A people of round roofs lives in a round house (an oval one when it is long).
+    let round_roof = ["conical", "dome", "thatch-round"].contains(&s(&ty["roof"]));
+    let house_shape = if !round_roof || !["round", "scattered"].contains(&layout) {
+        "rect"
+    } else if hs(1, 13.0) <= hs(3, 9.0) + 1.0 {
+        "circle"
+    } else {
+        "round"
+    };
+    let mut items = vec![item("house", hl.max(hd), hd, house_shape)];
+    // Programme: the core buildings, then draws from the ancillary pool.
+    let names = |key: &str| -> Vec<&'static str> {
+        arr(&ty[key])
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|l| table[*l].is_object())
+            .collect()
+    };
+    let mut list = names("core");
+    let pool = names("ancillary");
+    let (lo, hi) = span(&ty["outbuildings"], 1.0, 3.0);
+    let want = ((lo + (hi - lo) * (si as f64 + r.float()) / 4.0).round() as usize).max(list.len());
+    while list.len() < want && !pool.is_empty() {
+        list.push(pool[r.int(0, pool.len() as u32 - 1) as usize]);
+    }
+    for l in list {
+        let b = &table[l];
+        let (w0, w1) = span(&b["width"], 3.0, 5.0);
+        let (d0, d1) = span(&b["depth"], 3.0, 4.0);
+        let (w, d) = (r.range(w0, w1) * scale, r.range(d0, d1) * scale);
+        // A round compound's small bodies (granaries, huts) are round too.
+        let round = yes(&b["round"]) || layout == "round" && w * d <= 25.0 * scale * scale;
+        items.push(item(l, w.max(d), w.min(d), if round { "circle" } else { "rect" }));
+    }
+    let (y0, y1) = span(&ty["yard"], 4.0, 9.0);
+    let yard = r.range(y0, y1) * scale;
+    let jitter = ty["jitter"].as_f64().unwrap_or(0.05);
+    let enclosure = s(&ty["enclosure"]);
+    match layout {
+        "closed" => yard_court(x, &items, 3, yard, enclosure == "wall"),
+        "u" => yard_court(x, &items, 2, yard, enclosure == "wall"),
+        "l" => yard_court(x, &items, 1, yard, enclosure == "wall"),
+        "linear" => row(x, &items, false, yard, enclosure == "wall"),
+        "terraced" => row(x, &items, true, yard, enclosure == "wall"),
+        "round" => compound(x, &items, yard, jitter, enclosure != "none"),
+        _ => scatter(x, items, false),
+    }
+}
+/// Catalogue court: the house on the back range and the long buildings on `sides` more
+/// ranges round a rectangular yard (1: an L, 2: a U, 3: a closed court, the gate between
+/// its front buildings); round bodies (well, dovecote, rick) stand in the yard's corners.
+fn yard_court(x: &mut Ctx, items: &[Item], sides: usize, yard: f64, walled: bool) -> Zone {
+    let wall_m = if walled { 1.5 } else { 0.0 };
+    let fm = 2.0 + wall_m;
+    let house = &items[0];
+    let mut long: Vec<&Item> = items[1..].iter().filter(|i| i.shape == "rect").collect();
+    long.sort_by(|a, b| (b.len * b.dep).total_cmp(&(a.len * a.dep)));
+    // Ranges: 0 left, 1 right, 2 front left, 3 front right; the first on the lee side.
+    let first = usize::from(x.f.west.x >= 0.0);
+    let order: Vec<usize> = match sides {
+        1 => vec![first],
+        2 => vec![first, 1 - first],
+        _ => vec![first, 1 - first, 2, 3],
+    };
+    let mut ranges: [Vec<&Item>; 4] = Default::default();
+    for (k, it) in long.iter().enumerate() {
+        ranges[order[k % order.len()]].push(*it);
+    }
+    let deep = |k: usize| ranges[k].iter().map(|i| i.dep).fold(0.0_f64, f64::max);
+    let load = |k: usize| ranges[k].iter().map(|i| i.len + 0.6).sum::<f64>();
+    let (dl, dr, df) = (deep(0), deep(1), deep(2).max(deep(3)));
+    let open = yard + 6.0 + 2.0 * x.si as f64;
+    let yd = open.max(load(0)).max(load(1));
+    let yw = open
+        .max(house.len - dl - dr)
+        .max(2.0 * (load(2) + 2.2 - dl))
+        .max(2.0 * (load(3) + 2.2 - dr));
+    let (yv0, ul, ur) = (fm + df, -yw / 2.0 - dl, yw / 2.0 + dr);
+    let yv1 = yv0 + yd;
+    let hu = 0.0_f64.clamp(ul + house.len / 2.0, (ur - house.len / 2.0).max(ul + house.len / 2.0));
+    let mut parts = vec![part(
+        "house",
+        rrect(hu - house.len / 2.0, yv1, hu + house.len / 2.0, yv1 + house.dep),
+    )];
+    for (k, range) in ranges.iter().enumerate() {
+        let mut pos = 0.0;
+        for it in range {
+            let poly = match k {
+                0 => rrect(-yw / 2.0 - it.dep, yv1 - pos - it.len, -yw / 2.0, yv1 - pos),
+                1 => rrect(yw / 2.0, yv1 - pos - it.len, yw / 2.0 + it.dep, yv1 - pos),
+                2 => rrect(ul + pos, yv0 - it.dep, ul + pos + it.len, yv0),
+                _ => rrect(ur - pos - it.len, yv0 - it.dep, ur - pos, yv0),
+            };
+            parts.push(part(it.u, poly));
+            pos += it.len + 0.6;
+        }
+    }
+    let corners = [(-1.0, true), (1.0, true), (-1.0, false), (1.0, false)];
+    for (it, (sd, back)) in items[1..].iter().filter(|i| i.shape != "rect").zip(corners) {
+        let rad = it.len / 2.0;
+        // Never on the way in from the gate.
+        if yw / 2.0 - 2.0 * rad - 1.0 < 1.5 {
+            continue;
+        }
+        let c = p(
+            sd * (yw / 2.0 - rad - 1.0),
+            if back { yv1 - rad - 1.0 } else { yv0 + rad + 1.0 },
+        );
+        parts.push(body_part(it, body(it, c, 0.0)));
+    }
+    let cu = (ul + ur) / 2.0;
+    for q in &mut parts {
+        q.poly = shift(&q.poly, -cu, 0.0);
+    }
+    let d = yv1 + house.dep + wall_m;
+    Zone {
+        parts,
+        yard: shift(&rrect(-yw / 2.0, yv0, yw / 2.0, yv1), -cu, 0.0),
+        walls: if walled {
+            vec![yard_wall(-cu, (ur - ul) / 2.0, d)]
+        } else {
+            vec![]
+        },
+        gate_u: -cu,
+        entry: p(-cu, yv0 + 1.5),
+        w: ur - ul + 2.0 * wall_m,
+        d,
+        house_u: hu - cu,
+    }
+}
+/// Catalogue row: the house and the long buildings in one line behind a front yard (a
+/// linear farm), or stepped against each other (a terraced one); round and small bodies
+/// stand at the two ends of the yard.
+fn row(x: &mut Ctx, items: &[Item], stepped: bool, yard: f64, walled: bool) -> Zone {
+    let wall_m = if walled { 1.5 } else { 0.0 };
+    let fm = 2.0 + wall_m;
+    let yc = yard + 5.0;
+    let v0 = fm + yc;
+    let house = &items[0];
+    let mut parts = vec![part(
+        "house",
+        rrect(-house.len / 2.0, v0, house.len / 2.0, v0 + house.dep),
+    )];
+    let (mut lo, mut hi, mut top) = (-house.len / 2.0, house.len / 2.0, v0 + house.dep);
+    let lee = x.f.west.x >= 0.0;
+    let mut loose = vec![];
+    let mut k = 0;
+    for it in &items[1..] {
+        if it.shape != "rect" || !stepped && it.len * it.dep <= 16.0 {
+            loose.push(it);
+            continue;
+        }
+        let right = (k % 2 == 0) == lee;
+        let step = if stepped { 1.5 * (1 + k / 2) as f64 } else { 0.0 };
+        let (a, b) = if right {
+            (hi, hi + it.len)
+        } else {
+            (lo - it.len, lo)
+        };
+        parts.push(part(it.u, rrect(a, v0 + step, b, v0 + step + it.dep)));
+        if right {
+            hi = b;
+        } else {
+            lo = a;
+        }
+        top = top.max(v0 + step + it.dep);
+        k += 1;
+    }
+    let (cu, half) = ((lo + hi) / 2.0, ((hi - lo) / 2.0).max(7.0));
+    for q in &mut parts {
+        q.poly = shift(&q.poly, -cu, 0.0);
+    }
+    let mut cursor = [fm + 1.0; 2];
+    for (j, it) in loose.into_iter().enumerate() {
+        let dep = if it.shape == "rect" { it.dep } else { it.len };
+        let side = j % 2;
+        // Inside the yard, clear of the way in from the gate.
+        if cursor[side] + dep > v0 - 1.0 || half - it.len - 0.5 < 1.5 {
+            continue;
+        }
+        let c = p(
+            if side == 0 { -1.0 } else { 1.0 } * (half - it.len / 2.0 - 0.5),
+            cursor[side] + dep / 2.0,
+        );
+        parts.push(body_part(it, body(it, c, 0.0)));
+        cursor[side] += dep + 1.0;
+    }
+    let d = top + 1.0 + wall_m;
+    Zone {
+        parts,
+        yard: rrect(-half, fm, half, v0),
+        walls: if walled {
+            vec![yard_wall(0.0, half, d)]
+        } else {
+            vec![]
+        },
+        gate_u: 0.0,
+        entry: p(0.0, fm + yc / 2.0),
+        w: 2.0 * half + 2.0 + 2.0 * wall_m,
+        d,
+        house_u: -cu,
+    }
+}
+/// Catalogue compound: the house at the back of a round yard, the type's huts and stores
+/// on its rim, their long side to the yard, inside a ring fence unless the type has none.
+fn compound(x: &mut Ctx, items: &[Item], yard: f64, jitter: f64, fenced: bool) -> Zone {
+    let r = &mut x.r;
+    let radial = |it: &Item| if it.shape == "circle" { it.len } else { it.dep };
+    let gap = 1.2;
+    let arc = 2.0 * PI - gap;
+    let around = items.iter().map(|it| it.len + 2.0).sum::<f64>()
+        + items.iter().map(|it| it.len).fold(0.0_f64, f64::max);
+    let deep = items.iter().map(radial).fold(0.0_f64, f64::max);
+    // Rim of the bodies' centres: the yard's, or what the bodies need side by side
+    // (measured on their inner faces, where they stand closest).
+    let rh = (0.5 * yard + 2.0).max(around / arc) + deep / 2.0;
+    let mut parts: Vec<Part> = vec![];
+    // Angle taken on either side of the house, which stands at the back (PI / 2).
+    let mut taken = [0.0_f64; 2];
+    for (k, it) in items.iter().enumerate() {
+        let half = (it.len / 2.0 + 1.0) / (rh - deep / 2.0);
+        let a = if k == 0 {
+            taken = [half; 2];
+            PI / 2.0
+        } else {
+            let sd = usize::from(taken[1] < taken[0]);
+            let a = PI / 2.0 + if sd == 1 { 1.0 } else { -1.0 } * (taken[sd] + half);
+            if taken[sd] + 2.0 * half > arc / 2.0 {
+                continue;
+            }
+            taken[sd] += 2.0 * half;
+            a
+        };
+        let turn = if k == 0 { 0.0 } else { r.range(-1.0, 1.0) * jitter };
+        let c = p(a.cos() * rh, a.sin() * rh);
+        parts.push(body_part(it, body(it, c, a + PI / 2.0 + turn)));
+    }
+    let ro = parts
+        .iter()
+        .flat_map(|q| q.poly.iter())
+        .map(|q| q.x.hypot(q.y))
+        .fold(0.0_f64, f64::max)
+        + 1.5;
+    let c = p(0.0, 3.0 + ro);
+    for q in &mut parts {
+        q.poly = shift(&q.poly, c.x, c.y);
+    }
+    Zone {
+        parts,
+        yard: circle(c, ro - 0.8, 16),
+        walls: if fenced {
+            vec![ring_points(c, ro, -PI / 2.0, 0.32)]
+        } else {
+            vec![]
+        },
+        gate_u: 0.0,
+        entry: p(0.0, c.y - 0.5 * (rh - deep / 2.0 - 1.0).max(0.0)),
+        w: 2.0 * ro + 3.0,
+        d: 2.0 * ro + 4.0,
+        house_u: 0.0,
     }
 }
 fn arid(t: &str) -> bool {
@@ -1628,6 +1929,8 @@ pub fn layout(t: &str, si: usize, c: &Context, mut f: Frame, r: Rng) -> LocalFar
                 "pueblo-ranch",
             ]
             .contains(&t)
+            // A type without an enclosure (camps, clearings) keeps no orchard.
+            && data()["types"][t]["enclosure"].as_str() != Some("none")
             && c.wet < 0.55;
         lot_plots.extend([
             plot("garden", g),
@@ -1784,11 +2087,21 @@ fn dress(t: &str, p: &Part, tags: &[String]) -> Value {
             _ => "thatch-round",
         }
         .into();
+    } else if d["roofs"][u].is_null()
+        && let Some(own) = data()["buildings"][u]["roof"].as_str()
+    {
+        // A catalogue building with a roof of its own (well, rick, tower) keeps it.
+        roof = match own {
+            "cone" => "conical",
+            "pyramid" => "pyramidal",
+            own => own,
+        }
+        .into();
     }
     if p.round && roof == "gable" {
         roof = "conical".into();
     }
-    let storeys = if u == "tower" {
+    let storeys = if ["tower", "farm-tower", "pigeon-tower"].contains(&u) {
         3
     } else if u == "house" && ["masseria", "vierkanthof", "dvor"].contains(&t) {
         2
@@ -1867,4 +2180,71 @@ pub fn seg_rect_dist(a: Point, b: Point, u0: f64, v0: f64, u1: f64, v1: f64) -> 
         best = best.min(dist(p, nearest(p, a, b)));
     }
     best
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /// Two cultures on the same site build different farm types and ground plans; every
+    /// building carries the massing of the town buildings in its culture's materials;
+    /// the parts stay inside the lot, clear of each other.
+    #[test]
+    fn countryside_farms_follow_their_culture() {
+        let farm = |people: &str| {
+            let ctx = Context {
+                culture: people.into(),
+                slope: 0.02,
+                market: 0.5,
+                ..Context::default()
+            };
+            let mut r = Rng::new("countryside-farm");
+            let kind = farm_type(&ctx, 1, &mut r);
+            let lf = layout(&kind, 1, &ctx, frame(p(0.0, 1.0), None), r.fork("plan"));
+            let mut g = place(&lf, p(500.0, 500.0), p(0.0, 1.0));
+            super::super::rural_farms::farm_massing(&mut g, people, &kind, lf.size, "countryside-farm");
+            (kind, lf, g)
+        };
+        let regime = |people: &str| -> Vec<&'static str> {
+            arr(&culture(people)["types"]).iter().map(|v| s(&v[0])).collect()
+        };
+        let (gulf, plains) = (farm("gulf-contemporary"), farm("native-plains"));
+        assert!(regime("gulf-contemporary").contains(&gulf.0.as_str()), "{}", gulf.0);
+        assert!(regime("native-plains").contains(&plains.0.as_str()), "{}", plains.0);
+        assert_ne!(gulf.0, plains.0);
+        let plan = |lf: &LocalFarm| -> Vec<String> {
+            lf.parts
+                .iter()
+                .map(|q| {
+                    let b = bbox(&q.poly);
+                    format!("{}:{:.0},{:.0}", q.use_, (b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0)
+                })
+                .collect()
+        };
+        assert_ne!(plan(&gulf.1), plan(&plains.1));
+        for (kind, lf, g) in [&gulf, &plains] {
+            assert!(lf.parts.len() >= 2, "{kind}: a house and its outbuildings");
+            for (i, q) in lf.parts.iter().enumerate() {
+                assert!(
+                    q.poly.iter().all(|v| v.x.abs() <= lf.w / 2.0 + 1e-6 && v.y >= -1e-6 && v.y <= lf.d + 1e-6),
+                    "{kind}: {} outside the lot",
+                    q.use_
+                );
+                for o in &lf.parts[..i] {
+                    assert!(!overlaps(&q.poly, &o.poly, -0.05), "{kind}: {} overlaps {}", q.use_, o.use_);
+                }
+            }
+            let parts = arr(&g["parts"]);
+            assert_eq!(parts.len(), lf.parts.len());
+            for b in parts {
+                let piece = &b["massing"][0];
+                assert!(
+                    piece["wall"].is_string() && !arr(&piece["volumes"]).is_empty(),
+                    "{kind}: {} without massing",
+                    s(&b["use"])
+                );
+            }
+        }
+        // The dwellings stand in their own building tradition (hide tents, plastered blocks).
+        let wall = |g: &Value| s(&g["parts"][0]["massing"][0]["wall"]).to_string();
+        assert_ne!(wall(&gulf.2), wall(&plains.2));
+    }
 }

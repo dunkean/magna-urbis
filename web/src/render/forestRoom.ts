@@ -17,11 +17,25 @@ const ROAD_WIDTH: Record<string, number> = { major: 8, minor: 3.6, track: 3 };
 export const ROAD_MARGIN = 2.5, RIVER_MARGIN = 1.5, EDGE_JITTER = 1.5, FARM_MARGIN = 5;
 
 export interface ForestCorridor { path: Polyline; half: number | number[]; /** A way under the canopy: no rooted tree on it, no clearing beside it. */ covered?: boolean }
-/** Roads at least this wide (m) open a corridor in the forest; narrower ways run under the canopy. */
+/** Roads at least this wide (m) open a corridor in the forest; narrower earth ways run under the canopy. */
 export const CLEARING_ROAD_WIDTH = 6;
-/** Room a road of this width takes in the forest. */
-export const roadCorridor = (path: Polyline, width: number): ForestCorridor =>
-  width >= CLEARING_ROAD_WIDTH ? { path, half: width / 2 + ROAD_MARGIN } : { path, half: Math.max(1, width / 2), covered: true };
+/** Room a road of this width takes in the forest. A paved road is cleared like a main road whatever its width. */
+export const roadCorridor = (path: Polyline, width: number, paved = false): ForestCorridor =>
+  paved || width >= CLEARING_ROAD_WIDTH ? { path, half: width / 2 + ROAD_MARGIN } : { path, half: Math.max(1, width / 2), covered: true };
+/** A town street as the generator sends it (rust/bridge/urban.ts `Street`). */
+type TownStreet = { path: Polyline; widths: readonly number[]; role: string };
+/** The streets of one town as corridors, by street index with their surface ('asphalt' or 'earth'; roadPavement.ts):
+ * no tree is rooted on any street; a paved street clears its sides, an earth one runs under the crowns. Tracks are
+ * never paved. */
+export function streetCorridors(streets: readonly TownStreet[], pavements?: readonly string[]): ForestCorridor[] {
+  const out: ForestCorridor[] = [];
+  streets.forEach((s, i) => {
+    if (s.path.length < 2) return;
+    const widths = s.widths.filter(w => Number.isFinite(w) && w > 0), width = widths.length ? Math.max(...widths) : 3;
+    out.push(roadCorridor(s.path, Math.max(3, width), pavements?.[i] === 'asphalt' && s.role !== 'track'));
+  });
+  return out;
+}
 
 /** Clear yard (m, beyond the walls) kept free of rooted crowns around the buildings of an isolated activity site (chapel,
  * quarry, mill, fishing hut): their crowns still overhang it from the edge, so the site reads as a clearing, not as a
@@ -43,13 +57,19 @@ function yardCorridors(region: RegionSites | undefined): ForestCorridor[] {
 
 /** Road and river corridors of a world, as centre lines with their cleared half widths (m). The satellite
  * ground leaves rivers out: its water mask already keeps trunks off the water and lets crowns overhang it. */
-export function forestCorridors(world: Pick<World, 'roads' | 'terrain'> & Partial<Pick<World, 'debug'>>, rivers = true): ForestCorridor[] {
+export function forestCorridors(world: Pick<World, 'roads' | 'terrain'> & Partial<Pick<World, 'debug'>>, rivers = true,
+  /** The paved and unpaved lengths of a road (roadPavement.ts `splitByPavement`); absent, every road is earth. */
+  surfaces?: (path: Polyline) => readonly { path: Polyline; pavement: string }[],
+  /** Further ways, such as the streets of the towns (streetCorridors). */
+  extra: readonly ForestCorridor[] = []): ForestCorridor[] {
   const out: ForestCorridor[] = yardCorridors(world.debug?.v2RustRegion as RegionSites | undefined);
   for (const road of world.roads ?? []) if (road.path.length > 1) {
     // The drawn width (render/scene.ts) where the network carries none.
     const width = road.width > 0 ? road.width : ROAD_WIDTH[road.kind] ?? 3;
-    out.push(roadCorridor(road.path, width));
+    if (!surfaces || road.kind === 'track') { out.push(roadCorridor(road.path, width)); continue; }
+    for (const piece of surfaces(road.path)) if (piece.path.length > 1) out.push(roadCorridor(piece.path, width, piece.pavement === 'asphalt'));
   }
+  out.push(...extra);
   if (rivers) for (const river of world.terrain?.rivers ?? []) if (river.path.length > 1)
     out.push({ path: river.path, half: river.path.map((_, i) => (river.width[i] ?? river.width[river.width.length - 1] ?? 0) / 2 + RIVER_MARGIN) });
   return out;

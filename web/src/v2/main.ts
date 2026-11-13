@@ -50,6 +50,9 @@ import { mountDesktopUpdates } from './desktopUpdates';
 import { mountV2Illustration } from './illustration';
 import { iconUrl, type IconId } from './stageIcons';
 import { mountRegionControls } from './regionControls';
+import { effectiveRegion } from './regionSettings';
+import { cityStageValidityKeys } from './stageValidity';
+import { SmallPlaceQueue } from './smallPlaces';
 import { mountMapControls } from './mapControls';
 import { mountMapLabelEditor } from './mapLabelEditor';
 import { applyLabelEdits } from './mapLabels';
@@ -95,6 +98,11 @@ registerMessages({
   'Elevations from this stage. Later stages remain to be run.': { en: 'Elevations from this stage. Later stages remain to be run.', fr: 'Altitudes de cette étape. Les étapes suivantes restent à exécuter.' },
 });
 let mods: unknown[] = [];
+/** Background build of small places (assigned with the generation helpers below). */
+let smallPlaces: SmallPlaceQueue | undefined;
+/** City recipe key of the map produced by the last run that built towns; undefined = no background pass on this map. */
+let smallPlaceRecipe: string | undefined;
+let lastGesture = 0;
 let selectedTown = 'main';
 let cityScope: 'all' | 'selection' = 'all';
 const selectedCities = new Set<string>();
@@ -461,7 +469,9 @@ function log(message: string): void {
 }
 function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
 client.onEngineReset=()=>chain.clearResults();
-function touchRecipe(): void { projectRevision++; scheduleAutosave(); updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
+function touchRecipe(): void { projectRevision++; scheduleAutosave();
+  // A recipe change drops the place in flight; the pass resumes only while the city recipe still matches the displayed map.
+  smallPlaces?.cancel(); smallPlaces?.start(); updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
 function updateExtent(): void { setDynamicText($('#extent-hint'), ()=>formatDistance(adaptedExtent(settings),getDistanceUnit(),numberLocale(),true)); }
 function syncControls(): Promise<void> {
   if (!world?.stats['v2.previewStage']) previewBase = undefined;
@@ -497,12 +507,54 @@ function setBusy(value: boolean): void {
   syncCitySelection();mapControls.sync();riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();
 }
 function labelEditorHostInert(value:boolean):void{const panel=document.querySelector<HTMLElement>('.map-label-editor');if(panel)panel.inert=value;}
+// ── Small places built in the background (smallPlaces.ts) ───────────────────────────────
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const)
+  window.addEventListener(type, event => { if (type !== 'pointermove' || (event as PointerEvent).buttons) lastGesture = performance.now(); }, { passive: true, capture: true });
+function smallPlaceRecipeKey(): string { return cityStageValidityKeys(settings, pristine, JSON.stringify(['all', []])).get('city-houses')!; }
+const GESTURE_QUIET_MS = 400;
+smallPlaces = new SmallPlaceQueue({
+  base: () => {
+    if (busy || !pristine || !world || previewBase || !pristine.urban || pristine.stats['v2.cityOutput']
+      || smallPlaceRecipe === undefined || smallPlaceRecipe !== smallPlaceRecipeKey()) return undefined;
+    return { world: pristine, limit: effectiveRegion(settings).autoBuildPopulation, recipe: smallPlaceRecipe,
+      backend: settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript' };
+  },
+  focus: () => { const view = client.viewer.getView(); return Number.isFinite(view.cx) && Number.isFinite(view.cy) ? { x: view.cx, y: view.cy } : undefined; },
+  // Exactly "Build targeted cities" with this one place selected; silent progress.
+  build: (base, key) => client.run('towns', settings, base, undefined, undefined, undefined, [key], undefined, () => undefined),
+  apply: async (result, key) => {
+    labelBaseline = undefined; applyLabelEdits(result, settings.naming?.labels);
+    pristine = result; world = applyBuildingEdits(result, mods).world;
+    log(`Built in the background: ${settlementDisplayName(world, key, settings) ?? key}`);
+    // Same world swap as after a targeted build: the place now has its `urban` layer and detail 'eager'.
+    window.dispatchEvent(new CustomEvent('v2-place-built', { detail: { key, world } }));
+    await client.show(world, true); updateWorld(true); scheduleAutosave();
+  },
+  idle: async () => {
+    for (;;) {
+      const quiet = performance.now() - lastGesture;
+      if (busy || quiet < GESTURE_QUIET_MS) { await new Promise(resolve => setTimeout(resolve, busy ? 250 : GESTURE_QUIET_MS - quiet)); continue; }
+      await new Promise<void>(resolve => typeof requestIdleCallback === 'function' ? requestIdleCallback(() => resolve(), { timeout: 1000 }) : setTimeout(resolve, 50));
+      if (!busy && performance.now() - lastGesture >= GESTURE_QUIET_MS) return;
+    }
+  },
+  onError: (key, error) => log(`Background build of ${key} failed: ${error instanceof Error ? error.message : String(error)}`),
+});
+/** Test and shot scripts: terrain, placement, then the main town only (secondary places stay lazy for the background pass). */
+async function generateMainOnly(): Promise<void> {
+  await generate('terrain'); if (!world) return;
+  await generate('region'); if (!world?.settlements?.length) return;
+  await generate('town', world.settlements.find(place => place.main)?.key ?? 'main');
+}
 async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<void> {
   if (busy) return; cancelled = false;
   const previousSeed = settings.options.seed; migrateUrbanSeeds(settings);
   if (previousSeed !== settings.options.seed) { $<HTMLInputElement>('#seed').value = settings.options.seed; projectRevision++; }
   if (action !== 'terrain' && action !== 'all' && !world) { toast('Créez d’abord le territoire.'); selectTab('terrain'); return; }
-  setBusy(true); const started = performance.now(); const revision = projectRevision; let completed = false;
+  setBusy(true);
+  // A user run takes the engine: the background place in flight (if any) completes and is dropped.
+  await smallPlaces?.stop(); if (cancelled) return;
+  const started = performance.now(); const revision = projectRevision; let completed = false;
   if (['terrain','region','settlements','town'].includes(action)) chain.clearCityResults();
   chain.beginRun(action === 'town' ? [] : stagesForAction(action, townStage, terrainStage, settings.terrain?.procedural?.coastAfter));
   setText($('#progress-label'), 'Préparation du calcul…'); setText($('#progress-time'), '0 s');
@@ -529,16 +581,18 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     if(refused){log(`${refused} demande(s) de construction refusée(s) par le moteur : consultez le rapport du lieu.`);toast(`${refused} construction(s) refusée(s). Le rapport de chaque lieu explique les contraintes.`,true);}
     if(world.stats['settlements.warning']){log(String(world.stats['settlements.warning']));if(!refused)toast(String(world.stats['settlements.warning']));}
     if (key) showInspector(key);
+    smallPlaceRecipe = ['town','towns','all'].includes(action) && !cityOutput && !terrainStage ? smallPlaceRecipeKey() : undefined;
     completed = true;
   } catch (e) { if (!cancelled) { const message = e instanceof Error ? e.message : String(e); log(`Échec : ${message}`); toast(message,true); } }
-  finally { chain.endRun(completed); setBusy(false); if (projectRevision !== revision) setText($('#footer-status'), 'Nouveaux réglages à générer'); }
+  finally { chain.endRun(completed); setBusy(false); if (projectRevision !== revision) setText($('#footer-status'), 'Nouveaux réglages à générer'); if (completed) smallPlaces?.start(); }
 }
-function updateWorld(): void {
+/** `keepInspector`: a background place arrived; the user's open inspector stays as it is. */
+function updateWorld(keepInspector = false): void {
   if (!world) return;
   labelEditor.sync();
   riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();
   mapControls.sync();
-  disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
+  if(!keepInspector)disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
   const towns = (world.settlements ?? []).map(place=>({...place,name:settlementDisplayName(world!,place.key,settings)}));
   setText($('#map-metrics'), `${world.terrain.rivers.length} cours d’eau\n${towns.length} peuplements`);
   const preview = stageById.get(String(world.stats['v2.previewStage'] ?? ''));
@@ -546,9 +600,9 @@ function updateWorld(): void {
   setText($('#towns-count'), String(towns.length));
   setHTML($('#settlement-list'), towns.length ? towns.map(s=>`<div class="settlement-choice"><input type="checkbox" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}',s.name??s.key))}" ${selectedCities.has(s.key)?'checked':''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${selectedTown===s.key}"><span class="settlement-dot ${(s.main ? world?.urban : s.urban)?'ready':''}"></span><span class="grow"><strong>${nameHTML(s.name,s.main?'Ville principale':s.key)}</strong><small>${populationMarkup(s.key,s.population)} · <span>${esc(s.archetype)}</span></small>${reachedPopulation(s.key,s.population)?.shortfallHouseholds?`<small class="warning" title="${esc(populationShortfallText(reachedPopulation(s.key,s.population),popFormat()))}">⚠ ${esc(populationShortfallText(reachedPopulation(s.key,s.population),popFormat()))}</small>`:''}<small class="settlement-stage">${cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? world?.urban : s.urban)?'↗':'＋'}</span></button></div>`).join('') : '<p class="hint">Créez les implantations pour sélectionner un lieu.</p>');
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(b=>b.onclick=()=>showInspector(b.dataset.town!,true));
-  document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input=>input.onchange=()=>{const key=input.dataset.citySelect!;if(input.checked)selectedCities.add(key);else selectedCities.delete(key);cityScope='selection';syncCitySelection();});
+  document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input=>input.onchange=()=>{const key=input.dataset.citySelect!;if(input.checked){selectedCities.add(key);smallPlaces?.prioritize(key);}else selectedCities.delete(key);cityScope='selection';syncCitySelection();});
   syncCitySelection();
-  $('#inspector').hidden = true; selectedBuilding = null;
+  if (!keepInspector) { $('#inspector').hidden = true; selectedBuilding = null; }
   syncPlacesPanel(); chain.sync();
 }
 /** Direct map edits replace the current snapshot; the full project saves that result. */
@@ -557,12 +611,13 @@ async function applyDirectMapEdit(next:World):Promise<void>{
   labelBaseline=undefined;
   previewBase=undefined;
   if(next.terrain!==world?.terrain)next.stats={...next.stats,'v2.waterEditRevision':Math.max(Number(next.stats['v2.waterEditRevision']??0),Number(world?.stats['v2.waterEditRevision']??0)+1)};
-  pristine=next;mods=[];world=next;
+  pristine=next;mods=[];world=next;smallPlaceRecipe=undefined;
   client.invalidateRetained();touchRecipe();
   await client.show(next,true);updateWorld();
 }
 function showInspector(key: string, focus = false): void {
   if (!world) return; const source = world.settlements?.find(s=>s.key===key); if (!source) return; const s={...source,name:settlementDisplayName(world,key,settings)};
+  if (!source.urban) smallPlaces?.prioritize(key);
   window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'selection'}));
   disposeInspectorForms();selectedTown = key; selectedBuilding = null;
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.town===key)));$('#places-panel').hidden=false;chain.sync();
@@ -697,7 +752,7 @@ $('#import-open').onclick=()=>dialog('#import-dialog');$('#heightmap-import-quic
 $('#expert-open').onclick=()=>{ const clone=structuredClone(settings);delete clone.options.importedHeight;$<HTMLTextAreaElement>('#expert-json').value=JSON.stringify(clone,null,2);setText($('#expert-error'), '');dialog('#expert-dialog'); };
 $('#expert-apply').onclick=()=>{try{const next=JSON.parse($<HTMLTextAreaElement>('#expert-json').value);if(settings.options.importedHeight)next.options.importedHeight=settings.options.importedHeight;validateSettings(next);settings=next;touchRecipe();syncControls();$<HTMLDialogElement>('#expert-dialog').close();toast('Recette appliquée. Lancez la génération souhaitée.');}catch(e){setText($('#expert-error'), String(e));}};
 async function loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void> {
-  labelBaseline=undefined;
+  labelBaseline=undefined;smallPlaceRecipe=undefined;await smallPlaces?.stop();
   const connections={localServer:settings.runtime?.localServer??bootRuntime.localServer,pythonServer:settings.runtime?.pythonServer??bootRuntime.pythonServer};
   if(connectLocal&&project.settings.runtime)project.settings.runtime={...project.settings.runtime,...connections};
   client.invalidateRetained();chain.clearResults();previewBase=undefined;selectedCities.clear();settings=project.settings;mods=project.mods;pristine=project.world?renameMap(project.world,settings,getLanguage()):undefined;world=pristine?applyBuildingEdits(pristine,mods).world:undefined;
@@ -814,7 +869,7 @@ $<HTMLInputElement>('#seed').maxLength=65536;
 initializeLanguage();
 syncControls();
 try{await client.init();}finally{document.getElementById('boot-splash')?.remove();}
-mountV2TestHook({getSettings:()=>settings,getWorld:()=>world??undefined,isBusy:()=>busy,load:loadProject,run:()=>generate('all'),getViewer:()=>client.viewer,get3d:()=>city3d,prepareCapture:()=>client.prepareViewportCapture(),rerollTown:key=>rerollCityStep('composition',[key]),displaySettled:()=>client.displaySettled()});
+mountV2TestHook({getSettings:()=>settings,getWorld:()=>world??undefined,isBusy:()=>busy,load:loadProject,run:places=>places==='main'?generateMainOnly():generate('all'),smallPlacesSettled:()=>smallPlaces?.settled()??Promise.resolve(),getViewer:()=>client.viewer,get3d:()=>city3d,prepareCapture:()=>client.prepareViewportCapture(),rerollTown:key=>rerollCityStep('composition',[key]),displaySettled:()=>client.displaySettled()});
 await cityCodeSharing.restoreFromLocation();
 { // Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
   const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';

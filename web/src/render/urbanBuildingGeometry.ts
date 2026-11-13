@@ -163,6 +163,17 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
       const eaves = volume.z_m + volume.wall_height_m, top = eaves + volume.roof_height_m;
       if (volume.envelope !== 'open') extrude(volume.footprint, eaves, volume.roof_height_m, volume.materials, false, volume.materials.cladding);
       for (const triangle of surfaceTriangles(volume.footprint)) emit({ points: triangle.map(p => [p.x, p.y, top]) as BuildingTriangle['points'], normal: [0, 0, 1], materials: volume.materials, material: volume.materials.cladding, surface: 'roof' });
+      // Standing works that make the building what it is from afar (mill sails, a water wheel: city3dMeshes.ts
+      // `overview_faces`) stay on the capped body: a windmill without sails is a box.
+      const kept = (volume as { overview_faces?: [number, number] }).overview_faces, mesh = volume.roof_mesh;
+      if (kept && mesh) for (let f = kept[0]; f < kept[1] && f < mesh.faces.length; f++) {
+        const face = mesh.faces[f], triangles = faceTriangles(mesh, face);
+        for (let i = 0; i + 2 < triangles.length; i += 3) {
+          const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
+          if (points.some(p => !p)) continue;
+          emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials: volume.materials, material: face.material, surface: 'roof' });
+        }
+      }
       continue;
     }
     const roof = volume.roof_mesh;

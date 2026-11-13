@@ -78,6 +78,29 @@ pub struct Settings {
     pub avulsions: bool,
     pub confluence: String,
     pub deltas: bool,
+    /// Headwaters, 0 (a river starts where its catchment reaches `river_area`) to 1: rivers continue up their
+    /// talweg, and take the side valleys they pass, down to a tenth of that catchment, as long as the relief
+    /// shows a valley or a cut channel.
+    #[serde(default)]
+    pub headwaters: f64,
+}
+/// Share of the river catchment a headwater keeps at `headwaters` 1.
+pub const HEADWATER_SHARE: f64 = 0.1;
+/// A talweg cell: across its flow direction the ground rises on both sides within two cells, by 3 % at least (a
+/// valley or a cut channel, not an open slope).
+pub fn valley_cell(height: &[f32], receiver: &[i32], n: usize, cell: f64, c: usize) -> bool {
+    let r = receiver[c];
+    if r < 0 {
+        return false;
+    }
+    let (x, y) = ((c % n) as isize, (c / n) as isize);
+    let (dx, dy) = ((r as usize % n) as isize - x, (r as usize / n) as isize - y);
+    let side = |k: isize| {
+        let (xx, yy) = (x - dy * k, y + dx * k);
+        (xx >= 0 && yy >= 0 && xx < n as isize && yy < n as isize).then(|| height[yy as usize * n + xx as usize] as f64)
+    };
+    let rise = (0.06 * cell).max(1.0);
+    matches!((side(2), side(-2)), (Some(a), Some(b)) if a.min(b) - height[c] as f64 >= rise)
 }
 #[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Climate {

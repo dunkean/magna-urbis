@@ -100,9 +100,25 @@ function smoothedFor(entry: Entry, metresPerPixel: number): Float32Array {
   }
   return data;
 }
+const pathData = (lines: { pts: { x: number; y: number }[]; closed: boolean }[]): string => lines.map(path => path.pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('') + (path.closed ? 'Z' : '')).join('');
 const reliefOf = (landform: string): Relief => landform === 'flat' || landform === 'hills' || landform === 'valley' ? landform : 'mountains';
 
-function contourKey(entry: Entry, scale: number, topographic = false): { key: string; step: number; metresPerPixel: number } {
+/**
+ * How the contours of a vector map follow the zoom. `fixed` is the V1 map (render/contours.ts): one set traced once for
+ * the whole map at the relief's base interval, many thin lines from the start; a zoom only changes their screen weight,
+ * never the lines, so it repaints nothing. `zoom` re-selects interval and smoothing per zoom band (cityContourInterval).
+ */
+export type ContourDetail = 'fixed' | 'zoom';
+/** V1 interval (CONTOUR_INTERVAL); a topographic sheet keeps at least a dozen levels over low relief. `sparse` (cadastre): half as many lines. */
+export function fixedContourInterval(relief: Relief, topographic = false, range = Infinity, sparse = false): number {
+  const base = CONTOUR_INTERVAL[relief] * (sparse ? 2 : 1);
+  if (!topographic || !(range > 0) || !Number.isFinite(range)) return base;
+  const wanted = range / 12, decade = 10 ** Math.floor(Math.log10(wanted));
+  const nice = [...NICE_STEPS].reverse().map(n => n * decade).find(step => step <= wanted * 1.001) ?? decade;
+  return Math.max(.5, Math.min(base, nice));
+}
+function contourKey(entry: Entry, scale: number, topographic = false, detail: ContourDetail = 'zoom', sparse = false): { key: string; step: number; metresPerPixel: number } {
+  if (detail === 'fixed') return { key: `fixed:${topographic}:${sparse}`, step: fixedContourInterval(entry.relief, topographic, entry.range, sparse), metresPerPixel: 0 };
   const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale)));
   const step = topographic ? topographicContourInterval(entry.relief, 1 / metresPerPixel, entry.slope, entry.range) : cityContourInterval(entry.relief, scale, entry.slope);
   return { key: `${topographic}:${step}:${metresPerPixel}`, step, metresPerPixel };
@@ -111,14 +127,14 @@ function contourKey(entry: Entry, scale: number, topographic = false): { key: st
 export type ContourView = { minX: number; minY: number; maxX: number; maxY: number };
 /** UTF-8 encoded canonical SVG path commands; no point-object graph crosses the worker boundary. */
 export interface TypedContourPaths { step: number; thin: Uint8Array; index: Uint8Array }
-export type ContourWorkerRequest = { id: number; landform: string; scale: number; topographic?: boolean; fine?: ContourView; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
+export type ContourWorkerRequest = { id: number; landform: string; scale: number; topographic?: boolean; detail?: ContourDetail; sparse?: boolean; fine?: ContourView; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
 export type ContourWorkerResponse = { id: number; paths?: TypedContourPaths; blocks?: { key: string; thin: Uint8Array; index: Uint8Array }[]; error?: string };
 let warmer: Worker | undefined, workerEntry: WeakRef<Entry> | undefined, warmId = 0, workerFailed = false;
-interface ContourJob { entry: Entry; key: string; ready: Set<() => void>; background: boolean; scale: number; topographic: boolean; fine: boolean }
+interface ContourJob { entry: Entry; key: string; ready: Set<() => void>; background: boolean; scale: number; topographic: boolean; fine: boolean; detail: ContourDetail }
 const warming = new Map<number, ContourJob>();
 const canQueue = (): boolean => typeof document !== 'undefined' && typeof Worker !== 'undefined' && !workerFailed;
 const decode = new TextDecoder();
-function queueContours(entry: Entry, scale: number, key: string, topographic: boolean, ready?: () => void, fine?: ContourView, background = false): void {
+function queueContours(entry: Entry, scale: number, key: string, topographic: boolean, ready?: () => void, fine?: ContourView, background = false, detail: ContourDetail = 'zoom', sparse = false): void {
   for (const job of warming.values()) if (job.entry === entry && job.key === key) {
     if (ready) job.ready.add(ready);
     if (!background && job.background) { job.background = false; entry.pending.add(key); }
@@ -127,12 +143,12 @@ function queueContours(entry: Entry, scale: number, key: string, topographic: bo
   try {
     ensureWarmer();
     const id = ++warmId, t = entry.terrain;
-    const request: ContourWorkerRequest = { id, landform: entry.relief, scale, topographic, fine };
+    const request: ContourWorkerRequest = { id, landform: entry.relief, scale, topographic, fine, ...(detail === 'fixed' ? { detail, sparse } : {}) };
     if (workerEntry?.deref() !== entry) {
       request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask }; workerEntry = new WeakRef(entry);
     }
     if (!background) entry.pending.add(key);
-    warming.set(id, { entry, key, ready: new Set(ready ? [ready] : []), background, scale, topographic, fine: !!fine });
+    warming.set(id, { entry, key, ready: new Set(ready ? [ready] : []), background, scale, topographic, fine: !!fine, detail });
     warmer!.postMessage(request);
   } catch { stopWarmer(); ready?.(); }
 }
@@ -145,7 +161,8 @@ function ensureWarmer(): void {
     if (data.paths) {
       const paths = { step: data.paths.step, thin: decode.decode(data.paths.thin), index: decode.decode(data.paths.index) };
       job.entry.paths.set(job.key, paths);
-      if (!job.background) { (job.entry.last ??= new Map()).set(job.topographic, paths); warmNeighbours(job.entry, job.scale, job.topographic); }
+      // A fixed set is the only one of its map: no zoom band to prewarm, and it is not the fallback of the zoom bands.
+      if (!job.background && job.detail === 'zoom') { (job.entry.last ??= new Map()).set(job.topographic, paths); warmNeighbours(job.entry, job.scale, job.topographic); }
     }
     if (data.blocks) for (const block of data.blocks) {
       if (job.entry.blocks.size >= FINE_BLOCK_LIMIT) job.entry.blocks.delete(job.entry.blocks.keys().next().value!);
@@ -159,9 +176,9 @@ function ensureWarmer(): void {
 }
 /** Only requested work gates visible completion; speculative neighbour bands do not. */
 export const cityContoursPending = (terrain: TerrainData | undefined): number => terrain ? cache.get(terrain)?.pending.size ?? 0 : 0;
-export function cityContourPathsPending(terrain: TerrainData, landform: string, scale: number, topographic = true): boolean {
+export function cityContourPathsPending(terrain: TerrainData, landform: string, scale: number, topographic = true, detail: ContourDetail = 'zoom', sparse = false): boolean {
   const entry = cache.get(terrain);
-  return !!entry && entry.relief === reliefOf(landform) && (entry.pending.has(contourKey(entry, scale, topographic).key)
+  return !!entry && entry.relief === reliefOf(landform) && (entry.pending.has(contourKey(entry, scale, topographic, detail, sparse).key)
     || [...warming.values()].some(job => job.entry === entry && job.fine && job.scale === scale));
 }
 /** Prewarm just two adjacent bands, only after the first requested level has landed. */
@@ -192,10 +209,11 @@ function stopWarmer(): void {
 }
 
 /** Same samples, slope filtering and index levels as Terrain Bench, without repainting its raster; smoothing follows the zoom. */
-export function cityContourPaths(terrain: TerrainData, landform: string, scale: number, topographic = false, onReady?: () => void): CityContourPaths {
+export function cityContourPaths(terrain: TerrainData, landform: string, scale: number, topographic = false, onReady?: () => void, detail: ContourDetail = 'zoom', sparse = false): CityContourPaths {
   if (terrain.caveMask.length || landform === 'cavern') return { step: 0, thin: '', index: '' };
   const relief = reliefOf(landform);
   const entry = entryOf(terrain, relief);
+  if (detail === 'fixed') return fixedContourPaths(entry, terrain, topographic, sparse, onReady);
   // One detail level per doubling of the zoom, so the cache stays small and a zoom step does not redraw every line.
   const { metresPerPixel, step, key } = contourKey(entry, scale, topographic), retained = entry.paths.get(key);
   if (onReady) for (const job of warming.values()) if (job.entry === entry && job.fine) job.ready.add(onReady);
@@ -210,17 +228,31 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, metresPerPixel) } } } as World;
   const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[relief]) : 1);
-  const pathData = (lines: typeof contours.thin): string => lines.map(path => path.pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('') + (path.closed ? 'Z' : '')).join('');
+  const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
+  entry.paths.set(key, paths); return paths;
+}
+
+/** The V1 set (`fixed`): whole map, once, in the worker on a page; lightly smoothed (the V1 grid had no 1024-sample steps). */
+function fixedContourPaths(entry: Entry, terrain: TerrainData, topographic: boolean, sparse: boolean, onReady?: () => void): CityContourPaths {
+  const { key, step } = contourKey(entry, 0, topographic, 'fixed', sparse), retained = entry.paths.get(key);
+  if (retained) return retained;
+  if (canQueue()) {
+    queueContours(entry, 0, key, topographic, onReady, undefined, false, 'fixed', sparse);
+    return { step, thin: '', index: '' };
+  }
+  const height = entry.world.terrain.height;
+  const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, height.cell / 5) } } } as World;
+  const contours = contourSet(world, terrain.width / 1600, step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[entry.relief]) : 1);
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths); return paths;
 }
 
 /** Async captures wait for the same retained paths as the live overlay. */
-export function cityContourPathsReady(terrain: TerrainData, landform: string, scale: number, topographic = true): Promise<CityContourPaths> {
+export function cityContourPathsReady(terrain: TerrainData, landform: string, scale: number, topographic = true, detail: ContourDetail = 'zoom', sparse = false): Promise<CityContourPaths> {
   return new Promise(resolve => {
-    const ready = () => resolve(cityContourPaths(terrain, landform, scale, topographic));
-    const paths = cityContourPaths(terrain, landform, scale, topographic, ready), entry = cache.get(terrain);
-    if (!entry || !entry.pending.has(contourKey(entry, scale, topographic).key)) resolve(paths);
+    const ready = () => resolve(cityContourPaths(terrain, landform, scale, topographic, undefined, detail, sparse));
+    const paths = cityContourPaths(terrain, landform, scale, topographic, ready, detail, sparse), entry = cache.get(terrain);
+    if (!entry || !entry.pending.has(contourKey(entry, scale, topographic, detail, sparse).key)) resolve(paths);
   });
 }
 

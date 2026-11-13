@@ -5,7 +5,7 @@
  * within TREE_FAR of the eye are built; trees grow out of their painted crown between TREE_FAR and TREE_NEAR,
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
-import { ForestRoom } from '../render/forestRoom';
+import { ForestRoom, type ForestCorridor } from '../render/forestRoom';
 import { FOREST_CLUMP_GLSL, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
 /** Horizontal distance from the eye (m): full trees within TREE_NEAR, none beyond TREE_FAR. */
@@ -85,6 +85,13 @@ export function buildNearTrees(inputs: TreeInputs, view: TreeView): Float32Array
   return step.value;
 }
 
+const wayRooms = new WeakMap<object, ForestRoom>();
+/** One point index per list of ways, kept with the occupation that carries it. */
+function wayRoomOf(ways: NonNullable<ForestOccupation['ways']>): ForestRoom {
+  let room = wayRooms.get(ways);
+  if (!room) wayRooms.set(ways, room = new ForestRoom(ways as readonly ForestCorridor[], []));
+  return room;
+}
 /** Same instance order and arithmetic, with one bounded world block per step. */
 export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Generator<void, Float32Array> {
   const { field, occupation: occ, seed } = inputs, T = inputs.climate.temperature, P = inputs.climate.precipitation;
@@ -101,6 +108,8 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
     return { cover, height: px[1] / 255 * 50 * (zone && inputs.zone === 6 ? .35 : 1), needle };
   };
   const occCell = occ ? occ.width / occ.n : 1;
+  // Exact ways: no trunk stands on a road or a street, whatever the raster resolution (crowns may still overhang an earth way).
+  const wayRoom = occ?.ways?.length ? wayRoomOf(occ.ways) : undefined;
   const occAt = (x: number, y: number): [number, number, number] | undefined => {
     if (!occ || !bilinear(occ.rgba, occ.n, occ.x, occ.y, occ.width, x, y, px)) return undefined;
     const i = clamp(Math.floor((x - occ.x) / occ.width * occ.n), 0, occ.n - 1), j = clamp(Math.floor((y - occ.y) / occ.width * occ.n), 0, occ.n - 1);
@@ -209,6 +218,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         const ex = cx - view.x, ey = cy - view.y;
         if (ex * ex + ey * ey > far2) continue;
         if (orchardRoom && !orchardRoom.keeps(cx, cy, 0)) continue;
+        if (wayRoom && !wayRoom.keeps(cx, cy, .5)) continue;
         const centre = fieldAt(cx, cy); if (!centre) continue;
         let { cover, needle } = centre; const height = centre.height;
         let open = -1e3, forced = -1e3, allow = 0, hedge = 0, openGallery = .5, occupied = false, tilledPlot = false;

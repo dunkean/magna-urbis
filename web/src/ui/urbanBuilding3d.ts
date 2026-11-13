@@ -101,6 +101,9 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   else if(c==26){bond=0.;cw=vec4(.1,2.2,.05,.35);k=vec4(.012,.04,.02,0.);}                                  // bamboo wall: upright canes
   else if(c==27){cw=vec4(.4,.3,.15,.1);k=vec4(.015,.01,.03,.02);run=vec2(.5);}                      // coral rag under lime
   else if(c==28){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.03);run=vec2(.6);}                             // snow: a faint even grain, the same on every roof
+  else if(c==29){cw=vec4(.9,.45,.06,.05);k=vec4(.03,.02,.025,0.);}                                   // ashlar: large dressed courses
+  else if(c==30){bond=0.;cw=vec4(1.2,2.6,.03,.03);k=vec4(.012,.012,.01,.03);run=vec2(.5,2.2);}       // concrete: formwork panels, stains
+  else if(c==31){bond=0.;cw=vec4(1.5,3.2,.05,.06);k=vec4(.05,.05,.012,0.);}                          // glass: mullion grid
   // Weathering once the units are no longer resolved: w.x its strength, w.yz its stretch along and down the face.
   vec3 w=vec3(.035,1.,1.);                                                                               // fired clay, stone, earth, hides: speckle
   if(c==3||c==16||c==17)w=vec3(.014,1.,2.5);                                                             // glazed tiles, metal, felt: even
@@ -109,6 +112,8 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   else if(c==8||c==13||c==26)w=vec3(.02,.3,3.);                                                          // reed, canes: fine streaks down
   else if(c==10)w=vec3(.05,1.,1.);                                                                       // turf: clumps
   else if(c==12||c==21)w=vec3(.03,2.5,.4);                                                               // bark sheets, boards, logs: along
+  else if(c==29)w=vec3(.02,1.,1.);                                                                       // ashlar: little
+  else if(c==31)w=vec3(.008,1.,1.);                                                                      // glass: smooth
   else if(c==28)w.x=0.;                                                                                  // snow keeps its own drifts
   float row=floor(q.y/cw.y);
   vec2 u=vec2(q.x/cw.x+bond*mod(row,2.),q.y/cw.y),f=fract(u);
@@ -264,12 +269,15 @@ function materialLayer(id: string | undefined): number {
 }
 /** Procedural grain classes of the flat-colour program (materialGrain). Roof covers take the class of the family the
  * 2D plan gives the same pan (`roofGrain`: cover, flatness, culture), so both views show one cover; wall materials
- * follow. At most 31: the class is stored in thirty-seconds on the normal's length. */
+ * follow. At most 31 (all in use): the class is stored in thirty-seconds on the normal's length. */
 const ROOF_CLASS: Record<CoverGrain, number> = { tile: 1, pantile: 2, glazed: 3, slate: 4, slab: 5, paving: 6, thatch: 7, reed: 8, palm: 9, turf: 10, shingle: 11, bark: 12, bamboo: 13,
   earth: 14, lime: 15, metal: 16, felt: 17, hide: 18 };
 /** Walls: lime plaster (rain streaks), timber frame (posts and rails under the plaster), boards and logs, brick, stone
  * courses, adobe and rammed earth, wattle and daub, upright bamboo, coral rag, hide (the stitched skins of the tent roof). */
-const WALL_CLASS: Record<string, number> = { plaster: 19, timber: 20, wood: 21, brick: 22, stone: 23, earth: 24, wattle: 25, bamboo: 26, coral: 27, hide: 18 };
+const WALL_CLASS: Record<string, number> = { plaster: 19, timber: 20, wood: 21, brick: 22, stone: 23, earth: 24, wattle: 25, bamboo: 26, coral: 27, hide: 18,
+  // Modern walls: cut limestone in large dressed courses, board-marked concrete (formwork panels, stains), curtain
+  // wall (a regular grid of mullions on a smooth surface), steel cladding (the standing-seam class: upright joints).
+  ashlar: 29, concrete: 30, glass: 31, steel: 16 };
 /** Class of a roof face under snow: the mantle is uneven, thinner in places (materialGrain). */
 const SNOW_CLASS = 28;
 /** Grain class of a face from its display material id `city3d:<cover|wall>:<key>`; 0 (no grain) for openings, roads,

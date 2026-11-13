@@ -1458,7 +1458,7 @@ impl BuildingSiteIndex {
                 let radius = super::shanty::formal_radius(layout);
                 (center.x - layout.center.x).hypot(center.y - layout.center.y) / radius
             },
-            complex: super::forms::complex_houses(layout),
+            complex: super::forms::complex_houses(layout), user_core: super::massing::user_core(layout, parcel.block),
         });
         if let Some(m) = activity_massing {
             programme["massing"] = Value::Array(m);

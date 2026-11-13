@@ -26,6 +26,10 @@ export interface SurfaceOptions {
   tolerance?: number;
   /** Curb return radius as a share of the narrower width of two arms (0: sharp corners). */
   fillet?: number;
+  /** Natural grounds: how a loose end stops ('round' cap by default; 'square' a paved end with a short bevel, 'taper'
+   * an earth way narrowing into the ground). With any of them, a straight continuation into a narrower way (a paved
+   * street running on as a country track) narrows over a taper of 15 to 40 m instead of stepping at the node. */
+  ends?: (street: number) => 'round' | 'square' | 'taper';
 }
 /** One ring; `street` owns its style (a junction belongs to its major arm). */
 export interface SurfacePiece { street: number; ring: Point[] }
@@ -60,6 +64,44 @@ function arc(c: Point, r: number, a0: number, sweep: number, tolerance: number):
   return out;
 }
 
+/** Two ways meeting end to end in a straight line with unequal widths: the wider one narrows to the other over its last
+ * 15 to 40 m (a new vertex where the narrowing starts), so a paved street runs on into a track instead of stepping. */
+function taperContinuations(paths: { pts: Point[]; ws: number[] }[]): void {
+  const ends = new Map<string, [number, boolean][]>(), inner = new Set<string>();
+  paths.forEach(({ pts }, si) => {
+    if (pts.length < 2) return;
+    for (let i = 1; i < pts.length - 1; i++) inner.add(keyOf(pts[i]));
+    for (const last of [false, true]) { const k = keyOf(last ? pts[pts.length - 1] : pts[0]); let list = ends.get(k); if (!list) ends.set(k, list = []); list.push([si, last]); }
+  });
+  /** Outward direction of a way at one of its ends, and its width there. */
+  const at = (si: number, last: boolean): { dir: Point; width: number } => {
+    const { pts, ws } = paths[si], i = last ? pts.length - 1 : 0, j = last ? pts.length - 2 : 1;
+    return { dir: unit(sub(pts[j], pts[i])), width: ws[i] };
+  };
+  for (const [k, list] of ends) {
+    if (list.length !== 2 || inner.has(k) || list[0][0] === list[1][0]) continue;
+    const a = at(...list[0]), b = at(...list[1]);
+    if (a.dir.x * b.dir.x + a.dir.y * b.dir.y > -.85 || Math.abs(a.width - b.width) < .75) continue;
+    const [[si, last], to]: [[number, boolean], number] = a.width > b.width ? [list[0], b.width] : [list[1], a.width];
+    const { pts, ws } = paths[si];
+    if (!last) { pts.reverse(); ws.reverse(); }
+    const span = Math.min(40, Math.max(15, 6 * (ws[ws.length - 1] - to)));
+    // Walk back from the end to the start of the narrowing.
+    let run = 0, i = pts.length - 1;
+    while (i > 0 && run + len(sub(pts[i], pts[i - 1])) < span) { run += len(sub(pts[i], pts[i - 1])); i--; }
+    if (i > 0) {
+      // The narrowing starts on segment (i - 1, i): a vertex there carries the full width.
+      const step = len(sub(pts[i], pts[i - 1])), t = (span - run) / (step || 1);
+      pts.splice(i, 0, add(pts[i], sub(pts[i - 1], pts[i]), t)); ws.splice(i, 0, ws[i] + (ws[i - 1] - ws[i]) * t);
+    }
+    // From that vertex to the end the width falls linearly with the distance left, down to the narrower way's.
+    const dist: number[] = []; dist[pts.length - 1] = 0;
+    for (let k = pts.length - 2; k >= i; k--) dist[k] = dist[k + 1] + len(sub(pts[k + 1], pts[k]));
+    const total = Math.max(dist[i], 1e-6), from = ws[i];
+    for (let k = i + 1; k < pts.length; k++) ws[k] = Math.min(ws[k], to + (from - to) * dist[k] / total);
+    if (!last) { pts.reverse(); ws.reverse(); }
+  }
+}
 export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceOptions = {}): SurfacePiece[] {
   const tolerance = options.tolerance ?? 0.12, fillet = options.fillet ?? 0.55;
   const extraOf = typeof options.extra === 'function' ? options.extra : ((v: number) => () => v)(options.extra ?? 0);
@@ -75,6 +117,7 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
     });
     return { pts, ws };
   });
+  if (options.ends) taperContinuations(paths);
   // Nodes: shared vertices, plus loose ends lying on another street's segment.
   const nodes = new Map<string, { at: Point; arms: Arm[]; ends: number }>();
   const node = (p: Point) => { const k = keyOf(p); let n = nodes.get(k); if (!n) nodes.set(k, n = { at: p, arms: [], ends: 0 }); return n; };
@@ -133,10 +176,14 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
       while (sweep > Math.PI) sweep -= 2 * Math.PI; while (sweep < -Math.PI) sweep += 2 * Math.PI;
       out.push({ street: si, ring: ccw([pts[i], ...arc(pts[i], h[i], a0, sweep, tolerance)]) });
     }
+    const end = options.ends?.(si) ?? 'round';
     for (const [i, j] of [[0, 1], [pts.length - 1, pts.length - 2]]) {
       if (junction(pts[i]) || BUTT.has(s.role)) continue;
-      const d = unit(sub(pts[i], pts[j])), a0 = Math.atan2(-d.x, d.y);
-      out.push({ street: si, ring: ccw([pts[i], ...arc(pts[i], h[i], a0, Math.PI, tolerance)]) });
+      const d = unit(sub(pts[i], pts[j])), n = left(d), p = pts[i], r = h[i];
+      // A paved end stops square, its corners worn back a little; an earth way narrows to a point within a few metres.
+      if (end === 'square') out.push({ street: si, ring: ccw([add(p, n, r), add(p, n, -r), add(add(p, d, .3 * r), n, -.8 * r), add(add(p, d, .3 * r), n, .8 * r)]) });
+      else if (end === 'taper') { const reach = Math.min(2.2 * r, 6); out.push({ street: si, ring: ccw([add(p, n, r), add(p, n, -r), add(add(p, d, reach), n, -.15 * r), add(add(p, d, reach), n, .15 * r)]) }); }
+      else { const a0 = Math.atan2(-d.x, d.y); out.push({ street: si, ring: ccw([p, ...arc(p, r, a0, Math.PI, tolerance)]) }); }
     }
   });
   // Junctions: the corners between consecutive arms, rounded by curb returns.

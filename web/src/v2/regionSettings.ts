@@ -10,10 +10,20 @@ export interface V2RegionSettings {
   resolution?: number;
   /** Farmland beyond subsistence: cultivated budget = settled people x base ha per head x (1 + cropSurplus). 0 = subsistence, ~2 = export farming. */
   cropSurplus?: number;
+  /** Secondary places up to this population are built in the background after the main town (0 = never). Display only: no stage depends on it. */
+  autoBuildPopulation?: number;
+}
+/** Native: a 500-inhabitant village costs ~0.8 s of urban work plus the shared land-use update; see smallPlaces.ts. */
+export const DEFAULT_AUTO_BUILD_POPULATION = 500;
+/** The regional recipe that generation depends on: the background build limit is a scheduling choice, not a product input. */
+export function generationRegion(region: V2RegionSettings | undefined): V2RegionSettings | undefined {
+  if (!region || region.autoBuildPopulation === undefined) return region;
+  const { autoBuildPopulation: _limit, ...rest } = region;
+  return rest;
 }
 export const regionSpec = (key='main',population=300):SettlementSpec => ({key,name:'',population,culture:'european-organic',siteType:'auto',sitePrefs:{}});
 export const DEFAULT_CROP_SURPLUS = 0.2;
-export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig;roads:RoadConfig|null;resolution:number;cropSurplus:number}{
+export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig;roads:RoadConfig|null;resolution:number;cropSurplus:number;autoBuildPopulation:number}{
   const o=settings.options, p=settings.region?.placement, local=settings.local.main??{};
   const secondary=Math.max(0,settings.settlementCount-1),village=Math.ceil(secondary*2/3);
   const placement:SettlementConfig={
@@ -41,7 +51,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
       ...(overrides.sitePrefs?{sitePrefs:{...spec.sitePrefs,...overrides.sitePrefs,weights:{...spec.sitePrefs?.weights,...overrides.sitePrefs.weights}}}:{})};
   });
   const roads=settings.region?.roads===null?null:{level:'rural',surface:'auto',culture:'auto',density:.5,gradeWeight:1,maxGrade:0,crossingCost:1,wobble:1,sharing:.7,exits:o.roads??2,...settings.region?.roads} as RoadConfig;
-  return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512),cropSurplus:settings.region?.cropSurplus??DEFAULT_CROP_SURPLUS};
+  return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512),cropSurplus:settings.region?.cropSurplus??DEFAULT_CROP_SURPLUS,autoBuildPopulation:settings.region?.autoBuildPopulation??DEFAULT_AUTO_BUILD_POPULATION};
 }
 /** Mirrors core/settlements/mod.rs::validate and roads/mod.rs::validate. */
 export function validateRegionSettings(value: unknown, width = 100000): void {
@@ -80,8 +90,9 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
       if (prefs.weights !== undefined) weights(prefs.weights, `${name}.sitePrefs.weights`);
     }
   };
-  const region = object(value, 'regional settings'); fields(region, ['placement', 'roads', 'resolution', 'cropSurplus'], 'region');
+  const region = object(value, 'regional settings'); fields(region, ['placement', 'roads', 'resolution', 'cropSurplus', 'autoBuildPopulation'], 'region');
   if (region.resolution !== undefined) number(region.resolution, 'Regional raster resolution', 64, 1024, true);
+  if (region.autoBuildPopulation !== undefined) number(region.autoBuildPopulation, 'Automatic small-place population', 0, 100000, true);
   if (region.cropSurplus !== undefined) number(region.cropSurplus, 'Crop surplus', 0, 3);
   if (region.placement !== undefined) {
     const p = object(region.placement, 'placement settings');

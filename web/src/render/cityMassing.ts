@@ -11,7 +11,10 @@ type Shape = Surface[number];
 
 /** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h.
  * `sails` (wind mill, cone roof): hub at (x, y) h above the eave, blades of length w and width d in the vertical plane facing `angle`, cross turned by `turn`. */
-export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher' | 'sails'; x: number; y: number; w: number; d: number; h: number; angle: number; turn?: number }
+/** `wheel` (water mill): axle centre at (x, y), h above the piece's base; w = wheel radius, d = wheel width, `angle` = direction
+ * of the axle (the wheel turns in the vertical plane across it), `turn` = phase of the paddles, `variant` = how the water
+ * reaches it ('overshot' adds a launder to the top of the wheel). */
+export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher' | 'sails' | 'wheel'; variant?: string; x: number; y: number; w: number; d: number; h: number; angle: number; turn?: number }
 /** Detail of a volume decided in Rust: parapet above a flat eave, roof-top features, hut roof overhang, trim colour. */
 export interface VolumeDetail { openings?: 'none' | 'door'; parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string; form?: 'yurt' | 'tipi' | 'tree' | 'mushroom' | 'longhouse' | 'tower' | 'battered'; stilts_m?: number; tree_seed?: string; /** Inhabitants' size against a human (doors, windows). */ body_scale?: number; /** Facade openness 0..1 (massive warm-climate walls open less: fewer, smaller windows). */ openness?: number }
 export type MassingRoof = 'gable' | 'hip' | 'shed' | 'pyramid' | 'cone' | 'dome' | 'barrel' | 'ring' | 'tent' | 'flat';
@@ -31,8 +34,13 @@ export interface MassingVolume extends VolumeDetail {
   minor?: boolean;
   /** True roof kind (halfhip, gablet, gambrel, mansard, saltbox...), informative: `roof` stays a kind the renderers know. */
   roof_form?: string;
+  /** Wall colour this volume asks for, "#rrggbb" (default: the piece's). */
+  tint?: string;
 }
 export interface MassingPiece {
+  /** Wall colour the building asks for, "#rrggbb" sRGB (beige ashlar, a grey of concrete, the accent of a tower);
+   * absent: the colour of its wall material and culture. Renderers pull the wall most of the way to it. */
+  tint?: string;
   openings?: 'none' | 'door';
   floors: number; eave_m: number; rise_m: number; roof: MassingRoof;
   ridges: [number, number, number, number][]; cover: string; wall: string; tone?: number;
@@ -41,14 +49,16 @@ export interface MassingPiece {
 /** One roof face: 3D polygon (z above the building ground) and its upward unit normal.
  * `vol` is the volume index inside the piece (0 when the piece has none), `cover`/`wall`/`tone`
  * the materials and 0..1 shade of that volume. */
-export interface RoofFace { points: Vertex3[]; holes?: Point[][]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number }
+export interface RoofFace { points: Vertex3[]; holes?: Point[][]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number; /** Wall colour asked for the volume ("#rrggbb"). */ tint?: string }
 
 /** A piece resolved to the volumes to draw (the piece itself when it has no `volumes`). */
 export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail; tree?: TreeDwelling
   /** Wall bottom above the building ground, when the volume stands on another one (0 < base_m < eave_m). */ base_m?: number;
   /** Explicit roof faces (see `MassingVolume.pans`): the whole roof of the volume. */ pans?: Vertex3[][];
   /** Vertical wall faces above the wall top, drawn in the wall material; nothing in plan. */ gables?: Vertex3[][];
-  minor?: boolean; roof_form?: string }
+  minor?: boolean; roof_form?: string; /** Wall colour asked for the volume ("#rrggbb", validated). */ tint?: string }
+/** A wall tint as the massing sends it, or undefined when it is not "#rrggbb". */
+export const wallTint = (value: unknown): string | undefined => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp01 = (v: unknown, d = 0.5): number => finite(v) ? Math.max(0, Math.min(1, v)) : d;
 /** Faces sent as flat `[x, y, z, ...]` arrays; undefined when the list or any face of it is malformed. */
@@ -78,6 +88,8 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
     if (pans) resolved.pans = pans;
     if (gables?.length) resolved.gables = gables;
     if (v.minor === true) resolved.minor = true;
+    const tint = wallTint(v.tint) ?? wallTint(m.tint);
+    if (tint) resolved.tint = tint;
     if (typeof v.roof_form === 'string') resolved.roof_form = v.roof_form;
   }
   if (out.length) return out.map(v => {
@@ -85,7 +97,8 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
     const tree = treeDwelling(v.shape.outer, v.eave_m, v.rise_m, v.detail.tree_seed ?? JSON.stringify(v.shape.outer));
     return { ...v, tree, shape: { outer: tree.outline, holes: [] }, eave_m: tree.height, rise_m: Math.max(...tree.crowns.map(c => c.z + c.height)) - tree.height };
   });
-  return [{ shape, floors: m.floors, eave_m: m.eave_m, rise_m: m.rise_m, roof: m.roof, ridges: m.ridges ?? [], cover: m.cover, wall: m.wall, tone: clamp01(m.tone), ...(m.openings ? { detail: { openings: m.openings } } : {}) }];
+  return [{ shape, floors: m.floors, eave_m: m.eave_m, rise_m: m.rise_m, roof: m.roof, ridges: m.ridges ?? [], cover: m.cover, wall: m.wall, tone: clamp01(m.tone), ...(m.openings ? { detail: { openings: m.openings } } : {}),
+    ...(wallTint(m.tint) ? { tint: wallTint(m.tint) } : {}) }];
 }
 
 /** Massing of a building's preview pieces, when the city sent one aligned with its footprint. */
@@ -136,7 +149,7 @@ function insetRing(ring: readonly Point[], distance: number, outer: boolean): Po
 
 class Faces {
   readonly list: RoofFace[] = [];
-  constructor(private piece: number, private vol = 0, private cover = '', private wall = '', private tone = 0.5) {}
+  constructor(private piece: number, private vol = 0, private cover = '', private wall = '', private tone = 0.5, private tint?: string) {}
   add(points: Vertex3[]): void {
     let nx = 0, ny = 0, nz = 0;
     for (let i = 0; i < points.length; i++) {
@@ -145,7 +158,7 @@ class Faces {
     }
     const l = Math.hypot(nx, ny, nz); if (l < 1e-9) return;
     const s = nz < 0 ? -1 : 1;
-    this.list.push({ points, normal: [s * nx / l, s * ny / l, s * nz / l], piece: this.piece, vol: this.vol, cover: this.cover, wall: this.wall, tone: this.tone });
+    this.list.push({ points, normal: [s * nx / l, s * ny / l, s * nz / l], piece: this.piece, vol: this.vol, cover: this.cover, wall: this.wall, tone: this.tone, ...(this.tint ? { tint: this.tint } : {}) });
   }
 }
 const at = (p: Point, z: number): Vertex3 => ({ x: p.x, y: p.y, z });
@@ -345,7 +358,7 @@ function flat(f: Faces, ring: readonly Point[], z: number): void { f.add(ring.ma
 
 /** Roof faces of one volume, z relative to the building ground. */
 export function volumeRoof(v: ResolvedVolume, piece: number, vol: number): RoofFace[] {
-  const f = new Faces(piece, vol, v.cover, v.wall, v.tone), eave = v.eave_m, rise = Math.max(0, v.rise_m), shape = v.shape, outer = v.detail?.form === 'battered' ? scaledRing(shape.outer, 0.92) : shape.outer;
+  const f = new Faces(piece, vol, v.cover, v.wall, v.tone, v.tint), eave = v.eave_m, rise = Math.max(0, v.rise_m), shape = v.shape, outer = v.detail?.form === 'battered' ? scaledRing(shape.outer, 0.92) : shape.outer;
   if (v.tree) { for (const points of treeCrownFaces(v.tree)) f.add(points); return f.list; }
   // Explicit pans are the whole roof: nothing is derived from the roof kind, the ridges or the rise.
   if (v.pans) { for (const points of v.pans) f.add(points); return f.list; }
@@ -425,7 +438,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
   // At the 1.4 px/m core view, a terrace bevel is ~1.5–1.7 px plus its dark seam.
   const w = terrace ? Math.min(1.45, perimeter > 0 ? 0.9 * area / perimeter : 0)
     : Math.min((v.detail?.parapet_m ?? 0) > 0.05 ? 0.8 : 0.6, Math.max(0.3, 0.07 * Math.sqrt(Math.max(0, area))), perimeter > 0 ? 0.3 * area / perimeter : 0);
-  const base = { piece: face.piece, vol: face.vol, cover: face.cover, wall: face.wall, tone: face.tone, flat: true as const, snow: 0, ...(terrace ? { terrace: true } : {}) };
+  const base = { piece: face.piece, vol: face.vol, cover: face.cover, wall: face.wall, tone: face.tone, flat: true as const, snow: 0, ...(terrace ? { terrace: true } : {}), ...(face.tint ? { tint: face.tint } : {}) };
   const out: PlanRoofFace[] = [];
   const rims: PlanRoofFace[] = [];
   if (!(w > 0.12)) out.push({ ...face, ...base, holes, snow: 1 });
@@ -453,7 +466,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
   out.push(...rims);
   // Keep roof-top structures visible above the receiving terrace's shadow wash.
   for (const f of v.detail?.features ?? []) {
-    if (f.kind === 'sails' || !(f.w > 0.1) || !(f.d > 0.1)) continue;
+    if (f.kind === 'sails' || f.kind === 'wheel' || !(f.w > 0.1) || !(f.d > 0.1)) continue;
     if (!pointInRing(f, ring) || holes.some(h => pointInRing(f, h))) continue;
     const ca = Math.cos(f.angle), sa = Math.sin(f.angle);
     const top = f.kind === 'dome'

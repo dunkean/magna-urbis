@@ -31,7 +31,7 @@ describe('render composition', () => {
   it('moves only the semantic key for opacity and looks', () => {
     const base = edit('atlas', () => {});
     expect(moved(base, edit('atlas', c => { c.landuse.opacity = .9; }))).toEqual(['semantic']);
-    expect(moved(base, edit('atlas', c => { c.landuse.rural = 'off'; c.landuse.urban = 'off'; }))).toEqual(['semantic']);
+    expect(moved(base, edit('atlas', c => { c.landuse.rural = 'subtle'; c.landuse.urban = 'categorical'; }))).toEqual(['semantic']);
   });
   it('leaves the other passes alone when one is hidden or changed', () => {
     const base = presetComposition('parchment');

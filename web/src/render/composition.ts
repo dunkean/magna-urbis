@@ -14,6 +14,7 @@ import type { LanduseForestTone } from './landuseForestTone';
 import type { AppearanceInput, RenderCapabilities, RenderTarget } from './appearanceRecipe';
 import type { UrbanBuildingStyle } from './urbanBuildingStyle';
 import type { ResolvedDisplayQuality } from './displayQuality';
+import type { ContourDetail } from './cityContours';
 
 /** Base looks of the ground; light presets reuse these renderers. */
 export type StyleId = 'atlas' | 'cadastre' | 'topographic' | 'satellite' | 'satellite-2' | 'parchment' | 'illustration';
@@ -35,6 +36,14 @@ export const SEMANTIC_DEPTHS: readonly SemanticDepth[] = ['surface', 'readable']
 export const NETWORK_LOOKS: readonly NetworkLook[] = ['inherit', 'ink', 'natural', 'wash'];
 export const BUILDING_LOOKS: readonly BuildingLook[] = ['footprints', 'cartographic-roofs', 'simple-volumes', 'detailed-volumes'];
 export const AMBIENCES: readonly Ambience[] = ['day', 'night'];
+export const CONTOUR_DETAILS: readonly ContourDetail[] = ['fixed', 'zoom'];
+/** Contour behaviour of a recipe: the V1 fixed set unless the recipe asks for the per-zoom one. */
+export const contourDetailOf = (c: Pick<CompositionRecipe, 'ground'> | undefined): ContourDetail => c?.ground.contourDetail ?? 'fixed';
+/** Contours as every page draws them: the recipe's detail; a cadastre carries half the lines, fainter (a hint of relief, not a survey sheet). */
+export function contourDrawOf(c: Pick<CompositionRecipe, 'ground'> | undefined): { detail: ContourDetail; sparse: boolean; opacity: number } {
+  const cadastre = c?.ground.look === 'cadastre';
+  return { detail: contourDetailOf(c), sparse: cadastre, opacity: cadastre ? .55 : 1 };
+}
 export const LAND_KINDS: readonly LandKind[] = ['field', 'meadow', 'pasture', 'forest', 'orchard', 'garden', 'marsh', 'commons'];
 /** The historical styles live on as variants of a base look; the first one is the look's default. */
 export const GROUND_VARIANTS: Readonly<Record<StyleId, readonly TerrainStyle[]>> = {
@@ -53,7 +62,8 @@ export interface CompositionRecipe {
   preset: PresetId | 'custom';
   /** Live display tier; captures always use full quality. Absent means full. */
   quality?: ResolvedDisplayQuality;
-  ground: { look: StyleId; /** Concrete style, one of GROUND_VARIANTS[look]. */ variant: TerrainStyle; contours: boolean };
+  ground: { look: StyleId; /** Concrete style, one of GROUND_VARIANTS[look]. */ variant: TerrainStyle; contours: boolean;
+    /** `fixed` (absent): the V1 set, traced once, thin and dense from the start; `zoom`: re-selected per zoom band. */ contourDetail?: ContourDetail };
   vegetation: { look: VegetationLook; /** Forest class of the land-use plan: dark marked green or the ground colour. */ forestTone: LanduseForestTone };
   landuse: {
     rural: SemanticLook; urban: SemanticLook; /** 0–1, on the semantic layer only. */ opacity: number; depth: SemanticDepth;
@@ -70,7 +80,8 @@ interface PresetValues { blocks?: boolean; ground: StyleId; contours: boolean; v
 /** Hides every text group but the listed ones. */
 const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => [g, shown.includes(g)])) as Record<TextGroup, boolean>;
 const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
-  atlas: { ground: 'atlas', contours: true, vegetation: 'symbols', rural: 'off', urban: 'subtle', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans' }) },
+  // A physical-geography plate: hypsometric tints, relief, water and names; no land-use zones (woods are a faint wash, cityOverlayLandKinds).
+  atlas: { ground: 'atlas', contours: true, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans' }) },
   'satellite-2': { blocks: false, ground: 'satellite-2', contours: true, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   parchment: { ground: 'parchment', contours: true, vegetation: 'symbols', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   // Rural land use lives in the brushes (crops, orchards, heath, woods) over a painted wash, not in vector polygons.
@@ -231,6 +242,7 @@ export function validateComposition(value: unknown): asserts value is Compositio
   if (value.quality !== undefined) oneOf(value.quality, ['full', 'light'], 'quality');
   const { effects, ground, vegetation, landuse, networks, buildings, annotations, text } = value as Record<string, Record<string, unknown>>;
   validateEffects(effects); flags(ground, ['contours'], 'ground'); oneOf(ground.look, STYLE_IDS, 'ground.look');
+  if (ground.contourDetail !== undefined) oneOf(ground.contourDetail, CONTOUR_DETAILS, 'ground.contourDetail');
   if (typeof ground.variant !== 'string' || !isTerrainStyle(ground.variant)) throw new Error('appearance.composition.ground.variant: unknown style.');
   if (!record(vegetation)) throw new Error('appearance.composition.vegetation: expected an object.');
   oneOf(vegetation.look, VEGETATION_LOOKS, 'vegetation.look'); oneOf(vegetation.forestTone, ['ground', 'marked'], 'vegetation.forestTone');

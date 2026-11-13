@@ -19,7 +19,7 @@ self.onmessage = ({ data }: MessageEvent<ContourWorkerRequest>) => {
       await loadRenderGeometry();
       if (!source) throw new Error('Contour samples are missing.');
       if (data.fine) response.blocks = cityFineContourBlocks(source, data.landform, data.scale, data.fine).map(({ key, block }) => ({ key, ...paths(block) }));
-      else { const p = cityContourPaths(source, data.landform, data.scale, data.topographic); response.paths = { step: p.step, ...paths(p) }; }
+      else { const p = cityContourPaths(source, data.landform, data.scale, data.topographic, undefined, data.detail, data.sparse); response.paths = { step: p.step, ...paths(p) }; }
     } catch (error) { response.error = String(error); }
     self.postMessage(response, { transfer });
   });

@@ -6,6 +6,7 @@ import type { V2Settings } from './contracts';
 import { fingerprintBytes, fingerprintNumbers } from './terrainFingerprint';
 import type { World } from '../gen/types';
 import { urbanSeed } from './urbanSeeds';
+import { generationRegion } from './regionSettings';
 import { seedRoot, stepSeed } from '../../../rust/bridge/generationSeed';
 
 export function settlementStageValidityKeys(settings: V2Settings, terrainKey?: string): Map<string, string> {
@@ -26,7 +27,7 @@ export function cityStageValidityKeys(settings: V2Settings, world: World | undef
   const options = { ...restOptions, seed: seedRoot(settings.options.seed) };
   const local = keys.map(key => [key, settings.local[key]]);
   const urban = settings.urban;
-  const composition = stableKey([scope, terrainKey, world?.stats['v2.terrainKey'], world?.stats['v2.planKey'], settings.region, settings.settlementCount,
+  const composition = stableKey([scope, terrainKey, world?.stats['v2.terrainKey'], world?.stats['v2.planKey'], generationRegion(settings.region), settings.settlementCount,
     options, local, urban?.backend ?? settings.runtime?.backend, urban?.layout,
     keys.map(key => [urbanSeed(settings, key, 'composition'), urban?.local?.[key]?.layout])]);
   const layout = stableKey([composition, keys.map(key => urbanSeed(settings, key, 'streets'))]);

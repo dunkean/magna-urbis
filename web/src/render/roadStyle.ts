@@ -31,8 +31,8 @@ export const ROAD_RANK_STYLE: Readonly<Record<RoadRank, RankStyle>> = {
   minor: { floor: 1.6, ceil: 7, alpha: .86, contrast: .13, earth: .8, shoulder: .12, surface: GRAVEL },
   street: { floor: 1.5, ceil: 6, alpha: .86, contrast: .095, earth: .8, shoulder: .1, surface: EARTH },
   lane: { floor: 1.1, ceil: 5, alpha: .78, contrast: .08, earth: .7, shoulder: .075, surface: EARTH },
-  track: { floor: .95, ceil: 4, alpha: .66, contrast: .075, earth: .58, shoulder: .045, surface: DIRT },
-  path: { floor: .75, ceil: 2.6, alpha: .5, contrast: .05, earth: .44, shoulder: 0, surface: DIRT },
+  track: { floor: .95, ceil: 4, alpha: .82, contrast: .1, earth: .66, shoulder: .045, surface: DIRT },
+  path: { floor: .75, ceil: 2.6, alpha: .66, contrast: .075, earth: .55, shoulder: 0, surface: DIRT },
 };
 /** Screen floor by urban street rank (0 = main street … 4 = lane), any look. */
 export const STREET_MIN_PX: readonly number[] = [3, 2.4, 1.7, 1.2, .9];
@@ -135,7 +135,9 @@ export function setRoadGround(landuse: LandUseLayer | undefined, size: number, t
   if (ctx) {
     ctx.fillStyle = rgbCss(base); ctx.fillRect(0, 0, GRID, GRID);
     ctx.setTransform(GRID / size, 0, 0, GRID / size, 0, 0);
-    for (const kind of ['meadow', 'pasture', 'commons', 'marsh', 'field', 'garden', 'orchard', 'forest'] as const) {
+    // No forest tone: a way through the woods is bare earth in the gaps of the canopy (its opacity follows the canopy,
+    // canopyRuns), never a tint of the crowns, which turned it olive and hid it on the glades of a wooded parcel.
+    for (const kind of ['meadow', 'pasture', 'commons', 'marsh', 'field', 'garden', 'orchard'] as const) {
       const tone = tones.kinds[kind]; if (!tone) continue;
       ctx.fillStyle = rgbCss(shade(tone)); ctx.beginPath();
       for (const a of landuse?.areas ?? []) if (a.kind === kind) for (const ring of [a.poly, ...(a.holes ?? [])]) {
@@ -244,12 +246,12 @@ export interface NaturalMarks { shadow: { color: string; alpha: number; extra: n
 /** The strokes of a natural road of `width` world units at `scale` px per unit; each shows only once it can be seen. */
 export function naturalMarks(rank: RoadRank, width: number, scale: number, style: RoadStyle): NaturalMarks {
   const s = ROAD_RANK_STYLE[rank], e = emphasisAlpha(style.emphasis), px = width * scale, snow = !style.night && mapGroundSnow();
-  // Earth tracks and paths held at their screen floor are thinner than a pixel on the ground: they fade with the
-  // share of the pixel they really cover (about 3 m and 1.6 m wide), and stay a little quieter at any scale, so
-  // a path that follows a river bank or a valley rim does not outline it on the far and mid views.
-  const faint = rank === 'track' || rank === 'path' ? .85 * clamp((rank === 'track' ? 3 : 1.6) * scale / s.floor, .35, 1) : 1;
+  // Earth tracks and paths held at their screen floor are thinner than a pixel on the ground: their opacity is the
+  // share of the stroke they really cover (about 3 m and 1.6 m wide), as a photograph averages a narrow pale line
+  // into its pixel. A track stays a thin pale line at 2 to 8 m per pixel; a path fades out first.
+  const cover = rank === 'track' || rank === 'path' ? clamp((rank === 'track' ? 3 : 1.6) * scale / s.floor, rank === 'track' ? .3 : .2, 1) : 1;
   return { shadow: s.shoulder > 0 || snow ? { color: snow ? 'rgb(116,139,158)' : SHADOW, alpha: clamp((snow ? .2 : s.shoulder) * e, 0, .4), extra: Math.max(1.4 / scale, width * .34) } : undefined,
-    bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) * (snow ? 1 : faint) },
+    bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) * (snow ? 1 : cover) },
     wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? .07 : .13) * e, share: .56, dash: WEAR_DASH } : undefined,
     // The grain tile is per-texel noise: below about one screen pixel per texel the unfiltered pattern aliases into
     // pixel speckle (a grainy, "pixelated" street at town zoom). It fades in between 1 and 2 px per texel.
@@ -297,10 +299,66 @@ export function sidewalkTone(style: RoadStyle): string {
   const snow = style.night ? 0 : mapGroundSnow();
   return rgbCss(over([232, 236, 240], style.night ? [50, 55, 66] : [174, 170, 160], .85 * snow));
 }
+// ---------------------------------------------------------------- ways under the woods
+/** Canopy over the ways, read from the products the satellite ground paints its woods from: the forest field (R: canopy
+ * cover) and the occupation raster (R: signed distance to open land, B: class). Set once per forest product; the road
+ * lists split each way by canopy level when they are built, never per frame. */
+interface CanopyRaster { x: number; y: number; width: number; n: number; rgba: Uint8Array }
+let canopyField: CanopyRaster | undefined, canopyOccupation: CanopyRaster | undefined, canopyRevision = 0;
+export function setRoadCanopy(field: CanopyRaster | undefined, occupation: CanopyRaster | undefined): void {
+  if (field === canopyField && occupation === canopyOccupation) return;
+  canopyField = field; canopyOccupation = occupation; canopyRevision++;
+}
+/** Changes whenever the canopy changes: part of every cache key of a split road list. */
+export const roadCanopyRevision = (): number => canopyField ? canopyRevision : 0;
+const texel = (r: CanopyRaster, x: number, y: number): number => {
+  const i = Math.floor((x - r.x) / r.width * r.n), j = Math.floor((y - r.y) / r.width * r.n);
+  return i < 0 || j < 0 || i >= r.n || j >= r.n ? -1 : (j * r.n + i) * 4;
+};
+/** Closed canopy share over a point, 0 open to 1 closed: open land of the occupation (fields, meadows, clearings,
+ * towns) carries none; a covered way (class 12) keeps the woods it runs through. */
+function canopyAt(x: number, y: number): number {
+  if (!canopyField) return 0;
+  const f = texel(canopyField, x, y); if (f < 0) return 0;
+  const o = canopyOccupation ? texel(canopyOccupation, x, y) : -1;
+  if (o >= 0 && canopyOccupation!.rgba[o + 3] && canopyOccupation!.rgba[o] > 128 && canopyOccupation!.rgba[o + 2] !== 12) return 0;
+  const c = canopyField.rgba[f] / 255, t = clamp((c - .3) / .45, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+/** Canopy levels of a split way: 0 open … CANOPY_LEVELS - 1 closed. */
+export const CANOPY_LEVELS = 4;
+const CANOPY_STEP = 14;
+type Pt = { x: number; y: number };
+/** A way cut into runs of one canopy level, sampled every ~14 m and smoothed so a level holds for at least a few tens of
+ * metres; consecutive runs share their end point, so the way stays continuous. One run when no canopy is set. */
+export function canopyRuns(pts: readonly Pt[]): { level: number; pts: Pt[] }[] {
+  if (!canopyField || pts.length < 2) return [{ level: 0, pts: pts as Pt[] }];
+  const at: Pt[] = [pts[0]], value: number[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / CANOPY_STEP));
+    for (let k = 1; k <= n; k++) {
+      const t0 = (k - 1) / n, t = k / n, m = (t0 + t) / 2;
+      value.push(canopyAt(a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m));
+      at.push(k === n ? b : { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  const level = value.map((_, k) => Math.round((CANOPY_LEVELS - 1) * (.25 * value[Math.max(0, k - 1)] + .5 * value[k] + .25 * value[Math.min(value.length - 1, k + 1)])));
+  if (level.every(l => l === 0)) return [{ level: 0, pts: pts as Pt[] }];
+  const out: { level: number; pts: Pt[] }[] = [];
+  for (let k = 0; k < level.length; k++) {
+    const last = out[out.length - 1];
+    if (last && last.level === level[k]) last.pts.push(at[k + 1]);
+    else out.push({ level: level[k], pts: [at[k], at[k + 1]] });
+  }
+  return out;
+}
 /** One paved regional road class: verge, clean-edged bed, then markings and wear once they resolve. */
-function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle): void {
+function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0): void {
   const paint = roadPaint(ctx, rank, style), marks = pavedMarks(rank, width, scale, style), snow = !style.night && mapGroundSnow();
-  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'round'): void => {
+  // A paved road clears its corridor (forestRoom.ts): the crowns only take a little off its edges.
+  marks.bed *= 1 - .25 * canopy;
+  // Asphalt stops square: a round cap as wide as the road reads as a drawn lollipop at a loose end or a change of surface.
+  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'square'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);
   };
   ctx.lineJoin = 'round';
@@ -313,31 +371,35 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
   ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineCap = 'round';
 }
 
-/** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. */
-export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle): void {
-  if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style); return; }
+/** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. `canopy`
+ * (0 open … 1 closed, canopyRuns): under closed woods the way is a fainter continuous trace, the gap in the crowns.
+ * Earth beds end butt: the runs of one way meet end to end, and round caps would bead at every change of level. */
+export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0): void {
+  if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style, canopy); return; }
   const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path', snow = !style.night && mapGroundSnow();
-  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'round'): void => {
+  const open = 1 - canopy, under = 1 - .58 * canopy;
+  marks.bed.alpha *= under;
+  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'butt'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);
   };
   ctx.lineJoin = 'round';
   if (marks.shadow) {
     if (snow) stroke(marks.shadow.color, width + marks.shadow.extra * 1.8, marks.shadow.alpha * .35);
-    stroke(marks.shadow.color, width + marks.shadow.extra, marks.shadow.alpha);
+    stroke(marks.shadow.color, width + marks.shadow.extra, marks.shadow.alpha * open);
   }
-  if (rank === 'path' && !snow) stroke(paint, width, marks.bed.alpha, [Math.max(3.4, 4 / scale), Math.max(1.8, 2.6 / scale)], 'butt');
-  else if (px < 2.4) stroke(paint, width, marks.bed.alpha);
+  // A footpath is a continuous worn line, as is every way held at its screen floor.
+  if (rank === 'path' || px < 2.4) stroke(paint, width, marks.bed.alpha);
   else {
     // A narrower continuous bed and full-width irregular runs: the edge wanders without any new geometry; on earth the grass eats further in.
     stroke(paint, width * (earthen ? .66 : .88), marks.bed.alpha);
     stroke(paint, width, marks.bed.alpha * (earthen ? .72 : 1), EDGE_DASH);
   }
-  if (marks.wear) stroke(marks.wear.color, width * marks.wear.share, marks.wear.alpha, marks.wear.dash, 'round');
-  if (marks.grain) { const grain = roadGrain(ctx); if (grain) stroke(grain, width, marks.grain); }
+  if (marks.wear) stroke(marks.wear.color, width * marks.wear.share, marks.wear.alpha * open, marks.wear.dash);
+  if (marks.grain) { const grain = roadGrain(ctx); if (grain) stroke(grain, width, marks.grain * under); }
   if (snow && rank !== 'path' && px >= 4) {
     // A dark band with its centre restored leaves two parallel wheel ruts.
     stroke('rgb(130,151,170)', width * .66, .38 * Number(snow));
     stroke(paint, width * .3, marks.bed.alpha);
-  } else if (earthen && px >= 5) { const grass = texture('bare', style.emphasis), p = grass && pattern(ctx, grass); if (p) stroke(p, width * .2, .55, RUT_DASH, 'butt'); }
+  } else if (earthen && px >= 5) { const grass = texture('bare', style.emphasis), p = grass && pattern(ctx, grass); if (p) stroke(p, width * .2, .55 * under, RUT_DASH); }
   ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineCap = 'round';
 }

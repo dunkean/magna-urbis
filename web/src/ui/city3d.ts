@@ -42,6 +42,7 @@ import { building3dHeight, isBuildingProjection, type Building3dVisual } from '.
 import type { NativeBuildingProjectionScene } from './urbanBuildingProjection';
 import type { Parent3dScene } from './urbanParent3d';
 import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type CityDrawOptions, type CityLayers, type CityScene } from '../render/cityCanvas';
+import { drawFarmLotPieces, farmPlacedBuildings } from '../render/farmRoofs';
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { forestOccupation } from './forestOccupation';
@@ -102,6 +103,9 @@ export interface City3dOptions {
   getRegionalStreets?(): readonly Street[] | undefined;
   /** Ground-tile painter of the activity-site installations meeting `box`, or undefined when there are none; `natural` = satellite look. */
   getSiteGround?(box: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): ((ctx: CanvasRenderingContext2D, natural: boolean) => void) | undefined;
+  /** Stand-in houses of the places whose plan is not generated yet (farmRoofs.ts placeholderPlacedBuildings): raised
+   * like the town silhouettes, so such a place does not vanish in 3D. The same list object while nothing changes. */
+  getPlaceholderBuildings?(): readonly PlacedBuilding[] | undefined;
   getPartitions?(): readonly Partition[] | undefined;
   getLotEnclosures?(): readonly import('../../../rust/bridge/urban').LotEnclosure[] | undefined;
   getSelected?(): string | undefined;
@@ -311,6 +315,9 @@ export function mountCity3d(options: City3dOptions): City3d {
   let structureInputs: unknown[] = [], structureBuildings: Building3dVisual[] = [];
   let canopyInputs: unknown[] = [], canopyBuildings: Building3dVisual[] = [];
   let yardInputs: unknown[] = [];
+  // Countryside farm buildings of the land use (farmRoofs.ts), raised like the town silhouettes; rebuilt only for a
+  // new farmstead list or a new terrain.
+  let farmInputs: unknown[] = [], farmBuildings: Building3dVisual[] | undefined;
   const realized = new WeakSet<Building3dVisual>();
   let displayIndex = new Map<string, number>(), indexOf: unknown;
   const pendingSwaps = new Map<string, Building3dVisual>();
@@ -653,6 +660,14 @@ export function mountCity3d(options: City3dOptions): City3d {
     // Remote accesses of activity sites (stairs, causeways, rope bridges, tunnels) lie in the ground tile like the roads.
     const siteGround = !tile.preview ? options.getSiteGround?.(box, mpp) : undefined;
     if (siteGround) { const target = groundContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); siteGround(target, !!satellite); target.restore(); }
+    // The lots of the countryside farms (yard, garden, pond, tree marks) lie in the ground tile of a natural ground,
+    // under their building meshes, as the 2D map paints them (farmRoofs.ts).
+    const farmLots = !tile.preview && satellite ? semantic?.landuse?.farmsteads : undefined;
+    if (farmLots?.length) {
+      const target = groundContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
+      for (const part of ['ground', 'trees'] as const) drawFarmLotPieces(target, farmLots, { part, viewport: box, mpp, altitude: heightAt });
+      target.restore();
+    }
     const footprintScene = planOptions?.buildingsVisible ? options.getScene() : undefined;
     let footprints = footprintScene && footprintPlans.get(footprintScene);
     if (footprintScene && !footprints) { footprints = buildCityBuildings(footprintScene); footprintPlans.set(footprintScene, footprints); }
@@ -744,6 +759,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     const yardLayers = planOptions?.layers, yardsShown = !flat && yardLayers?.lotEnclosures !== false;
     const nextYards = [options.getLotEnclosures?.(), options.getPartitions?.(), yardsShown, flat];
     if (nextYards.some((input, i) => input !== yardInputs[i])) { yardInputs = nextYards; force = true; t.invalidateTiles(); }
+    const farmsteads = options.getSemantic?.()?.landuse?.farmsteads;
+    const placeholders = options.getPlaceholderBuildings?.();
+    if (farmsteads !== farmInputs[0] || heightAt !== farmInputs[1] || placeholders !== farmInputs[2]) { farmInputs = [farmsteads, heightAt, placeholders]; farmBuildings = undefined; force = true; }
     const scene = options.getProjection?.() ?? options.getScene(), layouts = options.getLayouts?.(), regional = options.getRegionalStreets?.();
     if (layouts !== bridgesOf[0] || regional !== bridgesOf[1]) { bridgesOf = [layouts, regional]; force = true; }
     if (scene !== sceneOf) {
@@ -788,7 +806,12 @@ export function mountCity3d(options: City3dOptions): City3d {
       // Town grove, tree platforms and their walkways (cityCanopy.ts): the same derivation as the 2D plan.
       const canopySource = scene && !('projection' in scene) ? scene.buildings : undefined, nextCanopyInputs = [layouts, canopySource, heightAt];
       if (nextCanopyInputs.some((input, i) => input !== canopyInputs[i])) { canopyInputs = nextCanopyInputs; canopyBuildings = city3dCanopy(cityCanopy(layouts, canopySource), heightAt); }
-      const extra = [...structureBuildings, ...yardMeshes, ...canopyBuildings];
+      // Farm buildings and the stand-in houses of places still waiting for their plan stand as meshes like every
+      // other building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain
+      // under its own footprint.
+      farmBuildings ??= farmsteads?.length || placeholders?.length ? city3dScene({ schema_version: '1', generator_version: 'silhouette',
+        buildings: [...farmsteads?.length ? farmPlacedBuildings(farmsteads, heightAt ?? (() => 0)) : [], ...placeholders ?? []], refusals: [], open_spaces: [] }, { heightAt }).buildings : [];
+      const extra = [...structureBuildings, ...yardMeshes, ...canopyBuildings, ...farmBuildings];
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };

@@ -23,7 +23,9 @@ import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
-import { roadGroundTones, setRoadGround } from '../render/roadStyle';
+import { roadGroundTones, setRoadCanopy, setRoadGround } from '../render/roadStyle';
+import { setWhiteWater } from '../render/whiteWater';
+import { vectorWhiteWater } from '../render/whiteWaterCourses';
 import { displayWorld } from '../render/displayWorld';
 import { buildingOccupationShapes } from '../ui/forestOccupation';
 import { v2DisplayForestAsync, v2ForestOccupation, v2ForestOccupationParts, withBuildingOccupationAsync } from './displayForest';
@@ -54,7 +56,7 @@ import { PassState, ResourceCache, passKeys, type PassInput } from './passes/pas
 import { buildScene, type SceneMask } from '../render/scene';
 import { createNativeCityMap, type NativeCityHooks } from './nativeCityMap';
 import { drawRuralSemantic, drawUrbanSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
-import type { SemanticLook } from '../render/composition';
+import { contourDrawOf, type SemanticLook } from '../render/composition';
 import type { SemanticLegendEntry } from '../render/legend';
 import type { CityScene } from '../render/cityCanvas';
 import { viewRect } from '../render/view';
@@ -203,9 +205,9 @@ export class BenchRenderer {
   }
   private async contoursAt(scale: number, box: Rect): Promise<void> {
     const look = this.contourLook(), terrain = this.native; if (!look || !terrain) return;
-    const topographic = this.resolved!.composition.recipe.ground.variant === 'topographic';
-    if (!topographic) cityFineContours(terrain, look.landform, scale, box);
-    await cityContourPathsReady(terrain, look.landform, scale, topographic);
+    const topographic = this.resolved!.composition.recipe.ground.variant === 'topographic', mode = contourDrawOf(this.resolved!.composition.recipe);
+    if (!topographic && mode.detail === 'zoom') cityFineContours(terrain, look.landform, scale, box);
+    await cityContourPathsReady(terrain, look.landform, scale, topographic, mode.detail, mode.sparse);
     while (cityContoursPending(terrain)) await new Promise(resolve => setTimeout(resolve, 16));
   }
   /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
@@ -468,7 +470,8 @@ export class BenchRenderer {
   private forestJob?: Promise<void>;
   private forestShown = false;
   private async forestPass(): Promise<void> {
-    if (!this.gpuActive) return;
+    // The natural road painter fades ways under the same canopy as the ground shader (roadStyle.ts setRoadCanopy).
+    if (!this.gpuActive) { setRoadCanopy(undefined, undefined); return; }
     this.dropBackground();
     // The Rust forest field and the occupation worker are independent: run them at once.
     const job = Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
@@ -477,13 +480,13 @@ export class BenchRenderer {
       const gpu = this.gpu!, world = this.world, request = this.request;
       const update: Promise<void> = job.then(([field, occupation]) => {
         if (this.disposed || this.gpu !== gpu || this.world !== world || this.request !== request || !this.gpuActive) return;
-        gpu.setForest(field, occupation); this.dropBackground(); void this.preparePrograms(); this.invalidate();
+        gpu.setForest(field, occupation); setRoadCanopy(field, occupation); this.dropBackground(); void this.preparePrograms(); this.invalidate();
       }, error => { this.programError = error; }).finally(() => { if (this.forestJob === update) { this.forestJob = undefined; this.invalidate(); } });
       this.forestJob = update;
       return;
     }
     const [field, occupation] = await job;
-    if (this.gpuActive) { this.gpu!.setForest(field, occupation); this.forestShown = true; }
+    if (this.gpuActive) { this.gpu!.setForest(field, occupation); setRoadCanopy(field, occupation); this.forestShown = true; this.invalidate(); }
   }
   /** The parchment tints multiply over the lit ground: the overlay gets it as a backdrop, transparent on the water below. */
   private landBackdrop(): HTMLCanvasElement | null {
@@ -511,6 +514,9 @@ export class BenchRenderer {
         this.gpu!.setOverlay(undefined);
       } else this.gpu!.setWater(undefined);
     }
+    // Rapids and falls of the satellite ground: vector foam marks over the GL rivers, built once per network (whiteWater.ts).
+    const satellite = r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap && this.world!.options.biome !== 'underdark';
+    setWhiteWater(this.gpuActive && visible && !ink && satellite && water.overlay === 'none' && t.water ? vectorWhiteWater(t.water, water.riverArea, water.season) : undefined);
     const decor = retainedDecorOf(this.world!.terrain);
     let svg = decor && visible ? decorWaterSvg(decor, ink ? r.palette.mapStyle : 'render3d', water.showLakes, colors) : '';
     if (t.water && visible) {
@@ -610,7 +616,7 @@ export class BenchRenderer {
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
     this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.world!) } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, groundCaverns: () => this.gpuActive && this.resolved?.ground.traits.family === 'material', terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
-      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}:${this.contourRevision}|w${this.waterAboveLand() ? JSON.stringify([this.resolved!.keys.water, mapSeasonKey(), this.vectorView?.region]) : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
+      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.resolved?.composition.recipe))}:${this.contourRevision}|w${this.waterAboveLand() ? JSON.stringify([this.resolved!.keys.water, mapSeasonKey(), this.vectorView?.region]) : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
       invalidate: () => this.invalidate(), brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
     const renderer = this.cartography;
     this.cartographyState = { config, scene: built, world: shown };
@@ -681,19 +687,20 @@ export class BenchRenderer {
     const look = this.contourLook(); if (!look) return false;
     const pal = terrainStyle(this.resolved!.ground.style, this.resolved!.palette.colors).palette, sc = 1 / mpp;
     const farLight = light && sc < 1;
-    const topographic = this.resolved!.composition.recipe.ground.variant === 'topographic';
-    const fine = farLight || topographic ? undefined : cityFineContours(this.native!, look.landform, sc, viewport);
+    const topographic = this.resolved!.composition.recipe.ground.variant === 'topographic', mode = contourDrawOf(this.resolved!.composition.recipe);
+    // Fixed (V1): the same whole-map set at every zoom, so no zoom repaints its lines; only the stroke weight follows the scale.
+    const fine = farLight || topographic || mode.detail === 'fixed' ? undefined : cityFineContours(this.native!, look.landform, sc, viewport);
     let sets = fine?.blocks;
     if (!sets) {
-      sets = [cityContourPaths(this.native!, look.landform, sc, topographic)].filter(paths => paths.step);
+      sets = [cityContourPaths(this.native!, look.landform, sc, topographic, undefined, mode.detail, mode.sparse)].filter(paths => paths.step);
     }
     if (cityContoursPending(this.native)) this.afterContours(defer?.() ?? this.contoursReady);
     if (!sets.length) return false;
     ctx.save(); ctx.strokeStyle = pal.contour; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.globalAlpha = pal.contourOpacity * 0.7; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
+    ctx.globalAlpha = pal.contourOpacity * 0.7 * mode.opacity; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
     const recording = ctx instanceof RecordingContext;
     if (!farLight) for (const set of sets) if (set.thin) ctx.stroke(contourPath(set, 'thin', recording));
-    ctx.globalAlpha = pal.contourOpacity; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, pal.contourIndexW / 1.6 * weight);
+    ctx.globalAlpha = pal.contourOpacity * mode.opacity; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, pal.contourIndexW / 1.6 * weight);
     for (const set of sets) if (set.index) ctx.stroke(contourPath(set, 'index', recording));
     ctx.restore(); return true;
   }

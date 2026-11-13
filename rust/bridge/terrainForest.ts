@@ -25,7 +25,10 @@ export const V2_FOREST_PROFILE_VERSION = 'optical-thinning4';
  * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
  * 9 agricultural lane clearance, 10 marsh, 11 forest clearing (main road corridor, farmstead ground), 12 covered way
  * (small road or track under the canopy); A 255 inside applied polygons. */
-export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Holdings for the satellite ground, on their own finer grid. */ detail?: LandDetail }
+export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Holdings for the satellite ground, on their own finer grid. */ detail?: LandDetail;
+  /** Exact ways (roads, town streets; render/forestRoom.ts corridors) for the modelled trees: the raster is too coarse
+   * to keep a trunk off a street a few metres wide. */
+  ways?: readonly { path: readonly { x: number; y: number }[]; half: number | readonly number[]; covered?: boolean }[] }
 /** Holdings raster (web/src/ui/landDetail.ts): R cropping system and crop (a plot identity in gardens), G and B cos 2a and sin 2a of the row direction, A edge distance over its range. */
 export interface LandDetail { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Quantized parcel frames, matching GB. */ orchards?: { poly: { x: number; y: number }[]; holes?: { x: number; y: number }[][]; along: [number, number] }[] }
 /** RGBA8 world raster on the height layer's square: R canopy cover 0..1,

@@ -112,6 +112,26 @@ pub(crate) fn flood_surface(height: &[f32], n: usize, routing: bool) -> FloodGri
     grids
 }
 
+/// Breaching sizes its valleys by upstream area: the surface flood with D8 and
+/// areas (`cell_area` per cell), without basin labels.
+pub(crate) fn flood_areas(height: &[f32], n: usize, cell_area: f64) -> FloodGrids {
+    let mut grids = FloodGrids::default();
+    flood(
+        height,
+        n,
+        cell_area,
+        None,
+        None,
+        None,
+        false,
+        true,
+        true,
+        &mut grids,
+        &mut Scratch::default(),
+    );
+    grids
+}
+
 /// Water balance needs a complete topological order, but supplies its own
 /// runoff accumulation and does not use basin labels.
 pub(crate) fn routing_grids(height: &[f32], n: usize) -> FloodGrids {

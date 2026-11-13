@@ -16,6 +16,7 @@ import { funeraryLandFill, roleLabel, uiRoleLocale, type RoleLocale } from './ci
 import { COVER_GRAINS, MATERIALS, coverGrainFrame, coverGrainPattern, coverLayer, roofGrain as roofGrainFamily, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { planPanLight } from './roofPlaneLight';
+import { tintedWallColor } from './buildingPalette';
 import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 import { streetToneAt, toneStamp, washAt } from './groundTone';
@@ -23,7 +24,7 @@ import { STREET_MIN_PX, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quay
 import { layoutStreetPavements } from './roadPavement';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
-import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
+import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3, type ResolvedVolume } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
 import { softenRuralGround } from './countryside';
 import { polygonCentroid as shapeRingCenter } from '../gen/core/geom';
@@ -171,11 +172,11 @@ export interface CityScene {
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
-export interface CityBuilding { ruins?: Surface; stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; snowAltitude?: number; /** Weathering of the roof, 0 (new cover) to 1 (old, mossy), stable per building. */ age?: number; id: string; surface: Surface; footprint?: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
+export interface CityBuilding { ruins?: Surface; stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; snowAltitude?: number; /** Weathering of the roof, 0 (new cover) to 1 (old, mossy), stable per building. */ age?: number; /** Mill works seen from above on a natural ground: sails (hub at (x, y), `z` above the ground, blades `w` long and `d` wide in the vertical plane facing `angle`) and water wheels (axle centre, radius `w`, width `d`, axle along `angle`). */ marks?: { kind: 'sails' | 'wheel'; x: number; y: number; w: number; d: number; z: number; angle: number; turn: number }[]; id: string; surface: Surface; footprint?: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number; /** Wall colour the building asks for ("#rrggbb"). */ tint?: string }; path?: Path2D; footprintPath?: Path2D }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
-export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; /** Share of a full snow mantle the pan keeps (0: never snowed). */ snow?: Float32Array; /** 1: inset snow patch of the pan before it (drawn only with snow on the ground). */ patch?: Uint8Array; /** 1: bevel of the rim around a flat roof (parapet or kerb). */ rim?: Uint8Array; /** Grain family of the pan: 1 + its index in COVER_GRAINS (buildingMaterials.ts), 0 for none. */ grain?: Uint8Array; shadows: Shape[][] }
+export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; /** Share of a full snow mantle the pan keeps (0: never snowed). */ snow?: Float32Array; /** 1: inset snow patch of the pan before it (drawn only with snow on the ground). */ patch?: Uint8Array; /** 1: bevel of the rim around a flat roof (parapet or kerb). */ rim?: Uint8Array; /** Wall colour asked for the pan's volume ("#rrggbb"). */ tint?: (string | undefined)[]; /** Grain family of the pan: 1 + its index in COVER_GRAINS (buildingMaterials.ts), 0 for none. */ grain?: Uint8Array; shadows: Shape[][] }
 export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number>; roofs?: CityRoofs; /** Class of the retained roof and shadow paths (default: the native Path2D); the vector recorder needs paths it can read. */ pathClass?: new () => Path2D }
 
 /** Optional contract fields read defensively: older plans render without them. */
@@ -289,6 +290,15 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       streets: new SpatialBins(streets.map(s => grow({ ...EMPTY }, s.street.path, s.width)), 128), landmarks: new SpatialBins(landmarks.map(l => l.box), 128) } };
 }
 
+/** Sails and water wheels of a building's volumes (massing features), with their height above the building ground. */
+function millMarks(volumes: readonly ResolvedVolume[] | undefined): CityBuilding['marks'] {
+  const marks: NonNullable<CityBuilding['marks']> = [];
+  for (const v of volumes ?? []) for (const f of v.detail?.features ?? []) {
+    if (f.kind === 'sails') marks.push({ kind: 'sails', x: f.x, y: f.y, w: f.w, d: f.d, z: v.eave_m + f.h, angle: f.angle, turn: f.turn ?? 0 });
+    else if (f.kind === 'wheel') marks.push({ kind: 'wheel', x: f.x, y: f.y, w: f.w, d: f.d, z: (v.base_m ?? 0) + f.h, angle: f.angle, turn: f.turn ?? 0 });
+  }
+  return marks.length ? marks : undefined;
+}
 /** Stable 0..1 value of a building id (one independent stream per salt). */
 function idUnit(id: string, salt: number): number {
   let h = 2166136261 ^ salt; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
@@ -297,7 +307,7 @@ function idUnit(id: string, salt: number): number {
 /** Buildings of a scene, linked to their parcel allocation for roles. */
 export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
   const items: CityBuilding[] = [], byId = new Map<string, number>();
-  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], roofPatch: number[] = [], roofGrainOf: number[] = [], roofRim: number[] = [], shadows: Shape[][] = [];
+  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], roofPatch: number[] = [], roofGrainOf: number[] = [], roofRim: number[] = [], roofTint: (string | undefined)[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
     let surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
@@ -314,8 +324,8 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     byId.set(building.id, items.length);
     items.push({ id: building.id, surface, footprint: massingFootprint(building.footprint, massing), fn: building.function, role: programme?.role ?? allocation?.role, family: roleFamily(programme?.role ?? allocation?.role, building.function),
       landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building, ruins: ruinFootprint(building.footprint, programme, massing),
-      stilts: volumes?.some(v => (v.detail?.stilts_m ?? 0) > 0), age: idUnit(building.id, 0x51ed),
-      material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5 } });
+      stilts: volumes?.some(v => (v.detail?.stilts_m ?? 0) > 0), age: idUnit(building.id, 0x51ed), marks: millMarks(volumes),
+      material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5, tint: first?.tint } });
     if (!massing) { shadows.push([]); continue; }
     const owner = items.length - 1, heat = buildingHeat(building.function);
     let terraced = false;
@@ -325,13 +335,16 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     // for every roof). Its snow is one inset patch: eaves, hips and ridges stay free of snow, and a heated roof
     // leaves a wider bare strip below the ridge. Only the faces that reach the top of their volume open there: the
     // lower courses of a dome, a cone or a tent keep an even patch (no bare rings), the crown opens like a smoke hole.
+    // The corners of each patch move a little (a hash of the building and the face, the same amplitude everywhere),
+    // so the bare rim is not ruler-drawn; the patch never reaches the edge of its face.
     const planned = planRoof(building.footprint, massing), tops = new Map<number, number>();
     for (const face of planned) { const key = face.piece * 4096 + face.vol; let top = tops.get(key) ?? -Infinity; for (const p of face.points) if (p.z > top) top = p.z; tops.set(key, top); }
-    for (const face of planned.flatMap(face => {
+    const snowSeed = Math.round(idUnit(building.id, 0x2b7) * 0xffff);
+    for (const face of planned.flatMap((face, fi) => {
       const light = face.light ?? roofLight3(face.normal), share = roofSnowShare(face.normal, light, heat, face.cover);
       const top = tops.get(face.piece * 4096 + face.vol)!, ridge = face.points.some(p => p.z > top - .05) ? roofSnowRidgeMelt(heat, light) : .055;
       return face.minor && share ? [{ ...face, snow: share }]
-        : [{ ...face, snow: 0 }, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal, .055, ridge).map(p => ({ ...face, points: p.points, snow: share, patch: 1 })))];
+        : [{ ...face, snow: 0 }, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal, .055, ridge, snowSeed + fi * 131, .09).map(p => ({ ...face, points: p.points, snow: share, patch: 1 })))];
     })) {
       if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
       if (face.flat) items[owner].flat = true;
@@ -340,7 +353,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       // decorative volumes (chimneys, dormers: a few pixels).
       const grain = face.minor || byPiece![face.piece]?.[face.vol]?.tree ? undefined : roofGrainFamily(face.cover, !!face.flat || face.normal[2] > .995, culture);
       roofGrainOf.push(grain ? COVER_GRAINS.indexOf(grain) + 1 : 0);
-      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0); roofSnow.push(face.snow ?? 0); roofPatch.push('patch' in face ? face.patch : 0); roofRim.push(face.rim ? 1 : 0);
+      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0); roofSnow.push(face.snow ?? 0); roofPatch.push('patch' in face ? face.patch : 0); roofRim.push(face.rim ? 1 : 0); roofTint.push(face.tint);
       roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [] }); roofOwner.push(owner); roofLight.push(face.light ?? roofLight3(face.normal)); roofCover.push(face.cover); roofWall.push(face.wall); roofTone.push(face.tone); roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
     }
     const casts = building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []);
@@ -358,7 +371,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1, a = altitudes.get(town)!;
     b.snowAltitude = a.sum / a.count;
   }
-  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), patch: Uint8Array.from(roofPatch), grain: Uint8Array.from(roofGrainOf), rim: Uint8Array.from(roofRim), shadows } : undefined;
+  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), patch: Uint8Array.from(roofPatch), grain: Uint8Array.from(roofGrainOf), rim: Uint8Array.from(roofRim), tint: roofTint, shadows } : undefined;
   return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox([...b.surface, ...b.footprint ?? []])), 64), ...(roofs ? { roofs } : {}) };
 }
 
@@ -550,12 +563,20 @@ function grainGain(color: string): number {
   return 1 - .5 * Math.max(0, Math.min(1, (l - .68) / .2)) - .45 * Math.max(0, Math.min(1, (.3 - l) / .15));
 }
 /** Walls whose top shows around a flat roof as a parapet of their own material. */
-const MASONRY = /^(brick|stone|coral)$/;
+const MASONRY = /^(brick|stone|coral|concrete|ashlar)$/;
+/** Wall colour on a natural ground: pulled three quarters of the way to the muted tone of the tint the building asks
+ * for (its beige, its grey, the darker or warmer glass of a tower: buildingPalette.ts tintedWallColor, shared with
+ * the 3D meshes); the drawn plans keep their own conventions. `material`: the wall material. */
+function tintedWall(wall: string, tint: string | undefined, palette: CityPalette, material = ''): string {
+  if (!tint || palette !== 'terrain') return wall;
+  const v = parseInt(wall.slice(1), 16), c = tintedWallColor([((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255], tint, material);
+  return '#' + c.map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+}
 /** Same massing faces and shared tint as the GPU path. On natural grounds (terrain palette, by day) a pitched pan
  * takes the capped light of its cover (planPanLight: thatch never shines), its weathering and its procedural grain
  * along the slope (`images`, textured materials, replaces that grain); the rim of a flat roof on masonry walls is
  * the top of those walls, in their colour (the brick of a block shows from above); snow is the inset patch of each
- * face, in the snow tint of its share, with a very faint even grain, the same on every roof. */
+ * face, an uneven mantle at the scales of the cover grain (the same on every roof), the flat snow tint further out. */
 function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): void {
   const roofs = b.roofs!;
   let index = roofIndex.get(roofs);
@@ -567,7 +588,7 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
   const key = toneStamp() + '|' + o.palette + '|' + roofSeasonKey() + '|' + (custom ?? '') + '|' + (o.night ? 1 : 0) + '|' + (rims ? 1 : 0);
   let paint = roofPaint.get(roofs);
   if (!paint || paint.key !== key) roofPaint.set(roofs, paint = { key, colors: [], gains: [] });
-  const frame = natural && !images ? coverGrainFrame(device) : undefined, snowGrain = frame ? .5 * frame.alpha[SNOW_GRAIN] : 0;
+  const frame = natural && !images ? coverGrainFrame(device) : undefined, unevenSnow = frame ? frame.alpha[0] : 0;
   // Pan edges (eaves, ridges, hips): ink on the drawn plans, a soft joint on a natural ground.
   ctx.strokeStyle = parchment ? 'rgba(44,33,23,0.65)' : natural ? 'rgba(31,24,17,0.45)' : 'rgba(31,24,17,0.65)'; ctx.lineWidth = (parchment ? 0.3 : 0.5) * o.mpp;
   for (const i of b.bins.query(o.viewport)) {
@@ -582,7 +603,7 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
       let color = paint.colors[k];
       if (color === undefined) {
         // The rim of a flat roof on masonry: the wall's own colour, its sunlit and shaded sides a little apart.
-        const base = wallRim ? planShade(planBuildingColors(item, o.palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).wall, Math.max(-.12, Math.min(.1, roofs.light[k] * .3)))
+        const base = wallRim ? planShade(tintedWall(planBuildingColors(item, o.palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).wall, roofs.tint?.[k], o.palette, roofs.wall?.[k]), Math.max(-.12, Math.min(.1, roofs.light[k] * .3)))
           : natural && !roofs.flat?.[k] && !snowed
           ? planShade(planBuildingColors(item, o.palette, roofs.cover[k], roofs.wall?.[k], roofs.tone[k]).roof, planPanLight(roofs.light[k], roofs.cover[k]))
           : planRoofColor(item, roofs, k, o.palette, custom);
@@ -591,12 +612,17 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
         color = paint.colors[k] = o.night ? nightRoof(aged, parchment) : aged;
         paint.gains[k] = natural && !wallRim ? grainGain(aged) : 0;
       }
-      ctx.fillStyle = color; ctx.fill(path);
-      if (snowed) {
-        // The same faint grain on the snow of every roof.
-        const grain = patch && snowGrain > .03 ? coverGrainPattern(ctx, COVER_GRAINS[SNOW_GRAIN], frame!.level, roofs.dir[k] ?? 0, age * 53.1, age * 71.9) : undefined;
-        if (grain) { ctx.globalAlpha = snowGrain; ctx.fillStyle = grain; ctx.fill(path); ctx.globalAlpha = 1; }
-      } else {
+      // The snow of a patch is uneven at the scales of the cover grain: the mantle as a pattern over the cover (thin
+      // places drawn out down the slope, the cover faintly through them), the same tile on every roof, shifted per
+      // building. Further out it is the flat snow tint; the two cross-fade.
+      const snow = snowed && patch && unevenSnow > .03 ? coverGrainPattern(ctx, roofs.light[k] < -.08 ? 'snowShade' : 'snow', frame!.level, roofs.dir[k] ?? 0, age * 53.1, age * 71.9) : undefined;
+      if (!snow) { ctx.fillStyle = color; ctx.fill(path); }
+      else {
+        if (unevenSnow < .97) { ctx.globalAlpha = 1 - unevenSnow; ctx.fillStyle = color; ctx.fill(path); }
+        const amount = Math.min(1, roofs.snow![k] * ground), t = amount * amount * (3 - 2 * amount);
+        ctx.globalAlpha = unevenSnow * Math.min(1, t * 1.12); ctx.fillStyle = snow; ctx.fill(path); ctx.globalAlpha = 1;
+      }
+      if (!snowed) {
         // The cover's own grain, wherever the cover shows: under deep snow only on the pans that kept little of it.
         const bare = ground < .6 || !roofs.patch?.[k + 1] || roofs.snow![k + 1] * ground < .5;
         const layer = images ? coverLayer(roofs.cover[k]) : -1, family = frame && bare ? roofs.grain?.[k] ?? 0 : 0;
@@ -612,11 +638,45 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
       }
       if (!roofs.snow?.[k]) ctx.stroke(path);
     }
+    if (natural && item.marks) drawMillMarks(ctx, b, item, o);
   }
 }
-/** Family whose soft marks grain the snow patches. */
-const SNOW_GRAIN = COVER_GRAINS.indexOf('lime');
-
+const millPaths = new WeakMap<CityBuilding, { Path: unknown; shadow: Path2D; bars: Path2D; wheels: Path2D; paddles: Path2D; cloth: number }>();
+/** Mill works of a building as an aerial photograph shows them (natural grounds). Sails stand in a vertical plane:
+ * from above they are a short pale bar across the cap, and what tells the windmill is their long cross-shaped shadow
+ * on the ground, cast like the building's (sun from the north-west). A water wheel is a dark timber rectangle, as
+ * long as its diameter and as wide as the wheel, beside the building, with its float boards across it. */
+function drawMillMarks(ctx: CanvasRenderingContext2D, b: CityBuildings, item: CityBuilding, o: CityDrawOptions): void {
+  const Path = b.pathClass ?? Path2D;
+  let held = millPaths.get(item);
+  if (!held || held.Path !== Path) {
+    held = { Path, shadow: new Path(), bars: new Path(), wheels: new Path(), paddles: new Path(), cloth: .5 };
+    for (const m of item.marks ?? []) {
+      const ax = Math.cos(m.angle), ay = Math.sin(m.angle), tx = -ay, ty = ax;
+      if (m.kind === 'sails') {
+        // Same cast as pieceShadow: a point h above the ground falls .55 h east and .44 h south.
+        const foot = (s: number, u: number): Point => ({ x: m.x + tx * s + (m.z + u) * .55, y: m.y + ty * s + (m.z + u) * .44 }), hub = foot(0, 0);
+        for (let k = 0; k < 4; k++) { const a = m.turn + k * Math.PI / 2, tip = foot(Math.cos(a) * m.w, Math.sin(a) * m.w); held.shadow.moveTo(hub.x, hub.y); held.shadow.lineTo(tip.x, tip.y); }
+        const reach = m.w * Math.max(Math.abs(Math.cos(m.turn)), Math.abs(Math.sin(m.turn)));
+        held.bars.moveTo(m.x - tx * reach + ax * .5, m.y - ty * reach + ay * .5); held.bars.lineTo(m.x + tx * reach + ax * .5, m.y + ty * reach + ay * .5);
+        held.cloth = Math.max(held.cloth, m.d, m.w * .16);
+      } else {
+        const r = Math.max(.6, m.w), half = Math.max(.3, m.d) / 2, at = (s: number, off: number): Point => ({ x: m.x + tx * s + ax * off, y: m.y + ty * s + ay * off });
+        const corners = [at(-r, -half), at(r, -half), at(r, half), at(-r, half)];
+        held.wheels.moveTo(corners[0].x, corners[0].y); for (const c of corners.slice(1)) held.wheels.lineTo(c.x, c.y); held.wheels.closePath();
+        for (let k = 1; k < 6; k++) { const s = -r + k * r / 3, p = at(s, -half), q = at(s, half); held.paddles.moveTo(p.x, p.y); held.paddles.lineTo(q.x, q.y); }
+      }
+    }
+    millPaths.set(item, held);
+  }
+  ctx.save();
+  ctx.lineCap = 'butt'; ctx.setLineDash([]);
+  ctx.strokeStyle = castShadowFill(o.palette, !!o.night, item.snowAltitude); ctx.lineWidth = Math.max(held.cloth * .6, 1.2 * o.mpp); ctx.stroke(held.shadow);
+  ctx.fillStyle = '#3b3127'; ctx.fill(held.wheels);
+  if (o.mpp <= .5) { ctx.strokeStyle = 'rgba(128,112,88,0.7)'; ctx.lineWidth = Math.max(.1, .5 * o.mpp); ctx.stroke(held.paddles); }
+  ctx.strokeStyle = 'rgba(226,220,202,0.92)'; ctx.lineWidth = Math.max(.35, 1.1 * o.mpp); ctx.stroke(held.bars);
+  ctx.restore();
+}
 /** Fill of the height shadows cast on the ground. Neutral attenuation cannot brighten any channel of the receiving
  * ground. On a natural ground the cast is a near-black cool shade, and on snow the blue of skylit shade (snow is
  * lighter than that tint in every channel). */
@@ -647,7 +707,7 @@ export function drawRoofedBuildings(ctx: CanvasRenderingContext2D, buildings: Ci
   ctx.strokeStyle = colors?.buildingEdge ?? '#2e261d'; ctx.lineWidth = .55 * o.mpp;
   for (const i of visible) {
     const item = buildings.items[i], path = item.path ??= group(item.surface);
-    ctx.fillStyle = colors?.building ?? planBuildingColors(item, o.palette).wall; ctx.fill(path, 'nonzero'); ctx.stroke(path);
+    ctx.fillStyle = colors?.building ?? tintedWall(planBuildingColors(item, o.palette).wall, item.material?.tint, o.palette, item.material?.wall); ctx.fill(path, 'nonzero'); ctx.stroke(path);
   }
   drawPlanRoofs(ctx, buildings, o as CityDrawOptions);
   ctx.restore();
@@ -794,7 +854,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     // junctions, curb returns, tapers — filled once per style, so nothing shows twice.
     // Decks, quays, fords, dashed tracks and stairs keep their stroked art.
     // `inset` and `inner`: the carriageway of a paved street, inside its sidewalks.
-    const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style; inset?: number; inner?: Style }[] = [];
+    // `end`: natural grounds stop a loose paved end square and narrow an earth one into the ground (roadSurface.ts).
+    const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style; inset?: number; inner?: Style; end?: 'square' | 'taper' }[] = [];
     const surfaceOk = (s: CityStreet, dash?: boolean): boolean => layers.roadSurface !== false && atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
     const emphasis = o.roadEmphasis ?? 1, inkEmphasis = emphasisAlpha(emphasis);
     // The user's own colours; the night defaults of `colors` belong to the ink look.
@@ -832,7 +893,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
           for (const k of paved.strokes) marks2.add({ stroke: k.paint ?? paintRoad, width: k.width, alpha: k.alpha, dash: k.dash as number[] | undefined, cap: k.cap }, path);
           const grain = paved.grain ? roadGrain(ctx) : undefined; if (grain) marks2.add({ stroke: grain, width: road, alpha: paved.grain, cap: 'round' }, path);
           const sidewalk = walk ? sidewalkTone(pavedStyle) : undefined;
-          if (surfaceOk(s)) { surfaced.push({ s, w, edge: 0, fill: sidewalk ? { fill: sidewalk, alpha: paved.bed } : bedStyle, inset: walk, inner: sidewalk ? bedStyle : undefined }); continue; }
+          if (surfaceOk(s)) { surfaced.push({ s, w, edge: 0, fill: sidewalk ? { fill: sidewalk, alpha: paved.bed } : bedStyle, inset: walk, inner: sidewalk ? bedStyle : undefined, end: 'square' }); continue; }
           if (sidewalk) casing.add({ stroke: sidewalk, width: w2, alpha: paved.bed, cap: 'round' }, path);
           fill.add({ stroke: paintRoad, width: sidewalk ? road : w2, alpha: paved.bed, cap: 'round' }, path);
           continue;
@@ -850,7 +911,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         }
         if (marks.wear) marks2.add({ stroke: marks.wear.color, width: w2 * marks.wear.share, alpha: marks.wear.alpha, dash: marks.wear.dash as number[], cap: 'round' }, path);
         const grain = marks.grain ? roadGrain(ctx) : undefined; if (grain) marks2.add({ stroke: grain, width: w2, alpha: marks.grain, cap: 'round' }, path);
-        if (surfaceOk(s)) { surfaced.push({ s, w, edge, casing: shoulder && lod !== 'far' ? { fill: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { fill: paintRoad, alpha: bed.alpha } }); continue; }
+        if (surfaceOk(s)) { surfaced.push({ s, w, edge, casing: shoulder && lod !== 'far' ? { fill: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { fill: paintRoad, alpha: bed.alpha }, end: 'taper' }); continue; }
         if (shoulder && lod !== 'far') casing.add({ stroke: shoulder.color, width: w2 + 2 * edge, alpha: shoulder.alpha, cap: 'round' }, path);
         fill.add({ stroke: paintRoad, width: w2, alpha: bed.alpha, cap: 'round' }, path);
         continue;
@@ -889,13 +950,14 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     if (surfaced.length) {
       const streets = surfaced.map(x => x.s.street), ring = (r: readonly Point[]): Path2D => { const p = new Path2D(); p.moveTo(r[0].x, r[0].y); for (let i = 1; i < r.length; i++) p.lineTo(r[i].x, r[i].y); p.closePath(); return p; };
       const tolerance = Math.max(0.05, 0.35 * px(1)), minWidth = (i: number): number => surfaced[i].w;
+      const ends = surfaced.some(x => x.end) ? (i: number): 'round' | 'square' | 'taper' => surfaced[i].end ?? 'round' : undefined;
       // Same streets, widths and edges (a camera move within one zoom step): same rings.
-      const key = `${tolerance.toFixed(3)}|${surfaced.map(x => `${x.s.layout}.${x.s.index}:${x.w.toFixed(2)}:${x.casing ? x.edge.toFixed(2) : '-'}${x.inset ? `:${x.inset.toFixed(2)}` : ''}`).join(',')}`;
+      const key = `${tolerance.toFixed(3)}|${surfaced.map(x => `${x.s.layout}.${x.s.index}:${x.w.toFixed(2)}:${x.casing ? x.edge.toFixed(2) : '-'}${x.inset ? `:${x.inset.toFixed(2)}` : ''}${x.end ? `:${x.end}` : ''}`).join(',')}`;
       let rings = SURFACE_CACHE.get(scene)?.get(key);
       if (!rings) {
-        const cas = surfaced.some(x => x.casing) ? roadSurface(streets, { extra: i => surfaced[i].casing ? surfaced[i].edge : 0, minWidth, tolerance }) : [];
-        const inner = surfaced.some(x => x.inset) ? roadSurface(streets, { extra: i => -(surfaced[i].inset ?? 0), minWidth, tolerance }).filter(p => surfaced[p.street].inset) : [];
-        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: roadSurface(streets, { minWidth, tolerance }).map(p => ({ street: p.street, path: ring(p.ring) })), inner: inner.map(p => ({ street: p.street, path: ring(p.ring) })) };
+        const cas = surfaced.some(x => x.casing) ? roadSurface(streets, { extra: i => surfaced[i].casing ? surfaced[i].edge : 0, minWidth, tolerance, ends }) : [];
+        const inner = surfaced.some(x => x.inset) ? roadSurface(streets, { extra: i => -(surfaced[i].inset ?? 0), minWidth, tolerance, ends }).filter(p => surfaced[p.street].inset) : [];
+        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: roadSurface(streets, { minWidth, tolerance, ends }).map(p => ({ street: p.street, path: ring(p.ring) })), inner: inner.map(p => ({ street: p.street, path: ring(p.ring) })) };
         let memo = SURFACE_CACHE.get(scene); if (!memo) SURFACE_CACHE.set(scene, memo = new Map());
         if (memo.size >= 8) memo.delete(memo.keys().next().value!);
         memo.set(key, rings);
@@ -953,7 +1015,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i]; stats.buildings++;
         const tint = planBuildingColors(b, footprint ? 'terrain' : palette);
-        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : colors?.building ?? (footprint ? tint.roof : o.buildings.roofs ? tint.wall : tint.roof);
+        const color = view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : o.appearance.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : colors?.building ?? (footprint ? tint.roof : o.buildings.roofs ? tintedWall(tint.wall, b.material?.tint, palette, b.material?.wall) : tint.roof);
         if (footprint) {
           if (!b.footprintPath) { b.footprintPath = new Path2D(); for (const s of b.footprint ?? b.building.footprint) b.footprintPath.addPath(shapePath(s)); }
           batch.add({ fill: color, ...edge }, b.footprintPath);

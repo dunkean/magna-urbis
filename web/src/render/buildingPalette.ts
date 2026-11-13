@@ -65,8 +65,12 @@ const LOCAL: Record<string, Partial<Record<'wall' | 'roof' | 'stone' | 'accent',
   'dravidian-temple': { wall: 'c4baa1', roof: 'b6ad95' }, 'indian-temple': { wall: 'cbb391', roof: 'ac8766' },
   bagan: { wall: 'b39473', roof: 'a7775d' }, 'great-zimbabwe': { wall: 'aea58d', roof: 'aa956c' },
 };
-const WALL: Record<string, string> = { timber: '8c745a', wood: '8c745a', brick: 'ae7c65', stone: 'b9b3a2', earth: 'bba17b', plaster: 'dfd6c0', bamboo: 'aa986b', wattle: 'ad9670', hide: 'bbae94', coral: 'd5cbb3' };
-const ROOF: Record<string, string> = { tile: 'a77960', slate: '747c80', thatch: 'b3a077', reed: 'b3a077', palm: 'ac9870', bamboo: 'a0946d', shingle: '8e8069', bark: '81745f', turf: '85916b', hide: 'b6a78d', felt: 'a59c88', earth: 'b7a17f', plaster: 'd1c5a9', stone: 'a6a69a', snow: 'd9e0db', metal: '8d9996', lead: '828a8c', ruin: 'd8d0bd' };
+const WALL: Record<string, string> = { timber: '8c745a', wood: '8c745a', brick: 'ae7c65', stone: 'b9b3a2', earth: 'bba17b', plaster: 'dfd6c0', bamboo: 'aa986b', wattle: 'ad9670', hide: 'bbae94', coral: 'd5cbb3',
+  // Modern walls: board-marked concrete, curtain-wall glass (the sky it reflects, darkened), dark steel cladding, cut limestone.
+  concrete: 'a8a7a1', glass: '6e8c96', steel: '5b6267', ashlar: 'd9cdb1' };
+const ROOF: Record<string, string> = { tile: 'a77960', slate: '747c80', thatch: 'b3a077', reed: 'b3a077', palm: 'ac9870', bamboo: 'a0946d', shingle: '8e8069', bark: '81745f', turf: '85916b', hide: 'b6a78d', felt: 'a59c88', earth: 'b7a17f', plaster: 'd1c5a9', stone: 'a6a69a', snow: 'd9e0db', metal: '8d9996', lead: '828a8c', ruin: 'd8d0bd',
+  // Modern covers: grey-blue zinc sheets, dark bitumen felt, glazed atria and domes.
+  zinc: '8a96a2', bitumen: '4b4b4c', glass: '7d9aa3' };
 // Repeated entries are weights: Europe remains mostly aged terracotta, with
 // occasional slate. These are related building colours, never random accents.
 const SWATCHES: Partial<Record<string, { wall: string[]; roof: string[] }>> = {
@@ -110,6 +114,26 @@ export function cultureIdentity(culture: string): CultureIdentity {
  * role defaults to dwelling; monument/tower/minaret/worship/civic/defence etc.
  * use local stone blended towards the dominant wall. Material names are Rust
  * massing wall/cover keys. Unknown culture uses those material colours. */
+/** A wall colour pulled three quarters of the way to the tint its building asks for ("#rrggbb"), shared by the 2D
+ * plan and the 3D meshes. The tint first becomes a tone the wall's material can have, never a paint: its saturation
+ * is capped (.30 for masonry and render, .40 for glass and steel) and its lightness kept within .18 of the wall's
+ * own. A magenta accent ends as a dusky mauve-grey glass, a cyan one as a blue-grey; beiges and greys pass unchanged. */
+export function tintedWallColor(base: PaletteRgb, tint: string, wall: string): PaletteRgb {
+  const asked = rgb(tint.replace('#', ''));
+  if (asked.some(v => !Number.isFinite(v))) return base;
+  const lightness = (c: PaletteRgb): number => (Math.max(...c) + Math.min(...c)) / 2;
+  const max = Math.max(...asked), min = Math.min(...asked), l = lightness(asked), d = max - min;
+  const s = d < 1e-6 ? 0 : d / (1 - Math.abs(2 * l - 1) || 1e-6);
+  const h = d < 1e-6 ? 0 : max === asked[0] ? ((asked[1] - asked[2]) / d + 6) % 6 : max === asked[1] ? (asked[2] - asked[0]) / d + 2 : (asked[0] - asked[1]) / d + 4;
+  // Pinks, magentas and reds read as toy colours on a whole building: they keep only a hint of their hue; blues,
+  // greens, bronzes and warm stone keep a little more.
+  const garish = h > 4.3 || h < .35;
+  const s2 = Math.min(s, garish ? .12 : wall === 'glass' || wall === 'steel' ? .28 : .24), own = lightness(base), l2 = Math.max(own - .18, Math.min(own + .18, l));
+  const c = (1 - Math.abs(2 * l2 - 1)) * s2, x = c * (1 - Math.abs(h % 2 - 1)), m = l2 - c / 2;
+  const hue: PaletteRgb = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
+  return base.map((v, i) => clamp(v + (hue[i] + m - v) * .75)) as PaletteRgb;
+}
+
 export function buildingTint(culture: string, wall: string, cover: string, tone: number, role = 'dwelling'): BuildingTint {
   const known = !!familyOf(culture), p = cultureIdentity(culture), t = Number.isFinite(tone) ? clamp(tone) : 0.5;
   const seed = Math.round(t * 15), wh = lotHash(seed, 0x68bc21eb), rh = lotHash(seed, 0x02e5be93);
@@ -131,7 +155,7 @@ export function buildingTint(culture: string, wall: string, cover: string, tone:
     w = choose('wall', wh); r = choose('roof', rh);
     w = mix(w, rgb(WALL[wall] ?? WALL.plaster), 0.10);
     // Thatch, turf and metal retain their material character within local hues.
-    const organic = /^(thatch|reed|palm|turf|bark|bamboo|snow|metal|lead)$/.test(cover);
+    const organic = /^(thatch|reed|palm|turf|bark|bamboo|snow|metal|lead|zinc|bitumen|glass)$/.test(cover);
     r = mix(r, rgb(ROOF[cover] ?? ROOF.tile), organic ? 0.85 : 0.08);
     if (masonry) { w = mix(p.stone, p.wall, 0.45); if (/^(earth|plaster|stone)$/.test(cover)) r = mix(r, w, 0.45); }
     // Ruin stubs (massing.rs `ruin_piece`): broken wall tops in pale weathered stone.

@@ -15,7 +15,7 @@ import { refreshCavernMask } from '../gen/terrain/caverns';
 import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/bridge/landuseNative';
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
-import { effectiveRegion } from './regionSettings';
+import { effectiveRegion, generationRegion } from './regionSettings';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
 import { routeNetwork } from '../gen/settlements/network';
@@ -381,7 +381,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
 function regionKey(settings: V2Settings): string {
   const o = settings.options;
   return stableStringify([o.population, o.culture, o.siteType, o.sitePrefs, o.center, o.roads, o.settlements, o.workflow,
-    settings.runtime?.backend,settings.region,settings.settlementCount, Object.entries(settings.local).filter(([key, o]) => o.center !== undefined ||
+    settings.runtime?.backend,generationRegion(settings.region),settings.settlementCount, Object.entries(settings.local).filter(([key, o]) => o.center !== undefined ||
       o.siteType !== undefined || o.sitePrefs !== undefined || key === 'main' && o.roads !== undefined)
       .sort(([a], [b]) => a.localeCompare(b)).map(([key, o]) =>
       [key, o.center, o.siteType, o.sitePrefs, key === 'main' ? o.roads : undefined]),

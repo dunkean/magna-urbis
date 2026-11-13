@@ -64,6 +64,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   choice('composition.ground.look', 'Ground', 'Fond', STYLE_ENTRIES.filter(entry => !isHiddenPreset(entry[0]))),
   choice('composition.ground.variant', 'Ground variant', 'Variante du fond', STYLE_IDS.filter(look => !isHiddenPreset(look)).flatMap(look => GROUND_VARIANTS[look]).map(id => [id, ...variantLabel(id)] as const)),
   flag('composition.ground.contours', 'Contour lines', 'Courbes de niveau'),
+  { ...choice('composition.ground.contourDetail', 'Contour detail', 'Détail des courbes', [['fixed', 'Fixed, fine from the start (V1)', 'Fixes, fines dès le départ (V1)'], ['zoom', 'Follow the zoom', 'Selon le zoom']]), defaultValue: 'fixed' },
   // Global effects: they apply on top of any style.
   choice('composition.effects.ambience', 'Ambience', 'Ambiance', [['day', 'Day', 'Jour'], ['night', 'Night', 'Nuit']]),
   number('composition.effects.season', 'Season (annual cycle)', 'Saison (cycle annuel)', 0, 1, .01),
@@ -99,7 +100,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
 /** Level 2: the composition rows of each section, in panel order; the semantic land-use rows are mounted apart (see `SEMANTIC_ROWS` and `LANDUSE_CLASS_ROWS`). */
 export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> = {
   general: ['composition.annotations.legend', 'composition.annotations.cartouche'],
-  relief: ['composition.ground.contours'],
+  relief: ['composition.ground.contours', 'composition.ground.contourDetail'],
   ground: ['composition.preset', 'composition.ground.look', 'composition.ground.variant'],
   vegetation: ['composition.vegetation.look', 'composition.vegetation.forestTone'],
   landuse: [],

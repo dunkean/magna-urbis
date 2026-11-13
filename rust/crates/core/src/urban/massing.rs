@@ -25,9 +25,12 @@
 //! different heights with cross-gables); the entry-level fields repeat the
 //! tallest volume. Ridges lie strictly inside their (convex) ring.
 //! `cover` ∈ tile | slate | thatch | reed | bamboo | palm | shingle | turf |
-//! bark | hide | felt | earth | plaster | stone | snow | metal; `wall` ∈
-//! timber | brick | stone | earth | wood | plaster | bamboo | wattle | hide |
-//! coral; `tone` ∈ 0..1 per lot.
+//! bark | hide | felt | earth | plaster | stone | snow | metal | zinc |
+//! bitumen | glass; `wall` ∈ timber | brick | stone | earth | wood | plaster |
+//! bamboo | wattle | hide | coral | concrete | glass | steel | ashlar (cut
+//! limestone); `tone` ∈ 0..1 per lot. The entry of a building whose style has
+//! a palette (`forms/styles_modern.json`) carries `tint`, the wall colour it
+//! asks for (sRGB `#rrggbb`, one per lot).
 //! Flat roofs also carry `parapet_m` (wall rising above the eave, 0.35–1.1 m
 //! by culture), `trim` (red band of mesoamerican flat roofs) and
 //! `features:[{kind,x,y,w,d,h,angle}]` (roof-top stair heads,
@@ -39,6 +42,9 @@ use serde_json::{Value, json};
 
 /// The ground floor's extra height (m) for shops.
 const SHOP_EXTRA_M: f64 = 0.8;
+/// A dwelling of this many storeys is a collective building: its wall tint
+/// comes from its palette's `special` list, like a singular building's.
+const TALL_FLOORS: u32 = 9;
 
 #[derive(Clone, Copy)]
 struct Tradition {
@@ -91,14 +97,21 @@ fn declared(traits: &'static super::forms::kit::CultureTraits) -> Option<Traditi
 /// kind's default cover / the culture's wall).
 fn material_style(material: &str, roof: &str, typology: &str) -> (Option<&'static str>, Option<&'static str>) {
     let pitched_wood = matches!(roof, "gable" | "thatch-ridge");
+    // Modern masonry under a flat roof: a bitumen membrane, not earth.
+    let flat = matches!(roof, "flat" | "terraced");
     match material {
+        "concrete" => (flat.then_some("bitumen"), Some("concrete")),
+        "ashlar" | "limestone" => (Some(if flat { "bitumen" } else { "zinc" }), Some("ashlar")),
+        "glass" => (Some("bitumen"), Some("glass")),
+        "steel" => (Some("metal"), Some("steel")),
+        "plaster" => (flat.then_some("bitumen"), None),
         "timber" => (None, Some("timber")),
         "wood" => match typology {
             "stilt-house" => (Some("bamboo"), Some("bamboo")),
             _ => (if pitched_wood { Some("shingle") } else { None }, Some("wood")),
         },
         "cedar-plank" => (Some("shingle"), Some("wood")),
-        "brick" => (None, Some("brick")),
+        "brick" => (flat.then_some("bitumen"), Some("brick")),
         "stone" | "granite" | "marble" => (None, Some("stone")),
         "dark-stone" | "rock" => (Some("stone"), Some("stone")),
         "coral-stone" => (Some("plaster"), Some("coral")),
@@ -225,6 +238,16 @@ pub(super) struct Input<'a> {
     /// kit's extra roof kinds, chimneys and dormers on homes. Monuments and
     /// utility buildings always compose their roofs.
     pub complex: bool,
+    /// The lot's quarter is city core by the user's edit (`overrides.quarters.<i>.zone`):
+    /// its style's height ladder stands at its top step.
+    pub user_core: bool,
+}
+
+/// Whether the user set the quarter of `block` as city core (quarter edit `zone: core`).
+pub(super) fn user_core(layout: &super::Layout, block: usize) -> bool {
+    let Some(b) = layout.blocks.get(block) else { return false };
+    layout.config.as_ref().and_then(|c| c.overrides.quarters.get(&b.quarter.to_string()))
+        .is_some_and(|o| o.zone.as_deref() == Some("core"))
 }
 
 /// Oriented box of a ring along a chosen axis: centre, unit axis, half length
@@ -302,7 +325,11 @@ fn touches(a: &Shape, b: &Shape) -> bool {
 /// house leaves its stone footing), no openings (the gaps between stubs are
 /// the doors and windows).
 pub(super) fn ruin_piece(label: &str, full_m: f64, wall: &str, tone: f64, rng: &mut Rng) -> Value {
-    let wall = if matches!(wall, "stone" | "brick" | "earth" | "plaster" | "coral") { wall } else { "stone" };
+    let wall = match wall {
+        "stone" | "brick" | "earth" | "plaster" | "coral" | "concrete" | "ashlar" => wall,
+        "glass" | "steel" => "concrete",
+        _ => "stone",
+    };
     let (eave, roof, rise) = match label {
         "rubble" => (0.12, "pyramid", (full_m * rng.range(0.08, 0.15)).max(0.3)),
         "ruin-corner" => (full_m * rng.range(0.9, 1.05), "flat", 0.0),
@@ -343,7 +370,7 @@ fn facade_openness(culture: &str, wall: &str) -> f64 {
     if traits.openness > 0.0 {
         return traits.openness;
     }
-    let masonry = matches!(wall, "stone" | "plaster" | "brick" | "earth" | "coral");
+    let masonry = matches!(wall, "stone" | "plaster" | "brick" | "earth" | "coral" | "concrete" | "ashlar");
     let warm = traits.mediterranean || !traits.flavor.is_empty();
     match (warm, masonry) { (true, true) => 0.5, (true, false) if traits.light_wall_openness > 0.0 => traits.light_wall_openness, _ => 1.0 }
 }
@@ -372,7 +399,9 @@ fn gradient_floors(m: &Input, tr: &Tradition, floors: u32) -> u32 {
     // on a pressured lot: isolated tall blocks in a thin periphery are wrong for every culture.
     let cap = |hi: u32| 1 + (g * hi.saturating_sub(1) as f64 + if hi >= 3 { 0.45 } else { 0.5 }).floor() as u32;
     let mixed = size > 0.3 && r.chance(0.2);
-    if lo >= 4 {
+    // A style with a height ladder (modern blocks) grades its heights from the
+    // core like any town; the tower / house mix is the historical tower cultures'.
+    if lo >= 4 && super::forms::kit::traits(m.culture).height_ladder.is_empty() {
         if r.chance(0.03 + 0.6 * size * central) {
             return lo + ((hi - lo) as f64 * size * central).round() as u32;
         }
@@ -962,6 +991,9 @@ pub(super) fn massing(m: &Input) -> Value {
         return Value::Null;
     }
     let mut tr = tradition(m.arch, m.culture);
+    // The style's height ladder caps the storeys by the settlement's size
+    // (a modern town of 10 000 stays low; a user-set core takes the top step).
+    tr.storeys = super::forms::kit::capped_storeys(tr.storeys, super::forms::kit::storey_cap(m.culture, m.population, m.user_core));
     let traits = super::forms::kit::traits(m.culture);
     let (metric_scale, form) = super::forms::kit::house_parameters(m.culture);
     // A culture may give its home form to a share of its lots only (elven
@@ -1035,6 +1067,12 @@ pub(super) fn massing(m: &Input) -> Value {
     let kit = super::forms::kit::house(m.culture, super::forms::kit::Traits { roof: tr.roof, pitch: tr.pitch, cover: tr.cover, wall: tr.wall });
     let family = super::culture::architecture_pack(m.culture).map_or("western", super::parcels::monument_family);
     let home = !m.landmark && matches!(m.function, "domestic" | "mixed") && look.is_none();
+    // The wall tint the building asks for (its style's palette, `forms::kit`):
+    // one draw per lot, from the singular list for a landmark, a lot that is
+    // not a dwelling or a tall collective dwelling, from the homes list otherwise.
+    let special = m.landmark || !m.role.starts_with("dwelling") || floors >= TALL_FLOORS;
+    let tint = super::forms::kit::tints(m.culture, special)
+        .and_then(|t| super::forms::kit::draw(t, &mut Rng::new(m.seed).fork("tint"), &|_| true, &|_, w| w));
     // A complex home draws its roof kind once in its kit (the wings follow the body).
     let home_roof: Option<&'static str> = (m.complex && home && matches!(tr.roof, "gable" | "hip") && tr.form.is_empty())
         .then(|| super::forms::kit::draw(&kit.roofs, &mut Rng::new(m.seed).fork("kit-roof"), &|_| true, &|_, w| w))
@@ -1529,7 +1567,12 @@ pub(super) fn massing(m: &Input) -> Value {
             .enumerate()
             .map(|(i, p)| {
                 let (vols, n) = match p {
-                    Piece::Raw(v) => return v,
+                    Piece::Raw(mut v) => {
+                        if let Some(t) = tint && v["cover"] != "ruin" {
+                            v["tint"] = json!(t);
+                        }
+                        return v;
+                    }
                     Piece::Vols(vols, n) => (vols, n),
                 };
                 // Entry-level fields repeat the tallest volume (a chimney is not one).
@@ -1540,7 +1583,7 @@ pub(super) fn massing(m: &Input) -> Value {
                     .max_by(|a, b| (a.1.eave + a.1.roof.rise).total_cmp(&(b.1.eave + b.1.roof.rise)))
                     .map_or(0, |(k, _)| k);
                 let t = &vols[top];
-                json!({"floors":vols.iter().map(|v| v.n).max().unwrap_or(n),"eave_m":round2(t.eave),"rise_m":round2(t.roof.rise),
+                let mut entry = json!({"floors":vols.iter().map(|v| v.n).max().unwrap_or(n),"eave_m":round2(t.eave),"rise_m":round2(t.roof.rise),
                     "roof":t.roof.kind,"ridges":t.roof.ridges,"cover":t.cover,"wall":t.wall,"tone":round2(lot_tone),
                     "volumes":vols.iter().enumerate().map(|(j, v)| {
                         let mut out = v.json();
@@ -1548,7 +1591,11 @@ pub(super) fn massing(m: &Input) -> Value {
                         if open < 1.0 { out["openness"] = json!(open); }
                         if v.form == "tree" { out["tree_seed"] = json!(format!("{}:tree:{}:{}", m.seed, i, j)); }
                         out
-                    }).collect::<Vec<_>>()})
+                    }).collect::<Vec<_>>()});
+                if let Some(t) = tint {
+                    entry["tint"] = json!(t);
+                }
+                entry
             })
             .collect(),
     )
@@ -1801,7 +1848,7 @@ mod tests {
     }
     fn input<'a>(parts: &'a [(Shape, &'static str)], arch: &'a Value, fronts: &'a [[Point; 2]], seed: &'a str) -> Input<'a> {
         Input { parts, arch, culture: "european-organic", zone: "core", role: "dwelling.row", function: "domestic",
-            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed, low_rural: true, distance: 0.0, archetype: "", complex: false }
+            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed, low_rural: true, distance: 0.0, archetype: "", complex: false, user_core: false }
     }
 
     /// A complex home: the wing takes its rule, the roofs are composed (the
@@ -2277,5 +2324,53 @@ mod tests {
             }
         }
         assert!(seen > 0 && kinds.contains("stair") && kinds.contains("windcatcher"), "{kinds:?}");
+    }
+
+    /// Modern styles build in their materials and tint their walls from their
+    /// palette: a Haussmannian home is cut limestone in its beige range, the
+    /// towers of a high-rise style vary, a historical culture asks for no tint.
+    #[test]
+    fn modern_styles_tint_their_walls_from_their_palette() {
+        let parts = [(rect(0.0, 0.0, 16.0, 12.0), "building")];
+        let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: 16.0, y: 0.0 }]];
+        let arch = json!({"typology":"apartment-building","roof":"hip","storeys":[5,6],"material":"ashlar"});
+        let home = massing(&Input { culture: "haussmannian", ..input(&parts, &arch, &fronts, "paris") });
+        let homes = super::super::forms::kit::tints("haussmannian", false).unwrap();
+        for p in home.as_array().unwrap() {
+            assert_eq!(p["wall"], "ashlar", "{p}");
+            assert!(p["tint"].as_str().is_some_and(|t| homes.contains_key(t)), "{p}");
+        }
+        let tower = [(rect(0.0, 0.0, 30.0, 24.0), "office-block")];
+        let glass = json!({"typology":"tower-block","roof":"flat","storeys":[20,40],"material":"glass"});
+        let tints: std::collections::BTreeSet<String> = (0..12).map(|k| {
+            let seed = format!("tower{k}");
+            let m = massing(&Input { culture: "global-high-rise", role: "commerce.office", function: "commerce", ..input(&tower, &glass, &fronts, &seed) });
+            assert_eq!(m[0]["wall"], "glass", "{m}");
+            m[0]["tint"].as_str().unwrap().to_string()
+        }).collect();
+        assert!(tints.len() >= 2, "{tints:?}");
+        let old = massing(&input(&parts, &json!({"roof":"gable","storeys":[2,3],"material":"stone"}), &fronts, "paris"));
+        assert!(old.as_array().unwrap().iter().all(|p| p.get("tint").is_none()), "{old}");
+    }
+
+    /// A tower style's height ladder: a core lot of a town of 10 000 stays at
+    /// four storeys at most, the same lot in a city of 100 000 or in a quarter
+    /// the user set as core rises to a collective block of nine storeys or more.
+    #[test]
+    fn modern_heights_climb_the_style_ladder() {
+        // A footprint broad enough for a tower (bodies stay under 2.5 × their width).
+        let parts = [(rect(0.0, 0.0, 40.0, 40.0), "building")];
+        let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: 40.0, y: 0.0 }]];
+        let arch = json!({"typology":"megatower","roof":"flat","storeys":[25,50],"material":"glass"});
+        let top = |population: u32, user_core: bool| (0..16).map(|k| {
+            let seed = format!("ladder{k}");
+            let m = massing(&Input { culture: "cyberpunk", role: "dwelling.house", population, user_core, ..input(&parts, &arch, &fronts, &seed) });
+            m.as_array().unwrap().iter().filter_map(|p| p["floors"].as_u64()).max().unwrap()
+        }).max().unwrap();
+        assert!(top(10_000, false) <= 4, "{}", top(10_000, false));
+        assert!(top(100_000, false) >= TALL_FLOORS as u64, "{}", top(100_000, false));
+        assert!(top(10_000, true) >= TALL_FLOORS as u64, "{}", top(10_000, true));
+        // A historical tower culture keeps its tradition.
+        assert_eq!(super::super::forms::kit::storey_cap("hadhrami-tower", 10_000, false), None);
     }
 }

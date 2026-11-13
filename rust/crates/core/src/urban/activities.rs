@@ -305,7 +305,7 @@ pub(crate) fn building_massing(archetype_id: &str, culture: &str, ring: &[super:
         distance: 2.0,
         seed,
         archetype: archetype_id,
-        complex: false,
+        complex: false, user_core: false,
     })
 }
 
@@ -529,7 +529,7 @@ pub(crate) fn formed(id: &str, culture: &str, yard: Vec<crate::settlements::acti
                 distance: 2.0,
                 seed: &seed,
                 archetype: "",
-                complex: true,
+                complex: true, user_core: false,
             });
             // Every absorbed building gives its archetype to one part: one of its own label
             // when the form has it (the belfry is the tower), else the last one free
@@ -632,7 +632,7 @@ pub(crate) fn ruined(id: &str, culture: &str, yard: Vec<crate::settlements::acti
         distance: 2.0,
         seed: &seed,
         archetype: "",
-        complex: false,
+        complex: false, user_core: false,
     });
     parts
         .iter()
@@ -826,7 +826,7 @@ pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f6
     let front = [at(-lw / 2.0, -ld / 2.0), at(lw / 2.0, -ld / 2.0)];
     let massing = super::massing::massing(&super::massing::Input {
         parts: &best, arch: culture_arch(culture), culture, zone: "rural", role: "dwelling.farm", function: "dwelling",
-        landmark: false, wealth, pressure: 0.0, small_home: false, population: 0, fronts: &[front], low_rural: true, distance: 2.0, complex: false,
+        landmark: false, wealth, pressure: 0.0, small_home: false, population: 0, fronts: &[front], low_rural: true, distance: 2.0, complex: false, user_core: false,
         seed: &best_seed, archetype: "",
     });
     let kind = super::farmsteads::farm_type(culture, &best_seed);
@@ -836,6 +836,78 @@ pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f6
         ring: shape.outer.clone(),
         massing: serde_json::Value::Array(vec![massing.get(k).cloned().unwrap_or(serde_json::Value::Null)]),
     }).collect()
+}
+
+/// Metric scale of a culture's bodies (giants, small folk), for the land-use farms.
+pub(crate) fn farm_scale(culture: &str) -> f64 { super::culture::house_parameters(culture).0 }
+
+/// Massing of a countryside farm of the land-use stage (landuse/rural_farms.rs), by the
+/// code of the settlement farmsteads (`farm_yard`): the culture's building tradition
+/// (`culture_arch`), composed roofs on the house, the outbuildings as the low volumes of
+/// the farm type `kind` (farmsteads.rs `look`). `bodies` are the farm's buildings (ring in
+/// map metres, land-use `use`), `front` the lot's front edge; one piece per body, in order.
+pub(crate) fn countryside_farm_massing(culture: &str, kind: &str, bodies: &[(Vec<super::Point>, &str)], front: [super::Point; 2], wealth: f64, seed: &str) -> Vec<serde_json::Value> {
+    use super::Point;
+    // Land-use uses onto the part labels of massing.rs: the dwellings are `building`
+    // (the home of the culture: yurt, tipi, pile house…), the rest farm outbuildings.
+    let mut home = false;
+    let parts: Vec<(super::Shape, &'static str)> = bodies.iter().map(|(ring, use_)| {
+        let round = ring.len() > 6;
+        let label = match *use_ {
+            "house" | "longhouse" | "roundhouse" | "ger" => "building",
+            "hut" | "cultivation" if round && !home => "building",
+            "barn" => "barn",
+            "cultivation" => if round { "hut" } else { "barn" },
+            "byre" => "byre",
+            "stable" | "gatehouse" => "stable",
+            "granary" | "spore-store" => "granary",
+            "raised-granary" => "raised-granary",
+            "shed" | "lean-to" => "shed",
+            "cart-shed" | "covered-yard" => "cart-shed",
+            "bakehouse" => "bakehouse",
+            "well" => "well",
+            "hayrick" => "hayrick",
+            "pit-house" => "pit-house",
+            "smithy" => "smithy",
+            "storeroom" | "storehouse" => "storeroom",
+            "farm-tower" | "tower" => "farm-tower",
+            "dovecote" => "dovecote",
+            "pigeon-tower" => "pigeon-tower",
+            "cook-house" | "kitchen" => "cook-house",
+            "sweat-bath" => "sweat-bath",
+            "bath" => if round { "sweat-bath" } else { "storeroom" },
+            "hut" => "hut",
+            _ => "shed",
+        };
+        home |= label == "building";
+        (super::geometry::normalized(super::Shape { outer: ring.clone(), holes: vec![] }), label)
+    }).collect();
+    if parts.is_empty() {
+        return vec![];
+    }
+    // The house fronts its own long side nearest the lot's front (the main body of the
+    // massing, its ridge along that side); a farm without a dwelling fronts the lot's.
+    let house_front = parts.iter().find(|p| p.1 == "building").and_then(|(shape, _)| {
+        let r = &shape.outer;
+        let edge = |i: usize| (r[i], r[(i + 1) % r.len()]);
+        let len = |i: usize| { let (a, b) = edge(i); (b.x - a.x).hypot(b.y - a.y) };
+        let longest = (0..r.len()).map(len).fold(0.0_f64, f64::max);
+        (0..r.len())
+            .filter(|&i| len(i) >= 0.8 * longest)
+            .map(|i| { let (a, b) = edge(i); (super::geometry::distance(Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 }, front[0], front[1]).0, i) })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, i)| { let (a, b) = edge(i); [a, b] })
+    });
+    let fronts = [house_front.unwrap_or(front)];
+    let seed = super::farmsteads::pinned(seed, kind);
+    match super::massing::massing(&super::massing::Input {
+        parts: &parts, arch: culture_arch(culture), culture, zone: "rural", role: "dwelling.farm", function: "dwelling",
+        landmark: false, wealth, pressure: 0.0, small_home: false, population: 0, fronts: &fronts, low_rural: true, distance: 2.0, complex: false, user_core: false,
+        seed: &seed, archetype: "",
+    }) {
+        serde_json::Value::Array(pieces) => pieces,
+        _ => vec![],
+    }
 }
 
 /// Whether a template works water (mill race, pier, pans…): its yard stands on a bank.

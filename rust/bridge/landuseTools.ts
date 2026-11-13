@@ -5,7 +5,12 @@ import type { FarmBuilding, FarmPlot, FarmSize, Polygon, Polyline, Vec2 } from '
 import { synchronousCoreWasm } from './wasmRuntime';
 export type FarmType = 'vierkanthof' | 'u-yard' | 'l-yard' | 'haufenhof' | 'longere' | 'einhaus' | 'masseria' | 'dvor'
   | 'norse-longhouse' | 'roundhouse' | 'minka' | 'hanok' | 'chinese-court' | 'indian-court' | 'ksar' | 'sahel-compound'
-  | 'kraal' | 'ail' | 'native-longhouse' | 'pueblo-ranch' | 'solar' | 'kancha' | 'stilt' | 'fungal-farm' | 'spore-farm';
+  | 'kraal' | 'ail' | 'native-longhouse' | 'pueblo-ranch' | 'solar' | 'kancha' | 'stilt' | 'fungal-farm' | 'spore-farm'
+  // Types laid out from their catalogue record (house size, core and ancillary buildings, layout).
+  | 'cascina' | 'villa-rustica' | 'cortijo' | 'bustan' | 'izbah' | 'tower-farm' | 'dhani' | 'thinnai' | 'newar-farm'
+  | 'smial-garden' | 'gnome-croft' | 'mage-steading' | 'elven-glade' | 'orc-steading' | 'goblin-burrow' | 'giant-steading'
+  | 'lizard-mound' | 'tipi-camp' | 'winter-house' | 'chum-camp' | 'agbo-ile' | 'tukul' | 'dhaka-homestead' | 'stone-huts'
+  | 'shamba' | 'calli-court' | 'wattle-homestead' | 'kainga' | 'maloca-clearing' | 'plank-house' | 'joglo' | 'nha-ba-gian';
 export const FARM_SIZES: FarmSize[] = ['cottage', 'family', 'large', 'manor'];
 export interface FarmContext { streetAlignedHomes?: boolean; culture: string; biome?: string; soil: number; slope: number;
   downhill: Vec2 | null; wet: number; exposed: number; market: number; west: number; pop?: number }

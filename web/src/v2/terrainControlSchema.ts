@@ -154,8 +154,8 @@ export const terrainRefinementFields: ParameterField[] = [
   number('detailNoise.shore', 'Coastal detail fade (m)', 'Atténuation côtière des détails (m)', 0, 50, .5),
 ];
 const hydroNumber = (key: string, en: string, fr: string, min: number, max: number, step: number, help?: [string, string]) => number(`hydrology.${key}`, en, fr, min, max, step, help);
-const hydroBool = (key: string, en: string, fr: string) => bool(`hydrology.${key}`, en, fr);
-const hydroSelect = (key: string, en: string, fr: string, options: [string, string, string][]) => select(`hydrology.${key}`, en, fr, simple(options));
+const hydroBool = (key: string, en: string, fr: string, help?: [string, string]) => bool(`hydrology.${key}`, en, fr, help);
+const hydroSelect = (key: string, en: string, fr: string, options: [string, string, string][], help?: [string, string]) => select(`hydrology.${key}`, en, fr, simple(options), help);
 export const terrainHydrologyFields: ParameterField[] = [
   hydroBool('enabled', 'Generate hydrology', 'Générer l’hydrologie'),
   hydroSelect('engine', 'Hydrology engine', 'Moteur hydrologique', [['rust', 'Rust', 'Rust'], ['vector', 'Vector', 'Vectoriel']]),
@@ -164,17 +164,22 @@ export const terrainHydrologyFields: ParameterField[] = [
   hydroSelect('condMode', 'Pre-hydrology conditioning', 'Conditionnement avant hydrologie', [['none', 'None', 'Aucun'], ['erosion', 'Fluvial erosion', 'Érosion fluviale'], ['breach', 'Sill breaching', 'Brèche des seuils'], ['both', 'Erosion and breaching', 'Érosion et brèches']]),
   hydroNumber('condStrength', 'Conditioning strength', 'Intensité du conditionnement', 0, 3, .05),
   hydroNumber('condDepth', 'Conditioning maximum breach depth (m)', 'Profondeur maximale des brèches de conditionnement (m)', 0, 500, 1),
+  hydroSelect('condBanks', 'Breach bank profile', 'Profil des berges des brèches', [['valley', 'Gentle valley sides', 'Versants de vallée doux'], ['step', 'Bed and short talus', 'Lit et talus court']],
+    ['How a breach meets the relief: gentle valley sides that vary along the course, or a narrow cut with a short talus.', 'Raccord d’une brèche au relief : versants de vallée doux qui varient le long du cours, ou entaille étroite à talus court.']),
   hydroNumber('condLength', 'Conditioning maximum breach length (m)', 'Longueur maximale des brèches de conditionnement (m)', 0, 100000, 100),
+  // Shared by both water chains.
+  hydroNumber('density', 'Tributary density', 'Densité des affluents', 0, 2, .05, ['More or fewer rivers: scales the catchment that starts a river. Lakes have their own settings.', 'Plus ou moins de rivières : change le bassin versant qui fait naître une rivière. Les lacs ont leurs propres réglages.']),
+  hydroBool('headwaters', 'Rivers reach their valley heads', 'Rivières jusqu’à la tête de leur vallée', ['Vector chain: a river continues up its valley to the head and takes the side valleys it passes.', 'Chaîne vectorielle : une rivière remonte sa vallée jusqu’à sa tête et prend les vallons latéraux qu’elle croise.']),
+  hydroSelect('lakes', 'Lake policy', 'Gestion des lacs', [['auto', 'Climate water budget', 'Bilan hydrique du climat'], ['none', 'No lakes', 'Aucun lac'], ['some', 'Carved lakes', 'Lacs creusés']],
+    ['No lakes turns off the kept basins and synthetic lakes; carved lakes only apply to the Rust chain.', 'Aucun lac désactive les cuvettes conservées et les lacs synthétiques ; les lacs creusés ne concernent que la chaîne Rust.']),
+  hydroNumber('lakeAbundance', 'Lake abundance', 'Abondance des lacs', 0, 2, .05, ['Share of the natural basins kept as lakes instead of being breached or filled: 0 keeps none, 2 keeps every suitable basin. The number of rivers has its own settings.', 'Part des cuvettes naturelles conservées en lacs au lieu d’être percées ou comblées : 0 n’en garde aucune, 2 garde toutes les cuvettes adaptées. Le nombre de rivières a ses propres réglages.']),
+  { ...hydroNumber('lakeCoverage', 'Maximum total lake coverage (%)', 'Couverture totale maximale des lacs (%)', 0, 100, .5, ['Kept basins stop once their combined area reaches this share of the map.', 'Les cuvettes conservées s’arrêtent quand leur surface cumulée atteint cette part de la carte.']), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
+  { ...hydroNumber('maxLakeArea', 'Maximum individual lake area (%)', 'Surface maximale d’un lac (%)', 0, 100, .5, ['A basin larger than this share of the map is breached or filled, not kept.', 'Une cuvette plus grande que cette part de la carte est percée ou comblée, pas conservée.']), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
 ];
 export const terrainRustHydrologyFields: ParameterField[] = [
   hydroSelect('main', 'Main channel', 'Cours d’eau principal', [['auto', 'Automatic', 'Automatique'], ['none', 'No main channel', 'Aucun cours principal'], ['stream', 'Stream', 'Ruisseau'], ['river', 'River', 'Rivière'], ['major', 'Major river', 'Fleuve']]),
-  hydroNumber('density', 'Tributary density', 'Densité des affluents', 0, 2, .05),
   hydroNumber('coastalStreams', 'Coastal stream density', 'Densité des cours côtiers', 0, 2, .05),
   hydroNumber('wetness', 'Water supply multiplier', 'Multiplicateur d’apport en eau', .1, 2, .1),
-  hydroSelect('lakes', 'Lake policy', 'Gestion des lacs', [['auto', 'Climate water budget', 'Bilan hydrique du climat'], ['none', 'No lakes', 'Aucun lac'], ['some', 'Carved lakes', 'Lacs creusés']]),
-  hydroNumber('lakeAbundance', 'Carved lake abundance', 'Abondance des lacs creusés', 0, 2, .05),
-  { ...hydroNumber('lakeCoverage', 'Maximum total lake coverage (%)', 'Couverture totale maximale des lacs (%)', 0, 100, .5), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
-  { ...hydroNumber('maxLakeArea', 'Maximum individual lake area (%)', 'Surface maximale d’un lac (%)', 0, 100, .5), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
   hydroNumber('minLakeArea', 'Minimum budget-lake area (m²)', 'Surface minimale des lacs à bilan (m²)', 0, 100000000, 100),
   hydroNumber('minLakeDepth', 'Minimum budget-lake depth (m)', 'Profondeur minimale des lacs à bilan (m)', 0, 100, .5),
   hydroSelect('meanders', 'Meander policy', 'Gestion des méandres', [['natural', 'Natural meanders', 'Méandres naturels'], ['reduced', 'Reduced meanders', 'Méandres réduits'], ['none', 'No added meanders', 'Aucun méandre ajouté']]),

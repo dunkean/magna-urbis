@@ -32,9 +32,13 @@ export function cityForestInput(seed: string, climate: { temperature: number; pr
 }
 
 const VEGETATION: readonly LandKind[] = ['forest', 'meadow', 'marsh', 'commons'];
+const atlasPlate = (r: ResolvedAppearance): boolean => r.composition.recipe.ground.look === 'atlas' && r.ground.traits.family === 'map';
 /** V2's vector overlay ownership: material/Illustrated grounds already paint their farmland. */
 export function cityOverlayLandKinds(r: ResolvedAppearance): true | ((kind: LandKind) => boolean) {
   const symbols = r.composition.vegetation.cartographic;
+  // An atlas plate is physical geography: the hypsometric tints and relief are the map. Woods stay as a faint wash
+  // (palette forestTint); fields, pastures and the other land-use polygons are not drawn.
+  if (atlasPlate(r)) return kind => kind === 'forest';
   if (r.ground.traits.family === 'material') return kind => symbols && VEGETATION.includes(kind);
   if (r.ground.traits.fantasy) return () => false;
   return symbols ? true : kind => !VEGETATION.includes(kind);
@@ -51,7 +55,7 @@ export function cityForestSettings(query: URLSearchParams) {
 /** The vector water remains visible through opaque rural ground washes. */
 export const cityWaterCutsLand = (r: ResolvedAppearance): boolean => r.composition.networks.water.visible && r.composition.networks.water.look === 'ink';
 /** A cached vector scene must be rebuilt when its layer ownership changes. */
-export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic]);
+export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic, atlasPlate(r)]);
 
 /** Both 2D hosts use the raster tile renderer and the retained map extent for decorative field scale. */
 export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number) {

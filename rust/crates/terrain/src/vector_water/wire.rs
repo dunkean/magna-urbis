@@ -480,10 +480,11 @@ pub fn request_with_clock(body: &[u8], now: &dyn Fn() -> f64) -> Result<Vec<u8>,
     out.finish()
 }
 fn validate_conditioning(s: &Conditioning) -> Result<(), String> {
-    if ![s.strength, s.max_depth, s.max_length]
+    if ![s.strength, s.max_depth, s.max_length, s.lakes, s.lake_area, s.lake_depth, s.lake_coverage, s.max_lake_area]
         .iter()
         .all(|v| v.is_finite())
         || !["none", "erosion", "breach", "both"].contains(&s.mode.as_str())
+        || !["", "valley", "step"].contains(&s.banks.as_str())
     {
         return Err("Invalid conditioning settings".into());
     }

@@ -47,9 +47,9 @@ export const DEFAULT_NEURAL_TUNING: NeuralTuning = {
 export const DEFAULT_HYDROLOGY: HydrologySettings = {
   enabled: true, main: 'auto', density: 1, wetness: 1, coastalStreams: 1, lakes: 'auto', meanders: 'natural', meanderIntensity: 1,
   estuary: 'auto', widthScale: 1, incision: 1, minLakeArea: 100000, minLakeDepth: 1,
-  lakeAbundance: .5, lakeCoverage: .05, maxLakeArea: .02, depressionPolicy: 'auto', maxBreachDepth: 12, maxBreachLength: 1000,
+  lakeAbundance: .8, lakeCoverage: .05, maxLakeArea: .02, depressionPolicy: 'auto', maxBreachDepth: 12, maxBreachLength: 1000,
   resolution: 512, compute: 'auto', engine: 'rust', erosionEnabled: true, showErosion: true,
-  condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000, riverArea: 0, lakeDepth: 1, lakeArea: 10, riverMode: 'vector',
+  condMode: 'both', condStrength: 2, condDepth: 8, condLength: 3000, condBanks: 'valley', headwaters: true, riverArea: 0, lakeDepth: 1, lakeArea: 10, riverMode: 'vector',
   flatSlope: 1, sinuosity: 1.8, vectorWidth: 3, vectorResolution: 1024, balance: true, braiding: 1,
   anabranching: true, terrainInfluence: true, avulsions: true, confluence: 'climate', deltas: true,
 };
@@ -150,7 +150,7 @@ export function validateTerrainSettings(value: unknown): asserts value is V2Terr
   }
   if (value.hydrology !== undefined) {
     if (!record(value.hydrology)) throw new Error('Invalid hydrology settings.');
-    const enums: Record<string, readonly unknown[]> = { main: ['auto', 'none', 'stream', 'river', 'major'], lakes: ['auto', 'none', 'some'], meanders: ['natural', 'reduced', 'none'], estuary: ['auto', 'simple', 'widening', 'funnel', 'tidal'], depressionPolicy: ['auto', 'fill'], resolution: [256, 512, 1024], compute: ['auto', 'cpu', 'gpu'], engine: ['vector', 'rust'], condMode: ['none', 'erosion', 'breach', 'both'], riverMode: ['vector', 'grid'], vectorResolution: [512, 1024], confluence: ['climate', 'drainage'] };
+    const enums: Record<string, readonly unknown[]> = { main: ['auto', 'none', 'stream', 'river', 'major'], lakes: ['auto', 'none', 'some'], meanders: ['natural', 'reduced', 'none'], estuary: ['auto', 'simple', 'widening', 'funnel', 'tidal'], depressionPolicy: ['auto', 'fill'], resolution: [256, 512, 1024], compute: ['auto', 'cpu', 'gpu'], engine: ['vector', 'rust'], condMode: ['none', 'erosion', 'breach', 'both'], condBanks: ['valley', 'step'], riverMode: ['vector', 'grid'], vectorResolution: [512, 1024], confluence: ['climate', 'drainage'] };
     const limits: Record<string, readonly [number, number]> = { density: [0, 2], coastalStreams: [0, 2], wetness: [.1, 2], lakeAbundance: [0, 2], lakeCoverage: [0, 1], maxLakeArea: [0, 1], minLakeArea: [0, 1e8], minLakeDepth: [0, 100], meanderIntensity: [0, 2], widthScale: [.5, 2], incision: [0, 2], maxBreachDepth: [0, 200], maxBreachLength: [0, 100000], condStrength: [0, 3], condDepth: [0, 500], condLength: [0, 100000], riverArea: [0, 5000], lakeDepth: [0, 500], lakeArea: [0, 100000], flatSlope: [0, 50], sinuosity: [1, 3.5], vectorWidth: [.1, 10], braiding: [0, 2] };
     for (const [key, entry] of Object.entries(value.hydrology)) {
       if (!(key in DEFAULT_HYDROLOGY)) throw new Error(`Unknown hydrology parameter: ${key}.`);

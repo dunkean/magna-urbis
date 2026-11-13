@@ -20,6 +20,12 @@ mod lots;
 pub(in crate::urban) mod camps;
 pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
 
+/// Share of the town plan's block area (inside the wall; without a wall, the
+/// core and middle zones) that may be open ground: the squares the plan drew
+/// plus the housing blocks reservations turn into markets, commons, parks or
+/// cemeteries.
+pub(super) const PLAN_OPEN: f64 = 0.03;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgrammeContext {
@@ -681,6 +687,37 @@ fn prepare_inner(
     let radii: Vec<OnceLock<f64>> = layout.blocks.iter().map(|_| OnceLock::new()).collect();
     let centroids: Vec<Point> = super::par::map(&layout.blocks, |_, b| centroid(&b.shape));
     let areas: Vec<f64> = super::par::map(&layout.blocks, |_, b| area(&b.shape));
+    // The town plan is built land: inside the wall, or without a wall in the
+    // core and middle zones, the open ground (the squares the plan drew, and
+    // the housing blocks turned into a market, a common, a park or a cemetery)
+    // totals at most `PLAN_OPEN` of the plan's block area. Past it a common,
+    // a park or a cemetery lies outside the plan, or takes a parcel. Nucleus
+    // figures (a plaza, a kraal) are the town's own form.
+    let rings: Vec<super::geometry::ContainmentIndex> = layout
+        .enclosures
+        .iter()
+        .map(|e| super::geometry::ContainmentIndex::new(&Shape { outer: e.path.clone(), holes: vec![] }))
+        .collect();
+    let mut enclosed: Vec<bool> = if isolated {
+        vec![false; layout.blocks.len()]
+    } else if rings.is_empty() {
+        layout.blocks.iter().map(|b| matches!(b.zone.as_str(), "core" | "middle")).collect()
+    } else {
+        super::par::map(&layout.blocks, |_, b| {
+            let at = super::geometry::interior_point(&b.shape);
+            rings.iter().any(|r| r.contains(at))
+        })
+    };
+    // A place that is all plan (a hamlet, a wall without a suburb) has no
+    // outside to send them to: its commons stay among its houses.
+    if !enclosed.iter().zip(&layout.blocks).any(|(e, b)| !*e && b.kind == "block") {
+        enclosed.fill(false);
+    }
+    let open_budget = PLAN_OPEN * enclosed.iter().zip(&areas).filter(|(e, _)| **e).map(|(_, a)| a).sum::<f64>();
+    let mut open_taken: f64 = layout.blocks.iter().enumerate()
+        .filter(|(bi, b)| enclosed[*bi] && matches!(b.kind.as_str(), "place" | "market" | "common" | "reserve:market" | "reserve:common"))
+        .map(|(bi, _)| areas[bi])
+        .sum();
     for di in reservation_order {
         let d = &mut demands[di];
         if d.requires.iter().any(|r| r == "navigableAccess") && !navigable {
@@ -887,6 +924,10 @@ fn prepare_inner(
                 && d.function == "common" && a > d.target_area.max(30.0) * slack {
                 return None;
             }
+            if !existing_open && enclosed[bi] && d.function == "common" && d.site != "nucleus"
+                && open_taken + a > open_budget {
+                return None;
+            }
             let c = centroids[bi];
             let score = if d.sites > 0 {
                 let facts = frame.facts(c, environment.get(bi));
@@ -957,6 +998,21 @@ fn prepare_inner(
             }
             out
         };
+        // Several sites of one demand share the plan's open budget.
+        let picks: Vec<(usize, usize, f64)> = picks
+            .into_iter()
+            .filter(|&(bi, _, _)| {
+                let converted = enclosed[bi] && layout.blocks[bi].kind == "block"
+                    && matches!(d.function.as_str(), "market" | "common");
+                if converted && d.function == "common" && d.site != "nucleus" && open_taken + areas[bi] > open_budget {
+                    return false;
+                }
+                if converted {
+                    open_taken += areas[bi];
+                }
+                true
+            })
+            .collect();
         let mut reserved_capacity = 0.0;
         for &(bi, street, front) in &picks {
             if context.intent == "activity" {
@@ -2055,11 +2111,14 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 .map_or([1, 1], |c| c.admissibility.floors);
             // A densified tissue (adaptive capacity) raises the floors toward
             // the upper bound its houses admit, never past it.
-            let drawn = tissue.1[0] + (tissue.1[1] - tissue.1[0]) * p.pressure.clamp(0.0, 1.0);
-            let top = f64::from(limits[1].max(limits[0]));
+            // The style's height ladder caps the storeys as massing.rs does.
+            let cap = super::forms::kit::storey_cap(&culture, pr.population, super::massing::user_core(layout, p.block));
+            let storeys = super::forms::kit::capped_storeys([tissue.1[0] as u32, tissue.1[1] as u32], cap).map(f64::from);
+            let drawn = storeys[0] + (storeys[1] - storeys[0]) * p.pressure.clamp(0.0, 1.0);
+            let top = f64::from(limits[1].max(limits[0])).min(cap.map_or(f64::MAX, f64::from));
             let floors = (drawn + (top - drawn).max(0.0) * densify)
                 .round()
-                .clamp(f64::from(limits[0]), top);
+                .clamp(f64::from(limits[0]).min(top), top);
             let capacity = household_capacity(
                 land_areas[pi],
                 tissue.0,

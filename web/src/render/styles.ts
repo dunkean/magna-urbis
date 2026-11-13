@@ -190,13 +190,15 @@ const OLD_SERIF = "'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio 
 const SCRIPT = "'Segoe Script', 'Lucida Handwriting', 'Snell Roundhand', 'Apple Chancery', 'URW Chancery L', 'Z003', 'Palatino Linotype', Georgia, serif";
 
 /**
- * School atlas: the hypsometric ramp is the map (lowland greens, yellows, browns, light summits; bathymetric blues at sea)
- * under a soft hillshade. Land use only tints it: woods a light green wash, fields a faint crop tint, no crowns, strips or hatching.
+ * School atlas: the hypsometric ramp is the map (lowland greens, yellows, ochres, browns, grey-white summits; bathymetric blues
+ * at sea) under a firm hillshade. No land-use polygons (cityOverlayLandKinds): only the woods, as a faint green wash.
  */
 const atlas = derive('atlas', 'Atlas', {
   paper: '#f4f1e8', ink: '#33404a', inkSoft: '#5b6975',
-  hypso: [[0, '#8fc27c'], [0.1, '#acd08c'], [0.24, '#d3e2a2'], [0.38, '#efe6ab'], [0.52, '#e9cd8f'], [0.68, '#d3a676'], [0.84, '#b48c6e'], [1, '#efebe6']],
-  shade: 0.72, grain: 0,
+  // Classic plate ramp (8 stops: the GPU ground reads no more): lowland green, light green, straw yellow, ochre, warm brown,
+  // dark brown, then through rock grey to snow white.
+  hypso: [[0, '#79b072'], [0.08, '#9cc787'], [0.2, '#cfdf9e'], [0.34, '#f0dd9a'], [0.5, '#e2b578'], [0.66, '#c38a5c'], [0.82, '#9d7360'], [1, '#efebe7']],
+  shade: 0.84, grain: 0,
   // Shore stop = coastline and river ink; the shallows are light and the sea darkens offshore (positions in shore bands, about 100 m).
   water: { stops: [[0, '#4f8fc2'], [0.12, '#bfe0f3'], [2.5, '#a3d0ee'], [8, '#83bbe3'], [20, '#6aa5d6']], bandFraction: .016 },
   ripple: '#e9f4fb', rippleOpacity: [0, 0, 0, 0],
@@ -205,7 +207,7 @@ const atlas = derive('atlas', 'Atlas', {
   fontFamily: SANS,
   // The V2 overlay is transparent, so a tint lays its colour over the ramp: grass classes sit close to the lowland green and vanish into it.
   land: { field: '#ecd57e', meadow: '#b4d68e', pasture: '#bfda95', forest: '#66a65c', orchard: '#a4cd86', garden: '#c4dd98', marsh: '#94cbc0', commons: '#c3da9c' },
-  landOpacity: 0.3, forestTint: 0.4, furlongAlpha: 0, waterAboveLand: true,
+  landOpacity: 0.3, forestTint: 0.26, furlongAlpha: 0, waterAboveLand: true,
   tex: { field: false, meadow: false, pasture: false, forest: false, orchard: false, garden: false, marsh: true, commons: false },
   stripAlpha: [0, 0], furrowAlpha: 0, hedgeOn: false, rural: { track: 0.55, way: 0.3, headland: 0 },
   stripA: '#f4ecb4', stripB: '#e6dc92', furrow: '#a89a55', hedge: '#4f8a4a',
@@ -296,13 +298,14 @@ const cadastre = derive('cadastre', 'Cadastre 1:1250', {
   landOpacity: 0.8, landBlend: 'multiply', waterAboveLand: true,
   tex: { field: true, meadow: false, pasture: false, forest: true, orchard: true, garden: false, marsh: true, commons: false },
   treeShape: 'dot',
-  stripA: '#f3ecd8', stripB: '#efe3c4', stripAlpha: [0, 0.5], furrow: '#1f1c1e', furrowAlpha: 0.65, hedge: '#3e5a2b', hedgeOn: false,
+  // Soft sepia furrows and a muted carmine (user, 2026-11-13: softer, less flashy); the plot lines stay the sheet's black ink.
+  stripA: '#f3ecd8', stripB: '#efe3c4', stripAlpha: [0, 0.5], furrow: '#5a5048', furrowAlpha: 0.42, hedge: '#3e5a2b', hedgeOn: false,
   treeFill: '#b8d08f', treeInk: '#5d7d3f', grass: '#6d8a4c', reed: '#6b94a8', orchardDot: '#5d7d3f',
   roadEdge: '#1f1c1e', roadFill: '#f8f3e3', trackFill: '#4a4446', bridgeDeck: '#f8f3e3', bridgeInk: '#1f1c1e',
-  farmRoof: '#dc6f86', farmInk: '#1f1c1e', farmYard: '#f0e8d0', marker: '#b3261e',
+  farmRoof: '#d3939a', farmInk: '#1f1c1e', farmYard: '#f0e8d0', marker: '#b3261e',
   urban: {
     street: '#f8f3e3', streetEdge: '#1f1c1e', yard: '#f3ecd8', garden: '#cfe4b4', gardenInk: '#6d9a4a',
-    mass: '#dc6f86', massEdge: '#2a1c20', massEdgeW: 0.36,
+    mass: '#d3939a', massEdge: '#2a1c20', massEdgeW: 0.36,
     plotLine: '#111111', plotAlpha: 0.85, plotLightAlpha: 0, plotW: 0.17,
     place: '#f8f3e3', placeInk: '#b9ae94',
     wall: '#1f1c1e', wallFill: '#b9b2a8', wallScale: 0.72, towerScale: 0.85,

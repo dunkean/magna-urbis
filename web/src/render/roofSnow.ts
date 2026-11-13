@@ -37,7 +37,7 @@ export function roofSnowShare(normal: readonly number[], light: number, heat = 0
   const hold = roofSnowCover(normal);
   if (!hold) return 0;
   const steep = clamp01((.86 - normal[2]) / .36), sun = clamp01(light * 2.2);
-  const slip = /^(metal|lead|slate)$/.test(cover) ? 1.35 : /^(thatch|reed|palm|turf)$/.test(cover) ? .55 : 1;
+  const slip = /^(metal|lead|slate|zinc|glass)$/.test(cover) ? 1.35 : /^(thatch|reed|palm|turf)$/.test(cover) ? .55 : 1;
   const warm = clamp01(heat) * (slip < 1 ? .5 : 1);
   // Flat roofs of the busiest households are shovelled after each fall (earthen terraces leak under a thaw).
   const cleared = normal[2] > .995 ? .4 * clamp01((heat - .6) * 2.5) : 0;
@@ -53,16 +53,22 @@ export function roofSnowRidgeMelt(heat: number, light: number): number {
 
 /** Plan (2D) roofs: the snow patch of one roof face (walls stay untouched). Geometry stays inside the face: `border`
  * leaves a narrow dark edge at the eaves, `ridge` (default: the same) a wider bare strip towards the top of the face.
+ * With a `seed`, each corner moves by up to half `jitter` of its way to the middle of the face, in or out but never
+ * to the face's edge, so the bare rim is not a band of constant width (same rule and same amplitude on every roof).
  * The 3D view whitens the roof triangles in place instead (an inset per triangle draws the triangulation as stripes). */
-export function roofSnowPatches(points: readonly Vertex3[], normal: readonly number[], border = .055, ridge = border): { points: Vertex3[]; weight: number }[] {
+export function roofSnowPatches(points: readonly Vertex3[], normal: readonly number[], border = .055, ridge = border, seed?: number, jitter = 0): { points: Vertex3[]; weight: number }[] {
   const weight = roofSnowCover(normal);
   if (!weight || points.length < 3) return [];
   const centre = points.reduce((s, p) => ({ x: s.x + p.x / points.length, y: s.y + p.y / points.length, z: s.z + p.z / points.length }), { x: 0, y: 0, z: 0 });
   let low = Infinity, high = -Infinity;
   for (const p of points) { low = Math.min(low, p.z); high = Math.max(high, p.z); }
   const span = high - low;
-  const inset = points.map(p => {
-    const k = span > .05 ? border + (ridge - border) * (p.z - low) / span : border;
+  const inset = points.map((p, i) => {
+    let k = span > .05 ? border + (ridge - border) * (p.z - low) / span : border;
+    if (seed !== undefined) {
+      let h = Math.imul(seed ^ Math.imul(i + 1, 0x9e3779b1), 0x85ebca6b); h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d);
+      k = Math.max(.025, Math.min(.85, k + jitter * (((h ^ (h >>> 13)) >>> 8 & 0xffff) / 0xffff - .5)));
+    }
     return { x: p.x + (centre.x - p.x) * k, y: p.y + (centre.y - p.y) * k, z: p.z + (centre.z - p.z) * k };
   });
   return [{ points: inset, weight }];

@@ -39,7 +39,7 @@ export class StudioClient {
   private syncRenderer: CanvasRenderer | null = null;
   private id = 0;
   private drawingId = 0;
-  private pending: { id: number; resolve: (world: World) => void; reject: (error: Error) => void } | null = null;
+  private pending: { id: number; resolve: (world: World) => void; reject: (error: Error) => void; progress?: (p: V2Progress) => void } | null = null;
   /** Lazy resource payload requests (worker message `resources`), and the payload of the last terrain. */
   private resourceRequests = new Map<number, { resolve: (payload: ResourcePayload | undefined) => void; reject: (error: Error) => void }>();
   private resourceCache?: { key: string; payload: Promise<ResourcePayload | undefined> };
@@ -113,7 +113,7 @@ export class StudioClient {
       const lazy = this.resourceRequests.get(m.id);
       if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
       if (m.id !== this.pending?.id) return;
-      if (m.type === 'progress') this.onProgress(m.progress);
+      if (m.type === 'progress') (this.pending!.progress ?? this.onProgress)(m.progress);
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldLanduse(m.world)); this.retained={id:m.id,world};p.resolve(world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
@@ -145,14 +145,16 @@ export class StudioClient {
     render.postMessage({ type: 'display', display: this.display });
     if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
   }
-  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<World> {
+  /** `progress` replaces the page progress for this run (background builds stay silent). */
+  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string,
+    progress?: (p: V2Progress) => void): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
     void import('./benchRenderer').catch(() => undefined);
     void import('../ui/terrainRenderer').then(module => module.prewarmTerrainRenderer(), () => undefined);
     const id = ++this.id;
     return new Promise((resolve, reject) => {
-      this.pending = { id, resolve, reject };
+      this.pending = { id, resolve, reject, progress };
       const dispatch = async () => {
         if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural'
           && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {

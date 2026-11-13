@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import './vectorWaterWasm';
 import type { TerrainData } from '../../rust/bridge/terrain';
 import type { HydrologyData } from '../../rust/bridge/hydrology';
 import type { TerrainLayer } from '../src/gen/types';
@@ -46,19 +47,20 @@ describe('V2 bench terrain contract', () => {
     settings.terrain!.hydrology!.engine = 'rust';
     expect(independent.terrain).toEqual({ motifSize: 10000, hydrology: { engine: 'vector' } });
   });
+  // Absent controls take today's defaults (10 km scale since 5dc3edf3); an import keeps them absent and the cache key stable.
   it('preserves historical absent terrain controls on project import instead of applying new-project defaults', () => {
     const legacy = defaultSettings(); delete legacy.terrain; legacy.extent = 'auto';
     const originalKey = terrainCacheKey(legacy);
     const loaded = parseProject(serializeProject(legacy)).settings;
     expect(loaded.terrain).toBeUndefined();
     expect(loaded.extent).toBe('auto');
-    expect(effectiveTerrainSettings(loaded, 6000)).toMatchObject({ motifSize: 3000, hydrology: { engine: 'rust' } });
+    expect(effectiveTerrainSettings(loaded, 6000)).toMatchObject({ motifSize: 10000, hydrology: { engine: 'rust' } });
     expect(terrainCacheKey(loaded)).toBe(originalKey);
     // Partial historical controls also retain their original scale and implicit hydrology engine.
     legacy.terrain = { hydrology: { density: .75 } };
     const partial = parseProject(serializeProject(legacy)).settings;
     expect(partial.terrain).toEqual({ hydrology: { density: .75 } });
-    expect(effectiveTerrainSettings(partial, 6000)).toMatchObject({ motifSize: 3000, hydrology: { engine: 'rust', density: .75 } });
+    expect(effectiveTerrainSettings(partial, 6000)).toMatchObject({ motifSize: 10000, hydrology: { engine: 'rust', density: .75 } });
   });
   it('forwards the vector water recipe while generating only terrain, without any settlement or urban stage', async () => {
     const settings = defaultSettings(); settings.extent = 2400; settings.runtime!.compute = 'cpu';

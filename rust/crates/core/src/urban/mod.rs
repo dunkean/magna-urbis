@@ -826,6 +826,10 @@ pub struct QuarterOverride {
     pub culture: Option<String>,
     pub tissue: Option<String>,
     pub density: Option<f64>,
+    /// User-set zone of the quarter: `core` lifts the style's height ladder
+    /// (`forms/kit.rs` `storey_cap`) to its top step whatever the population.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
     /// New outline (`urban/edits.rs`): clipped to dry land, the other quarters
     /// and the main streets; the quarter's interior is redrawn inside it.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -40,4 +40,12 @@ describe('City Bench contours', () => {
     terrain.caveMask = new Uint8Array(32 * 32);
     expect(cityContourPaths(terrain, 'mountains', 1)).toEqual({ step: 0, thin: '', index: '' });
   });
+
+  it('fixed detail traces the V1 set once and draws it at every zoom', () => {
+    const terrain = ramp(), fixed = cityContourPaths(terrain, 'flat', 1, false, undefined, 'fixed');
+    expect(fixed.step).toBe(2);
+    expect(fixed.thin.length).toBeGreaterThan(0);
+    expect(cityContourPaths(terrain, 'flat', 0.05, false, undefined, 'fixed')).toBe(fixed);
+    expect(cityContourPaths(terrain, 'flat', 1, false, undefined, 'fixed', true).step).toBe(4);
+  });
 });

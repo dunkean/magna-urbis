@@ -22,25 +22,25 @@
       { "role": "storage.elevator", "function": "collective", "per": 0, "minPop": 0, "max": 1, "site": "spread", "area": [100, 200], "maxPop": 1 }
     ],
     "art-deco-metropolis": [
-      { "role": "commerce.skyscraper", "function": "collective", "per": 8000, "minPop": 6000, "max": 16, "site": "nucleus", "area": [900, 3000], "landmark": true, "district": "market" }
+      { "role": "commerce.skyscraper", "function": "collective", "per": 8000, "minPop": 50000, "max": 16, "site": "nucleus", "area": [900, 3000], "landmark": true, "district": "market" }
     ],
     "dieselpunk": [
-      { "role": "commerce.skyscraper", "function": "collective", "per": 10000, "minPop": 6000, "max": 10, "site": "nucleus", "area": [900, 3000], "landmark": true, "district": "market" },
+      { "role": "commerce.skyscraper", "function": "collective", "per": 10000, "minPop": 50000, "max": 10, "site": "nucleus", "area": [900, 3000], "landmark": true, "district": "market" },
       { "role": "civic.power-plant", "function": "workshop", "per": 30000, "minPop": 8000, "max": 3, "site": "edge", "area": [15000, 40000], "district": "craft" },
-      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 10000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true }
+      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 100000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true }
     ],
     "soviet-socialist": [
-      { "role": "commerce.skyscraper", "function": "collective", "per": 0, "minPop": 30000, "max": 1, "site": "nucleus", "area": [1500, 4000], "landmark": true, "district": "civic" },
-      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 20000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true }
+      { "role": "commerce.skyscraper", "function": "collective", "per": 0, "minPop": 50000, "max": 1, "site": "nucleus", "area": [1500, 4000], "landmark": true, "district": "civic" },
+      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 100000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true }
     ],
     "post-socialist-european": [
       { "role": "commerce.mall", "function": "collective", "per": 40000, "minPop": 10000, "max": 3, "site": "gate", "area": [8000, 30000], "district": "market" },
-      { "role": "commerce.skyscraper", "function": "collective", "per": 30000, "minPop": 20000, "max": 4, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" },
+      { "role": "commerce.skyscraper", "function": "collective", "per": 30000, "minPop": 50000, "max": 4, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" },
       { "role": "worship.parish", "function": "collective", "per": 3000, "minPop": 150, "max": 40, "site": "spread", "area": [300, 1200] }
     ],
     "dystopian-brutalism": [
-      { "role": "civic.megastructure", "function": "collective", "per": 30000, "minPop": 8000, "max": 4, "site": "spread", "area": [6000, 20000], "landmark": true },
-      { "role": "housing.slab", "function": "collective", "per": 800, "minPop": 1000, "max": 120, "site": "spread", "area": [1500, 4000] }
+      { "role": "civic.megastructure", "function": "collective", "per": 30000, "minPop": 100000, "max": 4, "site": "spread", "area": [6000, 20000], "landmark": true },
+      { "role": "housing.slab", "function": "collective", "per": 800, "minPop": 30000, "max": 120, "site": "spread", "area": [1500, 4000] }
     ],
     "american-suburbia": [
       { "role": "commerce.mall", "function": "collective", "per": 20000, "minPop": 4000, "max": 6, "site": "gate", "area": [8000, 30000], "district": "market" },
@@ -56,7 +56,7 @@
     ],
     "european-contemporary": [
       { "role": "worship.parish", "function": "collective", "per": 5000, "minPop": 300, "max": 20, "site": "spread", "area": [300, 1200] },
-      { "role": "housing.tower", "function": "collective", "per": 10000, "minPop": 20000, "max": 6, "site": "spread", "area": [800, 2400] }
+      { "role": "housing.tower", "function": "collective", "per": 10000, "minPop": 50000, "max": 6, "site": "spread", "area": [800, 2400] }
     ],
     "eco-city": [
       { "role": "civic.vertical-farm", "function": "collective", "per": 10000, "minPop": 2000, "max": 6, "site": "spread", "area": [1500, 4000] },
@@ -66,28 +66,28 @@
       { "role": "worship.parish", "function": "collective", "per": 6000, "minPop": 300, "max": 12, "site": "spread", "area": [300, 1200] }
     ],
     "global-high-rise": [
-      { "role": "housing.tower", "function": "collective", "per": 800, "minPop": 1500, "max": 200, "site": "spread", "area": [800, 2400] },
+      { "role": "housing.tower", "function": "collective", "per": 800, "minPop": 50000, "max": 200, "site": "spread", "area": [800, 2400] },
       { "role": "worship.temple", "function": "collective", "per": 20000, "minPop": 3000, "max": 8, "site": "spread", "area": [300, 1500] }
     ],
     "gulf-contemporary": [
       { "role": "worship.mosque.friday", "function": "collective", "per": 40000, "minPop": 1500, "max": 6, "site": "nucleus", "area": [1500, 10000], "landmark": true, "district": "religious" },
       { "role": "worship.masjid", "function": "collective", "per": 3000, "minPop": 500, "max": 40, "site": "spread", "area": [200, 900] },
       { "role": "commerce.mall", "function": "collective", "per": 25000, "minPop": 4000, "max": 6, "site": "gate", "area": [8000, 30000], "district": "market" },
-      { "role": "commerce.skyscraper", "function": "collective", "per": 8000, "minPop": 6000, "max": 20, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" }
+      { "role": "commerce.skyscraper", "function": "collective", "per": 8000, "minPop": 50000, "max": 20, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" }
     ],
     "japanese-contemporary": [
       { "role": "worship.temple", "function": "collective", "per": 6000, "minPop": 600, "max": 20, "site": "spread", "area": [300, 1500] },
       { "role": "worship.shrine", "function": "collective", "per": 3000, "minPop": 300, "max": 30, "site": "spread", "area": [100, 600] },
-      { "role": "housing.tower", "function": "collective", "per": 15000, "minPop": 20000, "max": 10, "site": "spread", "area": [800, 2400] }
+      { "role": "housing.tower", "function": "collective", "per": 15000, "minPop": 50000, "max": 10, "site": "spread", "area": [800, 2400] }
     ],
     "chinese-megacity": [
-      { "role": "housing.tower", "function": "collective", "per": 600, "minPop": 1500, "max": 300, "site": "spread", "area": [800, 2400] },
+      { "role": "housing.tower", "function": "collective", "per": 600, "minPop": 50000, "max": 300, "site": "spread", "area": [800, 2400] },
       { "role": "worship.temple", "function": "collective", "per": 50000, "minPop": 10000, "max": 4, "site": "spread", "area": [300, 1500] },
       { "role": "commerce.mall", "function": "collective", "per": 25000, "minPop": 8000, "max": 6, "site": "gate", "area": [8000, 30000], "district": "market" }
     ],
     "korean-high-rise": [
-      { "role": "housing.slab", "function": "collective", "per": 800, "minPop": 1500, "max": 150, "site": "spread", "area": [1500, 4000] },
-      { "role": "housing.tower", "function": "collective", "per": 2500, "minPop": 3000, "max": 80, "site": "spread", "area": [800, 2400] },
+      { "role": "housing.slab", "function": "collective", "per": 800, "minPop": 30000, "max": 150, "site": "spread", "area": [1500, 4000] },
+      { "role": "housing.tower", "function": "collective", "per": 2500, "minPop": 50000, "max": 80, "site": "spread", "area": [800, 2400] },
       { "role": "worship.church", "function": "collective", "per": 4000, "minPop": 500, "max": 30, "site": "spread", "area": [300, 1200] },
       { "role": "worship.temple", "function": "collective", "per": 30000, "minPop": 5000, "max": 4, "site": "spread", "area": [300, 1500] }
     ],
@@ -111,7 +111,7 @@
     "sub-saharan-african-metropolis": [
       { "role": "worship.mosque.friday", "function": "collective", "per": 40000, "minPop": 2000, "max": 6, "site": "nucleus", "area": [1500, 10000], "landmark": true, "district": "religious" },
       { "role": "worship.parish", "function": "collective", "per": 4000, "minPop": 300, "max": 30, "site": "spread", "area": [300, 1200] },
-      { "role": "commerce.office-block", "function": "collective", "per": 5000, "minPop": 20000, "max": 20, "site": "nucleus", "area": [600, 2400], "district": "market" }
+      { "role": "commerce.office-block", "function": "collective", "per": 5000, "minPop": 30000, "max": 20, "site": "nucleus", "area": [600, 2400], "district": "market" }
     ],
     "informal-urban-expansion": [
       { "role": "worship.parish", "function": "collective", "per": 3000, "minPop": 150, "max": 40, "site": "spread", "area": [300, 1200] },
@@ -124,10 +124,10 @@
       { "role": "defence.tower", "function": "collective", "per": 2000, "minPop": 200, "max": 12, "site": "hill", "area": [60, 200] }
     ],
     "cyberpunk": [
-      { "role": "civic.megastructure", "function": "collective", "per": 30000, "minPop": 10000, "max": 4, "site": "spread", "area": [6000, 20000], "landmark": true },
-      { "role": "civic.arcology", "function": "collective", "per": 0, "minPop": 30000, "max": 1, "site": "nucleus", "area": [10000, 40000], "landmark": true, "district": "civic" },
-      { "role": "housing.tower", "function": "collective", "per": 1500, "minPop": 2000, "max": 200, "site": "spread", "area": [800, 2400] },
-      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 20000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true }
+      { "role": "civic.megastructure", "function": "collective", "per": 30000, "minPop": 100000, "max": 4, "site": "spread", "area": [6000, 20000], "landmark": true },
+      { "role": "civic.arcology", "function": "collective", "per": 0, "minPop": 200000, "max": 1, "site": "nucleus", "area": [10000, 40000], "landmark": true, "district": "civic" },
+      { "role": "housing.tower", "function": "collective", "per": 1500, "minPop": 50000, "max": 200, "site": "spread", "area": [800, 2400] },
+      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 100000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true }
     ],
     "solarpunk": [
       { "role": "civic.vertical-farm", "function": "collective", "per": 4000, "minPop": 800, "max": 20, "site": "spread", "area": [1500, 4000] },
@@ -138,14 +138,14 @@
     ],
     "atompunk-retrofuturist": [
       { "role": "civic.habitat-dome", "function": "collective", "per": 15000, "minPop": 2000, "max": 6, "site": "spread", "area": [1500, 8000] },
-      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 5000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true },
+      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 50000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true },
       { "role": "civic.power-plant.atomic", "function": "workshop", "per": 0, "minPop": 15000, "max": 1, "site": "edge", "area": [15000, 40000], "district": "craft" },
       { "role": "civic.power-plant", "function": "collective", "per": 0, "minPop": 0, "max": 1, "site": "spread", "area": [100, 200], "maxPop": 1 },
       { "role": "housing.tower", "function": "collective", "per": 0, "minPop": 0, "max": 1, "site": "spread", "area": [100, 200], "maxPop": 1 }
     ],
     "corporate-arcology": [
-      { "role": "civic.arcology", "function": "collective", "per": 0, "minPop": 500, "max": 1, "site": "nucleus", "area": [10000, 40000], "landmark": true, "district": "civic" },
-      { "role": "civic.megastructure", "function": "collective", "per": 40000, "minPop": 15000, "max": 3, "site": "spread", "area": [6000, 20000], "landmark": true }
+      { "role": "civic.arcology", "function": "collective", "per": 0, "minPop": 100000, "max": 1, "site": "nucleus", "area": [10000, 40000], "landmark": true, "district": "civic" },
+      { "role": "civic.megastructure", "function": "collective", "per": 40000, "minPop": 100000, "max": 3, "site": "spread", "area": [6000, 20000], "landmark": true }
     ],
     "futuristic-space-colony": [
       { "role": "civic.habitat-dome", "function": "collective", "per": 0, "minPop": 50, "max": 1, "site": "nucleus", "area": [2000, 12000], "landmark": true, "district": "civic" },
@@ -879,8 +879,8 @@
       { "role": "civic.fire-station", "function": "collective", "per": 6000, "minPop": 2000, "max": 16, "site": "spread", "area": [150, 500] },
       { "role": "civic.power-house", "function": "workshop", "per": 40000, "minPop": 8000, "max": 3, "site": "downstream", "area": [900, 3500], "district": "craft" },
       { "role": "civic.water-tower", "function": "collective", "per": 12000, "minPop": 1500, "max": 8, "site": "hill", "area": [100, 300] },
-      { "role": "commerce.skyscraper", "function": "collective", "per": 30000, "minPop": 25000, "max": 6, "site": "nucleus", "area": [900, 3000], "landmark": true, "district": "market" },
-      { "role": "commerce.office-block", "function": "collective", "per": 2500, "minPop": 5000, "max": 40, "site": "nucleus", "area": [500, 2000], "district": "market" },
+      { "role": "commerce.skyscraper", "function": "collective", "per": 30000, "minPop": 50000, "max": 6, "site": "nucleus", "area": [900, 3000], "landmark": true, "district": "market" },
+      { "role": "commerce.office-block", "function": "collective", "per": 2500, "minPop": 30000, "max": 40, "site": "nucleus", "area": [500, 2000], "district": "market" },
       { "role": "commerce.department-store", "function": "collective", "per": 20000, "minPop": 8000, "max": 4, "site": "nucleus", "area": [1200, 4500], "district": "market" },
       { "role": "commerce.bank", "function": "collective", "per": 8000, "minPop": 2500, "max": 10, "site": "nucleus", "area": [300, 1100], "district": "market" },
       { "role": "commerce.hotel", "function": "collective", "per": 10000, "minPop": 3000, "max": 8, "site": "gate", "area": [500, 2000] },
@@ -902,19 +902,19 @@
       { "role": "commerce.market", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "nucleus", "area": [1000, 20000], "perCapita": 0.25, "landmark": true, "district": "market" },
       { "role": "civic.townhall", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "nucleus", "area": [1200, 6000], "landmark": true, "district": "civic" },
       { "role": "civic.monument", "function": "collective", "per": 0, "minPop": 3000, "max": 1, "site": "nucleus", "area": [300, 1500], "landmark": true, "district": "civic" },
-      { "role": "housing.slab", "function": "collective", "per": 1200, "minPop": 1500, "max": 80, "site": "spread", "area": [1500, 4000] },
-      { "role": "housing.tower", "function": "collective", "per": 4000, "minPop": 8000, "max": 30, "site": "spread", "area": [800, 2400] },
+      { "role": "housing.slab", "function": "collective", "per": 1200, "minPop": 30000, "max": 80, "site": "spread", "area": [1500, 4000] },
+      { "role": "housing.tower", "function": "collective", "per": 4000, "minPop": 50000, "max": 30, "site": "spread", "area": [800, 2400] },
       { "role": "civic.school", "function": "collective", "per": 2500, "minPop": 600, "max": 40, "site": "spread", "area": [600, 2000] },
       { "role": "civic.library", "function": "collective", "per": 0, "minPop": 6000, "max": 1, "site": "nucleus", "area": [600, 2400], "landmark": true, "district": "civic" },
       { "role": "civic.theatre", "function": "collective", "per": 20000, "minPop": 8000, "max": 4, "site": "nucleus", "area": [800, 2600], "district": "civic" },
       { "role": "civic.station", "function": "collective", "per": 0, "minPop": 2500, "max": 1, "site": "gate", "area": [2500, 12000], "landmark": true },
       { "role": "civic.stadium", "function": "collective", "per": 0, "minPop": 15000, "max": 1, "site": "edge", "area": [20000, 40000], "landmark": true },
       { "role": "civic.power-plant", "function": "workshop", "per": 50000, "minPop": 20000, "max": 2, "site": "edge", "area": [15000, 40000], "district": "craft" },
-      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 30000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true },
+      { "role": "civic.tv-tower", "function": "collective", "per": 0, "minPop": 100000, "max": 1, "site": "hill", "area": [400, 1500], "landmark": true },
       { "role": "civic.fire-station", "function": "collective", "per": 8000, "minPop": 3000, "max": 12, "site": "spread", "area": [200, 600] },
       { "role": "civic.water-tower", "function": "collective", "per": 15000, "minPop": 1500, "max": 6, "site": "hill", "area": [100, 300] },
       { "role": "commerce.department-store", "function": "collective", "per": 30000, "minPop": 10000, "max": 3, "site": "nucleus", "area": [1500, 5000], "district": "market" },
-      { "role": "commerce.office-block", "function": "collective", "per": 5000, "minPop": 10000, "max": 20, "site": "nucleus", "area": [600, 2400], "district": "market" },
+      { "role": "commerce.office-block", "function": "collective", "per": 5000, "minPop": 30000, "max": 20, "site": "nucleus", "area": [600, 2400], "district": "market" },
       { "role": "commerce.skyscraper", "function": "collective", "per": 0, "minPop": 50000, "max": 1, "site": "nucleus", "area": [1500, 4000], "landmark": true, "district": "civic" },
       { "role": "commerce.market.hall", "function": "collective", "per": 20000, "minPop": 5000, "max": 4, "site": "spread", "area": [900, 3500], "district": "market" },
       { "role": "commerce.tavern", "function": "collective", "per": 1500, "minPop": 150, "max": 40, "site": "spread", "area": [80, 300] },
@@ -927,9 +927,9 @@
       { "role": "commerce.market", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "nucleus", "area": [600, 16000], "perCapita": 0.2, "landmark": true, "district": "market" },
       { "role": "civic.townhall", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "nucleus", "area": [900, 5000], "landmark": true, "district": "civic" },
       { "role": "commerce.mall", "function": "collective", "per": 40000, "minPop": 8000, "max": 4, "site": "gate", "area": [8000, 30000], "district": "market" },
-      { "role": "commerce.office-block", "function": "collective", "per": 3000, "minPop": 6000, "max": 40, "site": "nucleus", "area": [600, 2400], "district": "market" },
-      { "role": "commerce.skyscraper", "function": "collective", "per": 25000, "minPop": 20000, "max": 10, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" },
-      { "role": "housing.tower", "function": "collective", "per": 3000, "minPop": 6000, "max": 60, "site": "spread", "area": [800, 2400] },
+      { "role": "commerce.office-block", "function": "collective", "per": 3000, "minPop": 30000, "max": 40, "site": "nucleus", "area": [600, 2400], "district": "market" },
+      { "role": "commerce.skyscraper", "function": "collective", "per": 25000, "minPop": 50000, "max": 10, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" },
+      { "role": "housing.tower", "function": "collective", "per": 3000, "minPop": 50000, "max": 60, "site": "spread", "area": [800, 2400] },
       { "role": "commerce.hotel", "function": "collective", "per": 15000, "minPop": 5000, "max": 8, "site": "gate", "area": [600, 2400] },
       { "role": "civic.school", "function": "collective", "per": 2500, "minPop": 600, "max": 40, "site": "spread", "area": [600, 2000] },
       { "role": "civic.library", "function": "collective", "per": 0, "minPop": 8000, "max": 1, "site": "nucleus", "area": [800, 3000], "landmark": true, "district": "civic" },
@@ -958,9 +958,9 @@
     "futuristic": [
       { "role": "commerce.market", "function": "market", "per": 0, "minPop": 300, "max": 1, "site": "nucleus", "area": [800, 16000], "perCapita": 0.2, "landmark": true, "district": "market" },
       { "role": "civic.townhall", "function": "collective", "per": 0, "minPop": 1500, "max": 1, "site": "nucleus", "area": [900, 5000], "landmark": true, "district": "civic" },
-      { "role": "housing.tower", "function": "collective", "per": 2500, "minPop": 3000, "max": 80, "site": "spread", "area": [800, 2400] },
-      { "role": "commerce.skyscraper", "function": "collective", "per": 15000, "minPop": 8000, "max": 12, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" },
-      { "role": "commerce.office-block", "function": "collective", "per": 3000, "minPop": 4000, "max": 40, "site": "nucleus", "area": [600, 2400], "district": "market" },
+      { "role": "housing.tower", "function": "collective", "per": 2500, "minPop": 50000, "max": 80, "site": "spread", "area": [800, 2400] },
+      { "role": "commerce.skyscraper", "function": "collective", "per": 15000, "minPop": 50000, "max": 12, "site": "nucleus", "area": [1200, 4000], "landmark": true, "district": "market" },
+      { "role": "commerce.office-block", "function": "collective", "per": 3000, "minPop": 30000, "max": 40, "site": "nucleus", "area": [600, 2400], "district": "market" },
       { "role": "commerce.mall", "function": "collective", "per": 30000, "minPop": 10000, "max": 4, "site": "gate", "area": [8000, 30000], "district": "market" },
       { "role": "civic.station", "function": "collective", "per": 0, "minPop": 2500, "max": 1, "site": "gate", "area": [3000, 14000], "landmark": true },
       { "role": "civic.stadium", "function": "collective", "per": 0, "minPop": 30000, "max": 1, "site": "edge", "area": [20000, 40000], "landmark": true },

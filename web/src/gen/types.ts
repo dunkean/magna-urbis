@@ -116,6 +116,10 @@ export interface FarmBuilding {
   poly: Polygon; use: string; arch: string; roof: RoofKind; storeys?: number; material?: string;
   /** Gatehouse with a carriage passage (the way into the yard runs through it). */
   passage?: boolean;
+  /** Massing of the building as the town buildings carry it (`programme.massing`: one `MassingPiece` of
+   * render/cityMassing.ts with `volumes[]`, composed roofs, culture materials), raised in Rust by the code of the
+   * settlement farmsteads for the farm's `culture` and `type`. Coordinates in map metres, heights above the ground. */
+  massing?: unknown[];
 }
 /** Piece of a farm lot: farmyard / garden / orchard / paddock partition the lot; ponds, pens, threshing floors and the raised platform lie inside it. */
 export interface FarmPlot { kind: 'farmyard' | 'garden' | 'orchard' | 'paddock' | 'pond' | 'pen' | 'threshing-floor' | 'platform'; poly: Polygon }
@@ -125,7 +129,8 @@ export interface Farmstead {
   /** Building footprints (same order as `parts`). */
   buildings: Polygon[]; yard: Polygon; drive: Polyline;
   // ---- farmstead variety (Rust landuse/farms)
-  /** Farm type (vierkanthof, longere, einhaus, l-yard, u-yard, haufenhof, masseria, norse-longhouse, minka, ...). */
+  /** Farm type: an id of the `farmstead.types` catalogue (vierkanthof, longere, masseria, bustan, joglo, dhani, ...),
+   * drawn among the types of `culture` (the culture of the nearest settlement) with the site rules of the land-use stage. */
   type?: string; size?: FarmSize; culture?: string;
   /** The farm lot: a rectangle on its track, partitioned by the farmyard / garden / orchard / paddock plots. */
   lot?: Polygon;

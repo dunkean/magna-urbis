@@ -14,7 +14,7 @@ import type { ParentMember3dVisual, Parent3dScene } from '../ui/urbanParent3d';
 import { roleFamily, type CityPalette } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
 import { loftRidges, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof, type ResolvedVolume } from './cityMassing';
-import { buildingTint } from './buildingPalette';
+import { buildingTint, tintedWallColor } from './buildingPalette';
 import { lightCrowns, type TreeDwelling } from './cityTrees';
 const TREE_CROWNS = ['city3d:tree:crown@5a7b41', 'city3d:tree:crown@5d7f44', 'city3d:tree:crown@618347', 'city3d:tree:crown@65874a'];
 import type { LotEnclosure } from '../../../rust/bridge/urban';
@@ -63,8 +63,10 @@ const FAMILY_MASSING: Record<string, Massing> = {
 const COVERS: Record<string, MaterialPattern> = {
   tile: 'tile', slate: 'stone', thatch: 'thatch', reed: 'thatch', palm: 'thatch', bamboo: 'wood', shingle: 'wood', bark: 'wood', turf: 'earth', hide: 'fabric', felt: 'fabric',
   earth: 'earth', plaster: 'plain', stone: 'stone', snow: 'snow', metal: 'stone', lead: 'stone', fungal: 'plain', ruin: 'stone',
+  zinc: 'stone', bitumen: 'earth', glass: 'plain',
 };
-const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain', bamboo: 'wood', wattle: 'earth', hide: 'fabric', coral: 'stone' };
+const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain', bamboo: 'wood', wattle: 'earth', hide: 'fabric', coral: 'stone',
+  concrete: 'stone', glass: 'plain', steel: 'stone', ashlar: 'stone' };
 CITY3D_MATERIALS.push(...Object.entries(COVERS).map(([k, pattern]) => ({ id: `city3d:cover:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
   ...Object.entries(WALLS).map(([k, pattern]) => ({ id: `city3d:wall:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
   { id: 'city3d:wall:opening', label: 'opening', roles: [], pattern: 'wood', origin: 'city3d', source_ref: null } as HouseMaterial,
@@ -214,8 +216,11 @@ function flatRoof(roof: RoofBuilder, surface: Surface, z: number, material: stri
 // Six-digit suffixes are final sRGB; bucket tone, never individual channels.
 const hex6 = (t: readonly number[]): string => t.map(v => Math.max(0, Math.min(255, Math.round(v * 255))).toString(16).padStart(2, '0')).join('');
 const tinted = (id: string, tint: string): string => tint ? `${id}@${tint}` : id;
-function paletteSlots(plain: MaterialSlots, culture: string, wall: string, cover: string, tone: number, role: string): MaterialSlots {
-  const p = buildingTint(culture, wall, cover, Math.round(tone * 15) / 15, role), w = tinted(plain.coating, hex6(p.wall));
+/** `tint`: wall colour the volume asks for ("#rrggbb"); the wall goes three quarters of the way to its muted tone,
+ * by the helper the 2D plan uses (tintedWallColor). */
+function paletteSlots(plain: MaterialSlots, culture: string, wall: string, cover: string, tone: number, role: string, tint?: string): MaterialSlots {
+  const p = buildingTint(culture, wall, cover, Math.round(tone * 15) / 15, role);
+  const w = tinted(plain.coating, hex6(tint ? tintedWallColor(p.wall, tint, wall) : p.wall));
   return { ...plain, frame: w, infill: w, coating: w, base: w, cladding: tinted(plain.cladding, hex6(p.roof)) };
 }
 const OPENING = 'city3d:wall:opening@393126';
@@ -246,19 +251,58 @@ function featureBox(roof: RoofBuilder, x: number, y: number, w: number, d: numbe
   for (let i = 0; i < 4; i++) { const [s0, t0] = c[i], [s1, t1] = c[(i + 1) % 4]; roof.face([at(s0, t0, z), at(s1, t1, z), at(s1, t1, z + h), at(s0, t0, z + h)], material); }
   roof.face(c.map(([s, t]) => at(s, t, z + h)), material);
 }
-/** Wind-mill sails: four crossed blades (a spar and a cloth strip each) in the vertical plane facing `angle`, hub at (x, y, z). */
+/** Wind-mill sails: four crossed blades in the vertical plane facing `angle`, hub at (x, y, z). Each blade is a
+ * stout spar, a pale cloth at least a sixth of the blade long across (so the cross reads from afar whatever width
+ * the massing sends) and the lattice that carries it (outer rail, cross bars) in dark timber over the cloth. */
 function featureSails(roof: RoofBuilder, x: number, y: number, len: number, width: number, z: number, angle: number, turn: number): void {
   const fx = Math.cos(angle), fy = Math.sin(angle), tx = -fy, ty = fx, nx = fx * 0.06, ny = fy * 0.06;
   const at = (s: number, u: number, k: number): Vertex3 => ({ x: x + tx * s + nx * k, y: y + ty * s + ny * k, z: z + u });
   const both = (pts: Vertex3[], material: string): void => { roof.face(pts, material); roof.face([...pts].reverse(), material); };
+  const DARK = 'city3d:wall:wood@393126', CLOTH = 'city3d:wall:plaster@e4ddca', cloth = Math.max(width, len * 0.16), spar = 0.09, from = len * 0.2;
   for (let k = 0; k < 4; k++) {
     const a = turn + k * Math.PI / 2, ds = Math.cos(a), du = Math.sin(a), ps = -du, pu = ds;
     const p = (r: number, off: number, depth: number): Vertex3 => at(ds * r + ps * off, du * r + pu * off, depth);
-    both([p(0, -0.06, 0), p(len, -0.06, 0), p(len, 0.06, 0), p(0, 0.06, 0)], 'city3d:wall:wood@393126');
-    both([p(len * 0.22, 0.06, 1), p(len, 0.06, 1), p(len, 0.06 + width, 1), p(len * 0.22, 0.06 + width, 1)], 'city3d:wall:plaster');
+    both([p(0, -spar, 0), p(len, -spar, 0), p(len, spar, 0), p(0, spar, 0)], DARK);
+    both([p(from, spar, 1), p(len, spar, 1), p(len, spar + cloth, 1), p(from, spar + cloth, 1)], CLOTH);
+    both([p(from, spar + cloth - 0.05, 2), p(len, spar + cloth - 0.05, 2), p(len, spar + cloth + 0.05, 2), p(from, spar + cloth + 0.05, 2)], DARK);
+    for (let b = 0; b <= 4; b++) { const r = from + (len - from) * b / 4; both([p(r - 0.04, spar, 2), p(r + 0.04, spar, 2), p(r + 0.04, spar + cloth, 2), p(r - 0.04, spar + cloth, 2)], DARK); }
   }
   // Hub block.
   featureBox(roof, x, y, 0.5, 0.5, 0.5, angle, z - 0.25, 'city3d:wall:wood@393126');
+}
+/** Water wheel: two rims, eight spokes a side, float boards across the width and the axle through the hub, in dark wet
+ * timber, turning in the vertical plane across the axle (`angle`), axle centre at (x, y, z). An overshot wheel gets its
+ * launder: a trough on two trestles that reaches the top of the wheel. About 140 triangles. */
+function featureWheel(roof: RoofBuilder, x: number, y: number, radius: number, width: number, z: number, angle: number, turn: number, variant: string | undefined, ground: number): void {
+  const ax = Math.cos(angle), ay = Math.sin(angle), tx = -ay, ty = ax, WOOD = 'city3d:wall:wood@3a2f24', r = Math.max(0.6, radius), w = Math.max(0.3, width), n = 12;
+  const at = (off: number, s: number, u: number): Vertex3 => ({ x: x + ax * off + tx * s, y: y + ay * off + ty * s, z: z + u });
+  for (let k = 0; k < n; k++) {
+    const a0 = turn + k * 2 * Math.PI / n, a1 = a0 + 2 * Math.PI / n, c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+    for (const side of [-w / 2, w / 2]) roof.face([at(side, c0 * r, s0 * r), at(side, c1 * r, s1 * r), at(side, c1 * (r - 0.16), s1 * (r - 0.16)), at(side, c0 * (r - 0.16), s0 * (r - 0.16))], WOOD);
+    // Float board: across the wheel, from inside the rim to just past it.
+    roof.face([at(-w / 2, c0 * (r - 0.38), s0 * (r - 0.38)), at(w / 2, c0 * (r - 0.38), s0 * (r - 0.38)), at(w / 2, c0 * (r + 0.04), s0 * (r + 0.04)), at(-w / 2, c0 * (r + 0.04), s0 * (r + 0.04))], WOOD);
+  }
+  for (let k = 0; k < 8; k++) {
+    const a = turn + k * Math.PI / 4, c = Math.cos(a), s = Math.sin(a), px = -s * 0.05, pu = c * 0.05;
+    for (const side of [-w / 2, w / 2]) roof.face([at(side, c * 0.12 - px, s * 0.12 - pu), at(side, c * (r - 0.16) - px, s * (r - 0.16) - pu), at(side, c * (r - 0.16) + px, s * (r - 0.16) + pu), at(side, c * 0.12 + px, s * 0.12 + pu)], WOOD);
+  }
+  const hub: [number, number][] = [[-0.14, -0.14], [0.14, -0.14], [0.14, 0.14], [-0.14, 0.14]];
+  for (let k = 0; k < 4; k++) { const [s0, u0] = hub[k], [s1, u1] = hub[(k + 1) % 4]; roof.face([at(-w / 2 - 0.3, s0, u0), at(w / 2 + 0.3, s0, u0), at(w / 2 + 0.3, s1, u1), at(-w / 2 - 0.3, s1, u1)], WOOD); }
+  if (variant === 'overshot') {
+    // The side the water comes from is not in the contract: the launder takes the side the paddle phase points to.
+    const side = Math.cos(turn) >= 0 ? 1 : -1, u0 = r + 0.12, half = w * 0.35, near = side * r * 0.1, far = side * r * 2.6;
+    roof.face([at(-half, near, u0), at(half, near, u0), at(half, far, u0), at(-half, far, u0)], WOOD);
+    for (const off of [-half, half]) roof.face([at(off, near, u0), at(off, far, u0), at(off, far, u0 + 0.28), at(off, near, u0 + 0.28)], WOOD);
+    for (const s of [side * r * 1.4, far - side * 0.2]) { const p = at(0, s, 0); featureBox(roof, p.x, p.y, 0.18, w * 0.7, Math.max(0.2, z + u0 - ground), angle + Math.PI / 2, ground, WOOD); }
+  }
+}
+/** Works that stand on or beside a volume whatever its roof and that tell what the building is from afar: mill sails,
+ * a water wheel. Drawn last, so their faces are one range of the roof mesh (kept by the overview level of detail). */
+function standingFeatures(roof: RoofBuilder, v: ResolvedVolume, ground: number): void {
+  for (const f of v.detail?.features ?? []) {
+    if (f.kind === 'sails') featureSails(roof, f.x, f.y, f.w, f.d, ground + v.eave_m + f.h, f.angle, f.turn ?? 0);
+    else if (f.kind === 'wheel') featureWheel(roof, f.x, f.y, f.w, f.d, ground + f.h, f.angle, f.turn ?? 0, f.variant, ground);
+  }
 }
 function featureDome(roof: RoofBuilder, x: number, y: number, r: number, h: number, z: number, material: string): void {
   const n = 8, rings = [0, 0.45, 0.8, 1].map(t => ({ k: Math.cos(t * Math.PI / 2), z: z + h * Math.sin(t * Math.PI / 2) }));
@@ -343,8 +387,8 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
       roof.face([{ ...a, z: top }, { ...b, z: top }, { ...f, z: top }, { ...e, z: top }], wallId);
     }
   }
-  for (const f of d.features ?? []) if (f.kind === 'sails') featureSails(roof, f.x, f.y, f.w, f.d, eave + f.h, f.angle, f.turn ?? 0);
-  for (const f of v.roof === 'flat' ? (d.features ?? []).filter(g => g.kind !== 'sails') : []) {
+  // Sails and wheels are raised by standingFeatures, whatever the roof; the boxes below are roof-top works of flat roofs.
+  for (const f of v.roof === 'flat' ? (d.features ?? []).filter(g => g.kind === 'stair' || g.kind === 'dome' || g.kind === 'windcatcher') : []) {
     if (f.kind === 'dome') { featureDome(roof, f.x, f.y, f.w / 2, f.h, eave, wallId); continue; }
     featureBox(roof, f.x, f.y, f.w, f.d, f.h, f.angle, eave, wallId);
     const ca = Math.cos(f.angle), sa = Math.sin(f.angle), z0 = f.kind === 'stair' ? eave + 0.05 : eave + f.h - 1.3, z1 = f.kind === 'stair' ? eave + 1.9 : eave + f.h - 0.2;
@@ -496,7 +540,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
       const piece = massing[i]; if (!piece) return [];
       return pieceVolumes(shape, piece).map((v, j) => {
         const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), roof = new RoofBuilder();
-        const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : '')), wallId = materials.coating;
+        const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : ''), v.tint), wallId = materials.coating;
         if (v.tree) {
           const tree = lightTrees ? { ...v.tree, light: true } : v.tree;
           // Closely related greens per crown, independent of its height.
@@ -534,6 +578,8 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           for (let k = 0; k < bottom.length; k++) { const n = (k + 1) % bottom.length; roof.face([{ ...bottom[k], z: base + raisedBy }, { ...bottom[n], z: base + raisedBy }, { ...top[n], z: base + v.eave_m }, { ...top[k], z: base + v.eave_m }], wallId); }
           volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
         } else volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
+        const standing = roof.faces.length;
+        standingFeatures(roof, v, base);
         const system = v.roof === 'flat' ? 'RF-FLAT' : v.roof === 'hip' || v.roof === 'pyramid' || v.roof === 'tent' ? 'RF-HIP' : 'RF-GABLE';
         // Ruin stubs and mounds (massing.rs `ruin_piece`) run their walls down to the footing: no plinth box, half the triangles.
         // A volume standing on another one has neither footing nor plinth: its walls run from its base to its eave.
@@ -542,6 +588,8 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           { ...foundation, footprint: ruin || raisedBy ? [] : [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
           [{ index: 0, footprint: [bodyShape], z_m: z0, height_m: v.eave_m + base - z0 }]);
         if (form === 'battered') volume.envelope = 'open';
+        // Sails and wheels stay on the overview body of the volume (urbanBuildingGeometry.ts).
+        if (roof.faces.length > standing) (volume as typeof volume & { overview_faces?: [number, number] }).overview_faces = [standing, roof.faces.length];
         // The overview LOD drops small decorative volumes (urbanBuildingGeometry.ts).
         if (v.minor) volume.role = MINOR_VOLUME_ROLE;
         return volume;

@@ -642,9 +642,13 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     const erosionEnabled = config?.erosionEnabled !== false;
     const showErosion = erosionEnabled && config?.showErosion !== false;
     const condMode = erosionEnabled ? config?.condMode : 'none';
+    // Vector chain: the lake settings keep a share of the closed depressions as lakes instead of breaching or filling them.
+    const condLakes = vector && config && config.lakes !== 'none' ? [config.lakeAbundance, config.lakeArea, config.lakeDepth, config.lakeCoverage, config.maxLakeArea] : [0, 0, 0, 0, 0];
+    const conditioningSettings = config && { mode: config.condMode, strength: config.condStrength, maxDepth: config.condDepth, maxLength: config.condLength,
+      banks: config.condBanks, lakes: condLakes[0], lakeArea: condLakes[1], lakeDepth: condLakes[2], lakeCoverage: condLakes[3], maxLakeArea: condLakes[4] };
     if (onRelief && config && water && kind === 'overview' && display === 'gl') {
       const n = hydrologyGrid(vector ? config.vectorResolution : config.resolution, definition.n);
-      const condKey = JSON.stringify([engineKey, engineCoastKey, n, condMode, condMode === 'none' ? 0 : [config.condStrength, config.condDepth, config.condLength]]);
+      const condKey = JSON.stringify([engineKey, engineCoastKey, n, condMode, condMode === 'none' ? 0 : [config.condStrength, config.condDepth, config.condBanks, config.condLength, condLakes]]);
       // Seconds of water work ahead: show the relief now.
       if (!conditioned || conditioned.key !== condKey || (vector && !vectorWater)) {
         onRelief({
@@ -656,10 +660,11 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     if (config && water) {
       const n = hydrologyGrid(vector ? config.vectorResolution : config.resolution, definition.n);
       // The whole map on the hydrology grid, conditioned before any drainage.
-      const condKey = JSON.stringify([engineKey, engineCoastKey, n, condMode, condMode === 'none' ? 0 : [config.condStrength, config.condDepth, config.condLength]]);
+      const condKey = JSON.stringify([engineKey, engineCoastKey, n, condMode, condMode === 'none' ? 0 : [config.condStrength, config.condDepth, config.condBanks, config.condLength, condLakes]]);
       const climate = climateOf(settings);
       const vs = {
-        riverArea: riverAreaFor(config, settings.width), lakeDepth: config.lakeDepth, lakeArea: config.lakeArea, riverMode: config.riverMode,
+        // The tributary density scales the catchment that starts a river; headwaters then follow the valleys upstream.
+        riverArea: riverAreaFor(config, settings.width) / Math.max(.05, config.density) ** 2, headwaters: config.headwaters !== false ? 1 : 0, lakeDepth: config.lakeDepth, lakeArea: config.lakeArea, riverMode: config.riverMode,
         flatSlope: config.flatSlope, sinuosity: config.sinuosity, widthScale: config.vectorWidth, balance: config.balance, braiding: config.braiding,
         anabranching: config.anabranching, terrainInfluence: config.terrainInfluence, avulsions: config.avulsions, confluence: config.confluence, deltas: config.deltas,
       };
@@ -680,7 +685,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
         else {
           progress?.('Conditionnement du relief avant drainage…',{stage:'terrain-conditioning'});
           // Erosion runs on at most 512², breaching on the whole grid; the change is spline-interpolated to the camera.
-          const conditioning = { mode: config.condMode, strength: config.condStrength, maxDepth: config.condDepth, maxLength: config.condLength };
+          const conditioning = conditioningSettings!;
           if (vector) {
             const result = await conditionAndWater(height, n, settings.width, conditioning, vs, climate, stepSeed(settings.generalSeed ?? settings.seed, 'water-hydrology'), runtime);
             const { height: out, delta, ...stats } = result.conditioning;
@@ -700,7 +705,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
             // Settling retains the pre-settle routing. Re-run the stateless chain
             // on settings changes so that routing never has to cross the bridge.
             const result = await conditionAndWater(conditioned.source, n, settings.width,
-              { mode: config.condMode, strength: config.condStrength, maxDepth: config.condDepth, maxLength: config.condLength },
+              conditioningSettings!,
               vs, climate, stepSeed(settings.generalSeed ?? settings.seed, 'water-hydrology'), runtime);
             const { height: out, delta, ...stats } = result.conditioning;
             Object.assign(conditioned, { height: out, delta, stats });

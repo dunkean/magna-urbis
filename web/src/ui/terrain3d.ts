@@ -1521,6 +1521,9 @@ export class Terrain3d {
       // A moving preview never displaces a completed full tile.
       if (patch.status === 'ready' && (patch.preview && !preview || this.captureMode && !patch.exact || !preview && (patch.texturePixels ?? 0) < pixels)) patch.status = 'idle';
       if (patch.status !== 'idle') continue;
+      // Map ground: while the view moves, a tile with a loaded ancestor keeps showing that ancestor stretched. A preview
+      // only holds the 2D raster tiles cached so far and showed paper (white squares) wherever they were missing.
+      if (preview && !this.groundSettings && !patch.texture && this.texturedAncestor(patch)) continue;
       const job = {}, epoch = this.epoch, revision = patch.revision, loader = this.tileLoader, exact = this.captureMode;
       const current = (): boolean => epoch === this.epoch && revision === patch.revision && !this.disposed && this.patches.get(patch.tile.key) === patch;
       patch.status = 'loading'; this.jobs.add(job);
@@ -1619,6 +1622,20 @@ export class Terrain3d {
     }
     return { texture: this.material, rect: [(tile.x - layer.x) / layer.width, (tile.y - layer.y) / layer.width, tile.width / layer.width, tile.width / layer.width], texel: layer.width / this.fallbackPixels, ready: !this.tileLoader || tile.level === 0 };
   }
+  /** Whether a loaded tile texture (not the whole-map fallback) covers `patch` through one of its ancestors. */
+  private texturedAncestor(patch: Patch): boolean {
+    let [level, ix, iy] = patch.tile.key.split('/').map(Number);
+    while (--level > 0) {
+      ix = Math.floor(ix / 2); iy = Math.floor(iy / 2);
+      if (this.patches.get(`${level}/${ix}/${iy}`)?.texture) return true;
+    }
+    return false;
+  }
+  /** Whether the drawn subtree of `node` shows tile textures of its own, with no stretched fallback. */
+  private subtreeTextured(node: Node): boolean {
+    if (!node.visible || node.patch.texture && node.patch.vao) return true;
+    return !!node.children?.length && node.blend >= 1 && node.children.every(child => this.subtreeTextured(child));
+  }
   private covered(node: Node): boolean {
     return !node.visible || !!node.patch.vao && (!this.requireHeights || node.patch.tile.level === 0 || node.patch.hasHeight && node.patch.coherentReady)
       || !!node.children?.length && node.children.every(child => this.covered(child));
@@ -1698,7 +1715,11 @@ export class Terrain3d {
     const raw = clamp((node.error - 2.15) / (3.6 - 2.15), 0, 1);
     let target = allowed && childrenReady && !replacingHeights ? raw * raw * (3 - 2 * raw) : 0;
     const descendantsOpen = node.children?.some(child => child.blend > 0);
-    if (target < node.blend && (descendantsOpen || !node.patch.vao || this.materialFor(node.patch).blend < 1)) target = node.blend;
+    // Map ground, zooming out: the finer tiles already on the GPU stay drawn until the coarser tile has its own texture,
+    // instead of merging onto a stretched far ancestor or the whole-map fallback (blank squares).
+    const awaitsOwn = target < node.blend && !this.groundSettings && !!this.tileLoader && node.patch.tile.level > 0
+      && !node.patch.texture && node.patch.status !== 'failed' && !!node.children?.length && node.children.every(child => this.subtreeTextured(child));
+    if (target < node.blend && (descendantsOpen || !node.patch.vao || awaitsOwn || this.materialFor(node.patch).blend < 1)) target = node.blend;
     if (childrenReady && !node.ready) { node.ready = true; node.updated = this.now; }
     let dt = this.now - node.updated;
     if (dt > 100 && !node.moving) dt = 0;

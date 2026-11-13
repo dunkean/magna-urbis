@@ -14,7 +14,8 @@ export interface HydrologySettings {
   widthScale: number; incision: number;
   /** Lakes: smallest area (m²) and depth (m) of a lake of the water budget. */
   minLakeArea: number; minLakeDepth: number;
-  /** Synthetic lakes (`lakes: 'some'`) only. */
+  /** Lake share, total coverage and largest lake (fractions of the map): synthetic lakes (`lakes: 'some'`) on the
+   *  Rust chain; on the vector chain, the closed depressions kept as lakes by the conditioning. */
   lakeAbundance: number; lakeCoverage: number; maxLakeArea: number;
   depressionPolicy: 'auto' | 'fill'; maxBreachDepth: number; maxBreachLength: number;
   resolution: 256 | 512 | 1024; compute: 'auto' | 'cpu' | 'gpu';
@@ -26,6 +27,10 @@ export interface HydrologySettings {
   showErosion: boolean;
   /** Pre-hydrology conditioning of the relief, shared by both chains. */
   condMode: 'none' | 'erosion' | 'breach' | 'both'; condStrength: number; condDepth: number; condLength: number;
+  /** Bank profile of a conditioning breach: gentle valley sides, or the bed and a short talus (a step). */
+  condBanks: 'valley' | 'step';
+  /** Vector chain: rivers continue up their valley to its head and take the side valleys they pass. */
+  headwaters: boolean;
   /** Vector chain: river threshold (km², 0 = from the map size), lakes (m, ha), tracing and channel styles. */
   riverArea: number; lakeDepth: number; lakeArea: number; riverMode: 'vector' | 'grid';
   flatSlope: number; sinuosity: number; vectorWidth: number; vectorResolution: 512 | 1024;
@@ -37,9 +42,9 @@ export const DEFAULT_HYDROLOGY: HydrologySettings = {
   enabled: true, main: 'auto', density: 1, coastalStreams: 1, wetness: 1, lakes: 'auto',
   meanders: 'natural', meanderIntensity: 1, estuary: 'auto', widthScale: 1,
   incision: 1, minLakeArea: 100000, minLakeDepth: 1, resolution: 512, compute: 'auto',
-  lakeAbundance: 0.5, lakeCoverage: 0.05, maxLakeArea: 0.02,
+  lakeAbundance: 0.8, lakeCoverage: 0.05, maxLakeArea: 0.02,
   depressionPolicy: 'auto', maxBreachDepth: 12, maxBreachLength: 1000,
-  engine: 'rust', erosionEnabled: true, showErosion: true, condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000,
+  engine: 'rust', erosionEnabled: true, showErosion: true, condMode: 'both', condStrength: 2, condDepth: 8, condLength: 3000, condBanks: 'valley', headwaters: true,
   riverArea: 0, lakeDepth: 1, lakeArea: 10, riverMode: 'vector', flatSlope: 1, sinuosity: 1.8, vectorWidth: 3, vectorResolution: 1024,
   balance: true, braiding: 1, anabranching: true, terrainInfluence: true, avulsions: true, confluence: 'climate', deltas: true,
 };

@@ -16,7 +16,7 @@ import type { CityView, CityPalette, CityLayers } from './cityCanvas';
 import type { UrbanBuildingStyle, UrbanBuildingDiagnostic } from './urbanBuildingStyle';
 import { DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from '../../../rust/bridge/fantasyPainting';
 import { DEFAULT_FOREST_SETTINGS, type ForestSettings } from '../../../rust/bridge/terrainForest';
-import { applyComposition, resolveComposition, withGroundVariant, type CompositionRecipe, type ResolvedComposition } from './composition';
+import { applyComposition, contourDrawOf, resolveComposition, withGroundVariant, type CompositionRecipe, type ResolvedComposition } from './composition';
 import type { ResolvedDisplayQuality } from './displayQuality';
 
 export type RenderTarget = 'view2d' | 'view3d' | 'export';
@@ -207,7 +207,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
     water: key(ground.style, ground.season, ground.calendar, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
-    cartography: key(groundTraits.satelliteVariant ? null : [ground.season, ground.calendar], mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone),
+    cartography: key(groundTraits.satelliteVariant ? null : [ground.season, ground.calendar], mapStyle, capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors, ground.style, cartography.roads, composition.networks.roads.look, cartography.landuse, cartography.painted, vegetation.symbols, composition.vegetation.cartographic, city.visible, cartography.landuseForestTone, contourDrawOf(composition.recipe)),
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
     roads: key(composition.networks.roads.emphasis),
     semantic: key(composition.landuse),

@@ -520,17 +520,16 @@ void main() {
     vec4 wIce=vec4(0.);float wIceEdge=0.;
     // Water climate tints applied after the evaluation (waterRegime.ts): x humic tea, y glacial milk, z sea sediment plume.
     vec3 wTint=vec3(0.);
-    // Optical depth the sea takes under a river's ribbon at its mouth (set with the water layer below).
-    float wRiverSea=0.;
+    // Estuary: share of the river's own water in a sea fragment that lies under a river's ribbon. 1 at the sea-level
+    // line inside the channel, 0 once the sea is 6 m deep: the river's colour runs out into the shallows and fades,
+    // instead of a deep river ending against a pale wedge of sea.
+    float wEst=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
       float under=uRenderV2>0?1.:1.-forestResolvedCover;
       if(uRenderV2>0){
-        // Where the river's ribbon runs over the sea, the shallows take the optical depth of the river (34 m of sea
-        // absorb like its 8 m of fresh water) and return to their own over the first 5 m of real depth: the
-        // river's colour fades into the sea instead of meeting it along the sea-level line inside the channel.
-        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.;wRiverSea=s.x<0.?34.*water.a*(1.-smoothstep(0.,5.,-s.x)):0.;
+        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.;
         // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds lie on the ground as painted
         // (sandy); the wet remainder takes the Render v2 water. Ice is not painted for this ground: it comes from
         // the land's snow at the water's altitude, below.
@@ -608,6 +607,8 @@ void main() {
           // A river's sediment plume, painted as a silt tint over the captured sea (renderWaterShader.ts).
           vec3 painted=water.rgb/max(water.a,1e-3);
           wTint.z=smoothstep(-.12,.3,painted.r-painted.b);
+          wEst=water.a*(1.-wTint.z)*(1.-smoothstep(0.,6.,-s.x));
+          wTint.xy=vec2(waterTea(),waterGlacial())*wEst;
         }
       }
       else color=color*(1.-water.a*under)+water.rgb*under;
@@ -636,9 +637,20 @@ void main() {
       vec4 sheet=v2FreshIce(world,uPx,wIce.x,wIce.y,wIce.z,wIce.w,wIceEdge);
       wBase=mix(wBase,sheet.rgb,wCover*sheet.a);wCover*=1.-sheet.a;color=wBase;
     }
-    if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(max(-s.x,0.),wRiverSea);}
+    if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(-s.x,0.);}
 #ifdef AUX_PASS
-    outAux = uvec4(auxCanopy, !underdark && v2w && uV2WaterVisible == 1 && wCover > 0. ? auxPack4x8(vec4(clamp(v2WaterColor(v2Here, world, uPx, wCover, wKind, wDepth), 0., 1.), 1.)) : 0u); return;
+    uint auxWater = 0u;
+    if(!underdark && v2w && uV2WaterVisible == 1 && wCover > 0.){
+      // One call site for the water model: the second turn is the river's water of an estuary fragment.
+      vec3 wc=vec3(0.);
+      for(int i=0;i<2;i++){
+        if(i==1&&wEst<=.002)break;
+        vec3 c=v2WaterColor(v2Here, world, uPx, wCover, i==0?wKind:3., i==0?wDepth:8.);
+        wc=i==0?c:mix(wc,c,wEst);
+      }
+      auxWater=auxPack4x8(vec4(clamp(wc, 0., 1.), 1.));
+    }
+    outAux = uvec4(auxCanopy, auxWater); return;
 #elif defined(AUX_TEXTURE)
     if(underdark){if(v2w && uV2WaterVisible == 1 && wCover > 0.)color = mix(wBase, underdarkWater(world, uPx, wDepth, 1.-smoothstep(0., .9, wCover)*smoothstep(0.,3.,wDepth)), wCover);}
     else if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.) color = mix(wBase, aux.rgb, wCover); }
@@ -646,7 +658,16 @@ void main() {
     // v2w is only ever set under uRenderV2>0; the variant test first lets the compilers drop the whole water model.
     if(uRenderV2>0)if(v2w){
       if(underdark){if(uV2WaterVisible==1)color=mix(wBase,underdarkWater(world,uPx,wDepth,1.-smoothstep(0.,.9,wCover)*smoothstep(0.,3.,wDepth)),wCover);}
-      else color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
+      else {
+        // One call site for the water model: the second turn is the river's water of an estuary fragment.
+        vec3 wc=color;
+        for(int i=0;i<2;i++){
+          if(i==1&&wEst<=.002)break;
+          vec3 c=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,i==0?wKind:3.,i==0?wDepth:8.);
+          wc=i==0?c:mix(wc,c,wEst);
+        }
+        color=wc;
+      }
     }
 #endif
 #ifndef AUX_PASS

@@ -31,7 +31,11 @@ export interface V2TestBindings {
   getWorld(): World | undefined;
   isBusy(): boolean;
   load(project: { settings: V2Settings; mods: unknown[] }): Promise<void>;
-  run(): Promise<void>;
+  /** 'all' (default): the whole chain, every place built. 'main': terrain, placement and the main town only;
+   * secondary places stay lazy for the background pass (region.autoBuildPopulation, 0 = never). */
+  run(places?: 'all' | 'main'): Promise<void>;
+  /** Resolves when the background build of small places has nothing left to do. */
+  smallPlacesSettled?(): Promise<void>;
   getViewer(): { getView(): View; setView(view: View): void };
   get3d(): { getCamera(): unknown; setCamera(camera: any): void; stats?(): unknown } | undefined;
   prepareCapture?(): void;
@@ -220,9 +224,14 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
     /** A whole procedural region from the page's own settings, patched by `options` (seed, culture, population, relief, biome...),
      * `extent` and `settlementCount`: several towns and their road network, no saved decor. */
     async runRegion(patch: { options?: Record<string, unknown>; extent?: number; settlementCount?: number; generation?: 'procedural' | 'neural';
-      runtime?: Record<string, unknown>; terrain?: Record<string, unknown> }): Promise<void> {
+      runtime?: Record<string, unknown>; terrain?: Record<string, unknown>;
+      /** 'all' (default) builds every place; 'main' builds the main town only and leaves the others lazy. */
+      places?: 'all' | 'main';
+      /** Regional settings merged over the page's, e.g. `{ autoBuildPopulation: 0 }` to keep secondary places lazy. */
+      region?: Record<string, unknown> }): Promise<void> {
       const settings = structuredClone(bindings.getSettings());
       Object.assign(settings.options, patch.options ?? {});
+      if (patch.region) settings.region = { ...settings.region, ...patch.region } as V2Settings['region'];
       if (patch.runtime) settings.runtime = { ...settings.runtime, ...patch.runtime } as V2Settings['runtime'];
       if (patch.terrain) settings.terrain = { ...settings.terrain, ...patch.terrain } as V2Settings['terrain'];
       if (patch.extent) settings.extent = patch.extent;
@@ -230,9 +239,14 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       if (patch.generation) settings.generation = patch.generation;
       request = undefined;
       await bindings.load({ settings, mods: [] });
-      await bindings.run();
+      await bindings.run(patch.places);
       await bindings.displaySettled?.();
       if (!bindings.getWorld()?.settlements?.length) throw new Error('The region has no placed town');
+    },
+    /** Waits until the background build of small places is done (then the display settles), before a shot. */
+    async smallPlacesSettled(): Promise<void> {
+      await bindings.smallPlacesSettled?.();
+      await bindings.displaySettled?.();
     },
     /** The 2D view (centre in metres, px/m), for capture scripts that move the camera frame by frame. */
     getView: () => bindings.getViewer().getView(),

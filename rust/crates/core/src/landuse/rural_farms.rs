@@ -271,6 +271,7 @@ impl Builder<'_> {
             };
         }
         self.lots.push((c, 0.5 * pl.lf.w.hypot(pl.lf.d)));
+        farm_massing(&mut g, culture, &pl.lf.type_, pl.lf.size, &format!("{}:farm:{key}", input.seed));
         let gate: Point = serde_json::from_value(g["gate"].clone()).unwrap_or_default();
         g["pos"] = serde_json::to_value(c).unwrap();
         g["buildings"] = Value::Array(arr(&g["parts"]).iter().map(|p| p["poly"].clone()).collect());
@@ -288,6 +289,35 @@ impl Builder<'_> {
             g["cultivation"] = "fungal".into();
         }
         self.farms.push(g);
+    }
+}
+/// Gives every building of a placed farm its `massing`: the display contract of the town
+/// buildings (`volumes[]`, composed roofs, culture materials), raised by the code of the
+/// settlement farmsteads (urban/activities.rs `countryside_farm_massing`) for the farm's
+/// culture and type. One piece per building, as an activity site's building carries it;
+/// the fields the farm already had (`use`, `arch`, `roof`, `material`) stay.
+pub(super) fn farm_massing(g: &mut Value, culture: &str, kind: &str, size: usize, seed: &str) {
+    let lot = poly(&g["lot"]);
+    if lot.len() < 2 {
+        return;
+    }
+    let at = |q: Point| crate::urban::Point { x: q.x, y: q.y };
+    let bodies: Vec<(Vec<crate::urban::Point>, &str)> = arr(&g["parts"])
+        .iter()
+        .map(|b| (poly(&b["poly"]).into_iter().map(at).collect(), s(&b["use"])))
+        .collect();
+    let pieces = crate::urban::activities::countryside_farm_massing(
+        culture,
+        kind,
+        &bodies,
+        [at(lot[0]), at(lot[1])],
+        [0.3, 0.5, 0.7, 0.85][size.min(3)],
+        seed,
+    );
+    if let Some(parts) = g["parts"].as_array_mut() {
+        for (b, piece) in parts.iter_mut().zip(pieces) {
+            b["massing"] = Value::Array(vec![piece]);
+        }
     }
 }
 #[allow(clippy::too_many_arguments)]

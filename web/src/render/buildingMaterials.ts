@@ -142,7 +142,9 @@ const GLAZED_TILES = new Set(['chinese', 'korean', 'japanese-jokamachi', 'vietna
  *  - thatch (straw, combed), reed (fine and smooth), palm (coarse overlapping fronds), turf (living grass, no direction);
  *  - shingle, bark (large sheets), bamboo (split canes down the slope); their flat decks only keep soft stains;
  *  - earth (terraces: stains, repairs, cracks), plaster and fungal caps (lime: soft stains only);
- *  - metal and lead (standing seams; flat sheets only keep soft stains, their seam direction is unknown);
+ *  - metal, lead and zinc (standing seams; flat sheets only keep soft stains, their seam direction is unknown);
+ *  - bitumen (felt strips with their laps, on a flat roof too: the strips are laid one way), glass roofs (the
+ *    regular grid of their glazing bars);
  *  - felt (strips and girth ropes), hide (stitched skins); the flat crown of a tent keeps soft stains. */
 export function roofGrain(cover: string | undefined, flat: boolean, culture = ''): CoverGrain | undefined {
   switch (cover) {
@@ -155,7 +157,9 @@ export function roofGrain(cover: string | undefined, flat: boolean, culture = ''
     case 'bamboo': return flat ? 'lime' : 'bamboo';
     case 'earth': return 'earth';
     case 'plaster': case 'fungal': return 'lime';
-    case 'metal': case 'lead': return flat ? 'lime' : 'metal';
+    case 'metal': case 'lead': case 'zinc': return flat ? 'lime' : 'metal';
+    case 'bitumen': return 'felt';
+    case 'glass': return 'paving';
     case 'felt': return flat ? 'lime' : 'felt';
     case 'hide': return flat ? 'lime' : 'hide';
     default: return undefined;
@@ -270,9 +274,20 @@ function grainValue(kind: CoverGrain, x: number, y: number): number {
 type GrainCanvas = OffscreenCanvas | HTMLCanvasElement;
 const grainCanvas = (size: number): GrainCanvas | undefined => typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size)
   : typeof document !== 'undefined' ? Object.assign(document.createElement('canvas'), { width: size, height: size }) : undefined;
-const grainTiles = new Map<CoverGrain, GrainCanvas[] | null>();
+/** Snow lying on a roof face, as a pattern of the snow's own colour whose opacity is the depth of the mantle: whole,
+ * with thin places drawn out down the slope where the cover shows faintly ('snow' in the sun, 'snowShade' a little
+ * bluer). One tile for every roof: no roof is snowed differently from its neighbour. */
+export type SnowCover = 'snow' | 'snowShade';
+type RoofPattern = CoverGrain | SnowCover;
+/** Opacity of the mantle at one pixel of the snow tile, from .7 in its thinnest places to 1. */
+function snowValue(x: number, y: number): number {
+  const n = .55 * grainNoise(x, y, 16, 64, 31) + .3 * grainNoise(x, y, 8, 16, 32) + .15 * grainNoise(x, y, 4, 4, 33);
+  const t = Math.max(0, Math.min(1, (n + .45) / .6));
+  return .7 + .3 * t * t * (3 - 2 * t);
+}
+const grainTiles = new Map<RoofPattern, GrainCanvas[] | null>();
 /** The tile of a family and its halved copies; null where the host has no canvas (the roofs keep their flat colour). */
-function grainLevels(kind: CoverGrain): GrainCanvas[] | null {
+function grainLevels(kind: RoofPattern): GrainCanvas[] | null {
   let levels = grainTiles.get(kind);
   if (levels !== undefined) return levels;
   levels = null;
@@ -280,7 +295,20 @@ function grainLevels(kind: CoverGrain): GrainCanvas[] | null {
     const n = GRAIN_TILE, base = grainCanvas(n), c = base?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
     if (base && c) {
       const built: GrainCanvas[] = [base];
-      {
+      if (kind === 'snow' || kind === 'snowShade') {
+        const image = c.createImageData(n, n), data = image.data, tone = kind === 'snowShade' ? [229, 234, 242] : [244, 245, 247];
+        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+          const o = (y * n + x) * 4;
+          data[o] = tone[0]; data[o + 1] = tone[1]; data[o + 2] = tone[2]; data[o + 3] = Math.round(255 * snowValue(x, y));
+        }
+        c.putImageData(image, 0, 0);
+        // Coarser levels are plain averages: the thin places merge into the mean depth of the mantle.
+        for (let l = 1; l < GRAIN_LEVELS; l++) {
+          const half = grainCanvas(n >> l), h = half?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
+          if (!half || !h) break;
+          h.imageSmoothingEnabled = true; h.drawImage(built[l - 1], 0, 0, n >> l, n >> l); built.push(half);
+        }
+      } else {
         // Neutral marks: black and white change the lightness of the cover and keep its hue. A light mark moves a
         // mid-tone roof further than a dark mark of the same opacity: .7 balances the two.
         const paint = (target: CanvasRenderingContext2D, field: Float32Array, size: number): void => {
@@ -342,10 +370,10 @@ export function coverGrainFrame(deviceMetresPerPixel: number): CoverGrainFrame |
 /** Patterns belong to the kind of context that made them (a recording context makes its own). */
 const grainPatterns = new WeakMap<object, Map<string, CanvasPattern | null>>();
 const grainMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-/** Repeating grain of a cover family for a context drawing in world metres, turned so that its courses lie across the
+/** Repeating grain of a cover family, or snow cover, for a context drawing in world metres, turned so that its courses lie across the
  * slope (`dir`: downslope direction in plan, radians) and shifted by (`shiftX`, `shiftY`) metres so two roofs never
  * show the same piece of it. The pattern is shared: set `fillStyle` and fill right away. */
-export function coverGrainPattern(ctx: CanvasRenderingContext2D, kind: CoverGrain, level: number, dir: number, shiftX = 0, shiftY = 0): CanvasPattern | undefined {
+export function coverGrainPattern(ctx: CanvasRenderingContext2D, kind: CoverGrain | SnowCover, level: number, dir: number, shiftX = 0, shiftY = 0): CanvasPattern | undefined {
   const owner = Object.getPrototypeOf(ctx) as object;
   let made = grainPatterns.get(owner); if (!made) grainPatterns.set(owner, made = new Map());
   const key = `${kind}/${level}`;

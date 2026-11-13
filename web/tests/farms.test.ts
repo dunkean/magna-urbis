@@ -1,5 +1,6 @@
 /** Farmstead variety (HANDOFF §7.6): types by culture and site, plausible sizes, plan invariants, metadata, determinism, cost. */
 import { describe, it, expect, beforeAll } from 'vitest';
+import './vectorWaterWasm';
 import polygonClipping from 'polygon-clipping';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';

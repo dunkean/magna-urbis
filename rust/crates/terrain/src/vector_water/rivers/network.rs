@@ -825,9 +825,63 @@ pub(crate) fn vector_rivers(
     let still: Vec<u8> = (0..total)
         .map(|c| u8::from(standing[c] != 0 || (back[c] >= 0 && link[c] == 0)))
         .collect();
-    let river: Vec<u8> = (0..total)
+    let mut river: Vec<u8> = (0..total)
         .map(|c| u8::from(still[c] == 0 && g.accumulation[c] as f64 >= threshold))
         .collect();
+    if s.headwaters > 0.0 {
+        // Headwaters: a river goes up its talweg to the head of the valley the relief shows, and takes the side
+        // valleys it passes. Receivers come first in flood order, so one pass grows the network upstream.
+        let low = threshold * (1.0 - (1.0 - HEADWATER_SHARE) * s.headwaters.min(1.0));
+        let original = river.clone();
+        for &c in &g.order {
+            let c = c as usize;
+            let r = g.receiver[c];
+            if river[c] == 0
+                && still[c] == 0
+                && r >= 0
+                && river[r as usize] != 0
+                && g.accumulation[c] as f64 >= low
+                && valley_cell(height, &g.receiver, n, cell, c)
+            {
+                river[c] = 1
+            }
+        }
+        // A source continues up its own talweg whatever the length; a side valley is a river from six cells on:
+        // shorter ones are folds of the bank. `up`: cells of the longest added course above and including a cell;
+        // `lead`: the added donor of a cell with the largest catchment; `fed`: river cells with a river donor.
+        const SIDE_VALLEY: u32 = 6;
+        let (mut up, mut lead, mut fed) = (vec![0_u32; total], vec![-1_i32; total], vec![0_u8; total]);
+        for &c in g.order.iter().rev() {
+            let c = c as usize;
+            let r = g.receiver[c];
+            if r < 0 || river[c] == 0 {
+                continue;
+            }
+            let r = r as usize;
+            if original[c] != 0 {
+                fed[r] = 1;
+                continue;
+            }
+            up[c] += 1;
+            if original[r] == 0 {
+                up[r] = up[r].max(up[c])
+            }
+            if lead[r] < 0 || g.accumulation[c] > g.accumulation[lead[r] as usize] {
+                lead[r] = c as i32
+            }
+        }
+        for &c in &g.order {
+            let c = c as usize;
+            if river[c] == 0 || original[c] != 0 {
+                continue;
+            }
+            let r = g.receiver[c] as usize;
+            let continues = lead[r] == c as i32 && (original[r] == 0 || fed[r] == 0);
+            if river[r] == 0 || !(continues || up[c] >= SIDE_VALLEY) {
+                river[c] = 0
+            }
+        }
+    }
     let mut main = vec![-1; total];
     for c in 0..total {
         let r = g.receiver[c];

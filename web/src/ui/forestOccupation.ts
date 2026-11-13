@@ -122,7 +122,7 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
     rgba[at + 2] = cls[i]; rgba[at + 3] = open[i] || forest[i] ? 255 : 0;
     hash = Math.imul(hash ^ cls[i] ^ rgba[at], 0x01000193);
   }
-  return { x, y, width: n * cell, n, rgba, detail: source?.detail, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
+  return { x, y, width: n * cell, n, rgba, detail: source?.detail, ways: source?.ways, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
 }
 
 /**

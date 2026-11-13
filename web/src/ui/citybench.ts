@@ -26,11 +26,13 @@ import { renderRustTerrain, terrainContourWidths } from '../../../rust/bridge/te
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { isTerrainStyle, styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { benchVegetationLimitations, getBenchComposition, resolveBenchAppearance, syncBenchAnnotations, setBenchAppearanceField, setBenchComposition, setBenchRenderCapabilities, writeBenchCompositionQuery } from './benchComposition';
-import { withGroundVariant, type Limitation } from '../render/composition';
+import { contourDrawOf, withGroundVariant, type Limitation } from '../render/composition';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import { forestOccupation } from './forestOccupation';
-import { roadCorridor } from '../render/forestRoom';
+import { roadCorridor, streetCorridors } from '../render/forestRoom';
+import { layoutStreetPavements } from '../render/roadPavement';
+import { setRoadCanopy } from '../render/roadStyle';
 import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
 import { decorWater3d } from './decorWater3d';
@@ -184,7 +186,7 @@ function retainedWater3d(): City3dRetainedWater | undefined {
   return retained3d.water;
 }
 window.magnaCityBackground = { url: backgroundUrl, style: () => backgroundStyle };
-let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupationStreets: unknown, occupation: ReturnType<typeof forestOccupation>;
+let forestOf: Decor | undefined, forestKey = '', forestField: ForestField | undefined, occupationOf: unknown, occupationStreets: unknown, occupationLayouts: unknown, occupation: ReturnType<typeof forestOccupation>;
 const lakeMasks = new WeakMap<Decor, Float32Array>();
 type BenchForestRequest = { d: Decor; key: string; settings: ReturnType<typeof resolveBenchAppearance>['vegetation']['forestSettings']; clearingProfile: ReturnType<typeof resolveBenchAppearance>['traits']['forestClearingProfile'] };
 let forestBuild: { d: Decor; key: string; job: Promise<void> } | undefined;
@@ -194,12 +196,14 @@ function benchForestRequest(target: 'view2d' | 'view3d'): BenchForestRequest | u
   return { d, key: JSON.stringify([settings, r.traits.forestClearingProfile]), settings, clearingProfile: r.traits.forestClearingProfile };
 }
 function benchForestResult() {
-  // Regional roads clear the forest as on V2 (displayForest.ts): no trunk in the corridor, crowns overhang its edges.
-  const streets = settlements.urban.regionalStreets;
-  if (occupationOf !== settlements.landuse || occupationStreets !== streets) {
-    occupationOf = settlements.landuse; occupationStreets = streets;
-    const corridors = streets.filter(s => s.path.length > 1).map(s => roadCorridor(s.path, Math.max(3, ...s.widths)));
-    occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse, undefined, undefined, corridors), settlements.landuse, settlements.landCultures) : undefined;
+  // Regional roads and town streets clear the forest as on V2 (displayForest.ts): no trunk on any way, crowns overhang earth ways.
+  const streets = settlements.urban.regionalStreets, layouts = settlements.urban.layouts ?? [];
+  if (occupationOf !== settlements.landuse || occupationStreets !== streets || occupationLayouts !== layouts) {
+    occupationOf = settlements.landuse; occupationStreets = streets; occupationLayouts = layouts;
+    const corridors = [...streets.filter(s => s.path.length > 1).map(s => roadCorridor(s.path, Math.max(3, ...s.widths))),
+      ...layouts.flatMap(layout => streetCorridors(layout.streets, layoutStreetPavements(layout)))];
+    const base = settlements.landuse ? forestOccupation(settlements.landuse, undefined, undefined, corridors) : undefined;
+    occupation = settlements.landuse ? withLandDetail(base && { ...base, ways: corridors }, settlements.landuse, settlements.landCultures) : undefined;
   }
   return { field: forestField, occupation };
 }
@@ -249,13 +253,14 @@ function drawContours(): void {
     contours.innerHTML = `<defs><mask id="cityContourLand" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${width}" style="mask-type:alpha"><image width="${width}" height="${width}" href="${mask}"/></mask></defs><g class="layer-contours" mask="url(#cityContourLand)" fill="none" stroke-linejoin="round" stroke-linecap="round"><path vector-effect="non-scaling-stroke"/><path vector-effect="non-scaling-stroke"/></g>`;
     contourTerrain = terrain; shownContours = undefined;
   }
-  const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', contoursReady);
+  const mode = contourDrawOf(r.composition.recipe);
+  const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', contoursReady, mode.detail, mode.sparse);
   const layer = contours.querySelector('g')!, [thin, index] = Array.from(layer.querySelectorAll('path'));
   if (shownContours !== paths) { thin.setAttribute('d', paths.thin); index.setAttribute('d', paths.index); shownContours = paths; }
   const style = r.composition.variant, pal = terrainStyle(style, getBenchRenderColors()).palette, widths = terrainContourWidths(style, view.scale);
   layer.setAttribute('stroke', pal.contour); contours.dataset.step = String(paths.step);
-  thin.setAttribute('stroke-width', String(widths.thin)); thin.setAttribute('opacity', '0.4');
-  index.setAttribute('stroke-width', String(widths.index)); index.setAttribute('opacity', '0.5');
+  thin.setAttribute('stroke-width', String(widths.thin)); thin.setAttribute('opacity', String(0.4 * mode.opacity));
+  index.setAttribute('stroke-width', String(widths.index)); index.setAttribute('opacity', String(0.5 * mode.opacity));
   contourScale = view.scale; contourStyle = backgroundStyle;
 }
 
@@ -300,7 +305,7 @@ async function drawBackground(d: Decor): Promise<void> {
   const painting = fantasyStyle ? prepareFantasyTerrain(t, fantasyStyle, renderSettings, fantasyOptions) : undefined;
   const fantasyRaster = painting ? await prepareFantasyRaster(painting, settlements.landuse) : undefined;
   // Contours come from the contour worker: wait for them before the ticket check, as the other inputs.
-  const contourPaths = r.ground.contours && r.ground.layers.relief ? await cityContourPathsReady(t, relief, 2048 / t.width, false) : undefined;
+  const contourPaths = r.ground.contours && r.ground.layers.relief ? await cityContourPathsReady(t, relief, 2048 / t.width, false, contourDrawOf(r.composition.recipe).detail, contourDrawOf(r.composition.recipe).sparse) : undefined;
   if (ticket !== backgroundTicket || decor !== d) return;
   // The key is retained only by the call that applies it: retained before the await, a newer call with the same key
   // returned early while this one was superseded, and the look was never applied (v7: "satellite" shots drawn in parchment).
@@ -315,7 +320,7 @@ async function drawBackground(d: Decor): Promise<void> {
     groundCanvas.hidden = false; background.replaceChildren();
     const field = t.field!;
     if (uploadedBackground !== t) { groundRenderer.setBase({ x: 0, y: 0, width: t.width, n: field.n, data: field.data, cave: field.cave, waterSurface: t.waterSurface }); uploadedBackground = t; }
-    groundRenderer.setForest(canopy?.field, canopy?.occupation);
+    groundRenderer.setForest(canopy?.field, canopy?.occupation); setRoadCanopy(canopy?.field, canopy?.occupation);
     backgroundLook={ style: r.ground.style, ambience:c.ambience,waterLook:c.networks.water.look,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
       colors: r.palette.colors, mapWidth: t.width, lighting: r.ground.lighting, layers: r.ground.layers, globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight,
       contours: false, contourStep: 1, flatRelief: relief === 'flat', refine: d.meta.terrainDisplay?.refine !== false, sourceCell: d.meta.terrainDisplay?.sourceCell ?? t.width / field.n,

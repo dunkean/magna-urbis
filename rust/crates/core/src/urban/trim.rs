@@ -794,6 +794,259 @@ mod tests {
         (l,part,requests)
     }
 
+    /// A town on a flat 5 km map, V2 default layout options: a regional
+    /// crossroads, and with `river` a 40 m river east of the centre that the
+    /// east-west road crosses.
+    fn town(culture: &str, population: u32, river: bool, hide: bool) -> (Layout, super::super::Partition, Vec<serde_json::Value>) {
+        town_on(&format!("earth-roof-{culture}"), culture, population, river, hide, 0.0)
+    }
+    /// `hills`: amplitude in metres of a smooth 1.2 km relief (0: flat).
+    fn town_on(seed: &str, culture: &str, population: u32, river: bool, hide: bool, hills: f32) -> (Layout, super::super::Partition, Vec<serde_json::Value>) {
+        let n = 256;
+        let height: Vec<f32> = (0..n*n).map(|i| { let (x,y) = ((i%n) as f32*5000./n as f32,(i/n) as f32*5000./n as f32);
+            10.+hills*(1.+(x/190.).sin()*(y/230.).cos()) }).collect();
+        let mut water = vec![0;n*n];
+        if river { for y in 0..n { for x in 136..138 { water[y*n+x] = 3; } } }
+        let level = vec![10.;n*n];
+        let surface = Surface { geometry:None, width:5000., n, height:&height, water:&water, interpolation: Default::default(),};
+        let site = super::super::Site { key:"town".into(),name:String::new(),population,culture:culture.into(),center:Point{x:2500.,y:2500.},radius:150. };
+        let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+        cfg.hide_unused_quarters = hide;
+        let road = |a: (f64,f64), b: (f64,f64)| Street { path:vec![Point{x:a.0,y:a.1},Point{x:b.0,y:b.1}],widths:vec![8.;2],rank:1,role:"regional".into() };
+        let roads = vec![road((0.,2500.),(5000.,2500.)), road((2500.,0.),(2500.,5000.))];
+        let l = super::super::generate_quarters(seed, &[site], &cfg, surface, &roads).unwrap();
+        let parts = super::super::generate_parcels(seed, &l, &ParcelConfig::default()).unwrap();
+        // V2 reapplies the programme after the cadastre.
+        let parts = programme::reallocate(&l, &parts).unwrap();
+        let requests = super::super::building_sites::requests(seed,&l,&parts,surface,&level,None).unwrap();
+        (l.into_iter().next().unwrap(),parts.into_iter().next().unwrap(),requests)
+    }
+
+    /// Blocks of the town plan (inside a wall, or core and middle ground)
+    /// left without any building: (count, their area, plan blocks, plan area).
+    fn bare_plan_blocks(l: &Layout, part: &super::super::Partition, requests: &[serde_json::Value]) -> (usize, f64, usize, f64) {
+        let used: HashSet<_> = requests.iter().filter(|r|r["preview"].as_array().is_some_and(|p|!p.is_empty())).filter_map(|r|r["parcel_id"].as_str()).collect();
+        let mut built = vec![false; l.blocks.len()];
+        for p in part.parcels.iter().filter(|p| used.contains(p.id.as_str())) { if let Some(b) = built.get_mut(p.block) { *b = true; } }
+        let rings = walls(l);
+        let plan = |b: &super::super::Block| b.kind == "block" && (matches!(b.zone.as_str(),"core"|"middle")
+            || rings.iter().any(|r| r.contains(g::interior_point(&b.shape))));
+        let all: Vec<_> = l.blocks.iter().enumerate().filter(|(_, b)| plan(b)).collect();
+        let bare: Vec<_> = all.iter().filter(|(i, _)| !built[*i]).collect();
+        (bare.len(), bare.iter().map(|(_, b)| g::area(&b.shape)).sum(), all.len(), all.iter().map(|(_, b)| g::area(&b.shape)).sum())
+    }
+
+    /// The town plan is built land (`programme::PLAN_OPEN`): a walled medina
+    /// of 2 500 and two modern cities of 25 000 keep no housing block of the
+    /// plan without a building, and the blocks of the plan under 10 % built
+    /// (squares, a park, a souk) stay a small share of it.
+    #[test]
+    fn the_town_plan_keeps_no_empty_quarter() {
+        for (culture, population, margin) in [("medina", 2500, 0.1), ("haussmannian", 25000, 0.05), ("global-high-rise", 25000, 0.05)] {
+            let (l, part, requests) = town(culture, population, false, false);
+            let (bare, bare_area, plan, _) = bare_plan_blocks(&l, &part, &requests);
+            assert!(plan > 0 && bare == 0, "{culture}: {bare} of {plan} housing blocks of the plan without a building ({bare_area:.0} m2)");
+            let rings = walls(&l);
+            let inside: Vec<bool> = l.blocks.iter().map(|b| if rings.is_empty() { matches!(b.zone.as_str(), "core" | "middle") }
+                else { rings.iter().any(|r| r.contains(g::interior_point(&b.shape))) }).collect();
+            let total: f64 = l.blocks.iter().zip(&inside).filter(|(_, i)| **i).map(|(b, _)| g::area(&b.shape)).sum();
+            assert!(total > 0.0, "{culture}: no plan");
+            let block_of: HashMap<&str, usize> = part.parcels.iter().map(|p| (p.id.as_str(), p.block)).collect();
+            let mut cover = vec![0.0; l.blocks.len()];
+            for r in &requests {
+                if let Some(&b) = r["parcel_id"].as_str().and_then(|id| block_of.get(id)) {
+                    cover[b] += r["preview"].as_array().map_or(0.0, |p| p.iter()
+                        .map(|v| serde_json::from_value::<Shape>(v.clone()).map_or(0.0, |s| g::area(&s))).sum::<f64>());
+                }
+            }
+            let open: f64 = l.blocks.iter().enumerate().filter(|(i, b)| inside[*i] && cover[*i] < 0.1 * g::area(&b.shape)).map(|(_, b)| g::area(&b.shape)).sum();
+            println!("PLAN {culture} {population}: open blocks {open:.0} m2 of {total:.0} m2 ({:.1} %)", 100.0 * open / total);
+            assert!(open <= margin * total, "{culture}: open blocks in the plan: {open:.0} m2 of {total:.0} m2");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn survey_empty_quarters() {
+        let cultures = std::env::var("SURVEY_CULTURES").unwrap_or_else(|_| "medina,european-organic,persian".into());
+        let hide = std::env::var("SURVEY_HIDE").is_ok();
+        let hills: f32 = std::env::var("SURVEY_HILLS").ok().and_then(|v|v.parse().ok()).unwrap_or(0.0);
+        let seeds = std::env::var("SURVEY_SEEDS").unwrap_or_else(|_| "earth-roof".into());
+        let population: u32 = std::env::var("SURVEY_POP").ok().and_then(|v|v.parse().ok()).unwrap_or(2500);
+        let rivers: &[bool] = if std::env::var("SURVEY_DRY").is_ok() { &[false] } else { &[false, true] };
+        for culture in cultures.split(',') { for seed in seeds.split(',') { for &river in rivers {
+            let seed = format!("{seed}-{culture}");
+            let clock = std::time::Instant::now();
+            let (l,part,requests) = town_on(&seed,culture,population,river,hide,hills);
+            println!("\nSURVEY population {population} generated in {:.1} s",clock.elapsed().as_secs_f64());
+            if let Ok(dir) = std::env::var("SURVEY_OUT") {
+                std::fs::create_dir_all(&dir).unwrap();
+                let previews: Vec<_> = requests.iter().map(|r|json!({"parcel_id":r["parcel_id"],"preview":r["preview"],"role":r["programme"]["role"]})).collect();
+                std::fs::write(std::path::Path::new(&dir).join(format!("{seed}-{}-h{hills}.json",if river {"river"} else {"flat"})),serde_json::to_vec(&json!({"layout":l,"partition":part,"requests":previews})).unwrap()).unwrap();
+            }
+            let used: HashSet<_> = requests.iter().filter(|r|r["preview"].as_array().is_some_and(|p|!p.is_empty())).filter_map(|r|r["parcel_id"].as_str()).collect();
+            let rings = walls(&l);
+            let inside = |s: &Shape| rings.iter().any(|r| r.contains(g::interior_point(s)));
+            let pr = part.programme.as_ref().unwrap();
+            let roles: HashMap<&str,&str> = pr.allocations.iter().map(|a|(a.parcel_id.as_str(),a.role.as_str())).collect();
+            let mut reasons = std::collections::BTreeMap::new();
+            for p in &part.parcels { let e = reasons.entry((p.use_kind.as_str(),p.reason.as_str())).or_insert((0usize,0usize,0usize)); e.0 += 1; e.1 += usize::from(used.contains(p.id.as_str())); e.2 += usize::from(roles.contains_key(p.id.as_str())); }
+            let wanted: f64 = pr.demands.iter().filter(|d|d.unit == "domesticUnits").map(|d|d.requested).sum();
+            let housed: f64 = pr.allocations.iter().map(|a|a.households).sum();
+            let m = l.structure.as_ref().map(|s| &s.metrics);
+            println!("\nSURVEY {culture} seed={seed} hills={hills} river={river} hide={hide}: quarters {} blocks {} streets {} enclosures {} lots {} with building {} allocations {}",
+                l.quarters.len(),l.blocks.len(),l.streets.len(),l.enclosures.len(),part.parcels.len(),used.len(),pr.allocations.len());
+            println!("  households wanted {wanted:.0} housed {housed:.0} housing_capacity {:.0}; metrics {}",pr.housing_capacity,m.map(|m|serde_json::to_string(m).unwrap()).unwrap_or_default());
+            println!("  mechanism {:?} family {:?}",l.structure.as_ref().map(|s|&s.mechanism),l.structure.as_ref().map(|s|&s.family));
+            println!("  lots (use,reason) -> (count, built, allocated): {reasons:?}");
+            println!("  warnings layout {:?}\n  warnings programme {:?}",l.warnings,pr.warnings);
+            let (bare,bare_area,plan,plan_area) = bare_plan_blocks(&l,&part,&requests);
+            println!("  plan blocks {plan} ({plan_area:.0} m2), without building {bare} ({bare_area:.0} m2)");
+            let mut kinds = std::collections::BTreeMap::new();
+            for (i,b) in l.blocks.iter().enumerate() {
+                let lots: Vec<_> = part.parcels.iter().filter(|p|p.block == i).collect();
+                let built = lots.iter().filter(|p|used.contains(p.id.as_str())).count();
+                let e = kinds.entry((b.kind.as_str(),b.zone.as_str(),inside(&b.shape),built > 0)).or_insert((0usize,0.0f64));
+                e.0 += 1; e.1 += g::area(&b.shape);
+                if built == 0 && (inside(&b.shape) || matches!(b.zone.as_str(),"core"|"middle")) {
+                    let mut why = std::collections::BTreeMap::new();
+                    for p in &lots { *why.entry((p.use_kind.as_str(),p.reason.as_str(),roles.get(p.id.as_str()).copied().unwrap_or("-"))).or_insert(0usize) += 1; }
+                    let res: Vec<_> = pr.reservations.iter().filter(|r|r.block == i).map(|r|r.demand_id.as_str()).collect();
+                    println!("    bare block {i} kind {} zone {} q{} inside {} area {:.0} reservations {res:?} lots {why:?}",b.kind,b.zone,b.quarter,inside(&b.shape),g::area(&b.shape));
+                }
+            }
+            println!("  blocks (kind,zone,inside,built) -> (count, area): {kinds:?}");
+            let shape_area = |v: &serde_json::Value| serde_json::from_value::<Shape>(v.clone()).map_or(0.0, |s| g::area(&s));
+            let block_of: HashMap<&str, usize> = part.parcels.iter().map(|p| (p.id.as_str(), p.block)).collect();
+            let mut cover = vec![0.0; l.blocks.len()];
+            for r in &requests {
+                if let Some(&b) = r["parcel_id"].as_str().and_then(|id| block_of.get(id)) {
+                    cover[b] += r["preview"].as_array().map_or(0.0, |p| p.iter().map(shape_area).sum::<f64>());
+                }
+            }
+            // Every zone: the ground of the plan against the ground that holds buildings.
+            let lot_area: f64 = part.parcels.iter().filter(|p| matches!(p.use_kind.as_str(),"plot"|"compound")).map(|p| g::area(&p.shape)).sum();
+            let built_lot_area: f64 = part.parcels.iter().filter(|p| used.contains(p.id.as_str())).map(|p| g::area(&p.shape)).sum();
+            let mut zones = std::collections::BTreeMap::new();
+            for (i,b) in l.blocks.iter().enumerate() {
+                let e = zones.entry((b.zone.as_str(), if b.kind == "block" { "block" } else if b.kind == "reserve" { "released" } else { "other" })).or_insert((0usize,0.0f64,0usize,0.0f64,0.0f64));
+                let a = g::area(&b.shape);
+                e.0 += 1; e.1 += a; e.4 += cover[i];
+                if cover[i] < 0.05 * a { e.2 += 1; e.3 += a; }
+            }
+            println!("  all blocks {:.0} m2, footprint {:.0} m2; house lots {lot_area:.0} m2, lots with a building {built_lot_area:.0} m2",l.blocks.iter().map(|b|g::area(&b.shape)).sum::<f64>(),cover.iter().sum::<f64>());
+            println!("  by (zone, kind) -> (blocks, area, blocks under 5 % built, their area, footprint): {zones:?}");
+            let households: f64 = pr.allocations.iter().map(|a|a.households).sum();
+            let homes = pr.allocations.iter().filter(|a|a.households > 0.0).count();
+            println!("  homes {homes}, households per home {:.1}; demands {:?}",households/homes.max(1) as f64,pr.demands.iter().filter(|d|d.unit == "domesticUnits").map(|d|(d.role.as_str(),d.requested.round(),d.built_capacity.round(),d.deficit.round())).collect::<Vec<_>>());
+            for r in &pr.reservations {
+                let d = pr.demands.iter().find(|d| d.id == r.demand_id);
+                let b = &l.blocks[r.block];
+                println!("    reservation {} role {} fn {} landmark {} block {} kind {} zone {} inside {} area {:.0} target {:.0} footprint {:.0}",r.demand_id,d.map_or("?",|d|d.role.as_str()),d.map_or("?",|d|d.function.as_str()),d.is_some_and(|d|d.landmark),r.block,b.kind,b.zone,inside(&b.shape),g::area(&b.shape),d.map_or(0.0,|d|d.target_area),cover[r.block]);
+            }
+            let (mut plan_area, mut plan_cover, mut open_area) = (0.0, 0.0, 0.0);
+            for (i,b) in l.blocks.iter().enumerate().filter(|(_,b)| inside(&b.shape)) {
+                let (a, c) = (g::area(&b.shape), cover[i]);
+                plan_area += a; plan_cover += c;
+                if c < 0.1 * a { open_area += a; println!("    open intra-muros block {i} kind {} zone {} area {a:.0} footprint {c:.0}",b.kind,b.zone); }
+            }
+            println!("  intra-muros blocks {plan_area:.0} m2, building footprint {plan_cover:.0} m2 ({:.0} %), in blocks under 10 % built {open_area:.0} m2 ({:.0} %)",100.0*plan_cover/plan_area.max(1.0),100.0*open_area/plan_area.max(1.0));
+            let mut bare_quarters = vec![];
+            for (q,quarter) in l.quarters.iter().enumerate() {
+                let blocks: Vec<_> = l.blocks.iter().enumerate().filter(|(_,b)|b.quarter == q).collect();
+                let built = part.parcels.iter().any(|p|used.contains(p.id.as_str()) && l.blocks.get(p.block).is_some_and(|b|b.quarter == q));
+                if !built { bare_quarters.push(format!("q{q} {} {:.0}m2 blocks {} inside {}",quarter.zone,g::area(&quarter.shape),blocks.len(),!quarter.shape.outer.is_empty() && inside(&quarter.shape))); }
+            }
+            println!("  quarters without building {}/{}: {bare_quarters:?}",bare_quarters.len(),l.quarters.len());
+        } } }
+    }
+
+    /// A cyberpunk town of 10 000 is a low town (its height ladder): no home
+    /// above four storeys, no tower or megastructure, and its people housed.
+    #[test]
+    fn a_small_modern_town_stays_low_and_houses_its_people() {
+        let (_, part, requests) = town_on("scale-cyberpunk", "cyberpunk", 10_000, false, false, 0.0);
+        let pr = part.programme.as_ref().unwrap();
+        let top = requests.iter().filter(|r| r["programme"]["role"].as_str().is_some_and(|s| s.starts_with("dwelling")))
+            .filter_map(|r| r["programme"]["massing"].as_array()).flat_map(|a| a.iter().filter_map(|p| p["floors"].as_u64())).max().unwrap_or(0);
+        assert!((1..=4).contains(&top), "homes of {top} storeys");
+        let tall = pr.allocations.iter().filter(|a| ["housing.tower", "civic.megastructure", "civic.arcology"].iter().any(|r| a.role.starts_with(r))).count();
+        assert_eq!(tall, 0);
+        let housed = pr.allocations.iter().map(|a| a.households).sum::<f64>() * super::super::roles::occupancy("cyberpunk").household_size;
+        assert!(housed >= 9_000.0, "{housed:.0} of 10 000 housed");
+    }
+
+    /// Height and density of the modern styles by population (`SCALE_CULTURES`,
+    /// `SCALE_POPS`): inhabitants housed, lots built, block coverage, street
+    /// land, storeys, tall singular buildings, street length along no built lot.
+    #[test]
+    #[ignore]
+    fn survey_modern_scale() {
+        let cultures = std::env::var("SCALE_CULTURES").unwrap_or_else(|_| "cyberpunk,global-high-rise,chinese-megacity,soviet-socialist,haussmannian".into());
+        let pops = std::env::var("SCALE_POPS").unwrap_or_else(|_| "10000,25000,50000,100000".into());
+        println!("SCALE | culture | pop | housed/target | built lots/lots | block coverage | street land | storeys p50/p90/max | lots >= 9 storeys | towers+slabs / mega+arco / sky+tv | dead street m (of m)");
+        for culture in cultures.split(',') { for pop in pops.split(',').filter_map(|p| p.parse::<u32>().ok()) {
+            let clock = std::time::Instant::now();
+            let hills: f32 = std::env::var("SCALE_HILLS").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            let (l, part, requests) = town_on(&format!("scale-{culture}"), culture, pop, false, false, hills);
+            let pr = part.programme.as_ref().unwrap();
+            let used: HashSet<&str> = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).filter_map(|r| r["parcel_id"].as_str()).collect();
+            let size = super::super::roles::occupancy(culture).household_size;
+            let housed: f64 = pr.allocations.iter().map(|a| a.households).sum::<f64>() * size;
+            let wanted: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum::<f64>() * size;
+            println!("SCALE-DETAIL {culture} {pop}: dwelling demand {wanted:.0} inhabitants; warnings {:?}", pr.warnings.iter().filter(|w| w.contains("opulation")).collect::<Vec<_>>());
+            let lots: Vec<_> = part.parcels.iter().collect();
+            let built = lots.iter().filter(|p| used.contains(p.id.as_str())).count();
+            let shape_area = |v: &serde_json::Value| serde_json::from_value::<Shape>(v.clone()).map_or(0.0, |s| g::area(&s));
+            let footprint: f64 = requests.iter().map(|r| r["preview"].as_array().map_or(0.0, |p| p.iter().map(shape_area).sum::<f64>())).sum();
+            let blocks: f64 = l.blocks.iter().filter(|b| b.kind == "block").map(|b| g::area(&b.shape)).sum();
+            let len = |s: &Street| s.path.windows(2).map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y)).sum::<f64>();
+            let width = |s: &Street| s.widths.iter().sum::<f64>() / s.widths.len().max(1) as f64;
+            let streets: f64 = l.streets.iter().map(|s| len(s) * width(s)).sum();
+            let mut floors: Vec<u64> = requests.iter().filter(|r| r["preview"].as_array().is_some_and(|p| !p.is_empty())).filter_map(|r| {
+                let m = &r["programme"]["massing"];
+                m.as_array().map_or_else(|| m["floors"].as_u64(), |a| a.iter().filter_map(|p| p["floors"].as_u64()).max())
+            }).collect();
+            floors.sort_unstable();
+            let q = |f: f64| floors.get(((floors.len() as f64 - 1.0) * f).round().max(0.0) as usize).copied().unwrap_or(0);
+            let tall = floors.iter().filter(|&&f| f >= 9).count();
+            let count = |roles: &[&str]| pr.allocations.iter().filter(|a| roles.iter().any(|r| a.role.starts_with(r))).count();
+            // Street length (local streets) with no built lot within reach on either side.
+            let cell = 60.0;
+            let mut grid: HashMap<(i64, i64), Vec<&Shape>> = HashMap::new();
+            for p in part.parcels.iter().filter(|p| used.contains(p.id.as_str())) {
+                let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                for v in &p.shape.outer { x0 = x0.min(v.x); y0 = y0.min(v.y); x1 = x1.max(v.x); y1 = y1.max(v.y); }
+                for cx in (x0 / cell).floor() as i64..=(x1 / cell).floor() as i64 { for cy in (y0 / cell).floor() as i64..=(y1 / cell).floor() as i64 {
+                    grid.entry((cx, cy)).or_default().push(&p.shape);
+                } }
+            }
+            let near = |at: Point, reach: f64| {
+                let (cx, cy) = ((at.x / cell).floor() as i64, (at.y / cell).floor() as i64);
+                (cx - 1..=cx + 1).any(|x| (cy - 1..=cy + 1).any(|y| grid.get(&(x, y)).is_some_and(|v| v.iter().any(|s|
+                    g::contains(s, at) || s.outer.iter().zip(s.outer.iter().cycle().skip(1)).any(|(a, b)| g::distance(at, *a, *b).0 <= reach)))))
+            };
+            let (mut dead, mut local) = (0.0, 0.0);
+            for s in l.streets.iter().filter(|s| s.role != "regional") {
+                let reach = width(s) * 0.5 + 6.0;
+                for w in s.path.windows(2) {
+                    let d = (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+                    let n = (d / 10.0).ceil().max(1.0) as usize;
+                    for i in 0..n {
+                        let t = (i as f64 + 0.5) / n as f64;
+                        let at = Point { x: w[0].x + t * (w[1].x - w[0].x), y: w[0].y + t * (w[1].y - w[0].y) };
+                        local += d / n as f64;
+                        if !near(at, reach) { dead += d / n as f64; }
+                    }
+                }
+            }
+            println!("SCALE | {culture} | {pop} | {housed:.0}/{pop} | {built}/{} | {:.0} % | {:.0} % | {}/{}/{} | {tall} | {} / {} / {} | {dead:.0} ({local:.0}) | {:.1} s",
+                lots.len(), 100.0 * footprint / blocks.max(1.0), 100.0 * streets / (streets + blocks).max(1.0), q(0.5), q(0.9), q(1.0),
+                count(&["housing.tower", "housing.slab"]), count(&["civic.megastructure", "civic.arcology"]), count(&["commerce.skyscraper", "civic.tv-tower"]),
+                clock.elapsed().as_secs_f64());
+        } }
+    }
+
     #[test]
     #[ignore]
     fn survey_fringe() {

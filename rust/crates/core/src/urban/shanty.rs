@@ -1250,7 +1250,7 @@ pub(super) fn request(
         distance: 1.3,
         seed,
         archetype: "",
-        complex: false,
+        complex: false, user_core: false,
     });
     let eave = rng.range(2.0, 2.7);
     if let Some(masses) = masses.as_array_mut() {

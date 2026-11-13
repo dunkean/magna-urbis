@@ -12,7 +12,9 @@ import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { landDetail, withLandDetail, worldLandCultures } from '../ui/landDetail';
 import { retainTerrainDisplayPreparation, runDisplayJob, registerDisplayLanduse, displayWorkerEpoch, type WorkerOccupation } from './displayPrep';
 import { productRevision } from '../render/displayProduct';
-import { forestCorridors } from '../render/forestRoom';
+import { forestCorridors, streetCorridors, type ForestCorridor } from '../render/forestRoom';
+import { layoutPavementSites, layoutStreetPavements, splitByPavement } from '../render/roadPavement';
+import { nativeCitiesOf } from './nativeProducts';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
 import { executionRuntime } from '../ui/executionProfile';
 
@@ -22,11 +24,20 @@ type OccupationParts = { occupation: Promise<ForestOccupation | undefined>; deta
 interface OccupationEntry { whole?: ForestOccupation; complete?: boolean; parts?: OccupationParts }
 const workerOccupations = new WeakMap<Uint8Array, WorkerOccupation>();
 const occupations = new WeakMap<LandUseLayer, Map<string, OccupationEntry>>();
+/** Every way of the world as a forest corridor: regional roads by surface (a paved length is cleared like a main road)
+ * and the streets of the towns, so no tree is rooted on a street, in 2D as in 3D. */
+function v2Corridors(world: World): ForestCorridor[] {
+  const layouts = nativeCitiesOf(world).flatMap(city => city.layouts ?? []), sites = layoutPavementSites(layouts);
+  return forestCorridors(world, false, sites && (path => splitByPavement(path, sites).map(piece => ({ path: [...piece.path], pavement: piece.pavement }))),
+    layouts.flatMap(layout => streetCorridors(layout.streets, layoutStreetPavements(layout))));
+}
+/** The exact ways ride with the occupation raster to the modelled trees (terrain3dTrees.ts). */
+const withWays = (occupation: ForestOccupation | undefined, ways: readonly ForestCorridor[]): ForestOccupation | undefined => occupation && { ...occupation, ways };
 function occupationEntry(world: World): OccupationEntry | undefined {
   retainTerrainDisplayPreparation(world);
   const landuse = world.landuse; if (!landuse) return;
   const region = world.debug?.v2RustRegion as { placement?: { activities?: object }; roads?: { nodes?: object } } | undefined;
-  const key = `1:${productRevision(world.roads)}:${productRevision(region?.placement?.activities)}:${productRevision(region?.roads?.nodes)}`;
+  const key = `1:${productRevision(world.roads)}:${productRevision(region?.placement?.activities)}:${productRevision(region?.roads?.nodes)}:${nativeCitiesOf(world).map(city => productRevision(city.layouts)).join(',')}`;
   let entries = occupations.get(landuse); if (!entries) { entries = new Map(); occupations.set(landuse, entries); }
   let entry = entries.get(key); if (!entry) { entry = {}; entries.set(key, entry); if (entries.size > 4) entries.delete(entries.keys().next().value!); }
   return entry;
@@ -34,7 +45,7 @@ function occupationEntry(world: World): OccupationEntry | undefined {
 /** Land-use/corridor revision, independent from presentation and visibility. Synchronous consumers reuse the async product. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const entry = occupationEntry(world); if (!entry) return;
-  if (!entry.complete) { entry.whole = withLandDetail(forestOccupation(world.landuse!, undefined, undefined, forestCorridors(world, false)), world.landuse!, worldLandCultures(world)); entry.complete = true; }
+  if (!entry.complete) { const ways = v2Corridors(world); entry.whole = withLandDetail(withWays(forestOccupation(world.landuse!, undefined, undefined, ways), ways), world.landuse!, worldLandCultures(world)); entry.complete = true; }
   return entry.whole;
 }
 /** One preparation lane for occupation, holdings, footprint merges and display forest overrides. */
@@ -46,12 +57,12 @@ export function v2ForestOccupationParts(world: World): OccupationParts {
     return entry.parts ??= { occupation: Promise.resolve(whole && { ...whole, detail: undefined }), detail: Promise.resolve(whole?.detail) };
   }
   if (!entry.parts) {
-    const registered = registerDisplayLanduse(landuse), revision = productRevision(entry);
-    const occupation = registered.ready.then(() => runDisplayJob('occupation', { landuseRevision: registered.revision, revision, corridors: forestCorridors(world, false) }))
+    const registered = registerDisplayLanduse(landuse), revision = productRevision(entry), ways = v2Corridors(world);
+    const occupation = registered.ready.then(() => runDisplayJob('occupation', { landuseRevision: registered.revision, revision, corridors: ways }))
       .then(result => {
         if (result) workerOccupations.set(result.rgba, { landuseRevision: registered.revision, revision, epoch: registered.epoch });
-        return result;
-      }).catch(() => forestOccupation(landuse, undefined, undefined, forestCorridors(world, false)));
+        return withWays(result, ways);
+      }).catch(() => withWays(forestOccupation(landuse, undefined, undefined, ways), ways));
     // Let every occupation subscriber post its dependent merge before sending optional detail.
     // A main-thread task boundary preserves that order even when the page is CPU-throttled.
     // Holdings take the crops of the culture of the nearest place.
@@ -80,7 +91,7 @@ export function withBuildingOccupationAsync(base: ForestOccupation | undefined, 
   const ref = base && workerOccupations.get(base.rgba), retained = ref?.epoch === displayWorkerEpoch() ? ref : undefined;
   const job = typeof Worker === 'undefined' || typeof document === 'undefined' ? Promise.resolve(local())
     : runDisplayJob('merge', { retained, source: !retained && base ? { x: base.x, y: base.y, width: base.width, n: base.n, rgba: base.rgba, key: base.key } : undefined, shapes: packed }, [packed.buffer]).catch(local);
-  slot.pending = job.then(result => slot.value = { ...result, detail: base?.detail }).finally(() => { slot.pending = undefined; });
+  slot.pending = job.then(result => slot.value = { ...result, detail: base?.detail, ways: base?.ways }).finally(() => { slot.pending = undefined; });
   return slot.pending;
 }
 const pending = new WeakMap<object, Map<string, Promise<ForestField | undefined>>>();

@@ -26,9 +26,23 @@ fn pair(v: &Value) -> (f64, f64) { (v[0].as_f64().unwrap_or(0.0), v[1].as_f64().
 /// Whether a preview label is a farm outbuilding (a key of the `buildings` table).
 pub(super) fn is_outbuilding(label: &str) -> bool { data()["buildings"].get(label).is_some() }
 
-/// The farm type of a lot: a weighted draw among its culture's types (same seed, same type).
+/// Marker of a seed that carries its farm type (`pinned`).
+const TYPE_PIN: &str = "#farm-type=";
+
+/// `seed` carrying the farm type `kind`: the land-use farms draw their type with their
+/// site rules (landuse/farms.rs); every reading here (`farm_type`, `house_size`, `plot`,
+/// `look`, `build`) then follows that type instead of drawing one.
+pub(super) fn pinned(seed: &str, kind: &str) -> String { format!("{seed}{TYPE_PIN}{kind}") }
+
+/// The farm type of a lot: a weighted draw among its culture's types (same seed, same type);
+/// the type a `pinned` seed carries when it is one of the catalogue.
 pub(super) fn farm_type(culture: &str, seed: &str) -> &'static str {
     let d = data();
+    if let Some((_, kind)) = seed.rsplit_once(TYPE_PIN)
+        && let Some(k) = d["types"].as_object().and_then(|o| o.keys().find(|k| k.as_str() == kind))
+    {
+        return k.as_str();
+    }
     let c = d["cultures"].get(culture).unwrap_or(&d["cultures"][d["default"].as_str().unwrap_or("european-organic")]);
     let types: Vec<(&'static str, f64)> = c["types"].as_array().map_or(vec![], |a| a.iter()
         .filter_map(|t| Some((t[0].as_str()?, t[1].as_f64().unwrap_or(1.0)))).collect());

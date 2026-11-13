@@ -130,6 +130,22 @@ pub(in crate::urban) struct CultureTraits {
     /// its own `overrides.<culture id>` (styles of one building tradition share
     /// their flat roofs, mansards or tower crowns without copying them).
     pub role_groups: Vec<String>,
+    /// Wall palette of a modern style: an id of `palettes` (`styles_modern.json`);
+    /// empty: the walls keep their material's own colour (no `tint`).
+    pub palette: String,
+    /// Height ladder of a modern style: an id of `ladders` (`styles_modern.json`)
+    /// capping its ordinary buildings' storeys by the settlement's population;
+    /// empty: no cap (the tissue's storey range by zone only).
+    pub height_ladder: String,
+}
+
+/// Wall tints of a style (`palettes.<id>`): sRGB `#rrggbb` keys and their
+/// weights, for ordinary homes and for singular and collective buildings.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(in crate::urban) struct Palette {
+    pub homes: HashMap<String, f64>,
+    pub special: HashMap<String, f64>,
 }
 
 #[derive(Default, Deserialize)]
@@ -146,6 +162,9 @@ struct Styles {
     kits: HashMap<String, Kit>,
     derive: Vec<Derive>,
     cultures: HashMap<String, Culture>,
+    palettes: HashMap<String, Palette>,
+    /// Height ladders: `[population, storeys]` steps in ascending population.
+    ladders: HashMap<String, Vec<[f64; 2]>>,
 }
 
 /// The registry: `styles.json`, then the files that add styles to it (their
@@ -159,15 +178,48 @@ fn styles() -> &'static Styles {
             all.kits.extend(more.kits);
             all.cultures.extend(more.cultures);
             all.derive.extend(more.derive);
+            all.palettes.extend(more.palettes);
+            all.ladders.extend(more.ladders);
         }
         all
     })
+}
+
+/// Storey cap of a culture's ordinary buildings in a settlement of
+/// `population` (its `heightLadder`): the storeys of the last step the
+/// population reaches. A quarter the user set as city core (`core`) and an
+/// unknown population (0) take the ladder's top step. None: no ladder.
+pub(in crate::urban) fn storey_cap(culture: &str, population: u32, core: bool) -> Option<u32> {
+    let steps = styles().ladders.get(traits(culture).height_ladder.as_str())?;
+    let top = steps.last()?;
+    let step = if core || population == 0 { top } else {
+        steps.iter().take_while(|s| s[0] <= population as f64).last().unwrap_or(&steps[0])
+    };
+    Some((step[1].max(1.0)) as u32)
+}
+
+/// A storey range under a ladder's cap: unchanged below it; else the cap on
+/// top and the low end at most 60 % of it, so a capped tower tissue becomes
+/// low blocks (cap 4: 2–4 storeys), never a row of equal stumps.
+pub(in crate::urban) fn capped_storeys([lo, hi]: [u32; 2], cap: Option<u32>) -> [u32; 2] {
+    match cap {
+        Some(c) if hi > c => [lo.min(((c as f64 * 0.6).round() as u32).max(1)), c.max(1)],
+        _ => [lo, hi],
+    }
 }
 
 /// Building traits of a culture (neutral for a culture without an entry).
 pub(in crate::urban) fn traits(culture: &str) -> &'static CultureTraits {
     static NEUTRAL: OnceLock<CultureTraits> = OnceLock::new();
     styles().cultures.get(culture).map_or_else(|| NEUTRAL.get_or_init(CultureTraits::default), |c| &c.traits)
+}
+
+/// Wall tints of a culture's palette: the `special` list (singular and
+/// collective buildings) or the `homes` one; None: the culture has no palette.
+pub(in crate::urban) fn tints(culture: &str, special: bool) -> Option<&'static HashMap<String, f64>> {
+    let p = styles().palettes.get(traits(culture).palette.as_str())?;
+    let t = if special && !p.special.is_empty() { &p.special } else { &p.homes };
+    (!t.is_empty()).then_some(t)
 }
 
 /// Metric scale of a culture's houses (1 unless its traits say otherwise) and
@@ -247,6 +299,25 @@ mod tests {
         // A culture may state traits only; its kit is then derived.
         for (c, v) in &s.cultures {
             assert!(v.kit.is_empty() || s.kits.contains_key(&v.kit), "culture {c} kit {}", v.kit);
+        }
+        // Every palette a culture names exists and lists sRGB tints.
+        for (c, v) in &s.cultures {
+            let id = &v.traits.palette;
+            assert!(id.is_empty() || s.palettes.contains_key(id), "culture {c} palette {id}");
+        }
+        // Every height ladder a culture names exists, its steps ascending.
+        for (c, v) in &s.cultures {
+            let id = &v.traits.height_ladder;
+            assert!(id.is_empty() || s.ladders.contains_key(id), "culture {c} ladder {id}");
+        }
+        for (id, steps) in &s.ladders {
+            assert!(!steps.is_empty() && steps.windows(2).all(|w| w[0][0] < w[1][0] && w[0][1] <= w[1][1]), "ladder {id}");
+        }
+        for (id, p) in &s.palettes {
+            assert!(!p.homes.is_empty(), "palette {id}");
+            for k in p.homes.keys().chain(p.special.keys()) {
+                assert!(k.len() == 7 && k.starts_with('#') && k[1..].chars().all(|c| c.is_ascii_hexdigit()), "palette {id}: {k}");
+            }
         }
     }
 

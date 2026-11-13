@@ -291,7 +291,10 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
   };
   const climate = displayClimate(display), ink = climate && !display.material ? regimeInk(display.style, edge) : undefined;
   const line = (l: RiverLine, thinner: number): void => {
-    const geo = riverGeometry(water, l, thinner, display.riverArea), { points, widths, kind } = geo;
+    const geo = riverGeometry(water, l, thinner, display.riverArea), { points, kind } = geo, widths = geo.widths.slice();
+    // The drawn ribbon narrows over its last segment where the course ends in the sea (MOUTH_END).
+    { const m = widths.length - 1, h = water.hydro, cell = h.width / h.n, x = Math.floor(points[2 * m] / cell), y = Math.floor(points[2 * m + 1] / cell);
+      if (m > 0 && kind[0] !== 5 && x >= 0 && y >= 0 && x < h.n && y < h.n && h.sea[y * h.n + x]) widths[m] *= MOUTH_END; }
     const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
     for (let i = 1; i < widths.length; i++) {
       const x0 = points[2 * i - 2], y0 = points[2 * i - 1], x1 = points[2 * i], y1 = points[2 * i + 1];
@@ -356,6 +359,15 @@ export function riverGeometry(water: VectorWater, line: RiverLine, thinner: numb
   return headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 };
 }
 
+/** Width gain of a river at its mouth in the sea, by the width of its channel there (m): none for a rill, a third
+ * for a brook, nearly double for a stream, about two and a half for a large river. */
+export function mouthFlare(width: number): number {
+  const smooth = (a: number, b: number, v: number): number => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  return 1 + .35 * smooth(3, 8, width) + .5 * smooth(8, 25, width) + .7 * smooth(30, 70, width);
+}
+/** Share of its width a drawn course keeps at a last vertex that lies in the sea: the ribbon narrows over its last
+ * segment and ends inside the water it enters, instead of pushing a round cap as wide as the mouth out of the coast. */
+export const MOUTH_END = .2;
 /** Hydraulic geometry, shared by both renderers; tidal mouths widen gradually. */
 export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): number[] {
   const widths = line.area.map((a, i) => channelWidth(a / (line.threads?.[i] ?? 1), water.widthScale ?? water.rivers?.widthScale ?? 1) * (thinner ? 0.65 : 1));
@@ -365,10 +377,9 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
   const back = Math.max(0, m - 1), dx = p[2 * m] - p[2 * back], dy = p[2 * m + 1] - p[2 * back + 1], run = Math.hypot(dx, dy) || 1;
   if ((sea(p[2 * m], p[2 * m + 1]) || sea(p[2 * m] + dx / run * cell, p[2 * m + 1] + dy / run * cell) || h.sea[line.outlet ?? -1]) && line.kind[0] !== 5) {
     // Exponential flare towards the sea, by the river's size, with a length and profile of its own. The gains follow
-    // the estuary modes of the hydrology (rust terrain hydrology: 1.6 simple, 2.4 widening, 4.0 funnel): a brook
-    // widens by half, a stream more than doubles, a large river opens into a funnel.
-    const smooth = (a: number, b: number, v: number): number => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
-    const factor = 1.6 + .8 * smooth(8, 25, widths[m]) + 1.6 * smooth(30, 70, widths[m]);
+    // the estuary modes of the hydrology, held lower (a 4x funnel read as a bulb at the coast): a brook widens by
+    // a third, a stream nearly doubles, a large river opens into a funnel of about two and a half widths.
+    const factor = mouthFlare(widths[m]);
     let hash = Math.imul(Math.round(p[2 * m]) ^ Math.imul(Math.round(p[2 * m + 1]), 668265263), 374761393);
     hash = (hash ^ (hash >>> 13)) >>> 0;
     const reach = widths[m] * (10 + 18 * (hash & 255) / 255), profile = 1.3 + 1.2 * ((hash >>> 8) & 255) / 255;
@@ -377,6 +388,7 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
       widths[i] *= factor ** ((1 - arc / reach) ** profile);
       if (i) arc += Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
     }
+
   }
   return widths;
 }

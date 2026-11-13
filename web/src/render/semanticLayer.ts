@@ -17,16 +17,19 @@ export interface SemanticDrawOptions {
 export interface RuralSemanticOptions extends SemanticDrawOptions { classes: Readonly<Record<LandKind, boolean>>; indexed?: boolean; patterns?: boolean; fieldStrips?: boolean }
 
 export interface SemanticClass { color: string; label: string; pattern: SemanticPatternId; /** Border dash, screen pixels. */ dash: readonly number[] }
-/** One stable colour, pattern and border dash per rural class (greyscale-readable); independent of the ground palette. Also the legend. */
+/** One stable colour, pattern and border dash per rural class (greyscale-readable); independent of the ground palette. Also the legend.
+ * Soft survey washes, not poster colours (user, 2026-11-13: cadastre "plus douces et moins flashy"); hue and lightness still part the classes.
+ * Fields and forests carry no pattern: the ground already draws each field's furrows in its own direction (a global hatch crossed
+ * them), and a forest is its tinted zone (tree dots over it doubled the sign). */
 export const RURAL_SEMANTIC: Readonly<Record<LandKind, SemanticClass>> = {
-  field: { color: '#d99a1e', label: 'Arable land', pattern: 'furrows', dash: [] },
-  meadow: { color: '#8fd45a', label: 'Meadow land', pattern: 'none', dash: [] },
-  pasture: { color: '#7f8a1c', label: 'Grazing land', pattern: 'dots', dash: [4, 3] },
-  forest: { color: '#17632f', label: 'Forest land', pattern: 'trees', dash: [] },
-  orchard: { color: '#33a852', label: 'Orchard land', pattern: 'grid', dash: [1.5, 3] },
-  garden: { color: '#c4d82e', label: 'Garden land', pattern: 'cross', dash: [6, 2, 1.5, 2] },
-  marsh: { color: '#1b9aa6', label: 'Wetland', pattern: 'reeds', dash: [5, 2] },
-  commons: { color: '#a8998a', label: 'Common land', pattern: 'dashes', dash: [8, 4] },
+  field: { color: '#d6b878', label: 'Arable land', pattern: 'none', dash: [] },
+  meadow: { color: '#b2cf95', label: 'Meadow land', pattern: 'none', dash: [] },
+  pasture: { color: '#a3a46e', label: 'Grazing land', pattern: 'dots', dash: [4, 3] },
+  forest: { color: '#5f8a69', label: 'Forest land', pattern: 'none', dash: [] },
+  orchard: { color: '#8db892', label: 'Orchard land', pattern: 'grid', dash: [1.5, 3] },
+  garden: { color: '#c8d08e', label: 'Garden land', pattern: 'cross', dash: [6, 2, 1.5, 2] },
+  marsh: { color: '#86b6b6', label: 'Wetland', pattern: 'reeds', dash: [5, 2] },
+  commons: { color: '#b8afa3', label: 'Common land', pattern: 'dashes', dash: [8, 4] },
 };
 const RURAL_ORDER: readonly LandKind[] = ['commons', 'pasture', 'meadow', 'marsh', 'field', 'garden', 'orchard', 'forest'];
 
@@ -36,9 +39,15 @@ const URBAN_LABELS_EN: Readonly<Record<string, string>> = {
   civic: 'Civic district', market: 'Market district', religious: 'Religious district', craft: 'Craft district', port: 'Port district', elite: 'Notables district',
   commoner: 'Commoner district', poor: 'Poor district', garrison: 'Garrison district', gardens: 'Gardens district', foreign: 'Foreign quarter',
 };
-/** District usage classes: the existing role palette (cityCanvas DISTRICT_ROLES) plus public spaces and a fallback. */
+/** The colour pulled `t` of the way toward a warm paper grey of its own lightness: same hue order, less saturation. */
+function mute(hex: string, t: number): string {
+  // Parsed here: this runs while the module initialises, before `hexParts` below exists.
+  const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), grey = .3 * rgb[0] + .59 * rgb[1] + .11 * rgb[2], paper = [grey * 1.04 + 6, grey + 4, grey * .94];
+  return '#' + rgb.map((c, i) => Math.round(Math.max(0, Math.min(255, c + (paper[i] - c) * t))).toString(16).padStart(2, '0')).join('');
+}
+/** District usage classes: the role palette (cityCanvas DISTRICT_ROLES), muted like the rural washes, plus public spaces and a fallback. */
 export const URBAN_SEMANTIC: Readonly<Record<string, SemanticClass>> = {
-  ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([role, { color }]): [string, SemanticClass] => [role, { color, label: URBAN_LABELS_EN[role] ?? role, pattern: 'none', dash: [] }])),
+  ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([role, { color }]): [string, SemanticClass] => [role, { color: mute(color, .4), label: URBAN_LABELS_EN[role] ?? role, pattern: 'none', dash: [] }])),
   public: { color: '#c9d6a0', label: 'Public space', pattern: 'none', dash: [] },
   other: { color: '#8f8a84', label: 'Other / unknown', pattern: 'none', dash: [] },
 };
@@ -89,7 +98,8 @@ function lookStyle(look: SemanticLook, opacity: number): LookStyle | undefined {
   const o = clamp01(opacity);
   switch (look) {
     case 'subtle': return { fill: o * .35, stroke: clamp01(o * 1.1), strokeWidth: 1, pattern: 0, strokeShade: 0 };
-    case 'categorical': return { fill: o, stroke: clamp01(.5 + o), strokeWidth: 1.4, pattern: clamp01(o * 1.4 + .15), strokeShade: .35 };
+    // Soft borders: a class edge a shade darker than its wash, not an ink line around every parcel.
+    case 'categorical': return { fill: o, stroke: clamp01(.3 + o * .9), strokeWidth: 1.1, pattern: clamp01(o * 1.1 + .1), strokeShade: .28 };
     // Thin outlines (user, 2026-11-12: field lines were all one saw): contours and roads must lead, the class pattern stays a light texture.
     case 'outlines': return { fill: 0, stroke: clamp01(.25 + o * .7), strokeWidth: .6, pattern: clamp01(o * .55 + .05), strokeShade: .15 };
     default: return undefined;

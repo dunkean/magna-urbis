@@ -1,6 +1,6 @@
 import { cityCountrysideTextureVisible } from './cityEnvironment';
 import { CITY_LOD_LIMITS, type CityScene } from './cityCanvas';
-import { drawFarmRoofs } from './farmRoofs';
+import { drawFarmLots, drawFarmRoofs, drawPlaceholderRoofs } from './farmRoofs';
 import { yardStyle } from './yardStyle';
 import { DEFAULT_TEXT, textPlacement, drawMapLabels, cityTextLabels, type TextSettings } from './textLayer';
 import { cavernDisplayWorld } from './cavernDisplay';
@@ -43,7 +43,8 @@ import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './c
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_PX } from './groundBlend';
-import { emphasisAlpha, regionalRank, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
+import { CANOPY_LEVELS, canopyRuns, emphasisAlpha, regionalRank, roadCanopyRevision, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
+import { drawWhiteWater, whiteWaterRevision } from './whiteWater';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
 import { RasterTileCache } from './rasterTiles';
@@ -371,6 +372,25 @@ function linePath(P: new () => Path2D, l: LineLayer, ids: ArrayLike<number>, min
     for (let k = 1; k < pts.length; k++) {
       const p = pts[k];
       const dx = p.x - lx, dy = p.y - ly;
+      if (e2 > 0 && dx * dx + dy * dy < e2 && k < pts.length - 1) continue;
+      path.lineTo(p.x, p.y); lx = p.x; ly = p.y;
+    }
+    any = true;
+  }
+  return any ? path : null;
+}
+
+/** The runs of one canopy level (roadStyle.ts canopyRuns) of some lines, simplified as linePath does. */
+function runPath(P: new () => Path2D, lines: readonly { level: number; pts: { x: number; y: number }[] }[][], level: number, minEdge: number): Path2D | null {
+  const path = new P(), e2 = minEdge * minEdge;
+  let any = false;
+  for (const runs of lines) for (const run of runs) {
+    const pts = run.pts;
+    if (run.level !== level || pts.length < 2) continue;
+    let lx = pts[0].x, ly = pts[0].y;
+    path.moveTo(lx, ly);
+    for (let k = 1; k < pts.length; k++) {
+      const p = pts[k], dx = p.x - lx, dy = p.y - ly;
       if (e2 > 0 && dx * dx + dy * dy < e2 && k < pts.length - 1) continue;
       path.lineTo(p.x, p.y); lx = p.x; ly = p.y;
     }
@@ -918,7 +938,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const start = now(), dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const cssW = canvas.width / dpr, cssH = canvas.height / dpr, rect = viewRect(view, cssW, cssH);
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
-    const key = `${scale}|${dpr}|${activeLight}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
+    const key = `${scale}|${dpr}|${activeLight}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     if (retainedFailed === key) return undefined;
     const r0 = retained;
     if (!r0 || r0.stale || r0.key !== key || !covers(r0.rect, rect)) {
@@ -974,7 +994,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const budget = rasterBudget(rect, scale);
     layerTilesFit = activeLight && scale < 1 || layerTilesFitView(rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
-    const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
+    const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${live ? 'live' : 'exact'}|${engine}|${activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(view);
     const buildTile = (request: typeof requests[number]): CanvasImageSource => {
@@ -1170,7 +1190,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
   function drawCachedMap(target: CanvasLike, box: Rect4): boolean {
     const ctx = target.getContext('2d'); if (!ctx) return false;
-    const semantic = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
+    const semantic = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     const light = displayQualityFor(true) === 'light', density = target.width / (box.maxX - box.minX);
     // Coarse first; a finer cached quadrant replaces it without doubling translucent ink.
     const tiles = [...mapPyramid].filter(([, t]) => t.semantic === semantic && t.light === light && t.density <= density * 2
@@ -1345,14 +1365,39 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const natural = roadStyle.look === 'natural', inkAlpha = emphasisAlpha(roadStyle.emphasis);
     /** All the visible pieces of some layers as one path: a translucent stroke never doubles at chunk ends. */
     const merged = (ls: LineLayer[]): Path2D => { const out = new P(); for (const l of ls) for (const p of linePaths(l)) out.addPath(p); return out; };
+    /** The same pieces split by the canopy over them (roadStyle.ts canopyRuns), one path per level, cached per tile and
+     * canopy revision: an earth way reads as a fainter continuous trace under closed woods. */
+    const canopyMerged = (ls: LineLayer[]): (Path2D | undefined)[] => {
+      const revision = roadCanopyRevision(), out: (Path2D | undefined)[] = [];
+      if (!revision) { out[0] = merged(ls); return out; }
+      const runsOf = new Map<string, ReturnType<typeof canopyRuns>[]>();
+      const add = (l: LineLayer, key: string, ids: ArrayLike<number>): void => {
+        for (let k = 0; k < CANOPY_LEVELS; k++) {
+          const p = cached(`${key}|c${revision}|${k}`, () => {
+            let runs = runsOf.get(key); if (!runs) runsOf.set(key, runs = Array.from(ids, i => canopyRuns(l.lines[i])));
+            return runPath(P, runs, k, minEdge);
+          });
+          if (p) (out[k] ??= new P()).addPath(p);
+        }
+      };
+      for (const l of ls) {
+        for (const t of l.index.tilesInRect(rect)) add(l, `${l.name}|${band}|t${t}|${l.tileKeys?.[t] ?? ''}`, l.index.itemsOf(t));
+        for (const i of l.index.bigInRect(rect)) add(l, `${l.name}|${band}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`, [i]);
+      }
+      return out;
+    };
+    const strokeEarthRoads = (ls: LineLayer[], rank: Parameters<typeof strokeNaturalRoad>[2], width: number): void =>
+      canopyMerged(ls).forEach((p, k) => { if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1)); });
     const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
       if (natural) {
         // Layers of one rank share a width: one painter call each, tracks first.
-        if (tracks.length) strokeNaturalRoad(ctx, merged(tracks), 'track', roadWidth('track', tracks[0].width, sc), sc, roadStyle);
+        if (tracks.length) strokeEarthRoads(tracks, 'track', roadWidth('track', tracks[0].width, sc));
         // Earth and gravel first, then the paved lengths of the same rank (roadPavement.ts).
         for (const kind of ['minor', 'major'] as const) for (const pavement of ['earth', 'asphalt'] as const) {
           const ls = roads.filter((l) => l.kind === kind && (l.pavement ?? 'earth') === pavement);
-          if (ls.length) strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, pavement === 'earth' ? roadStyle : { ...roadStyle, pavement });
+          if (!ls.length) continue;
+          if (pavement === 'earth') strokeEarthRoads(ls, regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc));
+          else strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, { ...roadStyle, pavement });
         }
         return;
       }
@@ -1620,18 +1665,26 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
     strokePolys('sea', pal.waterEdge, lw(1.5 * u, 1.2));
     strokePolys('lakes', pal.waterEdge, lw(1.3 * u, 1.1));
+    // White water of steep rivers over a satellite ground (whiteWater.ts): above the water, under the roads and bridges.
+    if (!roadStyle.night) timedRec('white-water', () => drawWhiteWater(ctx, P, pathRect, sc));
 
     // 4. regional roads + farmsteads
     if (lod.farmsteads && polyL('farm-yards')) {
       const drives = linesOf((l) => l.role === 'drive');
       if (natural) { if (drives.length) strokeNaturalRoad(ctx, merged(drives), 'track', roadWidth('track', drives[0].width, sc), sc, roadStyle); }
       else strokeLines(drives, pal.trackFill, (l) => Math.min(lw(l.width * .7, 1), px(2.4)), 0.55 * Math.min(1, inkAlpha), [], 'butt');
-      fillPolys('farm-gardens', pal.land.garden);
+      // On a natural ground the lot belongs to the photograph (farmRoofs.ts drawFarmLots): beaten earth that fades
+      // at its edge, a muted garden with its bed rows, grass under the orchard, a dark pond in a wet bank; no plan
+      // tint, no lot outline; all of it under the snow with the land around. Other grounds keep the plan symbols.
+      if (natural) timedRec('farm-lots', () => drawFarmLots(ctx, world, { part: 'ground', viewport: pathRect, mpp: px(1), night: roadStyle.night, Path: P }));
+      else {
+        fillPolys('farm-gardens', pal.land.garden);
+        strokePolys('farm-gardens', pal.hedge, lw(0.4, 0.3), 0.8);
+        fillPolys('farm-orchards', pal.land.orchard);
+        fillPolys('farm-paddocks', pal.land.pasture);
+      }
       fillPolys('farm-fungal-gardens', pal.land.garden);
-      strokePolys('farm-gardens', pal.hedge, lw(0.4, 0.3), 0.8);
       strokePolys('farm-fungal-gardens', pal.hedge, lw(0.4, 0.3), 0.8);
-      fillPolys('farm-orchards', pal.land.orchard);
-      fillPolys('farm-paddocks', pal.land.pasture);
       if (brushes && lod.textures) { brushFill('farm-gardens', 'garden', sc); brushFill('farm-orchards', 'orchard', sc); }
       if (polyL('farm-fungal-gardens')?.polys.length && lod.textures) {
         const pat = getPattern(ctx, 'fungal-farm', 8, 8, 0, (c, k) => drawPanelCanvas(c, { w: 0, h: 0, prims: underdarkMark('garden', 4 * k, 4 * k, 1.7 * k, pal, k) }, 0, 0, family));
@@ -1639,16 +1692,19 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (pat && l) { ctx.fillStyle = pat; for (const p of polyPaths(l)) ctx.fill(p, 'evenodd'); }
       }
       strokePolys('farm-platforms', pal.farmInk, lw(0.5, 0.4), 0.7, [px(3), px(2)]);
-      // On a natural ground a farm is painted as a town is: its yard is a light wash of trodden earth (not a flat
-      // plan tint), its walls take the yard-wall colour of the towns (no ink), its buildings are city buildings.
-      fillPolys('farm-yards', pal.farmYard, natural ? 0.3 : 0.9);
-      fillPolys('farm-pens', pal.farmYard, natural ? 0.3 : 1);
-      if (!natural) strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
-      fillPolys('farm-ponds', pal.water.stops[0][1]);
-      strokePolys('farm-ponds', pal.waterEdge, lw(0.5, 0.4));
+      // On a natural ground the walls take the yard-wall colour of the towns (no ink) and the buildings are city
+      // buildings; yard, pens and ponds were painted with the lot above.
+      if (!natural) {
+        fillPolys('farm-yards', pal.farmYard, 0.9);
+        fillPolys('farm-pens', pal.farmYard);
+        strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
+        fillPolys('farm-ponds', pal.water.stops[0][1]);
+        strokePolys('farm-ponds', pal.waterEdge, lw(0.5, 0.4));
+      }
       if (natural) { const wall = yardStyle('wall', '', 'terrain'); strokeLines(linesOf((l) => l.name === 'farm-walls'), wall.color, () => lw(wall.width, wall.minPx), wall.alpha, [], 'butt'); }
       else strokeLines(linesOf((l) => l.name === 'farm-walls'), pal.farmInk, () => lw(0.9, 0.7), 1, [], 'butt');
-      if (lod.band >= 2 && polyL('farm-trees')) {
+      if (natural) { if (lod.band >= 2) timedRec('farm-trees', () => drawFarmLots(ctx, world, { part: 'trees', viewport: pathRect, mpp: px(1), night: roadStyle.night, Path: P })); }
+      else if (lod.band >= 2 && polyL('farm-trees')) {
         if (brushes) brushTrees('farm-trees', true); else {
         fillPolys('farm-trees', pal.treeFill);
         strokePolys('farm-trees', pal.treeInk, lw(0.3, 0.3), 0.8);
@@ -1940,6 +1996,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           if (U.lit && lod.band >= 2) drawLit(ctx, rect, sc, U.lit.color, U.lit.density);
         }
       }
+      // A place whose plan is still to come: on a natural ground its stand-in houses are houses of its culture under
+      // the roof painter of the towns, along earth lanes (farmRoofs.ts), over the plain stand-in marks; other
+      // grounds keep those marks.
+      if (natural && px(1) <= CITY_LOD_LIMITS[1]) timedRec('place-roofs', () => drawPlaceholderRoofs(ctx, world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P,
+        lane: path => strokeNaturalRoad(ctx, path, 'lane', roadWidth('lane', 3, sc), sc, roadStyle) }));
       // landmark buildings: the landmark tone, outlined
       const lmHatch = lod.fine ? getPattern(ctx, 'lmhatch', 1.6, 1.6, 45, (c, k) => { c.globalAlpha = 0.55; c.strokeStyle = U.landmarkEdge; c.lineWidth = 0.35 * k; c.beginPath(); c.moveTo(0, 0.8 * k); c.lineTo(1.6 * k, 0.8 * k); c.stroke(); }) : null;
       const hatched = (name: string): void => {

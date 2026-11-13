@@ -80,6 +80,8 @@ export interface UrbanEdits {
 export interface EditShape { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }
 export interface QuarterOverride {
   culture?: string; tissue?: string; density?: number; role?: string; wealth?: number;
+  /** 'core': the quarter is city core, so a modern style's tall buildings (top of its height ladder) are allowed whatever the population. */
+  zone?: string;
   /** New outline of the quarter. The engine clips it, so the applied shape can be smaller. */
   shape?: EditShape;
   /** The quarter's blocks and lots are removed. The land returns to open ground; main streets stay. */
