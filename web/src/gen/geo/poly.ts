@@ -235,8 +235,11 @@ export function inscribed(outer: Polygon, holes: Polygon[] = [], precision = 0.5
   const rings = [outer, ...holes];
   const bb = bboxOf(outer);
   const w = bb.x1 - bb.x0, h = bb.y1 - bb.y0;
-  const cellSize = Math.min(w, h);
-  if (cellSize <= 0) return { c: outer[0], r: 0 };
+  const narrowSide = Math.min(w, h);
+  if (narrowSide <= 0) return { c: outer[0], r: 0 };
+  // Bound the initial grid for slivers before the search's iteration guard applies.
+  // Promising cells are still refined below to the requested precision.
+  const cellSize = Math.max(narrowSide, precision, Math.max(w, h) / 1000);
   // (flat coordinates; the same arithmetic as pointInRing / distToSeg, without a point object per edge)
   const RX = rings.map((r) => Float64Array.from(r, (q) => q.x)), RY = rings.map((r) => Float64Array.from(r, (q) => q.y));
   const sd = (x: number, y: number): number => {

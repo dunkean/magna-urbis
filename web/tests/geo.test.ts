@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { cleanRing, isSimple, inscribed, obb, interiorAngle, area } from '../src/gen/geo/poly';
+import { describe, it, expect, vi } from 'vitest';
+import { cleanRing, isSimple, inscribed, obb, interiorAngle, area, pointInRing, distToRing } from '../src/gen/geo/poly';
 import { union, difference, intersection, mpArea } from '../src/gen/geo/bool';
 import { splitByChord, lpoly, rayHit, insidePieces } from '../src/gen/geo/split';
 import { ribbon, insetConvex, sweepLeft } from '../src/gen/geo/offset';
@@ -24,6 +24,53 @@ describe('poly', () => {
     const o = obb([{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 0, y: 10 }]);
     expect(o.hu).toBeCloseTo(20, 6);
     expect(Math.abs(o.u.x)).toBeCloseTo(1, 6);
+  });
+});
+
+describe('inscribed', () => {
+  it.each([
+    { vertical: false, precision: 0.5 },
+    { vertical: true, precision: 0.5 },
+    { vertical: false, precision: 1e-12 },
+    { vertical: true, precision: 1e-12 },
+  ])('bounds work for a sliver ($vertical, precision $precision)', ({ vertical, precision }) => {
+    const p = [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 1e-9 }, { x: 0, y: 1e-9 }]
+      .map(({ x, y }) => vertical ? { x: y, y: x } : { x, y });
+    const hypot = Math.hypot;
+    let calls = 0;
+    // Stop a regression before its trillion-cell initial grid can exhaust the test process's heap.
+    const distance = vi.spyOn(Math, 'hypot').mockImplementation((...args: number[]) => {
+      if (++calls > 100_000) throw new Error('Unbounded inscribed-circle search');
+      return hypot(...args);
+    });
+    try {
+      const circle = inscribed(p, [], precision);
+      expect(circle.r / 5e-10).toBeCloseTo(1, 6);
+      expect(pointInRing(p, circle.c)).toBe(true);
+    } finally {
+      distance.mockRestore();
+    }
+  });
+
+  it.each([false, true])('refines an elongated triangle from a coarse initial grid (vertical %s)', (vertical) => {
+    const p = [{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 0, y: 2 }]
+      .map(({ x, y }) => vertical ? { x: y, y: x } : { x, y });
+    const precision = 0.01;
+    const circle = inscribed(p, [], precision);
+    const radius = (4002 - Math.hypot(4000, 2)) / 2;
+    expect(pointInRing(p, circle.c)).toBe(true);
+    expect(circle.r).toBeGreaterThanOrEqual(radius - precision);
+    expect(circle.r).toBeLessThanOrEqual(radius + 1e-9);
+  });
+
+  it('keeps the circle outside holes within the requested precision', () => {
+    const outer = sq(0, 0, 20), hole = sq(8, 8, 4);
+    const circle = inscribed(outer, [hole], 0.001);
+    const radius = 8 * Math.SQRT2 / (1 + Math.SQRT2);
+    expect(pointInRing(outer, circle.c)).toBe(true);
+    expect(pointInRing(hole, circle.c)).toBe(false);
+    expect(circle.r).toBeGreaterThanOrEqual(radius - 0.001);
+    expect(circle.r).toBeLessThanOrEqual(Math.min(distToRing(outer, circle.c), distToRing(hole, circle.c)));
   });
 });
 
