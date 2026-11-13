@@ -360,12 +360,15 @@ export function riverGeometry(water: VectorWater, line: RiverLine, thinner: numb
 export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): number[] {
   const widths = line.area.map((a, i) => channelWidth(a / (line.threads?.[i] ?? 1), water.widthScale ?? water.rivers?.widthScale ?? 1) * (thinner ? 0.65 : 1));
   const p = line.points, m = widths.length - 1, h = water.hydro, cell = h.width / h.n;
-  const x = Math.floor(p[2 * m] / cell), y = Math.floor(p[2 * m + 1] / cell);
-  if (((x >= 0 && y >= 0 && x < h.n && y < h.n && h.sea[y * h.n + x]) || h.sea[line.outlet ?? -1]) && line.kind[0] !== 5) {
-    // Exponential flare towards the sea, scaled by the river's size (a brook
-    // barely widens), with a length and profile of its own.
-    const size = Math.min(1, Math.log(Math.max(1, widths[m] / 4)) / Math.log(15));
-    const factor = 1 + 0.8 * size * size * (3 - 2 * size);
+  const sea = (px: number, py: number): boolean => { const x = Math.floor(px / cell), y = Math.floor(py / cell); return x >= 0 && y >= 0 && x < h.n && y < h.n && !!h.sea[y * h.n + x]; };
+  // The course ends in the sea, or one cell short of it: the cell its last segment points into counts too.
+  const back = Math.max(0, m - 1), dx = p[2 * m] - p[2 * back], dy = p[2 * m + 1] - p[2 * back + 1], run = Math.hypot(dx, dy) || 1;
+  if ((sea(p[2 * m], p[2 * m + 1]) || sea(p[2 * m] + dx / run * cell, p[2 * m + 1] + dy / run * cell) || h.sea[line.outlet ?? -1]) && line.kind[0] !== 5) {
+    // Exponential flare towards the sea, by the river's size, with a length and profile of its own. The gains follow
+    // the estuary modes of the hydrology (rust terrain hydrology: 1.6 simple, 2.4 widening, 4.0 funnel): a brook
+    // widens by half, a stream more than doubles, a large river opens into a funnel.
+    const smooth = (a: number, b: number, v: number): number => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+    const factor = 1.6 + .8 * smooth(8, 25, widths[m]) + 1.6 * smooth(30, 70, widths[m]);
     let hash = Math.imul(Math.round(p[2 * m]) ^ Math.imul(Math.round(p[2 * m + 1]), 668265263), 374761393);
     hash = (hash ^ (hash >>> 13)) >>> 0;
     const reach = widths[m] * (10 + 18 * (hash & 255) / 255), profile = 1.3 + 1.2 * ((hash >>> 8) & 255) / 255;

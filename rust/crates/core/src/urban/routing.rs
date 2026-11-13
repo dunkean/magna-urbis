@@ -15,12 +15,6 @@ const SEARCHED: usize = 0;
 const PUT_OFF: usize = 1;
 const RERUN: usize = 2;
 const REPEATED: usize = 3;
-/// `URBAN_ROUTE_FLOOD=off` (A/B measurement only): every search runs when asked, with no
-/// reachability flood and no remembered answer.
-fn plain_search() -> bool {
-    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *OFF.get_or_init(|| std::env::var("URBAN_ROUTE_FLOOD").is_ok_and(|v| v == "off"))
-}
 pub(super) fn tally(label: &str) {
     if std::env::var_os("URBAN_PROFILE").is_some() {
         let [searched, put_off, rerun, repeated] = [SEARCHED, PUT_OFF, RERUN, REPEATED].map(|i| TALLY[i].load(Relaxed));
@@ -367,12 +361,15 @@ fn inside(shape: &Shape, a: Point, b: Point) -> bool {
     InsideIndex::new(shape).inside(a, b)
 }
 
+/// Best arrival at a state (cell and incoming heading) in the search of `epoch`.
 #[derive(Clone, Copy)]
 struct Slot {
-    epoch: u32,
     cost: f64,
-    parent: usize,
+    /// The state arrived from, `ROOT` at an origin.
+    parent: u32,
+    epoch: u32,
 }
+const ROOT: u32 = u32::MAX;
 
 #[derive(Clone, Copy)]
 struct Entry {
@@ -431,7 +428,8 @@ pub(super) struct RoutePlanner<'a> {
     /// planner dropped before that never pays for them.
     put_off: Vec<(Point, Point, f64)>,
     rerunning: bool,
-    /// No flood and no remembered answer (`plain_search`).
+    /// Test reference: every search runs when asked, with no flood and no remembered answer.
+    #[cfg(test)]
     plain: bool,
     /// Answers given for (start, end, grade limit) without a corridor. A repeated query takes the
     /// same steps over edges the first one already cached, so it returns the same route.
@@ -468,7 +466,8 @@ impl<'a> RoutePlanner<'a> {
             flood_whole: None,
             put_off: vec![],
             rerunning: false,
-            plain: plain_search(),
+            #[cfg(test)]
+            plain: false,
             answers: HashMap::new(),
         }
     }
@@ -710,7 +709,11 @@ impl<'a> RoutePlanner<'a> {
         max_grade: f64,
         shape: Option<&Shape>,
     ) -> Option<Vec<Point>> {
-        if shape.is_some() || self.rerunning || self.plain {
+        #[cfg(test)]
+        if self.plain {
+            return self.search(start, end, max_grade, shape);
+        }
+        if shape.is_some() || self.rerunning {
             return self.search(start, end, max_grade, shape);
         }
         let key = [
@@ -760,8 +763,12 @@ impl<'a> RoutePlanner<'a> {
         // A goal across water or beyond a slope has no route, and the search would expand every
         // state it can reach to find that out. The flood settles it on cells; the search itself
         // is put off (`put_off`). Bank lattices keep their own check below, corridors run as asked.
-        if !self.bank
-            && !self.plain
+        #[cfg(test)]
+        let flood = !self.plain;
+        #[cfg(not(test))]
+        let flood = true;
+        if flood
+            && !self.bank
             && shape.is_none()
             && !self.rerunning
             && self.unreachable(start, end, &origins, &goals, max_grade)
@@ -780,12 +787,13 @@ impl<'a> RoutePlanner<'a> {
             // Most streets on level ground use the direct fast path and never
             // need the search lattice or its per-heading cache.
             let size = self.nx * self.ny * HEADINGS;
+            assert!(size < ROOT as usize, "route lattice too large");
             self.slots.resize(
                 size,
                 Slot {
                     epoch: 0,
                     cost: f64::INFINITY,
-                    parent: NONE,
+                    parent: ROOT,
                 },
             );
         }
@@ -829,7 +837,7 @@ impl<'a> RoutePlanner<'a> {
                 self.slots[state] = Slot {
                     epoch,
                     cost,
-                    parent: NONE,
+                    parent: ROOT,
                 };
                 heap.push(Entry {
                     estimate: cost + ahead[cell],
@@ -894,7 +902,7 @@ impl<'a> RoutePlanner<'a> {
                     self.slots[state] = Slot {
                         epoch,
                         cost,
-                        parent: entry.state,
+                        parent: entry.state as u32,
                     };
                     if ahead[next].is_nan() {
                         ahead[next] = distance(self.position(next), end);
@@ -914,7 +922,10 @@ impl<'a> RoutePlanner<'a> {
         let mut state = best.1;
         while state != NONE {
             path.push(self.position(state / HEADINGS));
-            state = self.slots[state].parent;
+            state = match self.slots[state].parent {
+                ROOT => NONE,
+                parent => parent as usize,
+            };
         }
         path.push(start);
         path.reverse();
@@ -1043,7 +1054,6 @@ mod tests {
         let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
         let bounds = (10.0, 10.0, 310.0, 310.0);
         let mut planner = RoutePlanner::new(surface, bounds);
-        planner.plain = false;
         // The reference runs every search when asked: no flood, no remembered answer.
         let mut reference = RoutePlanner::new(surface, bounds);
         reference.plain = true;

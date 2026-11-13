@@ -520,12 +520,17 @@ void main() {
     vec4 wIce=vec4(0.);float wIceEdge=0.;
     // Water climate tints applied after the evaluation (waterRegime.ts): x humic tea, y glacial milk, z sea sediment plume.
     vec3 wTint=vec3(0.);
+    // Optical depth the sea takes under a river's ribbon at its mouth (set with the water layer below).
+    float wRiverSea=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
       float under=uRenderV2>0?1.:1.-forestResolvedCover;
       if(uRenderV2>0){
-        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.;
+        // Where the river's ribbon runs over the sea, the shallows take the optical depth of the river (34 m of sea
+        // absorb like its 8 m of fresh water) and return to their own over the first 5 m of real depth: the
+        // river's colour fades into the sea instead of meeting it along the sea-level line inside the channel.
+        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.;wRiverSea=s.x<0.?34.*water.a*(1.-smoothstep(0.,5.,-s.x)):0.;
         // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds lie on the ground as painted
         // (sandy); the wet remainder takes the Render v2 water. Ice is not painted for this ground: it comes from
         // the land's snow at the water's altitude, below.
@@ -631,7 +636,7 @@ void main() {
       vec4 sheet=v2FreshIce(world,uPx,wIce.x,wIce.y,wIce.z,wIce.w,wIceEdge);
       wBase=mix(wBase,sheet.rgb,wCover*sheet.a);wCover*=1.-sheet.a;color=wBase;
     }
-    if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(-s.x,0.);}
+    if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(max(-s.x,0.),wRiverSea);}
 #ifdef AUX_PASS
     outAux = uvec4(auxCanopy, !underdark && v2w && uV2WaterVisible == 1 && wCover > 0. ? auxPack4x8(vec4(clamp(v2WaterColor(v2Here, world, uPx, wCover, wKind, wDepth), 0., 1.), 1.)) : 0u); return;
 #elif defined(AUX_TEXTURE)
