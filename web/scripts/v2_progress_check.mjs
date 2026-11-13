@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Cold procedural generation: measured worker phases and the visible EN/FR status UI. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -36,7 +37,7 @@ try{
   const started=Date.now();await page.locator('#terrain-only').click();
   await page.waitForFunction(()=>window.__terrainProof.events.some(e=>e.stage==='terrain-generation'),null,{timeout:120000});
   await page.screenshot({path:resolve(output,'01-generating-en.png')});
-  await page.locator('#language-select').selectOption('fr');
+  await chooseWorkshopPreference(page, 'language', 'fr');
   await page.screenshot({path:resolve(output,'02-generating-fr.png')});
   await page.waitForFunction(()=>window.__terrainProof.results.length>0&&document.querySelector('#app')?.getAttribute('aria-busy')==='false',null,{timeout:180000});
   const proof=await page.evaluate(()=>window.__terrainProof);

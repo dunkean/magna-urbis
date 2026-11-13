@@ -39,6 +39,13 @@ export async function createTerrainRenderer(canvas: HTMLCanvasElement, webgpuCan
   return new TerrainGl(canvas);
 }
 
+/** Starts the WebGPU map preparation (module chunk, device, shader modules, preview pipeline) in the background,
+ * e.g. while the first map is generated; createTerrainRenderer then finds it ready. Only for the automatic choice (a forced backend keeps its own path). */
+export function prewarmTerrainRenderer(): void {
+  if (requestedTerrainBackend() !== undefined || typeof navigator === 'undefined' || !navigator.gpu) return;
+  void import('./terrainGpu').then(module => module.prepareTerrainGpu(), () => undefined);
+}
+
 /** The canvas a renderer draws into: TerrainGl's own, or the WebGPU renderer's. */
 export function terrainRendererCanvas(renderer: TerrainRenderer, glCanvas: HTMLCanvasElement): HTMLCanvasElement {
   return renderer instanceof TerrainGl ? glCanvas : (renderer as { canvas?: HTMLCanvasElement }).canvas ?? glCanvas;

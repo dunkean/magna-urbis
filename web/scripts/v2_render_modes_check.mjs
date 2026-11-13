@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Real retained terrain/native houses: display parity without any generation job. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -118,7 +119,7 @@ try {
 
   await page.locator('#map-style').selectOption('render-v2'); await idle('render-v2');
   await page.locator('#tab-settlements').click(); await page.locator('[data-town="main"]').click();
-  await page.locator('#inspector .close').click();
+  await page.locator('#editor-close').click();
   for (let i = 0; i < 2; i++) await page.locator('#zoom-in').click();
   await idle('render-v2');
   await page.waitForFunction(() => JSON.parse(document.querySelector('#map-canvas').dataset.cityRender || '{}').visibleBuildings > 0);
@@ -172,7 +173,7 @@ try {
   assert(streetsAlpha.drawn > 1000 && streetsAlpha.drawn < streetsAlpha.pixels, JSON.stringify(streetsAlpha));
   report.checks.independentExports = { cityWithoutStreets: cityAlpha, streetsWithoutCity: streetsAlpha };
 
-  await page.locator('#language-select').selectOption('fr'); await page.setViewportSize({ width: 390, height: 844 }); await idle();
+  await chooseWorkshopPreference(page, 'language', 'fr'); await page.setViewportSize({ width: 390, height: 844 }); await idle();
   await page.locator('#toast').waitFor({ state: 'hidden' });
   const mobileStyle = await page.locator('#map-style').evaluate(element => {
     const style = getComputedStyle(element), box = element.getBoundingClientRect();

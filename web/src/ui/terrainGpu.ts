@@ -21,6 +21,7 @@ import { waterSeasonUniforms } from '../render/seasonPalette';
  *   as a TerrainGl on a WebGL2 canvas when one can be had, otherwise captures throw a clear error.
  */
 import { unzlibSync } from 'fflate';
+import { boxMips, rasterMips } from './boxMips';
 import { LiveGround } from './liveGround';
 import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
@@ -45,6 +46,12 @@ import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { isNeuralRefinement } from './terrainRefinement';
 import { PREVIEW_VARIANT, TerrainGl, hex, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type RetainedWaterOptions, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
 import type { TerrainRenderer } from './terrainRenderer';
+import { rendererOverride } from './rendererOverride';
+/** Runs `task` when the page is idle (at the latest after a few seconds). */
+export function whenIdle(task: () => unknown): void {
+  const run = (): void => { void Promise.resolve().then(task).catch(error => console.warn('Idle preparation failed:', error)); };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 4000 }); else setTimeout(run, 1500);
+}
 import * as WGSL from './terrainWgsl.generated';
 
 type ParamsLayout = { size: number; fields: Record<string, { offset: number; type: string; count: number }> };
@@ -73,21 +80,6 @@ class Params {
       view[field.offset / 4 + element * stride + component] = view === this.u32 ? values[k] >>> 0 : values[k];
     }
   }
-}
-
-/** Box-filtered mip chain of an 8-bit image (all layers), as glGenerateMipmap. */
-function boxMips(data: Uint8Array, width: number, height: number, channels: number, layers = 1): { data: Uint8Array; width: number; height: number }[] {
-  const levels = [{ data, width, height }];
-  while (width > 1 || height > 1) {
-    const w = Math.max(1, width >> 1), h = Math.max(1, height >> 1), previous = levels[levels.length - 1].data, next = new Uint8Array(w * h * channels * layers);
-    for (let l = 0; l < layers; l++) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < channels; c++) {
-      const x0 = Math.min(width - 1, 2 * x), x1 = Math.min(width - 1, 2 * x + 1), y0 = Math.min(height - 1, 2 * y), y1 = Math.min(height - 1, 2 * y + 1);
-      const at = (px: number, py: number): number => previous[((l * height + py) * width + px) * channels + c];
-      next[((l * h + y) * w + x) * channels + c] = (at(x0, y0) + at(x1, y0) + at(x0, y1) + at(x1, y1) + 2) >> 2;
-    }
-    levels.push({ data: next, width: w, height: h }); width = w; height = h;
-  }
-  return levels;
 }
 
 const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
@@ -185,10 +177,10 @@ class GpuShared {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
-  terrainKey(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha'): string { return `${pass}.${v.mode}.${v.v2}.${+v.forest}${+v.brushes}.${+!!v.water}.${blend}`; }
+  terrainKey(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha'): string { return `${pass}.${v.mode}.${v.v2}.${+v.forest}${+v.brushes}.${blend}`; }
   /** Map (or auxiliary) pipeline of a variant: the switches are overrides of the generated module. */
   terrainDescriptor(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha'): GPURenderPipelineDescriptor {
-    const constants: Record<string, number> = { [WGSL.WGSL_OVERRIDES.uMode]: v.mode, [WGSL.WGSL_OVERRIDES.uRenderV2]: v.v2, [WGSL.WGSL_OVERRIDES.uForest]: +v.forest, [WGSL.WGSL_OVERRIDES.uForestBrushes]: +v.brushes, [WGSL.WGSL_OVERRIDES.uNaturalWater]: +!!v.water };
+    const constants: Record<string, number> = { [WGSL.WGSL_OVERRIDES.uMode]: v.mode, [WGSL.WGSL_OVERRIDES.uRenderV2]: v.v2, [WGSL.WGSL_OVERRIDES.uForest]: +v.forest, [WGSL.WGSL_OVERRIDES.uForestBrushes]: +v.brushes };
     const module = pass === 'aux' ? this.modules.auxFs : mapPasses(v).includes('aux') ? this.modules.terrainAuxTextureFs : this.modules.terrainFs;
     return {
       label: this.terrainKey(v, pass, blend), layout: this.pipelineLayouts.terrain,
@@ -220,6 +212,9 @@ const destroyedHere = new WeakSet<GPUDevice>();
 /** The device and its shared objects, once per page (again after a device loss); undefined without a
  * usable (hardware) adapter unless `forced`. The preview pipeline is created before anything is returned:
  * a failure here keeps the WebGL2 path available (no canvas context has been taken yet). */
+/** Prepares the page's WebGPU device, modules and start-up pipelines ahead of the first map (no canvas is
+ * touched): they depend on no map, and the first display otherwise waits for them (seconds on D3D12). */
+export function prepareTerrainGpu(): Promise<unknown> { return sharedGpu(false).catch(() => undefined); }
 function sharedGpu(forced: boolean): Promise<GpuShared | undefined> {
   return shared ??= (async () => {
     if (!navigator.gpu) return undefined;
@@ -472,7 +467,7 @@ export class TerrainGpu implements TerrainRenderer {
   }
   /** RGBA8 world raster; box mipmaps keep the field's mean cover at coarse footprints (forestTexture). */
   private rgbaImage(raster: { n: number; rgba: Uint8Array }, mipmaps: boolean): GpuImage {
-    return this.image(raster.n, raster.n, 'rgba8unorm', raster.rgba, 4, mipmaps ? boxMips(raster.rgba, raster.n, raster.n, 4).map(l => l.data) : undefined);
+    return this.image(raster.n, raster.n, 'rgba8unorm', raster.rgba, 4, mipmaps ? rasterMips(raster.rgba, raster.n, raster.n, 4) : undefined);
   }
   private releaseImage(image: GpuImage | undefined): void { image?.texture.destroy(); }
 
@@ -737,9 +732,12 @@ export class TerrainGpu implements TerrainRenderer {
     return undefined;
   }
 
+  /** The forest switch follows the look (groundCover: procedural vegetation, whose field arrives a few seconds
+   * later from a worker), not the field's arrival: deciding on the field compiled a forest-off pair first, then
+   * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand. */
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, water: look.waterLook === 'natural', forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && !!this.forest, brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
   }
   private terrainPipeline(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha', wait: boolean): GPURenderPipeline | undefined {
     return this.gpu.pipeline(this.gpu.terrainKey(v, pass, blend), () => this.gpu.terrainDescriptor(v, pass, blend), wait);
@@ -747,12 +745,30 @@ export class TerrainGpu implements TerrainRenderer {
   /** The look's map variant once created; meanwhile the last drawn variant (or the preview) stands in. */
   private mapVariant(look: TerrainLook, wait: boolean): { variant: TerrainVariant; pipeline: GPURenderPipeline } | undefined {
     const target = this.lookVariant(look), pipeline = this.terrainPipeline(target, 'map', 'none', wait);
-    if (pipeline) return { variant: this.lastVariant = target, pipeline };
+    if (pipeline) { this.prewarmLikely(); return { variant: this.lastVariant = target, pipeline }; }
     for (const v of [this.lastVariant, PREVIEW_VARIANT]) {
       const standIn = this.terrainPipeline(v, 'map', 'none', false);
       if (standIn) return { variant: v, pipeline: standIn };
     }
     return undefined;
+  }
+  private prewarmStarted = false;
+  /** Once the requested look is drawn, prepare the likely next ones while the page is idle: the Satellite map
+   * pipelines (the heaviest look), then its 3D ground. Never before the requested look: a heavy compilation started
+   * first delays it. A hit makes the later switch or 3D opening immediate; a miss costs background compiler time. */
+  private prewarmLikely(): void {
+    if (this.prewarmStarted || this.capturing) return;
+    this.prewarmStarted = true;
+    whenIdle(async () => {
+      const gpu = this.gpu;
+      if (this.disposed || gpu.lost) return;
+      const satellite: TerrainVariant = { mode: 3, v2: 1, forest: true, brushes: false };
+      const keys = mapPasses(satellite).map(pass => { this.terrainPipeline(satellite, pass, 'none', false); return gpu.terrainKey(satellite, pass, 'none'); });
+      await Promise.all(keys.map(key => gpu.settled(key)));
+      if (this.disposed || gpu.lost || rendererOverride() === 'webgl') return;
+      // The 3D view's Satellite ground (same Render v2 material, forest on): its own device, created here if needed.
+      (await import('./terrain3dGpu')).prewarmTerrain3dGround(1, 1, 0);
+    });
   }
   /** Pipeline keys of a look (map, auxiliary pass if any, blended map if detail layers are shown); starts
    * creating them. */
@@ -827,7 +843,7 @@ export class TerrainGpu implements TerrainRenderer {
       p.set('uOrigin', origin[0], origin[1]);
       p.set('uPx', px); p.set('uDpr', stylePixelRatio);
       p.set('uGroundCapture', look.groundCapture ? 1 : 0);
-      p.set('uNight', look.ambience === 'night' ? 1 : 0);
+      p.set('uNight', look.ambience === 'night' ? 1 : 0); p.set('uNaturalWater', look.waterLook === 'natural' ? 1 : 0);
       p.set('uMapW', look.mapWidth);
       p.set('uRelief', look.layers.relief ? 1 : 0); p.set('uWaterVisible', look.layers.water !== false ? 1 : 0);
       p.set('uMaterialSeed', look.seed >>> 0);

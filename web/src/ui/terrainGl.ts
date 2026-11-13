@@ -1,8 +1,7 @@
 import { waterSeasonUniforms } from '../render/seasonPalette';
-import { ShaderVariants, finishProgram, isAngleD3D11, specializeShader, startProgram } from './glVariants';
+import { ShaderVariants, finishProgram, specializeShader, startProgram } from './glVariants';
 import { LiveGround } from './liveGround';
 import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
-import { showAngleD3D11Notice } from './angleNotice';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupation';
@@ -190,10 +189,18 @@ vec3 surface(vec2 world) {
   // Half a level sharper than the pixel footprint: crisp relief without shimmer.
   float lod = clamp(log2(max(1.0, uPx / uFieldCell)) - 0.5, 0.0, float(uMaxLod));
   int lower = int(floor(lod));
-  vec3 a = level(lower, world);
   float t = lod - float(lower);
-  if (t > 0.001 && lower < uMaxLod) a = mix(a, level(lower + 1, world), t);
+  // Both pyramid levels from one loop (one inlined level() per surface() call: the material shaders call it often).
+  int levels = t > 0.001 && lower < uMaxLod ? 2 : 1;
+  vec3 a = vec3(0.0);
+  for (int k = 0; k < levels; k++) { vec3 v = level(lower + k, world); a = k == 0 ? v : mix(a, v, t); }
   return a;
+}
+// Mean height of the four neighbours at distance r (+x, -x, +y, -y), one surface() call in a loop.
+float surfaceMean4(vec2 world, float r) {
+  float sum = 0.0;
+  for (int k = 0; k < 4; k++) sum += surface(world + (k == 0 ? vec2(r, 0.0) : k == 1 ? vec2(-r, 0.0) : k == 2 ? vec2(0.0, r) : vec2(0.0, -r))).x;
+  return sum * 0.25;
 }
 
 // Gradient noise (Perlin 2002 fade) with its derivatives; same lattice hash as the CPU bench.
@@ -298,14 +305,14 @@ ${MOONLIGHT_GLSL}
 V2Env v2Here;
 float naturalTpi(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
-  float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
+  float mean=surfaceMean4(world,r);
   return (s.x-mean)/(6.*r);
 }
 uniform sampler2D uShoreRing; uniform vec3 uShoreRingRect;
 #if NATURAL
 vec3 naturalMaterial(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
-  float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
+  float mean=surfaceMean4(world,r);
   float shore=1e9, openness=0.;
   if(s.x<12. && length(s.yz)<.5) {
     vec2 ring=textureLod(uShoreRing,(world-uShoreRingRect.xy)/uShoreRingRect.z,0.).rg;
@@ -425,8 +432,10 @@ void main() {
 #else
     vec3 landColor=uGroundCapture==1 ? vec3(0.) : land(landS,world);
 #endif
-    vec3 color = uGroundCapture==1 ? sea(world)*coverage : mix(sea(world),landColor,landCover);
-    if (uRelief == 0) color = mix(sea(world), uPaper, landCover);
+    // One sea evaluation (natural water included) for the three uses below.
+    vec3 seaColor = sea(world);
+    vec3 color = uGroundCapture==1 ? seaColor*coverage : mix(seaColor,landColor,landCover);
+    if (uRelief == 0) color = mix(seaColor, uPaper, landCover);
     if (uHasCave == 1 && uRelief == 1) {
       vec2 uv = (world - uFieldOrigin) / (uFieldCell * float(uFieldN));
       float rock = smoothstep(0.35, 0.65, texture(uCave, uv).r);
@@ -436,7 +445,9 @@ void main() {
       coverage=rock+coverage*(1.-rock);
     }
 #ifndef AUX_PASS
-    if(uForest==1 && uMode!=3 && uRenderV2==0 && uGroundCapture==0){
+    // Variant switches alone in their own test: mixed with a runtime uniform, the WebGPU path (Tint → DXC)
+    // kept the dead branch and inlined its whole material, seconds of compilation for every variant.
+    if(uForest==1 && uMode!=3 && uRenderV2==0)if(uGroundCapture==0){
       vec3 root=level(0,world);
       float shore=max(root.x,0.)/max(length(root.yz),.0001);
       vec3 macro=earthMaterial(root,world,max(uPx,1.),naturalTpi(root,world),shore,0.);
@@ -536,7 +547,8 @@ void main() {
 #elif defined(AUX_TEXTURE)
     if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.) color = mix(wBase, aux.rgb, wCover); }
 #else
-    if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
+    // v2w is only ever set under uRenderV2>0; the variant test first lets the compilers drop the whole water model.
+    if(uRenderV2>0)if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
 #endif
 #ifndef AUX_PASS
     if(uRenderV2>0&&v2w&&uV2WaterVisible==1){
@@ -656,9 +668,10 @@ const compile = (gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
  * Forest crowns and Render v2 water come from an auxiliary pass (mapPasses). Measured alone with FXC:
  * Render v2 with forest 22 s for the map and 21 s for its auxiliary pass (linking in parallel), Render v2
  * 19 s + 12 s, natural 5 s; the full shader never loaded. On FXC they link in the background. */
-export interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean; water?: boolean }
+/** Natural water is a runtime uniform, not a variant: Satellite and Satellite-2 (ink water) share their programs. */
+export interface TerrainVariant { mode: number; v2: number; forest: boolean; brushes: boolean }
 export const PREVIEW_VARIANT: TerrainVariant = { mode: 0, v2: 0, forest: false, brushes: false };
-const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}.${+!!v.water}`;
+const variantKey = (v: TerrainVariant): string => `${v.mode}.${v.v2}.${+v.forest}${+v.brushes}`;
 /** Map passes of a look: forest crowns and Render v2 water are rendered first by an auxiliary pass
  * (one RGBA32UI texture: crowns in three words, the water colour in the fourth), then read by the map. */
 export const mapPasses = (v: TerrainVariant): ('aux' | 'map')[] => v.forest || v.v2 > 0 ? ['aux', 'map'] : ['map'];
@@ -666,11 +679,11 @@ export const mapPasses = (v: TerrainVariant): ('aux' | 'map')[] => v.forest || v
 export const glLandDetailUnit = (gl: WebGL2RenderingContext): number | undefined => gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) > 16 ? 16 : undefined;
 let glTerrainFs = TERRAIN_FS;
 const terrainFragment = (v: TerrainVariant): string => specializeShader(glTerrainFs,
-  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uNaturalWater: +!!v.water },
+  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes },
   { NATURAL: v.mode >= 2 ? 1 : 0, ...(mapPasses(v).includes('aux') ? { AUX_TEXTURE: 1 } : {}) });
 const auxKey = (v: TerrainVariant): string => `aux.${variantKey(v)}`;
 const auxFragment = (v: TerrainVariant): string => specializeShader(glTerrainFs,
-  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes, uNaturalWater: +!!v.water }, { NATURAL: 0, AUX_PASS: 1 });
+  { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes }, { NATURAL: 0, AUX_PASS: 1 });
 export const lookMode = (look: TerrainLook): number => styleTraits(look.style).elevation ? 1 : look.layers.hypsometry && styleTraits(look.style).ground3d ? 3 : styleTraits(look.style).neuralEarth && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
@@ -679,8 +692,6 @@ export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private terrain!: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
   private variants: ShaderVariants;
-  /** ANGLE/D3D11: the heavy natural looks are linked in the background before they are chosen. */
-  private prewarm: boolean;
   /** Last terrain variant drawn: it stands in while the look's own variant links. */
   private lastTerrain?: WebGLProgram;
   /** Auxiliary pass output (RGBA32UI) and the inputs it was rendered for. */
@@ -742,8 +753,6 @@ export class TerrainGl {
     this.gl = gl;
     this.variants = new ShaderVariants(gl, () => this.request());
     this.terrainVariant(PREVIEW_VARIANT, false);   // starts linking the preview
-    this.prewarm = isAngleD3D11(gl);
-    if (this.prewarm) { showAngleD3D11Notice(); this.prewarmVariants(); }
     this.river = compile(gl, RIVER_VS, RIVER_FS);
     this.composite = compile(gl, COMPOSITE_VS, COMPOSITE_FS);
     this.riverBuffer = gl.createBuffer()!;
@@ -767,15 +776,19 @@ export class TerrainGl {
   private terrainVariant(v: TerrainVariant, wait: boolean): WebGLProgram | undefined {
     return this.variants.get(variantKey(v), () => [TERRAIN_VS, terrainFragment(v)], wait);
   }
-  /** Render v2 and Render3D (with and without forest) and Render: about a minute each on FXC, so they
-   * link from the start. Occupation and banks stay uniforms: the forest variants are known in advance. */
-  private prewarmVariants(): void {
-    if (!this.prewarm) return;
-    for (const v of [{ mode: 3, v2: 1, forest: true }, { mode: 3, v2: 0, forest: true }, { mode: 3, v2: 1, forest: false }, { mode: 2, v2: 0, forest: false }]) {
-      const variant = { ...v, brushes: false };
+  private prewarmStarted = false;
+  /** Once the requested look is drawn, link the Satellite variant (the heaviest look, the usual next choice) while
+   * the page is idle. Never before: on ANGLE/D3D11 a link started first delays the requested one by tens of seconds. */
+  private prewarmLikely(): void {
+    if (this.prewarmStarted || this.capturing) return;
+    this.prewarmStarted = true;
+    const start = (): void => {
+      if (this.disposed || this.gl.isContextLost()) return;
+      const variant: TerrainVariant = { mode: 3, v2: 1, forest: true, brushes: false };
       this.variants.start(variantKey(variant), () => [TERRAIN_VS, terrainFragment(variant)]);
-      if (mapPasses(variant).includes('aux')) this.variants.start(auxKey(variant), () => [TERRAIN_VS, auxFragment(variant)]);
-    }
+      this.variants.start(auxKey(variant), () => [TERRAIN_VS, auxFragment(variant)]);
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(start, { timeout: 4000 }); else setTimeout(start, 1500);
   }
   /** Auxiliary pass of the look into auxTarget, over the base layer, skipped when its inputs did not change;
    * the map program then reads it on unit 15 (uHasAux 0 while the pass is still linking). */
@@ -831,9 +844,12 @@ export class TerrainGl {
     this.auxKey = '';
     return { framebuffer, texture, width, height };
   }
+  /** The forest switch follows the look (groundCover: procedural vegetation, whose field arrives a few seconds
+   * later from a worker), not the field's arrival: deciding on the field compiled a forest-off pair first, then
+   * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand. */
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, water: look.waterLook === 'natural', forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && !!this.forest, brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
   }
   /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
    * (undefined if none is linked yet). Captures wait for the link. */
@@ -845,7 +861,7 @@ export class TerrainGl {
       const aux = !mapPasses(v).includes('aux') || !!this.variants.get(auxKey(v), () => [TERRAIN_VS, auxFragment(v)], wait);
       canvas.dataset.mapVariant = variantKey(v); canvas.dataset.mapVariantReady = target && aux ? '1' : '0';
     }
-    if (target) return this.lastTerrain = target;
+    if (target) { this.prewarmLikely(); return this.lastTerrain = target; }
     return this.lastTerrain ?? this.terrainVariant(PREVIEW_VARIANT, false);
   }
   /** Resolves once the current look's variant is linked, without blocking: callers that can wait

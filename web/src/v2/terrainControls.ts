@@ -25,7 +25,7 @@ export interface TerrainControlBindings {
   disabled?: () => boolean;
   context?: TerrainSketchContext;
 }
-export interface TerrainControls { sync(): void; dispose(): void; sketchHost: HTMLElement;
+export interface TerrainControls { sync(): void; dispose(): void; openEditor(): void; sketchHost: HTMLElement;
   /** The same value model as the mounted forms (defaults, climate and preset side effects), for staged forms. */
   access: { get(path: string): unknown; set(path: string, value: unknown): void } }
 
@@ -160,6 +160,10 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   button(inputActions, ui.paint, () => { sketchHost.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click(); }, 'terrain-paint-regions');
   const extent = document.createElement('fieldset'); extent.className = 'terrain-extent';
   const extentLegend = document.createElement('legend'); setText(extentLegend, ui.width); extent.append(extentLegend);
+  const sizeHelp = document.createElement('details'); sizeHelp.id = 'terrain-size-help'; sizeHelp.className = 'terrain-size-help';
+  registerMessages({ 'About world size': { en: 'About world size', fr: 'À propos de la taille du monde' } });
+  const sizeHelpToggle = document.createElement('summary'); sizeHelpToggle.textContent = '?'; sizeHelpToggle.setAttribute('aria-label', 'About world size');
+  sizeHelp.append(sizeHelpToggle); extent.append(sizeHelp);
   const extentRow = document.createElement('div'); extentRow.className = 'terrain-width-row';
   const width = document.createElement('input'); width.type = 'number'; width.id = 'terrain-width'; width.dataset.settingPath = 'extent'; width.setAttribute('aria-label', ui.width); width.step = '0.1';
   const unit = document.createElement('select'); unit.id = 'terrain-width-unit'; unit.setAttribute('aria-label', ui.unit);
@@ -168,8 +172,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   extentRow.append(width, unit); extent.append(extentRow);
   const widthSlider = document.createElement('input'); widthSlider.type = 'range'; widthSlider.id = 'terrain-width-slider'; widthSlider.className = 'parameter-slider';
   widthSlider.dataset.sliderPath = 'extent'; widthSlider.setAttribute('aria-label', ui.width); extent.append(widthSlider);
-  const extentHint = document.createElement('p'); extentHint.id = 'terrain-width-help'; extentHint.className = 'hint'; setText(extentHint, ui.extentHelp); width.setAttribute('aria-describedby', extentHint.id); extent.append(extentHint);
-  const definitionHint = document.createElement('p'); definitionHint.id = 'terrain-definition-help'; definitionHint.className = 'hint'; definitionHint.setAttribute('role', 'status'); extent.append(definitionHint);
+  const extentHint = document.createElement('p'); extentHint.id = 'terrain-width-help'; extentHint.className = 'hint'; setText(extentHint, ui.extentHelp); width.setAttribute('aria-describedby', extentHint.id); sizeHelp.append(extentHint);
+  const definitionHint = document.createElement('p'); definitionHint.id = 'terrain-definition-help'; definitionHint.className = 'hint'; definitionHint.setAttribute('role', 'status'); sizeHelp.append(definitionHint);
   const presetRow = document.createElement('div'); presetRow.className = 'terrain-presets';
   for (const metres of [2400, 10000, 40000, 100000, 200000]) { const preset = button(presetRow, formatDistance(metres,getDistanceUnit()), () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
   extent.append(presetRow); quick.append(extent);
@@ -244,6 +248,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const neuralNote = document.createElement('p'); neuralNote.className = 'hint terrain-neural-note'; setText(neuralNote, ui.neuralNote); root.append(neuralNote);
   const procedural = group(ui.procedural, terrainProceduralFields.filter(field => !['terrain.motifSize', 'terrain.sampleSpacing'].includes(field.path)));
   form(extent, [terrainProceduralFields.find(field => field.path === 'terrain.sampleSpacing')!]);
+  const spacingHelp = extent.querySelector<HTMLElement>('.parameter-help'); if (spacingHelp) sizeHelp.append(spacingHelp);
   const compactHelp = button(procedural, '? · Phasor', () => openMethodNote('compact-terrain-phasor'), 'terrain-phasor-method');
   const climate = group(ui.climate, terrainClimateFields);
   const neural = group(ui.neural, terrainNeuralFields);
@@ -308,7 +313,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const isNeural = !['procedural', 'procedural-phasor'].includes(String(get('runtime.source'))) && !importedSurface, isClassic = get('runtime.backend') === 'typescript';
     importedNote.hidden = !importedSurface || isClassic;
     classicNote.hidden = !isClassic; classic.hidden = !isClassic;
-    for (const section of [basics, climate, refinement, forest, inputGroup, sketchHost]) section.hidden = isClassic;
+    for (const section of [basics, climate, refinement, forest, inputGroup]) section.hidden = isClassic;
     coastOption.control.hidden = isClassic || importedSurface;
     coasts.hidden = coastOption.control.hidden || coastOption.control.getAttribute('aria-expanded') !== 'true';
     waterOption.control.hidden = isClassic;
@@ -353,5 +358,5 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     sync();
   }));
   sync();
-  return { sync, sketchHost, access: { get, set }, dispose: () => { disposed = true; cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
+  return { sync, openEditor: () => sketchControls?.open(), sketchHost, access: { get, set }, dispose: () => { disposed = true; cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
 }

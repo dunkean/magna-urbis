@@ -189,7 +189,8 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   if (usesNeural && request.compute === 'cpu') throw new Error('Les moteurs neuronaux actuels nécessitent WebGPU ou un service GPU local. Le relief procédural fonctionne sur CPU.');
   sourceDefinition({ ...request.terrain, width: request.width, source: request.source });
   if (request.terrain) {
-    const { sourceNativeResolution: _nativeResolution, ...recipe } = request.terrain as Partial<TerrainSettings>;
+    // These fields are derived by the orchestrator, not user-editable recipe parameters.
+    const { sourceNativeResolution: _nativeResolution, generalSeed: _generalSeed, ...recipe } = request.terrain as Partial<TerrainSettings>;
     validateTerrainSettings(recipe);
   }
   const n = request.terrain?.resolution ?? request.resolution ?? 512;

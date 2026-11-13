@@ -47,14 +47,18 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     // 3D gradient noise, quintic fade, unit standard deviation.
     float surfaceNoise(vec3 p,uint salt){
       vec3 fl=floor(p);ivec3 c=ivec3(fl);vec3 f=p-fl;vec3 u=f*f*f*(f*(f*6.-15.)+10.);
-      float a0=surfaceCorner(c,f,ivec3(0,0,0),salt);float a1=surfaceCorner(c,f,ivec3(1,0,0),salt);
-      float a2=surfaceCorner(c,f,ivec3(0,1,0),salt);float a3=surfaceCorner(c,f,ivec3(1,1,0),salt);
-      float x0=a0+(a1-a0)*u.x;float x1=a2+(a3-a2)*u.x;float y0=x0+(x1-x0)*u.y;
-      // The map plane z=0 has u.z=0: the upper layer has no weight, the value is unchanged.
+      // The corners come from one loop with a data-dependent bound: the shader compilers inline every call, and this
+      // noise is called ~160 times per material shader; eight inlined corners each made D3D (DXC/FXC) compile for
+      // tens of seconds. Same arithmetic as eight separate corners. The map plane z=0 (u.z=0) needs the lower four only.
+      vec4 a=vec4(0.),b=vec4(0.);int corners=u.z==0.?4:8;
+      for(int k=0;k<corners;k++){
+        float v=surfaceCorner(c,f,ivec3(k&1,(k>>1)&1,k>>2),salt);int j=k&3;
+        if(k<4){if(j==0)a.x=v;else if(j==1)a.y=v;else if(j==2)a.z=v;else a.w=v;}
+        else{if(j==0)b.x=v;else if(j==1)b.y=v;else if(j==2)b.z=v;else b.w=v;}
+      }
+      float x0=a.x+(a.y-a.x)*u.x;float x1=a.z+(a.w-a.z)*u.x;float y0=x0+(x1-x0)*u.y;
       if(u.z==0.){return y0*5.25;}
-      float b0=surfaceCorner(c,f,ivec3(0,0,1),salt);float b1=surfaceCorner(c,f,ivec3(1,0,1),salt);
-      float b2=surfaceCorner(c,f,ivec3(0,1,1),salt);float b3=surfaceCorner(c,f,ivec3(1,1,1),salt);
-      float x2=b0+(b1-b0)*u.x;float x3=b2+(b3-b2)*u.x;float y1=x2+(x3-x2)*u.y;
+      float x2=b.x+(b.y-b.x)*u.x;float x3=b.z+(b.w-b.z)*u.x;float y1=x2+(x3-x2)*u.y;
       return (y0+(y1-y0)*u.z)*5.25;
     }
     // surfaceNoise on the plane z=0 with its gradient: (value, d/dx, d/dy).
@@ -173,10 +177,14 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       if(fp>=10.){return surfaceMicroTone;}
       float fallLength=length(surfaceGroundGradient);surfaceFall=fallLength>.0001?surfaceGroundGradient/fallLength:vec2(1.,0.);
       float k1=1.-sstep(5.,10.,fp);float k2=1.-sstep(1.4,2.8,fp);float k3=1.-sstep(.38,.76,fp);float k4=1.-sstep(.1,.2,fp);
-      vec3 n1=surfaceBand(world,40.,salt+31u);vec3 n2=vec3(0.);vec3 n3=vec3(0.);vec3 n4=vec3(0.);
-      if(k2>0.){n2=surfaceBand(world,11.,salt+32u);}
-      if(k3>0.){n3=surfaceBand(world,3.,salt+33u);}
-      if(k4>0.){n4=surfaceBand(world,.8,salt+34u);}
+      // Each group of bands, chutes, blocks, stones and beds comes from one loop: the shader compilers inline every
+      // call, and this function is inlined in every material shader (seconds of D3D compilation per copy).
+      vec3 n1=vec3(0.);vec3 n2=vec3(0.);vec3 n3=vec3(0.);vec3 n4=vec3(0.);
+      for(int k=0;k<4;k++){
+        if(k==1&&k2<=0.||k==2&&k3<=0.||k==3&&k4<=0.)continue;
+        vec3 n=surfaceBand(world,k==0?40.:k==1?11.:k==2?3.:.8,salt+31u+uint(k));
+        if(k==0)n1=n;else if(k==1)n2=n;else if(k==2)n3=n;else n4=n;
+      }
       surfaceMicroSlope=.1*(40.*k1*n1.yz+11.*k2*n2.yz+3.*k3*n3.yz+.8*k4*n4.yz);
       float mottle=.5*k1*n1.x+.38*k2*n2.x+.3*k3*n3.x+.22*k4*n4.x;
       float soil=(1.-rock)*(1.-grass);float herb=(1.-rock)*grass;
@@ -191,39 +199,46 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
         // Fall-line wear (chutes and ribs), weighted by biome: alone it reads as threads.
         float steep=sstep(.12,.5,slope);
         if(surfaceStreakWeight>.01){
-          float wear=.06*(1.-sstep(14.,30.,fp))*surfaceChute(world,26.,15.,salt+61u);
-          if(k1>0.)wear+=.045*k1*surfaceChute(world,9.,5.4,salt+62u);
-          if(k2>0.)wear+=.04*k2*surfaceChute(world,3.2,1.9,salt+63u);
+          float wear=0.;
+          for(int k=0;k<3;k++){
+            if(k==1&&k1<=0.||k==2&&k2<=0.)continue;
+            float chute=surfaceChute(world,k==0?26.:k==1?9.:3.2,k==0?15.:k==1?5.4:1.9,salt+61u+uint(k));
+            if(k==0)wear=.06*(1.-sstep(14.,30.,fp))*chute;else if(k==1)wear+=.045*k1*chute;else wear+=.04*k2*chute;
+          }
           detail+=steep*surfaceStreakWeight*wear;
         }
         // Jointed blocks on outcrops and cliffs, not on rocky plains: a tone and a face tilt per
         // block, dark joints once resolved. Bands follow the 40/11/3 m fades of the mottle.
         float blocky=surfaceFacetWeight*sstep(.1,.4,slope);
         if(blocky>.01){
-          vec4 f1=surfaceFacets(world/40.,salt+71u);
-          float block=.10*k1*f1.x-.12*k1*surfaceJoint(f1.y,fp/40.);vec2 tilt=.5*k1*f1.zw;
-          if(k2>0.){vec4 f2=surfaceFacets(world/11.,salt+72u);block+=.08*k2*f2.x-.12*k2*surfaceJoint(f2.y,fp/11.);tilt+=.4*k2*f2.zw;}
-          if(k3>0.){vec4 f3=surfaceFacets(world/3.,salt+73u);block+=.06*k3*f3.x-.10*k3*surfaceJoint(f3.y,fp/3.);tilt+=.3*k3*f3.zw;}
+          float block=0.;vec2 tilt=vec2(0.);
+          for(int k=0;k<3;k++){
+            if(k==1&&k2<=0.||k==2&&k3<=0.)continue;
+            float size=k==0?40.:k==1?11.:3.;vec4 f=surfaceFacets(world/size,salt+71u+uint(k));float joint=surfaceJoint(f.y,fp/size);
+            if(k==0){block=.10*k1*f.x-.12*k1*joint;tilt=.5*k1*f.zw;}
+            else if(k==1){block+=.08*k2*f.x-.12*k2*joint;tilt+=.4*k2*f.zw;}
+            else{block+=.06*k3*f.x-.10*k3*joint;tilt+=.3*k3*f.zw;}
+          }
           detail+=blocky*block;surfaceMicroSlope+=rock*blocky*tilt;
         }
         tone+=rock*relief*detail;
         // Bed lines on faces; the period seen on the ground is the bed thickness over the slope.
         float face=rock*sstep(.35,.9,slope)*surfaceStrataWeight;float rate=slope+.2;
         if(face>.01){
-          float b1=surfaceBed(surfaceRise/18.,salt+41u)*(1.-sstep(.125,.25,fp*rate/18.));
-          float b2=surfaceBed(surfaceRise/4.5,salt+42u)*(1.-sstep(.125,.25,fp*rate/4.5));
-          float b3=surfaceBed(surfaceRise/1.1,salt+43u)*(1.-sstep(.125,.25,fp*rate/1.1));
+          vec3 beds=vec3(0.);
+          for(int k=0;k<3;k++){float t=k==0?18.:k==1?4.5:1.1;beds[k]=surfaceBed(surfaceRise/t,salt+41u+uint(k))*(1.-sstep(.125,.25,fp*rate/t));}
+          float b1=beds.x;float b2=beds.y;float b3=beds.z;
           tone+=face*relief*(.24*b1+.18*b2+.12*b3);
         }
       }
       // Scree rests at the angle of repose, between soil and cliff; gravel on open soil.
       float talus=sstep(.22,.42,slope)*(1.-sstep(.8,1.2,slope))*(1.-.85*grass);float clastic=max(talus,.55*soil);
-      if(talus>.01&&fp<1.3){
-        vec2 block=surfaceStones(world/2.9,salt+51u);tone+=talus*(1.-sstep(.6,1.3,fp))*(.30*block.x-.2*(.27-block.y));
-        if(fp<.34){vec2 stone=surfaceStones(world/.78,salt+52u);tone+=talus*(1.-sstep(.16,.34,fp))*(.26*stone.x-.16*(.27-stone.y));}
-      }
-      if(clastic>.01&&fp<.09){
-        vec2 pebble=surfaceStones(world/.21,salt+53u);tone+=clastic*(1.-sstep(.045,.09,fp))*(.22*pebble.x-.12*(.27-pebble.y));
+      for(int k=0;k<3;k++){
+        if(k==0&&!(talus>.01&&fp<1.3)||k==1&&!(talus>.01&&fp<1.3&&fp<.34)||k==2&&!(clastic>.01&&fp<.09))continue;
+        vec2 st=surfaceStones(world/(k==0?2.9:k==1?.78:.21),salt+51u+uint(k));
+        if(k==0)tone+=talus*(1.-sstep(.6,1.3,fp))*(.30*st.x-.2*(.27-st.y));
+        else if(k==1)tone+=talus*(1.-sstep(.16,.34,fp))*(.26*st.x-.16*(.27-st.y));
+        else tone+=clastic*(1.-sstep(.045,.09,fp))*(.22*st.x-.12*(.27-st.y));
       }
       // Add centred detail instead of multiplying correlated bands.
       surfaceMicroTone=hue*clamp(tone,.55,1.45)+surfaceGroundCover(world,slope,fp,rock,grass,salt,n1,n2);
@@ -262,9 +277,8 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     // Fixed physical reference for V2 crown roots, independent of the viewport.
     float surfaceRootBeach(vec3 s,vec2 world,float shore,float openness){
       vec3 point=vec3(world,0.);float fp=30.;
-      vec2 reach=surfaceFbm(point,20000.,3,fp,uMaterialSeed+7u);
-      vec2 grove=surfaceFbm(point,4800.,4,fp,uMaterialSeed+3u);
-      vec2 fine=surfaceFbm(point,240.,4,fp,uMaterialSeed+5u);
+      vec2 f[3];for(int k=0;k<3;k++)f[k]=surfaceFbm(point,k==0?20000.:k==1?4800.:240.,k==0?3:4,fp,uMaterialSeed+(k==0?7u:k==1?3u:5u));
+      vec2 reach=f[0];vec2 grove=f[1];vec2 fine=f[2];
       float width=surfaceBeachWidth(reach,grove,fine,openness);
       return clamp((min(width,20.*fp)-shore+fp)/fp,0.,1.)*(1.-sstep(4.,12.,s.x))*(1.-sstep(.2,.5,length(s.yz)));
     }
@@ -288,9 +302,14 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float snowAmount=1.;float moisture=0.;
       uint salt=uMaterialSeed;float fp=footprint;float phase=surfaceSeason();float h=max(height,0.);
       float materialDetail=sstep(30.,60.,fp)*(1.-sstep(120.,240.,fp));
-      vec2 regional=surfaceFbm(point,64000.,4,fp,salt+1u);vec2 regional2=surfaceFbm(point+vec3(5101.,-2297.,3313.),48000.,4,fp,salt+2u);
-      vec2 grove=surfaceFbm(point,4800.,4,fp,salt+3u);vec2 crag=surfaceFbm(point,700.,4,fp,salt+4u);
-      vec2 fine=surfaceFbm(point,240.,4,fp,salt+5u);vec2 province=surfaceFbm(point,900000.,3,fp,salt+6u);
+      // The seven fields from one loop (salts +1..+7), one inlined surfaceFbm instead of seven:
+      // regional, regional2 (shifted), grove, crag, fine, province, and the beach reach used further down.
+      vec2 fields[7];
+      for(int k=0;k<7;k++){
+        float scale=k==0?64000.:k==1?48000.:k==2?4800.:k==3?700.:k==4?240.:k==5?900000.:20000.;
+        fields[k]=surfaceFbm(k==1?point+vec3(5101.,-2297.,3313.):point,scale,k>=5?3:4,fp,salt+1u+uint(k));
+      }
+      vec2 regional=fields[0];vec2 regional2=fields[1];vec2 grove=fields[2];vec2 crag=fields[3];vec2 fine=fields[4];vec2 province=fields[5];
       float m1=regional.x*sqrt(regional.y);float m2=regional2.x*sqrt(regional2.y);float pv=province.x*sqrt(province.y);
       float ts=clamp(ts0-ls*h,-45.,45.);float tw=clamp(tw0-lw*h,-45.,45.);
       float locality=1.-sstep(600.,6000.,fp);
@@ -409,7 +428,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       // Beaches: a strip along open water (none beside ponds), 30-190 m wide by
       // climate, with a ragged inner edge, as area coverage (visible at 240 m
       // samples); low flats behind it stay as wetter river/estuary bars.
-      vec2 reach=surfaceFbm(point,20000.,3,fp,salt+7u);
+      vec2 reach=fields[6];
       float width=surfaceBeachWidth(reach,grove,fine,openness);
       float beachLimit=20.*fp;
 #ifdef RENDER3D_FOREST

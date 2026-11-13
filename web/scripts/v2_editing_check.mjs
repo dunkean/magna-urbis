@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -21,11 +22,11 @@ try{
   await page.getByRole('button',{name:'Delete river and tributaries',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#map-metrics').textContent.startsWith('1 '));
   await page.locator('#family-tab-settlements').click();
-  await reveal('[data-network-tool=roads]');await page.locator('[data-network-tool=roads]').click();
+  await reveal('[data-network-quick=roads]');await page.locator('[data-network-quick=roads]').click();
   await page.mouse.click(point(300,600).x,point(300,600).y);
   await page.getByRole('button',{name:'Delete road',exact:true}).click();
   await page.waitForTimeout(350);
-  await page.locator('[data-network-tool=draw]').click();
+  await page.locator('[data-network-quick=draw]').click();
   await page.locator('[data-route-method]').selectOption('free');
   await page.mouse.click(point(200,700).x,point(200,700).y);await page.mouse.click(point(650,700).x,point(650,700).y);
   await page.getByRole('button',{name:'Finish road',exact:true}).click();
@@ -57,8 +58,8 @@ try{
   assert.deepEqual(saved.world.terrain.rivers.map(r=>r.id),[3]);assert.equal(saved.world.roads.length,1);
   assert.equal(saved.world.names.town,'Editor fixture');assert(saved.world.names.entries.some(e=>e.text==='North watch'));
   if(await page.locator('#export-dialog').isVisible())await page.locator('[data-close="export-dialog"]').first().click();
-  await page.locator('#language-select').selectOption('fr');
-  assert.match(await labels.innerText(),/Noms et étiquettes/);
+  await chooseWorkshopPreference(page, 'language', 'fr');
+  assert.match(await page.locator('#editor-dock').innerText(),/Noms et étiquettes/);
   await page.screenshot({path:`${out}/labels.png`});
   assert.deepEqual(errors,[]);
   await writeFile(`${out}/report.json`,JSON.stringify({labels:true,errors},null,2));

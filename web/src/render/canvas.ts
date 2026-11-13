@@ -35,7 +35,7 @@ import { applyRenderColors, type RenderColors } from './customColors';
 import { fieldBoundaryStyle, fieldHedgeStyle } from './hedges';
 import { furrowLines, furrowSpacing } from './furrows';
 import { orientPos } from '../gen/geo/poly';
-import { clipRingBox, unionMany } from '../gen/geo/bool';
+import { unionMany } from '../gen/geo/bool';
 import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from './strokes';
 import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './countryside';
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
@@ -58,6 +58,10 @@ import { appendUnderdarkMark, underdarkMark, underdarkTextureSpec } from './unde
 import { frameModel, panelMargin } from './frame';
 import { litDots } from './extras';
 import { displayQualityFor, type ResolvedDisplayQuality } from './displayQuality';
+import { RecPath2D } from './gpu/path';
+import { RecordingCanvas, RecordingContext } from './gpu/recorder';
+import type { DisplayList, Mat } from './gpu/displayList';
+import { noteLivePart, noteLiveCount, existingGpuRasterizer, getVectorEngine, noteCpuTile, noteGpuFailure, noteGpuFallback, noteGpuTile, vectorRasterizer } from './vectorEngine';
 
 export interface CanvasLike { width: number; height: number; getContext(id: '2d', options?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D | null }
 
@@ -70,7 +74,7 @@ export interface CanvasRendererDeps {
   roadLook?: import('./composition').RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;
-  /** Path2D constructor (default: global). */
+  /** Path2D constructor (default: RecPath2D, a native Path2D that both vector engines can draw). */
   Path2D?: new () => Path2D;
   /** Offscreen canvas factory (default: OffscreenCanvas / document canvas). Return null if unavailable. */
   createCanvas?: (w: number, h: number) => CanvasLike | null;
@@ -119,7 +123,8 @@ export interface CanvasRenderer {
   /** Only explicit live draws use density buckets, progressive filling and the browser quality policy. */
   draw(view: View, options?: { live: boolean }): FrameStats;
   suspendLive(): void;
-  drawText(target: CanvasRenderingContext2D, view: View, width: number, height: number): void;
+  /** `moving`: a frame of a pan or zoom gesture; the labels of the last placement follow the map instead of being placed again. */
+  drawText(target: CanvasRenderingContext2D, view: View, width: number, height: number, moving?: boolean): void;
   /** Physical land use alone (no grid, semantics, water or roads) on the transparent `target`, which covers the world square `box`. False: nothing there. */
   drawGround(target: CanvasLike, box: Rect4, options?: { live: boolean }): boolean;
   /** Read-only live pyramid preview. Never rasterises a missing tile or includes labels. */
@@ -134,6 +139,10 @@ export interface CanvasRenderer {
   /** `withRect = false` draws the static base only (the page overlays the view rectangle itself). */
   drawMinimap(target: CanvasLike, view: View, viewW: number, viewH: number, withRect?: boolean): void;
   lastStats(): FrameStats;
+  /** True while live frames replay a retained GPU list (pan and zoom cost one GPU replay, no CPU repaint). */
+  liveRetained(): boolean;
+  /** Conservative owned storage for retaining an inactive style (native Path2D memory is estimated). */
+  retainedBytes(): number;
   /** Title and legend of the actual renderer, without a view-specific scale in the external drawer. */
   getMapInfo(): MapInformation;
   dispose(): void;
@@ -157,6 +166,16 @@ const CACHE_MAX = 8000;
 const LAYER_TILE_PX = 512, LAYER_TILE_GUTTER = 2, LAYER_TILE_MAX_DENSITY = 4, LAYER_TILE_BYTES = 128 * 1024 * 1024;
 /** Farthest reach of a sprite from its mark (m): the largest canopy crown is 10 x 1.59 m from its centre. */
 const LAYER_TILE_REACH = 16;
+/** GPU engine, live view: the retained region extends this share of the view beyond each side. */
+const RETAIN_MARGIN = .35;
+/** GPU engine, live view: a new detail level or region is recorded this long after the view rests. */
+const RETAIN_SETTLE_MS = 150, RETAIN_MAX_WAIT_MS = 1500;
+/** GPU engine, live view: a region is recorded in this many horizontal bands, one per idle step. */
+const RETAIN_BANDS = 4;
+/** GPU engine: most woods sprites one cached batch may hold (one instanced draw; a far view of a wooded map). */
+const GPU_SPRITE_BATCH_MAX = 400_000;
+/** GPU engine: sprite marks in view under which a layer stamps them directly on the recording (instanced) instead of pre-compositing layer tiles. */
+const GPU_SPRITE_BUDGET = 60_000;
 /** Side of the coarse whole-map raster shown under the missing live tiles. */
 const PREVIEW_PX = 2048;
 const growRect = (r: Rect4, d: number): Rect4 => ({ minX: r.minX - d, minY: r.minY - d, maxX: r.maxX + d, maxY: r.maxY + d });
@@ -165,11 +184,14 @@ const frac = (v: number): number => v - Math.floor(v);
 const vhash = (i: number, j: number, salt: number): number => frac(Math.sin(i * 127.1 + j * 311.7 + salt * 74.7) * 43758.5453);
 /** Smooth value noise in 0-1, two octaves: clumps of vegetation with empty gaps between them. */
 function clumpNoise(x: number, y: number, scale: number, salt: number): number {
+  // Four lattice hashes per octave (each was evaluated twice), no per-call octave table.
   let sum = 0;
-  for (const [f, w] of [[1, .65], [3.1, .35]] as const) {
+  for (let octave = 0; octave < 2; octave++) {
+    const f = octave === 0 ? 1 : 3.1, w = octave === 0 ? .65 : .35;
     const fx = x * f / scale, fy = y * f / scale, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
     const su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v), s = salt + f * 13;
-    const top = vhash(i, j, s) + (vhash(i + 1, j, s) - vhash(i, j, s)) * su, bottom = vhash(i, j + 1, s) + (vhash(i + 1, j + 1, s) - vhash(i, j + 1, s)) * su;
+    const h00 = vhash(i, j, s), h10 = vhash(i + 1, j, s), h01 = vhash(i, j + 1, s), h11 = vhash(i + 1, j + 1, s);
+    const top = h00 + (h10 - h00) * su, bottom = h01 + (h11 - h01) * su;
     sum += w * (top + (bottom - top) * sv);
   }
   return sum;
@@ -258,6 +280,50 @@ function addRing(path: Path2D, ring: Vec2[]): void {
   path.closePath();
 }
 
+/** Bounds of a ring, kept with it (rings are immutable scene products). */
+const ringBounds = new WeakMap<readonly Vec2[], Float64Array>();
+function boundsOf(ring: readonly Vec2[]): Float64Array {
+  let b = ringBounds.get(ring);
+  if (!b) {
+    b = new Float64Array([Infinity, Infinity, -Infinity, -Infinity]);
+    for (const p of ring) { if (p.x < b[0]) b[0] = p.x; if (p.y < b[1]) b[1] = p.y; if (p.x > b[2]) b[2] = p.x; if (p.y > b[3]) b[3] = p.y; }
+    ringBounds.set(ring, b);
+  }
+  return b;
+}
+let clipA = new Float64Array(1024), clipB = new Float64Array(1024);
+/** clipRingBox (gen/geo/bool.ts) on a Vec2 ring, same planes, order and arithmetic, on scratch typed arrays:
+ * the tuple copies and per-point closures of the generic version cost seconds on map-sized forest and wash rings
+ * clipped again for every tile. A ring outside the rectangle is rejected from its cached bounds. */
+export function clipRingRect(ring: readonly Vec2[], rect: Rect4): Vec2[] {
+  const b = boundsOf(ring);
+  if (b[2] < rect.minX || b[0] > rect.maxX || b[3] < rect.minY || b[1] > rect.maxY) return [];
+  const need = 2 * (2 * ring.length + 8);
+  if (clipA.length < need) { clipA = new Float64Array(need); clipB = new Float64Array(need); }
+  let src = clipA, dst = clipB, n = ring.length;
+  for (let i = 0; i < n; i++) { src[2 * i] = ring[i].x; src[2 * i + 1] = ring[i].y; }
+  for (let plane = 0; plane < 4 && n; plane++) {
+    const axis = plane < 2 ? 0 : 1, bound = plane === 0 ? rect.minX : plane === 1 ? rect.maxX : plane === 2 ? rect.minY : rect.maxY, low = plane === 0 || plane === 2;
+    // Each edge emits at most two points.
+    if (dst.length < 4 * n) dst = new Float64Array(4 * n);
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      const j = i + 1 === n ? 0 : i + 1, px = src[2 * i], py = src[2 * i + 1], qx = src[2 * j], qy = src[2 * j + 1];
+      const sp = low ? src[2 * i + axis] - bound : bound - src[2 * i + axis], sq = low ? src[2 * j + axis] - bound : bound - src[2 * j + axis];
+      if (sp >= 0) { dst[2 * m] = px; dst[2 * m + 1] = py; m++; }
+      if ((sp >= 0) !== (sq >= 0)) { const t = sp / (sp - sq); dst[2 * m] = px + (qx - px) * t; dst[2 * m + 1] = py + (qy - py) * t; m++; }
+    }
+    const swap = src; src = dst; dst = swap; n = m;
+  }
+  clipA = src; clipB = dst;
+  const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = src[2 * i], y = src[2 * i + 1], last = out[out.length - 1];
+    if (!last || last.x !== x || last.y !== y) out.push({ x, y });
+  }
+  while (out.length > 1 && out[0].x === out[out.length - 1].x && out[0].y === out[out.length - 1].y) out.pop();
+  return out;
+}
 function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<number>, minEdge: number, rect?: Rect4): Path2D | null {
   const path = new P();
   const e2 = minEdge * minEdge;
@@ -271,8 +337,7 @@ function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<number>, min
     for (const ring of rings) {
       // Clip before submitting to Canvas: the GPU otherwise replays map-sized
       // forest/wash paths for every tile and every multiply stamp.
-      const pts = rect ? clipRingBox([...ring.map(p => [p.x, p.y] as [number, number]),
-        [ring[0]?.x ?? 0, ring[0]?.y ?? 0]], { x0: rect.minX, y0: rect.minY, x1: rect.maxX, y1: rect.maxY }).map(([x, y]) => ({ x, y })) : ring;
+      const pts = rect ? clipRingRect(ring, rect) : ring;
       if (pts.length < 3) continue;
       let lx = pts[0].x, ly = pts[0].y, kept = 1;
       path.moveTo(lx, ly);
@@ -342,7 +407,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const S = world.mapSize;
   const furrowSize = deps.furrowReferenceSize ?? S;
   const now = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
-  const P: new () => Path2D = deps.Path2D ?? (globalThis as unknown as { Path2D: new () => Path2D }).Path2D;
+  const P: new () => Path2D = deps.Path2D ?? RecPath2D;
   const makeCanvas = deps.createCanvas ?? defaultCreateCanvas;
   const canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome) ? new CanvasCanopy(world.seed, pal, makeCanvas) : undefined;
   let brushes: CanvasBrushes | undefined;
@@ -387,7 +452,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const rasterFill = new LiveTileFill(now);
   const previewFill = new LiveTileFill(now);
   let lastRaster: { canvas: CanvasLike; view: View; dpr: number } | undefined;
-  const suspendLive = (): void => rasterFill.suspend();
+  const suspendLive = (): void => { rasterFill.suspend(); previewFill.suspend(); };
   const dropLastRaster = (): void => { if (lastRaster) { lastRaster.canvas.width = 0; lastRaster.canvas.height = 0; } lastRaster = undefined; };
   /** The whole map rasterised once at a coarse density: a live view shows it under its missing tiles, never blank tiles. */
   let preview: { key: string; canvas: CanvasLike } | undefined;
@@ -442,15 +507,22 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
 
   /** A clip contains only candidate tiles in this view, and remains exact (no LOD decimation). */
+  /** Layer tile canvases drawn into a GPU recording (see the layer tile release). */
+  const recordedTiles = new WeakSet<object>();
+  /** True while drawVector records for the GPU engine (set at each drawVector entry). */
+  let recordingNow = false;
+  /** Diagnostics: slowest recording of a drawVector section (vectorEngineStats().liveParts, keys 'rec:*'). */
+  const timedRec = <T,>(name: string, f: () => T): T => { if (!recordingNow) return f(); const t = now(); try { return f(); } finally { noteLivePart('rec:' + name, t); } };
   function visibleClip(l: PolyLayer, rect: Rect4): Path2D | null {
     const tiles = l.index.tilesInRect(rect), big = l.index.bigInRect(rect);
     const stamp = tiles.map((t) => `${t}:${l.tileKeys?.[t] ?? ''}`).join(';') + '|' + big.map((i) =>
       `${i}:${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`).join(';');
-    return cached(`${l.name}|clip|${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}|${stamp}`, () => {
+    const recording = recordingNow;
+    return cached(`${l.name}|clip|${recording ? 'gpu' : `${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}`}|${stamp}`, () => {
       const ids: number[] = [];
       for (const t of tiles) for (const i of l.index.itemsOf(t)) ids.push(i);
       ids.push(...big);
-      return polyPath(P, l, ids, 0, rect);
+      return polyPath(P, l, ids, 0, recording ? undefined : rect);
     });
   }
 
@@ -567,7 +639,23 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   };
   let placementLast: { labels: MapLabel[]; cx: number; cy: number; scale: number; w: number; h: number; maxLabels: number; pad: number; reserved: boolean; placed: PlacedMapLabel[] } | undefined;
   let textSourcesOf: readonly CityScene[] | undefined, textLabelsOf: MapLabel[] | undefined, combinedLabels: MapLabel[] = mapLabels;
-  function drawText(ctx: CanvasRenderingContext2D, view: View, cssW: number, cssH: number): void {
+  /** The last placement moved with the map to `view`: point and area labels by their anchor (a name stays by its
+   * symbol), path labels glyph by glyph along their line. Nothing is placed again, so nothing jumps during a gesture. */
+  function movedPlacement(last: NonNullable<typeof placementLast>, view: View, cssW: number, cssH: number): PlacedMapLabel[] {
+    const k = view.scale / last.scale, ox = (last.cx - view.cx) * view.scale + cssW / 2, oy = (last.cy - view.cy) * view.scale + cssH / 2;
+    const mx = (x: number): number => (x - cssW / 2) * k + ox, my = (y: number): number => (y - cssH / 2) * k + oy;
+    return last.placed.map(pl => {
+      const symbol = pl.symbol && { ...pl.symbol, x: mx(pl.symbol.x), y: my(pl.symbol.y) };
+      if (pl.path || pl.glyphs.some(g => g.a !== 0)) {
+        return { ...pl, cx: mx(pl.cx), cy: my(pl.cy), symbol, path: pl.path?.map(([x, y]) => [mx(x), my(y)] as [number, number]),
+          glyphs: pl.glyphs.map(g => ({ ...g, x: mx(g.x), y: my(g.y) })) };
+      }
+      const ax = pl.symbol ? pl.symbol.x : (pl.label.x - last.cx) * last.scale + cssW / 2, ay = pl.symbol ? pl.symbol.y : (pl.label.y - last.cy) * last.scale + cssH / 2;
+      const dx = mx(ax) - ax, dy = my(ay) - ay;
+      return { ...pl, cx: pl.cx + dx, cy: pl.cy + dy, symbol, glyphs: pl.glyphs.map(g => ({ ...g, x: g.x + dx, y: g.y + dy })) };
+    });
+  }
+  function drawText(ctx: CanvasRenderingContext2D, view: View, cssW: number, cssH: number, moving = false): void {
     const sources = deps.textSources?.();
     if (sources !== textSourcesOf || textLabelsOf !== mapLabels) {
       textSourcesOf = sources; textLabelsOf = mapLabels;
@@ -582,9 +670,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const placement = textPlacement(text), last = placementLast;
       if (last && last.labels === combinedLabels && last.cx === view.cx && last.cy === view.cy && last.scale === view.scale && last.w === cssW && last.h === cssH
         && last.maxLabels === placement.maxLabels && last.pad === placement.pad && !last.reserved === !reserved) placedLast = last.placed;
+      else if (moving && last && last.labels === combinedLabels && last.w === cssW && last.h === cssH) placedLast = movedPlacement(last, view, cssW, cssH);
       else {
         // Layouts are memoised per (measure, label style, text, size): a pan at a constant zoom lays nothing out again.
-        placedLast = placeMapLabels(combinedLabels, view, cssW, cssH, measureLabel, { ...placement, reserved });
+        const previous = last?.labels === combinedLabels ? new Set(last.placed.map(pl => pl.label)) : undefined;
+        placedLast = placeMapLabels(combinedLabels, view, cssW, cssH, measureLabel, { ...placement, reserved, previous });
         placementLast = { labels: combinedLabels, cx: view.cx, cy: view.cy, scale: view.scale, w: cssW, h: cssH, maxLabels: placement.maxLabels, pad: placement.pad, reserved: !!reserved, placed: placedLast };
       }
       drawMapLabels(ctx, placedLast, pal, family);
@@ -608,7 +698,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (terrainChanged) { terrainImg = waterImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
-    if (nextScene !== scene) { treeMarks.clear(); penMarks.clear(); forestWashes.clear(); strayMarks.clear(); }
+    if (nextScene !== scene) { treeMarks.clear(); treeSprites.clear(); penMarks.clear(); forestWashes.clear(); strayMarks.clear(); }
     // Woods depend on the scene, the forest wash and the roads/farms that clear them (forestRoom below): rebuild them all,
     // or, on a local update, those near the changed areas (the dirty rects already include the reach of the derived products).
     if (local) {
@@ -624,6 +714,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     scene = nextScene; sourceWorld = nextSource; world = nextWorld; mapLabels = nextLabels;
     overlays.labels = world.options.labels !== false; overlays.legend = !!world.options.legend;
     legendPanel = infoPanel = null; litCache = undefined; forestRoom = undefined;
+    // The retained GPU list keeps showing until its replacement is recorded (no blank frame after a town build).
+    if (retained) retained.stale = true;
+    retainedPending = undefined;
     return true;
   }
 
@@ -691,6 +784,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
   /** Tiling pattern (tile of `tw` x `th` meters drawn at 14 px/m, rotated `rot` degrees); null where canvases/DOMMatrix are unavailable (Node). */
   function getPattern(ctx: CanvasRenderingContext2D, key: string, tw: number, th: number, rot: number, draw: (c: CanvasRenderingContext2D, k: number) => void): CanvasPattern | null {
+    // A pattern made by a native context never goes to the recorder, nor the reverse: one cache per engine.
+    key = (ctx instanceof RecordingContext ? 'rec|' : 'cpu|') + key;
     let p = patterns.get(key);
     if (p !== undefined) return p;
     p = null;
@@ -748,8 +843,115 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
 
   /** Half-octave live tiles stretch by at most sqrt(2); exports retain their exact raster density. */
+  /**
+   * GPU engine, live view: the vector map of a region around the view is recorded once per half-octave of scale and
+   * replayed by the GPU on every frame with the view matrix. No tiles: pan and zoom inside the region never re-record
+   * nor repaint anything on the CPU; leaving it, or reaching a new detail level, records once after the frame while the
+   * previous list keeps showing.
+   */
+  /** One horizontal band of a retained region: its own list, recorded around its centre at the region's scale. */
+  type RetainedPart = { list: DisplayList; rect: Rect4; cx: number; cy: number; w: number; h: number };
+  type RetainedPlan = { key: string; rect: Rect4; scale: number; dpr: number; bands: Rect4[] };
+  let retained: (RetainedPlan & { parts: RetainedPart[]; stale: boolean; firstMs?: number }) | undefined;
+  let retainedJob: ReturnType<typeof setTimeout> | undefined, retainedWanted: { view: View; cssW: number; cssH: number; dpr: number; key: string; light: boolean } | undefined;
+  /** A region being recorded band by band, one band per idle step; it replaces `retained` once complete. */
+  let retainedPending: (RetainedPlan & { parts: RetainedPart[]; light: boolean; ms: number }) | undefined;
+  let retainedFailed = '', disposed = false, retainedSince = 0;
+  function retainedPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): RetainedPlan {
+    const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2), hw = cssW / view.scale * (.5 + RETAIN_MARGIN), hh = cssH / view.scale * (.5 + RETAIN_MARGIN);
+    // Region edges on a lattice (a power of two near half the view): panning back and forth meets the same regions,
+    // whose region-keyed products (forest clearings union) stay cached.
+    const step = 2 ** Math.round(Math.log2(Math.max(hw, hh) / 2));
+    const rect: Rect4 = { minX: Math.floor((view.cx - hw) / step) * step, minY: Math.floor((view.cy - hh) / step) * step, maxX: Math.ceil((view.cx + hw) / step) * step, maxY: Math.ceil((view.cy + hh) / step) * step };
+    const bands: Rect4[] = [];
+    for (let i = 0; i < RETAIN_BANDS; i++) bands.push({ minX: rect.minX, maxX: rect.maxX, minY: rect.minY + (rect.maxY - rect.minY) * i / RETAIN_BANDS, maxY: rect.minY + (rect.maxY - rect.minY) * (i + 1) / RETAIN_BANDS });
+    return { key, rect, scale, dpr, bands };
+  }
+  /** Records one band; undefined (and the key marked failed) when the recorder cannot represent it. */
+  function recordBand(plan: RetainedPlan, band: Rect4): RetainedPart | undefined {
+    const cx = (band.minX + band.maxX) / 2, cy = (band.minY + band.maxY) / 2;
+    const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)), h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
+    const rec = new RecordingCanvas(w, h);
+    let list: DisplayList | undefined;
+    try { drawVector({ cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band); list = rec.finish(); }
+    catch (error) { noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`); }
+    finally { releaseDrapeTemps(); }
+    if (!list || list.unsupported) { if (list?.unsupported) noteGpuFallback(list.unsupported); retainedFailed = plan.key; return undefined; }
+    return { list, rect: band, cx, cy, w, h };
+  }
+  /** Whole region at once: the first display, which has nothing else to show. */
+  function recordRetained(view: View, cssW: number, cssH: number, dpr: number, key: string): boolean {
+    const t0 = now(), plan = retainedPlan(view, cssW, cssH, dpr, key), parts: RetainedPart[] = [];
+    for (const band of plan.bands) { const part = recordBand(plan, band); if (!part) return false; parts.push(part); }
+    retained = { ...plan, parts, stale: false, firstMs: now() - t0 };
+    return true;
+  }
+  /** One idle step of the progressive recording: a band, then its GPU upload; the next step is scheduled until done. */
+  function recordStep(): void {
+    retainedJob = undefined;
+    const want = retainedWanted; if (!want || disposed) return;
+    if (!retainedPending || retainedPending.key !== want.key || retainedPending.dpr !== want.dpr || retainedPending.light !== want.light
+      || !covers(retainedPending.rect, viewRect(want.view, want.cssW, want.cssH)))
+      retainedPending = { ...retainedPlan(want.view, want.cssW, want.cssH, want.dpr, want.key), parts: [], light: want.light, ms: 0 };
+    const pending = retainedPending, live = activeLive, light = activeLight, t = now();
+    activeLive = true; activeLight = pending.light;
+    let part: RetainedPart | undefined;
+    try { part = recordBand(pending, pending.bands[pending.parts.length]); } finally { activeLive = live; activeLight = light; }
+    if (!part) { retainedPending = undefined; deps.invalidate!(); return; }
+    // Upload now, in this step, rather than in the first frame that replays the new region.
+    try { vectorRasterizer()?.prepare(part.list); } catch (error) { noteGpuFailure(error); }
+    pending.parts.push(part); pending.ms += now() - t;
+    noteLivePart('record-step', t);
+    if (pending.parts.length < pending.bands.length) { retainedJob = setTimeout(recordStep, 0); return; }
+    retained = { ...pending, stale: false, firstMs: pending.ms }; retainedPending = undefined;
+    deps.invalidate!();
+  }
+  const covers = (outer: Rect4, inner: Rect4): boolean => outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY;
+  function drawRetained(view: View): FrameStats | undefined {
+    const gpu = vectorRasterizer(), ctx = canvas.getContext('2d');
+    if (!gpu || !ctx || !deps.invalidate) return undefined;
+    const start = now(), dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
+    const cssW = canvas.width / dpr, cssH = canvas.height / dpr, rect = viewRect(view, cssW, cssH);
+    const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
+    const key = `${scale}|${dpr}|${activeLight}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
+    if (retainedFailed === key) return undefined;
+    const r0 = retained;
+    if (!r0 || r0.stale || r0.key !== key || !covers(r0.rect, rect)) {
+      // Only a moving view postpones the recording: redraws of a still view (readiness loops, progressive layers) must
+      // not, or the recording would never start. A long gesture still records after RETAIN_MAX_WAIT_MS.
+      const before = retainedWanted, moved = !before || before.key !== key || before.view.cx !== view.cx || before.view.cy !== view.cy || before.view.scale !== view.scale;
+      retainedWanted = { view: { ...view }, cssW, cssH, dpr, key, light: activeLight };
+      if (retainedJob === undefined && !retainedPending) retainedSince = now();
+      // Nothing to show yet (or another pixel ratio): record now. Otherwise once the view rests (debounced), band by
+      // band over idle steps: a gesture keeps replaying the previous list at the new scale, and no step blocks long.
+      if (!r0 || r0.dpr !== dpr) { const t = now(); if (!recordRetained(view, cssW, cssH, dpr, key)) return undefined; noteLivePart('record-sync', t); }
+      else if (moved && now() - retainedSince < RETAIN_MAX_WAIT_MS || retainedJob === undefined && !retainedPending) {
+        clearTimeout(retainedJob); retainedJob = setTimeout(recordStep, RETAIN_SETTLE_MS);
+      }
+    }
+    const r = retained!, k = view.scale / r.scale, W = canvas.width, H = canvas.height;
+    // Recorded device pixels of each band -> this frame's device pixels; each band only paints its own rows.
+    const toX = (x: number): number => dpr * view.scale * (x - view.cx) + W / 2, toY = (y: number): number => dpr * view.scale * (y - view.cy) + H / 2;
+    const parts = r.parts.map(p => ({ list: p.list, post: [k, 0, 0, k, -k * p.w / 2 + toX(p.cx), -k * p.h / 2 + toY(p.cy)] as Mat,
+      scissor: [toX(p.rect.minX), toY(p.rect.minY), toX(p.rect.maxX), toY(p.rect.maxY)] as const }));
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, W, H);
+    const t1 = now();
+    try {
+      gpu.rasterizeParts(parts, ctx, 0, 0, [W, H]); noteLivePart('replay', t1);
+      const rs = gpu.lastStats(); noteLiveCount('n:draws', rs.drawCalls); noteLiveCount('n:clips', rs.clips ?? 0); noteLiveCount('n:ops', rs.ops ?? 0); noteLiveCount('n:ktri', Math.round(rs.triangles / 1000));
+    }
+    catch (error) { noteGpuFailure(error); retained = undefined; return undefined; }
+    if (r.firstMs !== undefined) { noteGpuTile(r.firstMs, now() - t1); r.firstMs = undefined; }
+    const overlay = drawVector(view, canvas, 'overlays');
+    stats = { ...overlay, ms: now() - start, band: selectLod(view.scale).band, scale: view.scale, pathsBuilt: 0, pathCache: cache.size,
+      rasterHits: 1, rasterBuilt: 0, rasterPending: retainedJob !== undefined || retainedPending ? 1 : 0, rasterBytes: gpu.bytes() };
+    return stats;
+  }
+
   function drawFrame(view: View): FrameStats {
     if (deps.raster === false || rasterFailed) return drawVector(view);
+    if (activeLive && getVectorEngine() === 'gpu') { const shown = drawRetained(view); if (shown) return shown; }
     const start = now(), dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const ctx = canvas.getContext('2d');
     if (!ctx) return stats;
@@ -759,29 +961,61 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const k = scale * dpr, outputK = view.scale * dpr, ratio = view.scale / scale;
     // Small live CPU tiles bound each indivisible raster operation; captures
     // retain their exact density and larger tiles. Polygon paths are clipped below.
-    const tilePx = live ? 256 : 512, gutter = live ? 8 : 32, tileSize = tilePx / k;
+    // Raster cost no longer bounds GPU tiles: live ones are larger, so a view needs fewer.
+    const engine = getVectorEngine();
+    const tilePx = live ? (engine === 'gpu' ? 512 : 256) : 512, gutter = live ? (engine === 'gpu' ? 16 : 8) : 32, tileSize = tilePx / k;
     const x0 = Math.floor(rect.minX / tileSize), y0 = Math.floor(rect.minY / tileSize);
     const x1 = Math.floor(rect.maxX / tileSize), y1 = Math.floor(rect.maxY / tileSize);
     const budget = rasterBudget(rect, scale);
     layerTilesFit = activeLight && scale < 1 || layerTilesFitView(rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
     const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}`;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${live ? 'live' : 'exact'}|${activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${live ? 'live' : 'exact'}|${engine}|${activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(view);
     const buildTile = (request: typeof requests[number]): CanvasImageSource => {
-      const target = makeCanvas(tilePx + 2 * gutter, tilePx + 2 * gutter);
-      // Keep vector replay local to a small CPU surface. Only the finished tile
-      // is uploaded; multiply display lists cannot accumulate in Chrome's GPU queue.
-      if (!target?.getContext('2d', { willReadFrequently: true })) throw new Error('Overlay tile allocation failed');
+      const side = tilePx + 2 * gutter, bytes = side * side * 4;
       const tileView = { cx: (request.x + 0.5) * tileSize, cy: (request.y + 0.5) * tileSize, scale };
-      const st = drawVector(tileView, target, 'map', rect); pathsBuilt += st.pathsBuilt; mapStats = st;
-      // The canvas itself is the tile: transferToImageBitmap waits for the GPU raster of the tile on the main thread.
-      const bytes = target.width * target.height * 4, resource = target as unknown as CanvasImageSource;
+      let resource: CanvasImageSource | undefined, release = (): void => {};
+      if (getVectorEngine() === 'gpu') {
+        // GPU engine: record the same drawVector calls, replay them on WebGL2. Unsupported lists and errors fall back to the CPU below.
+        try {
+          const t0 = now(), rec = new RecordingCanvas(side, side);
+          // A recording failure (a Canvas call the recorder lacks) costs this tile only; a raster failure demotes the engine.
+          let st: FrameStats | undefined, list: DisplayList | undefined;
+          try { st = drawVector(tileView, rec as unknown as CanvasLike, 'map', rect); list = rec.finish(); }
+          catch (error) { noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`); }
+          const t1 = now(), gpu = list ? vectorRasterizer() : null;
+          if (list?.unsupported) noteGpuFallback(list.unsupported);
+          else if (list && st && gpu) {
+            try {
+              const bitmap = gpu.rasterize(list);
+              noteGpuTile(t1 - t0, now() - t1);
+              pathsBuilt += st.pathsBuilt; mapStats = st;
+              resource = bitmap; release = () => bitmap.close();
+            } catch (error) { noteGpuFailure(error); }
+          }
+        } finally { releaseDrapeTemps(); }
+      }
+      if (!resource) {
+        const t0 = now(), target = makeCanvas(side, side);
+        // Keep vector replay local to a small CPU surface. Only the finished tile
+        // is uploaded; multiply display lists cannot accumulate in Chrome's GPU queue.
+        if (!target?.getContext('2d', { willReadFrequently: true })) throw new Error('Overlay tile allocation failed');
+        const st = drawVector(tileView, target, 'map', rect); pathsBuilt += st.pathsBuilt; mapStats = st;
+        // The finished CPU tile becomes an ImageBitmap here: its deferred raster runs inside this progressive step
+        // (one tile), not in the first drawImage of the frame that composes every tile, and later blits of a bitmap
+        // are cheaper than re-blitting the software canvas.
+        const bitmap = typeof (target as { transferToImageBitmap?: () => ImageBitmap }).transferToImageBitmap === 'function'
+          ? (target as unknown as OffscreenCanvas).transferToImageBitmap() : undefined;
+        resource = (bitmap ?? target) as unknown as CanvasImageSource;
+        release = () => { if (bitmap) bitmap.close(); else { target.width = 0; target.height = 0; } };
+        noteCpuTile(now() - t0);
+      }
       const margin = paintMargin(scale) + gutter / k;
       rasterCache.put(request.key, { value: resource, bytes,
         bounds: { minX: request.x * tileSize - margin, minY: request.y * tileSize - margin,
           maxX: (request.x + 1) * tileSize + margin, maxY: (request.y + 1) * tileSize + margin },
-        release: () => { target.width = 0; target.height = 0; } });
+        release });
       if (live) {
         mapPyramid.set(request.key, { x: request.x * tileSize, y: request.y * tileSize, span: tileSize,
           pixels: tilePx, gutter, density: k, semantic: semanticKey, light: activeLight });
@@ -963,8 +1197,34 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
   function paintGround(target: CanvasLike, box: Rect4): boolean {
     const dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
-    const fs = drawVector({ cx: (box.minX + box.maxX) / 2, cy: (box.minY + box.maxY) / 2, scale: target.width / (box.maxX - box.minX) / dpr }, target, 'ground');
-    return fs.tilesDrawn + fs.bigDrawn + fs.textureTiles > 0;
+    const view = { cx: (box.minX + box.maxX) / 2, cy: (box.minY + box.maxY) / 2, scale: target.width / (box.maxX - box.minX) / dpr };
+    const drawn = (fs: FrameStats): boolean => fs.tilesDrawn + fs.bigDrawn + fs.textureTiles > 0;
+    if (getVectorEngine() === 'gpu') {
+      const t0 = now();
+      try {
+        const rec = new RecordingCanvas(target.width, target.height);
+        let fs: FrameStats | undefined, list: DisplayList | undefined;
+        try { fs = drawVector(view, rec as unknown as CanvasLike, 'ground'); list = rec.finish(); }
+        catch (error) { noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`); }
+        const t1 = now(), gpu = list ? vectorRasterizer() : null, tx = target.getContext('2d');
+        if (list?.unsupported) noteGpuFallback(list.unsupported);
+        else if (list && fs && gpu && tx) {
+          let bitmap: ImageBitmap | undefined;
+          try { bitmap = gpu.rasterize(list); } catch (error) { noteGpuFailure(error); }
+          if (bitmap) {
+            try {
+              tx.setTransform(1, 0, 0, 1, 0, 0); tx.globalAlpha = 1; tx.globalCompositeOperation = 'source-over';
+              tx.clearRect(0, 0, target.width, target.height); tx.drawImage(bitmap, 0, 0);
+            } finally { bitmap.close(); }
+            noteGpuTile(t1 - t0, now() - t1);
+            return drawn(fs);
+          }
+        }
+      } finally { releaseDrapeTemps(); }
+    }
+    const t0 = now(), fs = drawVector(view, target, 'ground');
+    noteCpuTile(now() - t0);
+    return drawn(fs);
   }
 
   function drawVector(view: View, target: CanvasLike = canvas, mode: 'all' | 'map' | 'overlays' | 'ground' = 'all', fullRect?: Rect4): FrameStats {
@@ -1007,13 +1267,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // Include the stamp/shadow reach and put artificial clipping edges safely
     // outside the canvas, so stroked polygons retain their original borders.
     const pathRect = growRect(rect, Math.max(16, paintMargin(sc)));
-    const rectKey = `${pathRect.minX},${pathRect.minY},${pathRect.maxX},${pathRect.maxY}`;
+    // GPU recording: no clipping to the frame (the GPU discards what falls outside), so the paths of an index tile are
+    // built once per band and reused by every retained region and tile; the Canvas engine keeps its clipped paths.
+    recordingNow = ctx instanceof RecordingContext;
+    const clipTo = recordingNow ? undefined : pathRect;
+    const rectKey = recordingNow ? 'gpu' : `${pathRect.minX},${pathRect.minY},${pathRect.maxX},${pathRect.maxY}`;
     const framePaths = new Map<PolyLayer, Path2D[]>();
     const polyPaths = (l: PolyLayer): Path2D[] => {
       const retained = framePaths.get(l); if (retained) return retained;
       const out: Path2D[] = [];
       for (const t of l.index.tilesInRect(pathRect)) {
-        const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ""}`, () => polyPath(P, l, l.index.itemsOf(t), minEdge, pathRect));
+        const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ""}`, () => polyPath(P, l, l.index.itemsOf(t), minEdge, clipTo));
         if (p) { out.push(p); fs.tilesDrawn++; }
       }
       const big = l.index.bigInRect(pathRect);
@@ -1021,10 +1285,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       // than enqueueing thousands of identical multiply operations per stamp.
       if (l.name.includes('-edge-') || l.name.includes('-fringe-')) {
         const stamp = l.bigKeys?.join(';') ?? '';
-        const p = cached(`${l.name}|${band}|${rectKey}|big|${stamp}`, () => polyPath(P, l, big, minEdge, pathRect));
+        const p = cached(`${l.name}|${band}|${rectKey}|big|${recordingNow ? big.join(',') + '|' : ''}${stamp}`, () => polyPath(P, l, big, minEdge, clipTo));
         if (p) { out.push(p); fs.bigDrawn += big.length; }
       } else for (const i of big) {
-        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ""}`, () => polyPath(P, l, [i], minEdge, pathRect));
+        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ""}`, () => polyPath(P, l, [i], minEdge, clipTo));
         if (p) { out.push(p); fs.bigDrawn++; }
       }
       framePaths.set(l, out); return out;
@@ -1075,7 +1339,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const roadStyle: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
     const natural = roadStyle.look === 'natural', inkAlpha = emphasisAlpha(roadStyle.emphasis);
     /** All the visible pieces of some layers as one path: a translucent stroke never doubles at chunk ends. */
-    const merged = (ls: LineLayer[]): Path2D => { const out = new Path2D(); for (const l of ls) for (const p of linePaths(l)) out.addPath(p); return out; };
+    const merged = (ls: LineLayer[]): Path2D => { const out = new P(); for (const l of ls) for (const p of linePaths(l)) out.addPath(p); return out; };
     const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
       if (natural) {
         // Layers of one rank share a width: one painter call each, tracks first.
@@ -1216,9 +1480,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (!luOn) break;
       const name = 'lu-' + kind;
       if (!polyL(name)) continue;
-      if (kind === 'forest') { ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
+      if (kind === 'forest') { ctx.save(); const clip = timedRec('forestClip', () => forestClip(rect)); if (clip) ctx.clip(clip, 'nonzero'); }
       multiply(true);
-      fillLand(name, kind);
+      timedRec('land-' + kind, () => fillLand(name, kind));
       multiply(false);
       // Actual parallel plough lines, anchored like the SVG pattern. Suppress subpixel moire at far zoom.
       if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips && pal.furrowAlpha > 0 && scene.furrows && furrowSpacing(furrowSize) * sc >= 1.5) {
@@ -1295,7 +1559,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         else if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
       }
     } else if (luOn) {
-      for (const tl of scene.textures) if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += drawTexture(ctx, tl, rect, band, lw, budgetRect);
+      for (const tl of scene.textures) if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, world.options.biome)))) fs.textureTiles += timedRec('tex-' + tl.kind, () => drawTexture(ctx, tl, rect, band, lw, budgetRect));
     }
 
     if (mode === 'ground') {
@@ -1305,7 +1569,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
 
     // Semantic land use: above every physical land-use layer, below water, roads and labels.
-    deps.semantic?.draw(ctx, rect, 1 / sc, activeLight ? 'light' : 'full');
+    timedRec('semantic', () => deps.semantic?.draw(ctx, rect, 1 / sc, activeLight ? 'light' : 'full'));
 
     // 3. rivers + water
     const rivers = polyL('rivers');
@@ -1375,7 +1639,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       strokePolys('farm-buildings', pal.farmInk, lw(0.5, 0.6));
       if (lod.band >= 2) strokeLines(linesOf((l) => l.name === 'farm-ridges'), pal.farmInk, () => lw(0.35, 0.4), 0.8, [], 'butt');
     }
-    if (luOn && lod.strips) drawRuralDetails(ctx, world, pal);
+    if (luOn && lod.strips) timedRec('rural', () => drawRuralDetails(ctx, world, pal));
     // roads, tracks and the street strokes below never spill over the sea or the lakes (bridges come later)
     const land = landClip();
     ctx.save();
@@ -1551,7 +1815,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           if (luOn) {
             for (const kind of NATURAL_LAND_KINDS) {
               const name = 'lu-' + kind;
-              if (kind === 'forest') { ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
+              if (kind === 'forest') { ctx.save(); const clip = timedRec('forestClip', () => forestClip(rect)); if (clip) ctx.clip(clip, 'nonzero'); }
               multiply(true); fillLand(name, kind); multiply(false);
               multiply(true); fillLand('u-cover-' + kind, kind); multiply(false);
               if (kind === 'forest') ctx.restore();
@@ -1893,10 +2157,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   /** Tree centres of a wood or orchard layer within `area`, in draw order (cached per index tile). */
   function treeMarksIn(tl: TextureLayer, area: Rect4): Mark[] {
     const marks: Mark[] = [];
+    for (const tile of tl.index.tilesInRect(area)) {
+      for (const m of tileTreeMarks(tl, tile)) if (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY) marks.push(m);
+    }
+    return marks.sort((a, b) => a.y - b.y || a.x - b.x);
+  }
+  /** Tree marks of one index tile (all of them, cached for the whole map). */
+  function tileTreeMarks(tl: TextureLayer, tile: number): Mark[] {
     let entries = treeMarks.get(tl); if (!entries) { entries = new Map(); treeMarks.set(tl, entries); }
     const exclusion = tl.kind === 'forest' ? polyL('u-forest-clearings') : undefined;
     const room = tl.kind === 'forest' ? roomOf() : undefined;
-    for (const tile of tl.index.tilesInRect(area)) {
+    {
       let points = entries.get(tile);
       if (!points) {
         points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < (canopy ? .5 + .5 * forestWeight(m.x, m.y) : forestWeight(m.x, m.y)))
@@ -1908,9 +2179,51 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (entries.size >= 8192) entries.delete(entries.keys().next().value!);
         entries.set(tile, points);
       }
-      for (const m of points) if (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY) marks.push(m);
+      return points;
     }
-    return marks.sort((a, b) => a.y - b.y || a.x - b.x);
+  }
+  /** GPU recording: canopy sprite data per index tile and atlas resolution, so a new region or zoom level re-records
+   * its woods by gathering cached instances instead of stamping every tree again. */
+  const treeSprites = new Map<TextureLayer, Map<string, { image: CanvasImageSource; data: Float32Array; marks: Mark[] } | null>>();
+  /** False when the canopy draws vector glyphs at this scale (no atlas): the caller paints the trees itself. */
+  function recordTreeSprites(ctx: RecordingContext, tl: TextureLayer, area: Rect4, pxPerMetre: number): boolean {
+    if (!canopy || brushes) return false;
+    const kind = tl.kind === 'orchard' ? 'orchard' : 'forest', resolution = canopy.resolutionFor(pxPerMetre, 1);
+    let cache = treeSprites.get(tl); if (!cache) { cache = new Map(); treeSprites.set(tl, cache); }
+    const parts: { image: CanvasImageSource; data: Float32Array; marks: Mark[] }[] = [];
+    for (const tile of tl.index.tilesInRect(area)) {
+      const key = `${tile}|${resolution}`;
+      let entry = cache.get(key);
+      if (entry === undefined) {
+        const marks = tileTreeMarks(tl, tile);
+        const made = canopy.spriteData(marks, kind, pxPerMetre, 1, tl.kind === 'forest' ? coniferOf : undefined);
+        entry = made ? { ...made, marks } : null;
+        if (cache.size >= 16384) cache.delete(cache.keys().next().value!);
+        cache.set(key, entry);
+      }
+      if (entry === null) return false;
+      if (entry.marks.length) parts.push(entry);
+    }
+    if (!parts.length) return true;
+    const image = parts[0].image;
+    if (parts.some(p => p.image !== image)) return false;
+    // Gather the marks inside the area, painted from back to front like the Canvas canopy (sorted by y, then x).
+    let n = 0;
+    for (const p of parts) n += p.marks.length;
+    const data = new Float32Array(n * 8), xs = new Float64Array(n), ys = new Float64Array(n);
+    let count = 0;
+    for (const p of parts) for (let i = 0; i < p.marks.length; i++) {
+      const m = p.marks[i];
+      if (m.x < area.minX || m.x > area.maxX || m.y < area.minY || m.y > area.maxY) continue;
+      data.set(p.data.subarray(i * 8, i * 8 + 8), count * 8); xs[count] = m.x; ys[count] = m.y; count++;
+    }
+    if (count > GPU_SPRITE_BATCH_MAX) return false;
+    const order = new Uint32Array(count);
+    for (let i = 0; i < count; i++) order[i] = i;
+    order.sort((a, b) => ys[a] - ys[b] || xs[a] - xs[b]);
+    ctx.globalAlpha = 1;
+    ctx.drawImageBatch(image, data, order);
+    return true;
   }
 
   /** Whole trees at their marks: painted brushes, or the canopy sprites (engraved on parchment). */
@@ -1975,7 +2288,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           // The canvas is the tile (no transferToImageBitmap: it would wait for the GPU raster on the main thread).
           const value = target as unknown as CanvasImageSource;
           image = value;
-          layerTiles.put(key, { value, bytes: side * side * 4, bounds, release: () => { target.width = 0; target.height = 0; } });
+          // The GPU engine may hold a texture of this canvas: drop it with the tile.
+          // A retained GPU list may still replay this canvas after its eviction: such a canvas is only dropped (the
+          // garbage collector frees it with the list), never emptied, or the replay would draw from a blank source.
+          layerTiles.put(key, { value, bytes: side * side * 4, bounds, release: () => { existingGpuRasterizer()?.invalidateImage(value); if (!recordedTiles.has(value)) { target.width = 0; target.height = 0; } } });
         }
       }
       if (image) tiles.push({ image, x, y });
@@ -1987,6 +2303,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const sx = t.a * tile.x * span + t.e, sy = t.d * tile.y * span + t.f;
       const left = Math.round(sx), top = Math.round(sy), right = Math.round(sx + t.a * span), bottom = Math.round(sy + t.d * span);
       ctx.save(); ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
+      if (ctx instanceof RecordingContext) recordedTiles.add(tile.image);
       ctx.drawImage(tile.image, sx - g * k, sy - g * k, side * k, side * k); ctx.restore();
     }
     ctx.restore();
@@ -2002,9 +2319,15 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const expanded = growRect(rect, CANOPY_MARGIN), count = tl.index.tilesInRect(expanded).length;
       ctx.save();
       if (tl.kind === 'forest') { const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); }
+      // GPU engine: the woods become one instanced sprite batch from cached per-tile data; failing that, few enough
+      // marks are stamped directly, and more go through the layer tiles below.
+      const batched = ctx instanceof RecordingContext && recordTreeSprites(ctx, tl, expanded, ctx.getTransform().a);
+      const direct = !batched && ctx instanceof RecordingContext ? treeMarksIn(tl, expanded) : undefined;
+      if (batched) { /* recorded as one sprite batch */ }
+      else if (direct && direct.length <= GPU_SPRITE_BUDGET) paintTrees(ctx, tl, direct, ctx.getTransform().a);
       // Thousands of sprites per view: stamp them once per density and tile, then reuse the bitmaps while panning and zooming.
-      if (!drawLayerTiles(ctx, tl, 'trees', rect, (target, area, pxPerMetre) => paintTrees(target, tl, treeMarksIn(tl, growRect(area, LAYER_TILE_REACH)), pxPerMetre)))
-        paintTrees(ctx, tl, treeMarksIn(tl, expanded), ctx.getTransform().a);
+      else if (!drawLayerTiles(ctx, tl, 'trees', rect, (target, area, pxPerMetre) => paintTrees(target, tl, treeMarksIn(tl, growRect(area, LAYER_TILE_REACH)), pxPerMetre)))
+        paintTrees(ctx, tl, direct ?? treeMarksIn(tl, expanded), ctx.getTransform().a);
       ctx.restore();
       return count;
     }
@@ -2018,11 +2341,23 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
    * and nothing repeats. No polygon test per tree: the tile is drawn once, then masked by the wood. Coarse tiles thin the
    * grid by a power of two and enlarge the crowns alike, which keeps the tone and the glades at any scale. */
   let canopyScratch: CanvasLike | undefined;
+  /** Per-call scratch canvases of a recorded 3D drape tile, released once the tile is rasterised. */
+  const drapeTemps: CanvasLike[] = [];
+  function releaseDrapeTemps(): void {
+    const gpu = existingGpuRasterizer();
+    for (const c of drapeTemps.splice(0)) { gpu?.invalidateImage(c as unknown as CanvasImageSource); c.width = 0; c.height = 0; }
+  }
   function drawDrapeCanopy(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, pxPerMetre: number): number {
     const ids = tl.index.query(rect); if (!ids.length || !canopy) return 0;
     const target = ctx.canvas as unknown as CanvasLike, w = target.width, h = target.height;
-    if (!canopyScratch || canopyScratch.width !== w || canopyScratch.height !== h) canopyScratch = makeCanvas(w, h) ?? undefined;
-    const sx = canopyScratch?.getContext('2d'); if (!canopyScratch || !sx) return 0;
+    let scratch = canopyScratch;
+    if (ctx instanceof RecordingContext) {
+      // A recorded drawImage keeps its source until the tile is rasterised: a scratch of its own per call, released after.
+      scratch = makeCanvas(w, h) ?? undefined; if (scratch) drapeTemps.push(scratch);
+    } else {
+      if (!scratch || scratch.width !== w || scratch.height !== h) canopyScratch = scratch = makeCanvas(w, h) ?? undefined;
+    }
+    const sx = scratch?.getContext('2d'); if (!scratch || !sx) return 0;
     const f = 2 ** Math.max(0, Math.ceil(Math.log2(.5 / Math.max(1e-6, pxPerMetre)))), sp = 6 * f;
     const boxes = ids.map(i => bboxOf(tl.areas[i].poly)).map(b => ({ minX: Math.max(rect.minX, b.x0) - 14 * f, minY: Math.max(rect.minY, b.y0) - 14 * f, maxX: Math.min(rect.maxX, b.x1) + 14 * f, maxY: Math.min(rect.maxY, b.y1) + 14 * f }));
     const marks: Mark[] = [], i0 = Math.floor((rect.minX - 14 * f) / sp), i1 = Math.ceil((rect.maxX + 14 * f) / sp), j0 = Math.floor((rect.minY - 14 * f) / sp), j1 = Math.ceil((rect.maxY + 14 * f) / sp);
@@ -2053,7 +2388,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
     ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero'); ctx.clip(wood, 'nonzero');
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = .8; ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(canopyScratch as unknown as CanvasImageSource, 0, 0); ctx.restore();
+    ctx.drawImage(scratch as unknown as CanvasImageSource, 0, 0); ctx.restore();
     return ids.length;
   }
   /** Conifer or broadleaf for a forest crown, from the climate and a broad mixing noise. */
@@ -2070,7 +2405,15 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
   /** `area`: only the marks inside it (a layer tile and the reach of its sprites); all marks of `tiles` otherwise. */
   function drawPenSymbols(ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4): void {
-    const sheet = penSheet(tl.kind), sp = tl.kind === 'pasture' ? 9 : 7.5, list: PenMark[] = [];
+    const sheet = penSheet(tl.kind), list = penMarkList(tl, tiles, area);
+    list.sort((a, b) => a.y - b.y);
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.globalAlpha = .8;
+    for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size);
+    ctx.restore();
+  }
+  /** Pen symbol marks of `tiles` (inside `area` when given), unsorted. */
+  function penMarkList(tl: TextureLayer, tiles: number[], area?: Rect4): PenMark[] {
+    const sp = tl.kind === 'pasture' ? 9 : 7.5, list: PenMark[] = [];
     for (const t of tiles) {
       const key = `${tl.kind}|${tl.areas.length}|${t}`;
       let marks = penMarks.get(key);
@@ -2082,14 +2425,19 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
       for (const m of marks) if (!area || (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY)) list.push(m);
     }
-    list.sort((a, b) => a.y - b.y);
-    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.globalAlpha = .8;
-    for (const m of list) sheet.draw(ctx, m.cell, m.x, m.y, m.size);
-    ctx.restore();
+    return list;
   }
 
   /** Canopy lone trees of an open land layer (cached per index tile); `area` keeps only the marks inside it. */
   function drawStrays(ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], pxPerMetre: number, area?: Rect4): void {
+    const lone = strayMarkList(tl, tiles, area);
+    if (!lone.length) return;
+    lone.sort((a, b) => a.y - b.y || a.x - b.x);
+    canopy!.draw(ctx, lone, 'forest', pxPerMetre, 1);
+    ctx.globalAlpha = 1;
+  }
+  /** Lone-tree marks of `tiles` (inside `area` when given), unsorted. */
+  function strayMarkList(tl: TextureLayer, tiles: number[], area?: Rect4): Mark[] {
     let entries = strayMarks.get(tl); if (!entries) { entries = new Map(); strayMarks.set(tl, entries); }
     const lone: Mark[] = [];
     for (const t of tiles) {
@@ -2102,10 +2450,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
       for (const m of marks) if (!area || (m.x >= area.minX && m.x <= area.maxX && m.y >= area.minY && m.y <= area.maxY)) lone.push(m);
     }
-    if (!lone.length) return;
-    lone.sort((a, b) => a.y - b.y || a.x - b.x);
-    canopy!.draw(ctx, lone, 'forest', pxPerMetre, 1);
-    ctx.globalAlpha = 1;
+    return lone;
   }
 
   function drawTextureMarks(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4): number {
@@ -2152,7 +2497,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const spriteStrays = strayKind && !!canopy;
     if (sprites) {
       // Thousands of small stamps per view: pre-composited per density and tile like the woods (drawLayerTiles).
-      const painted = drawLayerTiles(ctx, tl, 'pen', rect, (target, area, pxPerMetre) => {
+      // GPU engine: few enough marks are stamped directly (instanced sprites); more go through the layer tiles.
+      const direct = ctx instanceof RecordingContext && penMarkList(tl, tiles).length + (spriteStrays ? strayMarkList(tl, tiles).length : 0) <= GPU_SPRITE_BUDGET;
+      const painted = !direct && drawLayerTiles(ctx, tl, 'pen', rect, (target, area, pxPerMetre) => {
         const reach = growRect(area, LAYER_TILE_REACH), owners = tl.index.tilesInRect(reach);
         drawPenSymbols(target, tl, owners, reach);
         if (spriteStrays) drawStrays(target, tl, owners, pxPerMetre, reach);
@@ -2291,8 +2638,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     lastPlaced: () => placedLast,
     drawMinimap,
     lastStats: () => stats,
+    liveRetained: () => !!retained && getVectorEngine() === 'gpu',
+    retainedBytes: () => rasterCache.bytes + layerTiles.bytes + (brushes?.cachedBytes ?? 0)
+      + (canopy ? 48 * 1024 * 1024 : 0) + cache.size * 1024 + furrowCache.size * 2048
+      + (lastRaster ? lastRaster.canvas.width * lastRaster.canvas.height * 4 : 0)
+      + (preview ? preview.canvas.width * preview.canvas.height * 4 : 0)
+      + scene.textures.reduce((n, layer) => n + layer.areas.reduce((s, a) => s + a.poly.length * 16, 0), 0),
     getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendNow(), fontFamily: family }),
-    dispose() { suspendLive(); dropLastRaster(); dropPreview(); canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); strayMarks.clear(); layerTiles.clear(); forestWashes.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); mapPyramid.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
+    dispose() { disposed = true; clearTimeout(retainedJob); retainedJob = undefined; retained = retainedPending = undefined; suspendLive(); dropLastRaster(); dropPreview(); canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); treeSprites.clear(); strayMarks.clear(); layerTiles.clear(); forestWashes.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); mapPyramid.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
   };
 }
 

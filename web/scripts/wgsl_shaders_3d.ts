@@ -33,7 +33,8 @@ const targetDir = join(root, 'rust/target/glsl-wgsl');
 const output = join(root, 'web/src/ui/terrain3dWgsl.generated.ts');
 
 /** Ground switches turned into WGSL overrides (pipeline constants by id). */
-const OVERRIDES = ['groundEnabled', 'uRenderV2', 'uForest', 'uForestBrushes', 'uNaturalWater'] as const;
+// uNaturalWater stays a runtime parameter: Satellite and Satellite-2 share their ground pipelines.
+const OVERRIDES = ['groundEnabled', 'uRenderV2', 'uForest', 'uForestBrushes'] as const;
 
 type SamplerKind = 'nearest' | 'linear' | 'aniso' | 'repeat';
 /** Shared samplers: 1 non-filtering, 2 filtering (trilinear, clamped), 3 anisotropic (clamped), 4 anisotropic repeating. */

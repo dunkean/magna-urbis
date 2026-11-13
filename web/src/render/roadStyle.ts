@@ -10,6 +10,7 @@ import type { LandKind, LandUseLayer } from '../gen/types';
 import type { RenderColors } from './customColors';
 import type { Palette } from './styles';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
+import { RecordingContext } from './gpu/recorder';
 
 export type RoadRank = 'major' | 'minor' | 'street' | 'lane' | 'track' | 'path';
 export type Rgb = readonly [number, number, number];
@@ -160,13 +161,17 @@ function texture(rank: RoadRank | 'bare', emphasis: number): Surface | undefined
   return surface;
 }
 const patterns = new WeakMap<CanvasRenderingContext2D, Map<Surface, CanvasPattern>>();
+/** Recorded patterns (GPU engine) are shared by every recording context but never mixed with the native ones. */
+const recordedPatterns = new WeakMap<Surface, CanvasPattern>();
 function pattern(ctx: CanvasRenderingContext2D, surface: Surface): CanvasPattern | undefined {
-  let own = patterns.get(ctx); if (!own) patterns.set(ctx, own = new Map());
-  let p = own.get(surface);
+  const recording = ctx instanceof RecordingContext;
+  let own = patterns.get(ctx); if (!own && !recording) patterns.set(ctx, own = new Map());
+  let p = recording ? recordedPatterns.get(surface) : own!.get(surface);
   if (!p) {
     const made = ctx.createPattern?.(surface as CanvasImageSource, 'repeat'); if (!made) return undefined;
     made.setTransform?.(new DOMMatrix([ground!.size / GRID, 0, 0, ground!.size / GRID, 0, 0]));
-    own.set(surface, p = made);
+    if (recording) recordedPatterns.set(surface, made); else own!.set(surface, made);
+    p = made;
   }
   return p;
 }
@@ -188,13 +193,16 @@ function grainTile(): Surface | undefined {
   return grainSurface = surface;
 }
 const grains = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
-/** The grain pattern for this context, or undefined where patterns do not exist. */
+let recordedGrain: CanvasPattern | undefined;
+/** The grain pattern for this context, or undefined where patterns do not exist. Recorded and native patterns stay apart. */
 export function roadGrain(ctx: CanvasRenderingContext2D): CanvasPattern | undefined {
-  let p = grains.get(ctx);
+  const recording = ctx instanceof RecordingContext;
+  let p = recording ? recordedGrain : grains.get(ctx);
   if (!p) {
     const tile = grainTile(), made = tile && ctx.createPattern?.(tile as CanvasImageSource, 'repeat'); if (!made) return undefined;
     made.setTransform?.(new DOMMatrix([GRAIN_METRES / GRAIN, 0, 0, GRAIN_METRES / GRAIN, 0, 0]));
-    grains.set(ctx, p = made);
+    if (recording) recordedGrain = made; else grains.set(ctx, made);
+    p = made;
   }
   return p;
 }

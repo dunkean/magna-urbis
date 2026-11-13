@@ -6,6 +6,7 @@ import type { LandKind, LandUseLayer } from '../gen/types';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { buildingOccupationSurfaces } from './urbanBuildingProjection';
 import { farmClearings, type ForestCorridor } from '../render/forestRoom';
+import { measureDisplayProduct, productRevision } from '../render/displayProduct';
 
 /** Shared classes: 7 built reserve, 8 construction, 9 agricultural lane clearance, 11 forest clearing
  * (road corridor or farmstead ground, see render/forestRoom.ts): grass ground where no crown is rooted,
@@ -16,8 +17,26 @@ const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, RANGE = 8, MIN_HALF
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
 export function withBuildingOccupation(source: ForestOccupation | undefined, scene: Building3dScene | undefined): ForestOccupation | undefined {
+  if (!(scene?.occupationBuildings ?? scene?.buildings)?.length) return source;
+  const slot = occupationMergeSlot(source, scene!);
+  if (slot.value) return slot.value.detail === source?.detail ? slot.value : { ...slot.value, detail: source?.detail };
   const shapes = buildingOccupationShapes(scene);
-  return shapes ? withOccupationShapes(source, shapes) : source;
+  if (!shapes) return source;
+  return slot.value = withOccupationShapes(source, shapes);
+}
+export interface OccupationMergeSlot { value?: ForestOccupation; pending?: Promise<ForestOccupation | undefined> }
+const noOccupation = {};
+const merged = new WeakMap<object, Map<string, OccupationMergeSlot>>();
+/** Footprint revision, independent from scene wrappers, palette, and building visibility. */
+export function occupationMergeSlot(source: ForestOccupation | undefined, scene: Building3dScene): OccupationMergeSlot {
+  const buildings = scene.occupationBuildings ?? scene.buildings;
+  const key = `1:${source?.key ?? ''}:${source?.x}:${source?.y}:${source?.width}:${source?.n}:`
+    + buildings.map(building => buildingOccupationSurfaces(building).map(productRevision).join('.')).join(',');
+  const owner = source?.rgba ?? noOccupation;
+  let entries = merged.get(owner); if (!entries) { entries = new Map(); merged.set(owner, entries); }
+  let slot = entries.get(key);
+  if (!slot) { slot = {}; entries.set(key, slot); if (entries.size > 8) entries.delete(entries.keys().next().value!); }
+  return slot;
 }
 type OccupationShape = { outer: Polygon; holes: Polygon[] };
 /** Accepted footprints and authorized circulation of a scene; undefined without buildings. */
@@ -55,6 +74,9 @@ export function unpackOccupationShapes(data: Float64Array): OccupationShape[] {
 }
 /** withBuildingOccupation for already extracted shapes (the page packs them for the occupation worker). */
 export function withOccupationShapes(source: ForestOccupation | undefined, shapes: readonly OccupationShape[]): ForestOccupation {
+  return measureDisplayProduct('merge', () => buildOccupationShapes(source, shapes));
+}
+function buildOccupationShapes(source: ForestOccupation | undefined, shapes: readonly OccupationShape[]): ForestOccupation {
   let x0 = source?.x ?? Infinity, y0 = source?.y ?? Infinity, x1 = source ? source.x + source.width : -Infinity, y1 = source ? source.y + source.width : -Infinity;
   for (const shape of shapes) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));

@@ -165,11 +165,27 @@ export function shoreRingGrid(layer: ForestBeachLayer, resolution: number): Shor
   return { x: layer.x, y: layer.y, width: layer.width, n: resolution, data };
 }
 
-const shoreCache = new WeakMap<object, ShoreRingGrid>();
-/** shoreRingGrid cached per layer object (2D and 3D share it). */
+// Renderer wrappers differ, but their immutable control samples are the same revision.
+// Do not key by the wrapper: a regional ring is 32 MiB.
+const shoreCache = new WeakMap<Float32Array, Map<string, ShoreRingGrid>>();
+const shoreKey = (layer: ForestBeachLayer): string => `1:${layer.x}:${layer.y}:${layer.width}:${layer.n}:${shoreRingResolution(layer.width)}`;
+/** Publish an off-thread result only against the exact samples/frame that produced it. */
+export function retainShoreRing(layer: ForestBeachLayer, grid: ShoreRingGrid): void {
+  if (grid.x !== layer.x || grid.y !== layer.y || grid.width !== layer.width || grid.n !== shoreRingResolution(layer.width)
+    || grid.data.length !== grid.n * grid.n * 2) return;
+  let entries = shoreCache.get(layer.data);
+  if (!entries) { entries = new Map(); shoreCache.set(layer.data, entries); }
+  if (!entries.has(shoreKey(layer))) entries.set(shoreKey(layer), grid);
+}
+/** One ring per immutable height-array/frame revision, shared by 2D and 3D. */
 export function shoreRingFor(layer: ForestBeachLayer): ShoreRingGrid {
-  let g = shoreCache.get(layer);
-  if (!g) shoreCache.set(layer, g = shoreRingGrid(layer, shoreRingResolution(layer.width)));
+  let g = shoreCache.get(layer.data)?.get(shoreKey(layer));
+  if (!g) {
+    const start = performance.now();
+    g = shoreRingGrid(layer, shoreRingResolution(layer.width));
+    performance.measure('displayprep:shore:build', { start });
+    retainShoreRing(layer, g);
+  }
   return g;
 }
 

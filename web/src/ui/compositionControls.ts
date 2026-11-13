@@ -1,7 +1,7 @@
 import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zones';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
-import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
+import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
 import { TEXT_GROUPS, NAME_LEVELS, nameLevelValue, DEFAULT_TEXT, type TextGroup, type NameLevel } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
 import { writeSettingPath, type ParameterField } from './parameterForm';
@@ -45,7 +45,7 @@ export const limitationText: Record<string, string> = {
 // Level 1 and 2: every row writes appearance.composition (render/composition.ts) and nothing else.
 const STYLE_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Satellite 2', 'Satellite 2'],
   ['parchment', 'Parchment', 'Parchemin'], ['illustration', 'Illustration', 'Illustration']] as const satisfies readonly (readonly [StyleId, string, string])[];
-const PRESET_ENTRIES = [...STYLE_ENTRIES.flatMap((entry): readonly (readonly [PresetId, string, string])[] => entry[0] === 'satellite'
+const PRESET_ENTRIES = [...STYLE_ENTRIES.filter(entry => !isHiddenPreset(entry[0])).flatMap((entry): readonly (readonly [PresetId, string, string])[] => entry[0] === 'satellite'
   ? [entry, ['satellite-light', 'Satellite · light', 'Satellite · léger'] as const]
   : entry[0] === 'parchment' ? [entry, ['parchment-light', 'Parchment · light', 'Parchemin · léger'] as const] : [entry]), ['custom', 'Custom', 'Personnalisé']] as const;
 /** Options of the preset selects (English labels, translated by the shared messages). */
@@ -61,8 +61,8 @@ const variantLabel = (id: TerrainStyle): readonly [string, string] => {
 };
 export const compositionFields: Record<string, ParameterField> = Object.fromEntries([
   choice('composition.preset', 'Preset', 'Préréglage', PRESET_ENTRIES),
-  choice('composition.ground.look', 'Ground', 'Fond', STYLE_ENTRIES),
-  choice('composition.ground.variant', 'Ground variant', 'Variante du fond', STYLE_IDS.flatMap(look => GROUND_VARIANTS[look]).map(id => [id, ...variantLabel(id)] as const)),
+  choice('composition.ground.look', 'Ground', 'Fond', STYLE_ENTRIES.filter(entry => !isHiddenPreset(entry[0]))),
+  choice('composition.ground.variant', 'Ground variant', 'Variante du fond', STYLE_IDS.filter(look => !isHiddenPreset(look)).flatMap(look => GROUND_VARIANTS[look]).map(id => [id, ...variantLabel(id)] as const)),
   flag('composition.ground.contours', 'Contour lines', 'Courbes de niveau'),
   // Global effects: they apply on top of any style.
   choice('composition.effects.ambience', 'Ambience', 'Ambiance', [['day', 'Day', 'Jour'], ['night', 'Night', 'Nuit']]),

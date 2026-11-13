@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -21,7 +22,7 @@ try {
   console.log('Terrain UI check: open source app');
   await page.goto(origin); await page.locator('#terrain-width').waitFor();
   assert.notEqual(await page.locator('#app').getAttribute('aria-busy'), 'true');
-  await page.locator('#language-select').selectOption('en');
+  await chooseWorkshopPreference(page, 'language', 'en');
   await page.locator('#terrain-width').fill('12.3'); await page.locator('#terrain-width').blur();
   assert.equal((await recipe()).extent, 12300); assert.equal(await page.locator('#terrain-extent-auto').isChecked(), false);
   const before = (await recipe()).terrain?.coastMask ?? 16;
@@ -39,14 +40,14 @@ try {
   await page.locator('[data-setting-path="terrain.neuralTuning.steps"]').fill('8');
   await page.locator('[data-setting-path="terrain.neuralTuning.steps"]').blur();
   assert.equal((await recipe()).terrain.neuralTuning.steps, 8);
-  await page.locator('#language-select').selectOption('fr');
+  await chooseWorkshopPreference(page, 'language', 'fr');
   assert.equal(await page.locator('#terrain-coast-NE').getAttribute('aria-label'), 'Côte nord-est');
   assert.equal(await page.locator('[data-setting-path="terrain.neuralTuning.steps"]').inputValue(), '8');
   assert.match(await neural.locator('summary').textContent(), /Génération neuronale/);
   await neural.scrollIntoViewIfNeeded(); await page.screenshot({ path: resolve(output, 'neural-fr.png') });
   console.log('Terrain UI check: neural configuration and live locale passed');
   await page.locator('#terrain-source').selectOption('procedural');
-  await page.locator('#language-select').selectOption('en');
+  await chooseWorkshopPreference(page, 'language', 'en');
   await page.locator('#terrain-paint-regions').evaluate(element => {
     for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true;
   });
@@ -74,7 +75,7 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#terrain-sketch-host [data-id="png"]').click()]);
   await download.saveAs(resolve(output, 'heightmap-roundtrip-16bit.png'));
   await page.locator('#terrain-sketch-host [data-id="input"]').selectOption('generated');
-  await page.setViewportSize({ width: 390, height: 844 }); await page.locator('#language-select').selectOption('fr');
+  await page.setViewportSize({ width: 390, height: 844 }); await chooseWorkshopPreference(page, 'language', 'fr');
   if (await page.locator('#sidebar').evaluate(element => element.classList.contains('mobile-closed'))) await page.locator('#mobile-toggle').click();
   if (await page.locator('#terrain-coast-toggle').getAttribute('aria-expanded') === 'true') await page.locator('#terrain-coast-toggle').click();
   await page.locator('.control-scroll').evaluate(element => { element.scrollTop = 0; });

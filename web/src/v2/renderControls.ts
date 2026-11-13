@@ -15,7 +15,10 @@ import { compositionMessages, advancedFields, fantasyFields, forestFields, diagn
 export { PRESET_OPTIONS, RENDER_COMPOSITION_ROWS, renderControlFields, RENDER_SECTION_FIELDS } from '../ui/compositionControls';
 import { worldCapabilities } from './nativeProducts';
 import { markStyleCustomized } from '../ui/renderStyleCustomization';
+import { applySceneClock } from './sceneClock';
 import { setDisplayQualityPreference, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
+import { getVectorEnginePreference, onVectorEngineChange, setVectorEnginePreference } from '../render/vectorEngine';
+import type { VectorEngineChoice } from '../render/gpu/displayList';
 
 export interface RenderControlBindings { getSettings(): V2Settings; onChange(): void; getWorld?(): World | undefined; getStyleSelectors?(): readonly HTMLSelectElement[]; /** Target of the current view, for the limitations shown under the rows. */ getTarget?(): RenderTarget }
 export interface RenderControls { sync(): void; dispose(): void }
@@ -31,7 +34,15 @@ const ui = {
   fullQuality: copy('Full quality', 'Qualité complète'),
   qualityNotice: copy('Light quality enabled to keep navigation fluid.', 'Qualité allégée activée pour garder une navigation fluide.'),
   unavailable: copy('This diagnostic needs retained data from the selected water engine.', 'Ce diagnostic nécessite les données conservées du moteur hydrologique correspondant.'),
+  vectorEngine: copy('Vector engine', 'Moteur vectoriel'),
+  vectorEngineHelp: copy('Draws the vector map on the graphics card; Auto falls back to the processor on slow or software graphics.', 'Dessine la carte vectorielle sur la carte graphique ; Auto revient au processeur sur un GPU lent ou logiciel.'),
+  vectorAuto: copy('Auto', 'Auto'), vectorGpu: copy('GPU', 'GPU'),
+  // Not plain "CPU": that key is already registered (compute choice) with a different French label.
+  vectorCpu: copy('CPU (processor)', 'Processeur'),
 };
+/** Browser preference, not a render setting: it never enters the saved recipe. */
+const vectorEngineField: ParameterField = { path: 'vectorEngine', label: ui.vectorEngine, help: ui.vectorEngineHelp, type: 'select',
+  options: [{ value: 'auto', label: ui.vectorAuto }, { value: 'gpu', label: ui.vectorGpu }, { value: 'cpu', label: ui.vectorCpu }] };
 // These labels also localize the shared terrain-style selector mounted by the main UI.
 copy('Fantasy · Ink (B&W)', 'Fantasy · Encre N&B'); copy('Fantasy · Watercolour', 'Fantasy · Aquarelle');
 copy('Render v2 · Satellite', 'Render v2 · Satellite'); copy('Elevation · DEM', 'Altitude · DEM');
@@ -60,9 +71,11 @@ function writeComposition(settings: V2Settings, key: string, value: unknown): vo
   // Choosing the full entry again overrides an automatic fallback and remembers that explicit choice.
   if (key === 'preset' && value !== 'custom' && previous?.quality === 'light' && appearance.composition.quality === 'full') setDisplayQualityPreference('full');
   if (key === 'preset' && value !== 'custom' || key === 'ground.look' || key === 'ground.variant') resetCityGround(settings);
+  if (key === 'preset' && settings.scene) applySceneClock(settings, settings.scene);
 }
 /** Materialize only the nested structure being edited, keeping unrelated inherited values absent. */
 export function writeAppearanceControl(settings: V2Settings, path: string, value: unknown): void {
+  if (/^appearance\.composition\.effects\.(season|ambience|lighting\.(enabled|azimuth|elevation))$/.test(path)) delete settings.scene;
   settings.appearance ??= { style: settings.options.style };
   if (path.startsWith('appearance.composition.')) return writeComposition(settings, path.slice('appearance.composition.'.length), value);
   const defaults = renderControlValues(settings);
@@ -98,6 +111,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   panel.popup.classList.add('v2-render-popup');
   for (const section of Object.values(panel.sections)) section.classList.add('v2-render-section');
   const forms: ParameterForm[] = [];
+  let unlistenEngine = (): void => {};
   const valueOf = (path: string) => readSettingPath({ appearance: renderControlValues(bindings.getSettings(), bindings.getWorld?.()) }, path);
   const mountIn = (parent: HTMLElement, fields: readonly ParameterField[]): void => {
     if (!fields.length) return;
@@ -120,6 +134,13 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     return group;
   };
   const fantasy = conditional(ui.fantasy, fantasyFields);
+  {
+    const body = document.createElement('div'); levels.general.advanced.append(body);
+    const engineForm = mountParameterForm(body, [vectorEngineField], { getValue: () => getVectorEnginePreference(), setValue: (_path, value) => setVectorEnginePreference(value as VectorEngineChoice) });
+    forms.push(engineForm);
+    // The engine can also change by itself (a demotion) or from another control: keep the select true.
+    unlistenEngine = onVectorEngineChange(() => engineForm.sync());
+  }
   let qualityToast: HTMLElement | undefined;
   const unlistenQuality = onDisplayQualityChange(change => {
     if (change.reason === 'preference') { qualityToast?.remove(); qualityToast = undefined; }
@@ -199,5 +220,5 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     legend.hidden = !resource;
     if (resource) text(legend, RESOURCE_LEGENDS[shown], legendFr[shown]);
   }
-  sync(); return { sync, dispose: () => { unlistenQuality(); qualityToast?.remove(); forms.forEach(form => form.dispose()); panel.dispose(); } };
+  sync(); return { sync, dispose: () => { unlistenQuality(); unlistenEngine(); qualityToast?.remove(); forms.forEach(form => form.dispose()); panel.dispose(); } };
 }

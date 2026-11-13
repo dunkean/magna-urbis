@@ -1,0 +1,17 @@
+{
+  "tool": "built-in image_gen",
+  "date": "2026-11-13",
+  "originals": [
+    "preset-classic-v1.png",
+    "preset-fast-v1.png"
+  ],
+  "runtimeAssets": [
+    "preset-classic-v1.webp",
+    "preset-fast-v1.webp"
+  ],
+  "processing": "Original PNGs preserved; runtime icons resized to 128 × 128 and encoded as lossless WebP, preserving alpha.",
+  "prompts": {
+    "classic": "Use case: stylized-concept. Asset type: a single premium hand-painted UI icon for Magna Urbis, a medieval fantasy cartography desktop app, displayed at 36 pixels. Style: dimensional watercolor and gouache strategy-game inventory art, natural stone, moss green, warm ivory and antique brass highlights, soft upper-left lighting, bold readable silhouette, subtle dark painted contour. Square canvas, one isolated centered object occupying the central 65 percent with generous empty transparent margins. Genuine alpha transparency everywhere outside the object. No background plate, frame, lettering, numbers, logos or watermark. Subject: a small square terrain diorama with two intricately eroded mountain ridges, a winding blue river, and a tiny antique brass survey compass at its front corner, conveying careful classical terrain generation. Keep the silhouette compact and readable; no tiny scattered parts.",
+    "fast": "Use case: stylized-concept. Asset type: a single premium hand-painted UI icon for Magna Urbis, a medieval fantasy cartography desktop app, displayed at 36 pixels. Style: dimensional watercolor and gouache strategy-game inventory art, natural stone, moss green, warm ivory and antique brass highlights, soft upper-left lighting, bold readable silhouette, subtle dark painted contour. Square canvas, one isolated centered object occupying the central 65 percent with generous empty transparent margins. Genuine alpha transparency everywhere outside the object. No background plate, frame, lettering, numbers, logos or watermark. Subject: a small square terrain diorama with two simplified rounded mountain ridges and a winding blue river, with one prominent sculpted antique-gold lightning bolt rising beside the front corner, conveying fast terrain generation. Keep the silhouette compact and readable; no motion trails outside the object."
+  }
+}

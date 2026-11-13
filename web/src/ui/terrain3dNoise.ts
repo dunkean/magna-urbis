@@ -109,10 +109,19 @@ vec3 terrain3dGradientNoise(vec2 p, uint seed) {
   return vec3(value,gradient)*1.4;
 }
 vec3 terrain3dSurface(vec2 world,float sourceCell,uint seed,vec4 a,vec3 b,int octaveCount) {
-  float cell=max(.25,sourceCell),h=terrain3dBaseHeight(world);if(h<=0.)return vec3(h,0.,0.);
+  float cell=max(.25,sourceCell);
   float probe=max(.125,cell*.25),radius=cell*4.;
-  vec2 g=vec2(terrain3dBaseHeight(world+vec2(probe,0.))-terrain3dBaseHeight(world-vec2(probe,0.)),terrain3dBaseHeight(world+vec2(0.,probe))-terrain3dBaseHeight(world-vec2(0.,probe)))/(2.*probe);
-  float slope=length(g),n=terrain3dBaseHeight(world-vec2(0.,radius)),s=terrain3dBaseHeight(world+vec2(0.,radius)),e=terrain3dBaseHeight(world+vec2(radius,0.)),w=terrain3dBaseHeight(world-vec2(radius,0.));
+  // The nine heights from one loop (one inlined level() instead of nine): centre, then +-x/+-y at the probe, then
+  // n, s, e, w at the radius. The centre alone when it is not above the floor.
+  float hv[9];
+  for(int k=0;k<9;k++){
+    vec2 o=k==0?vec2(0.):k==1?vec2(probe,0.):k==2?vec2(-probe,0.):k==3?vec2(0.,probe):k==4?vec2(0.,-probe):k==5?vec2(0.,-radius):k==6?vec2(0.,radius):k==7?vec2(radius,0.):vec2(-radius,0.);
+    hv[k]=terrain3dBaseHeight(world+o);
+    if(k==0&&hv[0]<=0.)break;
+  }
+  float h=hv[0];if(h<=0.)return vec3(h,0.,0.);
+  vec2 g=vec2(hv[1]-hv[2],hv[3]-hv[4])/(2.*probe);
+  float slope=length(g),n=hv[5],s=hv[6],e=hv[7],w=hv[8];
   float relief=max(max(abs(h-n),abs(h-s)),max(abs(h-e),abs(h-w)))/radius;
   float crest=smoothstep(.002,.025,(h-(n+s+e+w)*.25)/radius)*smoothstep(.04,.2,max(slope,relief));
   float mountain=smoothstep(.04,.2,slope);if(a.x==0.||(crest==0.&&mountain==0.))return vec3(h,g);

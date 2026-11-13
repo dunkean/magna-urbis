@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Region acceptance: actual controls and worker stops, without app-only test hooks. */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -118,7 +119,7 @@ try {
   assert.equal(await page.evaluate(() => regionStagesCheck.requests.length), requestsBeforeClose);
   assert.equal(await page.locator('#preview-close').isVisible(), false);
   report.checks.preservedProject = 'Preview preserves the full project on export; closing restores it without generation';
-  await page.locator('#language-select').selectOption('en');
+  await chooseWorkshopPreference(page, 'language', 'en');
   await page.locator('.chain-scroll').evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ path: `${output}/04-region-en.png` });
   assert.deepEqual(errors, []); report.errors = errors;

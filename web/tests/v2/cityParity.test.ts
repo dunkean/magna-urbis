@@ -25,7 +25,7 @@ import type { V2Settings } from '../../src/v2/contracts';
 import type { Options } from '../../src/gen/types';
 import { city3dScene } from '../../src/render/city3dMeshes';
 import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from '../../src/render/urbanBuildingGeometry';
-import { PRESET_IDS, presetComposition, validateComposition, withCompositionQuality } from '../../src/render/composition';
+import { PRESET_IDS, isHiddenPreset, presetComposition, validateComposition, withCompositionQuality } from '../../src/render/composition';
 import { PRESET_OPTIONS, compositionMessages } from '../../src/ui/compositionControls';
 import { passKeys } from '../../src/v2/passes/pass';
 import { LiveGround } from '../../src/ui/liveGround';
@@ -194,7 +194,7 @@ describe('V2 and City Bench stay in sync', () => {
     } finally { unlisten(); setDisplayQualityPreference('auto'); }
   });
   it('lists light presets beside their full versions and changes only their quality', () => {
-    expect(PRESET_OPTIONS.map(o => o.value)).toEqual([...PRESET_IDS, 'custom']);
+    expect(PRESET_OPTIONS.map(o => o.value)).toEqual([...PRESET_IDS.filter(id => !isHiddenPreset(id)), 'custom']);
     for (const base of ['satellite', 'parchment'] as const) {
       const full = presetComposition(base), light = presetComposition(`${base}-light`);
       expect(() => validateComposition(light)).not.toThrow();

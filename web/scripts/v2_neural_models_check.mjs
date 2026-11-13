@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Model downloads through the real V2 controls, including persistence across page loads. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -91,7 +92,7 @@ try {
   await page.locator('#neural-model-clear').click();
   await waitFor(() => document.querySelectorAll('[data-model][data-stored="true"]').length === 0);
   report.checks.push('Individual deletion and remove all affect the model cache');
-  await close(); await page.locator('#language-select').selectOption('en'); await open();
+  await close(); await chooseWorkshopPreference(page, 'language', 'en'); await open();
   assert.match(await panel.locator(':scope > summary').textContent(), /Downloaded neural models/);
   await panel.locator('.neural-model-explanation > summary').click();
   assert.match(await panel.locator('.neural-model-explanation').textContent(), /22.15–24.06 m/);

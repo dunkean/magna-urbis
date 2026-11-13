@@ -178,42 +178,49 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
       float concentration=clamp(freeze+.12*shore*freeze*(1.-freeze)+.045*province*freeze*(1.-freeze)*4.,0.,.995);
       float pack=v2PackMean(concentration);float brightness=.88;float rim=0.;float shadow=0.;
       if(concentration>.002&&fp<450.){
-        float warpX=v2Pattern(point,1800.,fp,salt+633u);
-        float warpY=v2Pattern(point,2100.,fp,salt+634u);
-        float warpZ=v2Pattern(point,1600.,fp,salt+635u);
-        vec3 displacement=vec3(warpX,warpY,warpZ);
+        // The patterns of each group come from one loop (one inlined v2Pattern per group): the shader compilers
+        // inline every call, and the 33 separate calls of this function were a quarter of the water shaders.
+        vec3 displacement=vec3(0.);
+        for(int k=0;k<3;k++)displacement[k]=v2Pattern(point,k==0?1800.:k==1?2100.:1600.,fp,salt+633u+uint(k));
+        float warpX=displacement.x;float warpY=displacement.y;float warpZ=displacement.z;
         float packKeep=1.-sstep(140.,450.,fp);
         float resolved=0.;float localLight=.88;float localRim=0.;
         if(concentration<.90&&kind<1.5){
           // Sea pack: floes are the level set of a warped multi-scale noise at the concentration's quantile, so their
           // edges are rounded and ragged and their sizes shrink toward open water; leads are the noise's thin zero-set
           // cracks, not cell edges. No cellular plates, no outline network.
-          vec3 warped=point+displacement*420.;
-          float body=.52*v2Pattern(warped,3400.,fp,salt+681u)+.30*v2Pattern(warped,1300.,fp,salt+682u)+.18*v2Pattern(warped,520.,fp,salt+683u);
-          float field=body+.07*v2Pattern(point,170.,fp,salt+684u)+.035*v2Pattern(point,62.,fp,salt+685u);
+          vec3 warped=point+displacement*420.;vec3 bent=point+displacement*160.;
+          // Salts 681..692 in order: warped 3400, 1300, 520; point 170, 62; bent 2300, 640, 900; point 240, 1700, 900, 210.
+          float q[12];
+          for(int k=0;k<12;k++){
+            float scale=k==0?3400.:k==1?1300.:k==2?520.:k==3?170.:k==4?62.:k==5?2300.:k==6?640.:k==7?900.:k==8?240.:k==9?1700.:k==10?900.:210.;
+            q[k]=v2Pattern(k<3?warped:k>=5&&k<8?bent:point,scale,fp,salt+681u+uint(k));
+          }
+          float body=.52*q[0]+.30*q[1]+.18*q[2];
+          float field=body+.07*q[3]+.035*q[4];
           float c=clamp(concentration,.02,.98),quantile=.11*log((1.-c)/c);
           float aa=max(.002,fp*.0006);
           float floe=sstep(quantile-aa,quantile+aa,field);
           // Two crack families; each fades before its noise is filtered out, where its width is far below a pixel.
-          vec3 bent=point+displacement*160.;
-          float crackA=v2Pattern(bent,2300.,fp,salt+686u)+.3*v2Pattern(bent,640.,fp,salt+687u);
-          float crackB=v2Pattern(bent,900.,fp,salt+688u)+.25*v2Pattern(point,240.,fp,salt+689u);
+          float crackA=q[5]+.3*q[6];
+          float crackB=q[7]+.25*q[8];
           float widthA=.016+.040*(1.-c),widthB=.008+.020*(1.-c);
           float lineA=(1.-sstep(widthA-max(.004,fp*.0004),widthA+max(.004,fp*.0004),abs(crackA)))*(1.-sstep(110.,230.,fp));
           float lineB=(1.-sstep(widthB-max(.004,fp*.0009),widthB+max(.004,fp*.0009),abs(crackB)))*(1.-sstep(45.,90.,fp));
-          float line=max(lineA,lineB*sstep(-.2,.2,v2Pattern(point,1700.,fp,salt+690u)));
+          float line=max(lineA,lineB*sstep(-.2,.2,q[9]));
           // Some leads are open water, others refrozen into grey young ice.
           float open=sstep(-.25,.25,warpX+.3*warpZ);
           resolved=floe*(1.-line*open);
           float inner=sstep(quantile,quantile+.06,field);
-          localLight=clamp(.86+.05*v2Pattern(point,900.,fp,salt+691u)+.025*v2Pattern(point,210.,fp,salt+692u)-.06*(1.-inner)-.14*line*(1.-open),.66,.97);
+          localLight=clamp(.86+.05*q[10]+.025*q[11]-.06*(1.-inner)-.14*line*(1.-open),.66,.97);
           // Submerged ice just off the floe edge: a soft cyan fringe, no drawn outline.
           localRim=max(sstep(quantile-.035-aa,quantile-.008+aa,field)-floe,0.)*.25;
         }else if(concentration<.90){
           vec3 warped=point+displacement*215.;
           vec4 plate=v2Cell(warped,2600.,salt+637u);
           vec4 shard=v2Cell(warped,470.,salt+638u);
-          float edge=plate.x+.012*v2Pattern(point,105.,fp,salt+639u);
+          vec2 fine=vec2(0.);for(int k=0;k<2;k++)fine[k]=v2Pattern(point,k==0?105.:38.,fp,salt+(k==0?639u:643u));
+          float edge=plate.x+.012*fine.x;
           float aa=max(.0008,fp/2600.*.75);
           float lead=.0025+.020*(1.-concentration);
           float large=sstep(lead-aa,lead+aa,edge);
@@ -227,7 +234,7 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
           float selection=((identity>=1.-concentration)?1.:0.);
           resolved=subdivided*selection;
           float ridge=(1.-sstep(lead+.006+aa,lead+.025+aa,edge))*large;
-          localLight=clamp(.84+.08*plate.z+.07*ridge-.065*plate.w+.02*v2Pattern(point,38.,fp,salt+643u),.65,.99);
+          localLight=clamp(.84+.08*plate.z+.07*ridge-.065*plate.w+.02*fine.y,.65,.99);
           localRim=(1.-sstep(lead+.004+aa,lead+.013+aa,edge))*resolved*.3;
         }
         // Compact pack retains rigid adjoining plates and thin leads. The
@@ -235,7 +242,10 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
         if(concentration>.68){
           // Bend the shared cell domain, not its edge distance: both sides of
           // a lead move together, so irregular contours retain thin channels.
-          vec3 jitter=vec3(v2Pattern(point,240.,fp,salt+639u),v2Pattern(point,240.,fp,salt+640u),v2Pattern(point,240.,fp,salt+641u))*40.+vec3(v2Pattern(point,70.,fp,salt+669u),v2Pattern(point,70.,fp,salt+670u),v2Pattern(point,70.,fp,salt+671u))*7.;
+          vec3 coarse=vec3(0.),finer=vec3(0.);
+          for(int k=0;k<6;k++){float v=v2Pattern(point,k<3?240.:70.,fp,salt+(k<3?639u+uint(k):666u+uint(k)));if(k<3)coarse[k]=v;else finer[k-3]=v;}
+          vec3 jitter=coarse*40.+finer*7.;
+          vec2 grain=vec2(0.);for(int k=0;k<2;k++)grain[k]=v2Pattern(point,k==0?350.:kind<1.5?90.:110.,fp,salt+(k==0?665u:667u));
           vec4 compact=v2CellCore(point+displacement*65.+jitter,1200.,salt+637u,kind<1.5);
           float edge=compact.x;
           float aa=max(.001,fp/1200.*.8);
@@ -260,13 +270,13 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
           float youngIce=(1.-floe)*(1.-openLead);
           float compactLight=.88;float compactRim=0.;
           if(kind<1.5){
-            float snowGrain=.005*v2Pattern(point,350.,fp,salt+665u)+.014*v2Pattern(point,90.,fp,salt+667u);
+            float snowGrain=.005*grain.x+.014*grain.y;
             float ridgeKeep=min(1.,(lead+.010)*1200./max(fp,1.));
             float pressure=(1.-sstep(lead+aa,lead+.010+aa,edge))*floe*ridgeKeep;
             compactLight=clamp(.88+.002*(compact.z-.5)-.002*compact.w+.028*pressure*clamp(-compact.w*2.,-1.,1.)+snowGrain-.035*youngIce,.80,.93);
             compactRim=(1.-sstep(lead+.002+aa,lead+.008+aa,edge))*floe*openLead*.06*ridgeKeep;
           }else{
-            float snowGrain=.012*v2Pattern(point,350.,fp,salt+665u)+.006*v2Pattern(point,110.,fp,salt+667u);
+            float snowGrain=.012*grain.x+.006*grain.y;
             compactLight=clamp(.88+.008*(compact.z-.5)+.010*ridge-.006*compact.w+snowGrain-.12*youngIce,.74,.92);
             compactRim=(1.-sstep(lead+.006+aa,lead+.024+aa,edge))*floe*openLead*.25;
           }

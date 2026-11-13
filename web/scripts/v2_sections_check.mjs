@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** End-to-end check of Region / Settlements / Map and their retained-world controls. */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -147,7 +148,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#map-names-apply').getAttribute('aria-busy') === 'false');
   report.checks.push('Combined settlement generation builds places; naming and project export preserve terrain and buildings');
 
-  await page.locator('#language-select').selectOption('fr');
+  await chooseWorkshopPreference(page, 'language', 'fr');
   assert.deepEqual(await page.locator('.chain-family-label').allTextContents(), ['Région', 'Peuplements', 'Carte']);
   await page.locator('#family-tab-region').click();
   await page.screenshot({ path: resolve(out, 'region-fr.png') });

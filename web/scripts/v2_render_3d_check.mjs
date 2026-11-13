@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Real V2 import → material controls → native 3D → capture, without generating a region or city. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -122,7 +123,7 @@ try {
   await page.locator('#view3d').click(); await page.locator('#view3d').click(); await idle();
   assert.equal(await page.locator('.city3d [data-plan]').isChecked(), false); assert.equal(await page.locator('.city3d [data-colors]').inputValue(), 'uses');
   assert.equal(await page.locator('.city3d [data-refinement]').inputValue(), 'source'); assert.equal(await page.locator('.city3d [data-relief]').inputValue(), '2');
-  await page.locator('#language-select').selectOption('fr');
+  await chooseWorkshopPreference(page, 'language', 'fr');
   assert.match(await page.locator('.city3d [data-ground]').locator('xpath=..').innerText(), /Sol/);
   assert.match(await page.locator('.city3d [data-ground] option[value="render-v2-snow"]').innerText(), /Neige/);
   assert.match(await page.locator('.city3d-info').innerText(), /WebGL logiciel/);

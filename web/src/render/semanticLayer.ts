@@ -8,6 +8,7 @@ import type { LandUseLayer, LandKind } from '../gen/types';
 import type { SemanticLook } from './composition';
 import { DISTRICT_ROLES, districtRoleKey, SpatialBins, type CityScene, type CityBlock } from './cityCanvas';
 import type { SemanticLegendEntry, SemanticPatternId } from './legend';
+import { newPath } from './gpu/path';
 
 export interface SemanticBox { minX: number; minY: number; maxX: number; maxY: number }
 export interface SemanticDrawOptions {
@@ -131,7 +132,7 @@ function ruralGeometry(landuse: LandUseLayer): RuralGeometry {
   return geometry;
 }
 function ringsPath(rings: readonly (readonly { x: number; y: number }[])[]): Path2D {
-  const path = new Path2D();
+  const path = newPath();
   for (const ring of rings) {
     if (ring.length < 3) continue;
     path.moveTo(ring[0].x, ring[0].y);
@@ -156,7 +157,7 @@ export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUs
   }
   for (const kind of RURAL_ORDER) {
     const ids = visible.get(kind); if (!ids) continue;
-    const path = new Path2D(), area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    const path = newPath(), area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     for (const i of ids) {
       path.addPath(paths[i] ??= ringsPath([landuse.areas[i].poly, ...(landuse.areas[i].holes ?? [])]));
       if (kind === 'field' && options.fieldStrips && landuse.areas[i].strips?.length) path.addPath(geometry.stripPaths[i] ??= ringsPath(landuse.areas[i].strips!));
@@ -195,7 +196,7 @@ export function drawUrbanSemantic(ctx: CanvasRenderingContext2D, scenes: readonl
     for (const i of scene.bins.blocks.query(viewport)) {
       const block = scene.blocks[i], cls = urbanClassOf(block);
       if (!cls) continue;
-      let path = paths.get(cls); if (!path) paths.set(cls, path = new Path2D());
+      let path = paths.get(cls); if (!path) paths.set(cls, path = newPath());
       path.addPath(blockPath(block));
     }
     for (const cls of URBAN_ORDER) {

@@ -73,7 +73,7 @@ export const terrainProceduralFields: ParameterField[] = [
   select('environment', 'Surrounding terrain', 'Relief environnant', reliefChoices.filter(option => ['flat', 'hills', 'mixed', 'mountains', 'high-mountains'].includes(option.value))),
   number('mountainMix', 'Mountain proportion', 'Proportion de montagnes', 0, 1, .01),
   number('erosion', 'Overall erosion', 'Érosion globale', 0, 2, .01),
-  number('sampleSpacing', 'Generation spacing (m)', 'Pas de génération (m)', 1, 1000, 1, ['Physical spacing of the retained terrain. Neural models provide native 30 m detail; finer requests are rejected.', 'Espacement physique du terrain conservé. Le neuronal fournit un détail natif de 30 m ; les demandes plus fines sont refusées.']),
+  number('sampleSpacing', 'Definition (m)', 'Définition (m)', 1, 1000, 1, ['Physical spacing of the retained terrain. Neural models provide native 30 m detail; finer requests are rejected.', 'Espacement physique du terrain conservé. Le neuronal fournit un détail natif de 30 m ; les demandes plus fines sont refusées.']),
   number('resolution', 'Overview grid resolution', 'Résolution de l’aperçu', 64, 1024, 1, ['Overview pixels do not determine the physical source definition.', 'Les pixels de l’aperçu ne déterminent pas la définition de la source physique.']),
   { ...select('compute', 'Terrain sampling', 'Échantillonnage du relief', simple([['wasm', 'CPU · Rust reference', 'CPU · référence Rust'], ['gpu-f32', 'GPU · FP32', 'GPU · FP32']])), optional: true },
   { ...select('generationCompute', 'Procedural generation compute', 'Calcul de génération procédurale', simple([

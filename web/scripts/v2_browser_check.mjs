@@ -98,7 +98,7 @@ try {
   assert.equal(hash(oneTown.world.roads), hash(region.world.roads));
   result.checks.individual = { buildings: oneTown.world.urban.buildings.length, neighborsUnbuilt: true, roadsRetained: true };
 
-  await page.locator('#inspector .close').click();
+  await page.locator('#editor-close').click();
   result.checks.allTownsLog = await job('#towns-only');
   const allTowns = await project('04-all-towns');
   const neighbors = allTowns.world.settlements.filter(s => !s.main);
@@ -134,7 +134,7 @@ try {
   assert.equal(edited.mods.length, 1); assert.equal(edited.mods[0].patch.height, 9.5);
   result.checks.house = { persisted: true, height: edited.mods[0].patch.height, storeys: edited.mods[0].patch.storeys };
   await page.screenshot({ path: `${out}/03-house-inspector.png`, fullPage: true });
-  await page.locator('#inspector .close').click();
+  await page.locator('#editor-close').click();
 
   const beforeStyle = hash(await page.locator('#map-canvas').screenshot());
   await page.locator('#map-style').selectOption('atlas');

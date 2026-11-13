@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Bilingual V2 regression: real controls, retained worlds and both atlas editions. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -71,9 +72,9 @@ if (process.argv.includes('--serve')) {
     page.on('console', message => { if (message.type() === 'error') report.errors.push(message.text()); });
     page.on('response', response => { if (response.status() >= 400 && !response.url().includes('favicon.ico')) report.missing.push(response.url()); });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const goto = async query => { await page.goto(`${base}/v2.html${query}`, { waitUntil: 'domcontentloaded' }); await page.locator('#language-select').waitFor(); };
+    const goto = async query => { await page.goto(`${base}/v2.html${query}`, { waitUntil: 'domcontentloaded' }); await page.locator('#language-select').waitFor({ state: 'attached' }); };
     const language = async value => {
-      await page.locator('#language-select').selectOption(value);
+      await chooseWorkshopPreference(page, 'language', value);
       await page.waitForFunction(value => document.documentElement.lang === value, value);
     };
     const reveal = async selector => { await page.locator(selector).evaluate(element => { const sections=[]; for(let parent=element.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)sections.push(parent); for(const section of sections.reverse())section.open=true; }); };
@@ -113,7 +114,7 @@ if (process.argv.includes('--serve')) {
     await page.screenshot({ path: resolve(out, '01-default-en.png'), fullPage: true });
     await language('fr'); await assertFrench();
     assert.equal(await page.evaluate(key => localStorage.getItem(key), preferenceKey), 'fr');
-    await page.reload({ waitUntil: 'domcontentloaded' }); await page.locator('#language-select').waitFor(); await assertFrench();
+    await page.reload({ waitUntil: 'domcontentloaded' }); await page.locator('#language-select').waitFor({ state: 'attached' }); await assertFrench();
     await goto('?empty');await assertFrench();
     await goto('?empty&lang=en'); await assertEnglish();
     await goto('?empty&lang=fr'); await assertFrench();
@@ -229,9 +230,9 @@ if (process.argv.includes('--serve')) {
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'fr-FR' });
     const mobilePage = await mobile.newPage();
     await mobilePage.goto(`${base}/v2.html?empty`, { waitUntil: 'domcontentloaded' });
-    await mobilePage.locator('#language-select').waitFor({ state: 'visible' });
+    await mobilePage.locator('#language-select').waitFor({ state: 'attached' });
     assert.equal(await mobilePage.locator('html').getAttribute('lang'), 'en');
-    await mobilePage.locator('#language-select').selectOption('fr');
+    await chooseWorkshopPreference(mobilePage, 'language', 'fr');
     await mobilePage.waitForFunction(() => document.documentElement.lang === 'fr');
     assert(await mobilePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await mobilePage.screenshot({ path: resolve(out, '07-mobile-fr.png'), fullPage: true });

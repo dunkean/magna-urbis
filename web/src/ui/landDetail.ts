@@ -2,6 +2,7 @@ import type { Polygon } from '../gen/core/geom';
 import type { LandArea, LandUseLayer } from '../gen/types';
 import type { ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { fillRings } from './forestOccupation';
+const details = new WeakMap<LandUseLayer, Map<string, LandDetail | undefined>>();
 
 /** Crop positions on the shader ramp (`landCropTone`) and their share: plough, stubble, ripe wheat, barley, oats, beans. */
 const CROPS: readonly (readonly [number, number])[] = [[.03, .10], [.18, .10], [.36, .30], [.52, .20], [.72, .20], [.92, .10]];
@@ -38,6 +39,12 @@ function longestEdge(ring: Polygon): number {
  * nearest strip edge over LAND_EDGE_RANGE metres, 0 outside. Deterministic: same layer, same bytes.
  */
 export function landDetail(landuse: LandUseLayer, maxN = 3072, minCell = 1): LandDetail | undefined {
+  let entries = details.get(landuse); if (!entries) { entries = new Map(); details.set(landuse, entries); }
+  const key = `1:${maxN}:${minCell}`;
+  if (entries.has(key)) return entries.get(key);
+  const result = buildLandDetail(landuse, maxN, minCell); entries.set(key, result); return result;
+}
+function buildLandDetail(landuse: LandUseLayer, maxN: number, minCell: number): LandDetail | undefined {
   const areas = landuse.areas.filter(area => DETAILED.has(area.kind));
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const area of areas) for (const p of area.poly) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }

@@ -1,10 +1,17 @@
+import { rasterizeSvg as imageOf } from '../render/svgRaster';
+import { RetainedBudget } from '../render/retainedBudget';
+import { retainTerrainDisplayPreparation } from './displayPrep';
+import { RenderReadiness } from '../render/renderReadiness';
+import { LiveTileFill } from '../render/liveTileFill';
 import { getLanguage } from './i18n';
 import { getDistanceUnit } from './units';
-import { rasterizeSvg as imageOf } from '../render/svgRaster';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountrysideCanvasOptions } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
 import { decorWaterSvg } from '../ui/decorWater';
 import { displayQualityFor } from '../render/displayQuality';
+import { getVectorEngine, onVectorEngineChange, noteLivePart } from '../render/vectorEngine';
+import { newPath } from '../render/gpu/path';
+import { RecordingContext } from '../render/gpu/recorder';
 /** Display adapters for the retained RustBench terrain and CityBench geometry.
  * No generation entry point is imported here. The original Canvas renderer remains available. */
 import type { MaterialRasterContext } from '../../../rust/bridge/terrainMaterialContext';
@@ -56,7 +63,7 @@ import type { Rect } from '../render/tileindex';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
 /** Overlay repaints slower than this follow pan/zoom as a transformed bitmap, repainted LIVE_SETTLE_MS after the view rests. */
 const LIVE_DEFER_MS = 40, LIVE_SETTLE_MS = 160;
-import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady, cityContourPathsPending } from '../render/cityContours';
+import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady } from '../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
 import { isResourceDiagnostic } from '../render/displayDiagnostics';
@@ -70,6 +77,11 @@ export async function paintedBrushes(): Promise<BrushImages | null> {
 /** A world-coordinate SVG body as a document rasterizing `region` at its density. */
 const svgOf = (body: string, region: ViewRasterRegion): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, Math.round(region.width * region.density))}" height="${Math.max(1, Math.round(region.height * region.density))}" viewBox="${region.x} ${region.y} ${region.width} ${region.height}" preserveAspectRatio="none">${body}</svg>`;
+/** svgOf as Blob parts around a body encoded once: a view raster never re-encodes megabytes of water paths. */
+const svgPartsOf = (body: Uint8Array, region: ViewRasterRegion): BlobPart[] => {
+  const [head, tail] = svgOf('\uE000', region).split('\uE000');
+  return [head, body as BlobPart, tail];
+};
 /** Pixel width of the whole-map renderSvg overlay of exports. */
 const EXPORT_OVERLAY_PX = 4096;
 const wholeMap = (width: number): ViewRasterRegion => ({ x: 0, y: 0, width, height: width, density: 2048 / width });
@@ -83,16 +95,57 @@ const DERIVED_REACH = 220;
 export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: ReturnType<typeof createNativeCityMap> } }
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { svg: string; image?: HTMLCanvasElement; fantasy?: FantasyRaster };
+type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World }; physical?: PhysicalGround };
 /** Contour width factor on the 3D drape tiles. */
 const DRAPE_CONTOUR_WEIGHT = 1.8;
 /** Parsed contour paths, kept as long as their cached strings. */
-const CONTOUR_PATHS = new WeakMap<object, { thin?: Path2D; index?: Path2D }>();
-const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index'): Path2D => {
+const CONTOUR_PATHS = new WeakMap<object, Partial<Record<'thin' | 'index' | 'recThin' | 'recIndex', Path2D>>>();
+/** Contour data is absolute M/L/Z only. The GPU engine cannot record a native Path2D(string), so it gets the same lines as a RecPath2D. */
+function recordedContourPath(d: string): Path2D {
+  // A character scan (the producer writes `M x,y L x,y ... Z` with fixed decimals): map-wide sets hold megabytes, which a
+  // regular expression and split parse an order of magnitude slower.
+  const path = newPath(), n = d.length;
+  let i = 0;
+  const num = (): number => {
+    let sign = 1, whole = 0, frac = 0, div = 1, c = d.charCodeAt(i);
+    if (c === 45) { sign = -1; i++; }
+    while (i < n && (c = d.charCodeAt(i)) >= 48 && c <= 57) { whole = whole * 10 + c - 48; i++; }
+    if (d.charCodeAt(i) === 46) { i++; while (i < n && (c = d.charCodeAt(i)) >= 48 && c <= 57) { frac = frac * 10 + c - 48; div *= 10; i++; } }
+    return sign * (whole + frac / div);
+  };
+  while (i < n) {
+    const c = d.charCodeAt(i++);
+    if (c === 90) path.closePath();
+    else if (c === 77 || c === 76) { const x = num(); i++; const y = num(); if (c === 77) path.moveTo(x, y); else path.lineTo(x, y); }
+  }
+  return path;
+}
+const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index', recording = false): Path2D => {
   let parsed = CONTOUR_PATHS.get(set); if (!parsed) CONTOUR_PATHS.set(set, parsed = {});
+  if (recording) return parsed[kind === 'thin' ? 'recThin' : 'recIndex'] ??= recordedContourPath(set[kind]);
   return parsed[kind] ??= new Path2D(set[kind]);
 };
 
 export class BenchRenderer {
+  private retained = new RetainedBudget();
+  private cartographyKey = '';
+  private presentationKey = '';
+  private cachedFrameKey = '';
+  private restoredFrameKey = '';
+  private programWork?: Promise<void>;
+  private programError?: unknown;
+  private cityRevision = 0;
+  private request?: RenderReadiness;
+  private suspended = false;
+  get requestId(): number | undefined { return this.request?.id; }
+  retainedStorage(): { bytes: number; frames: number } { return { bytes: this.retained.bytes, frames: this.retained.frameBytes }; }
+  derivedPending(): number { return cityContoursPending(this.native) + this.contourWaiters.size + Number(!!this.forestJob) + Number(!!this.programWork); }
+  setSuspended(value: boolean): void {
+    if (this.suspended === value) return;
+    this.suspended = value; this.gpu?.setLivePaused(value || this.preparing);
+    if (value) { this.suspendLiveTiles(); clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.livePending = this.groundPending = undefined; }
+    else this.invalidate();
+  }
   private surface = document.createElement('canvas');
   private miniature = document.createElement('canvas');
   /** Live GPU ground and transparent CPU overlays are composed by the browser. */
@@ -134,6 +187,26 @@ export class BenchRenderer {
     this.contourRevision++;
     this.invalidate();
   };
+  private contourWaiters = new Map<TerrainData, Set<() => void>>();
+  private afterContours(ready: () => void): void {
+    const terrain = this.native!;
+    let callbacks = this.contourWaiters.get(terrain);
+    if (callbacks) { callbacks.add(ready); return; }
+    callbacks = new Set([ready]); this.contourWaiters.set(terrain, callbacks);
+    const poll = (): void => {
+      if (this.disposed) { this.contourWaiters.delete(terrain); return; }
+      if (cityContoursPending(terrain)) { setTimeout(poll, 32); return; }
+      this.contourWaiters.delete(terrain); for (const callback of callbacks!) callback();
+    };
+    setTimeout(poll, 32);
+  }
+  private async contoursAt(scale: number, box: Rect): Promise<void> {
+    const look = this.contourLook(), terrain = this.native; if (!look || !terrain) return;
+    const topographic = this.resolved!.composition.recipe.ground.variant === 'topographic';
+    if (!topographic) cityFineContours(terrain, look.landform, scale, box);
+    await cityContourPathsReady(terrain, look.landform, scale, topographic);
+    while (cityContoursPending(terrain)) await new Promise(resolve => setTimeout(resolve, 16));
+  }
   /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
   private exportOverlay?:HTMLCanvasElement;
   /** Physical land use of an export when a rural semantic look is on: drawn under the semantics, the rest of the overlay above. */
@@ -172,11 +245,14 @@ export class BenchRenderer {
     this.element.className = 'viewer-direct';
     this.element.setAttribute('aria-hidden', 'true');
     this.element.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
-    this.unlistenQuality = onDisplayQualityChange(() => {
+    const repaint = (): void => {
       this.liveCapture = false;
       this.suspendLiveTiles(); clearTimeout(this.liveTimer); this.livePending = undefined; this.liveShown = undefined;
       if (!this.disposed && this.world) this.invalidate();
-    });
+    };
+    // The vector engine is part of the frame key and of the overlay tile keys: a switch repaints like a quality change.
+    const offQuality = onDisplayQualityChange(repaint), offEngine = onVectorEngineChange(repaint);
+    this.unlistenQuality = () => { offQuality(); offEngine(); };
   }
   private ownsMaterialContext: boolean;
   /** Resources an export renderer may reuse (read-only for it). */
@@ -187,7 +263,10 @@ export class BenchRenderer {
     const r = this.resolved!;
     return this.exportLayers.terrain !== false && r.ground.layers.relief && !isFantasyStyle(r.ground.style) && !this.gpuUnavailable ? 'gpu' : 'cpu';
   }
-  async set(world: World, settings: V2Settings, r: ResolvedAppearance, layers: Partial<ExportLayers> = {}): Promise<void> {
+  async set(world: World, settings: V2Settings, r: ResolvedAppearance, layers: Partial<ExportLayers> = {}, request = new RenderReadiness(r.target === 'export' ? 'capture' : '2d')): Promise<void> {
+    this.request = request; this.programError = undefined; this.programWork = undefined; this.forestJob = undefined; this.restoredFrameKey = '';
+    // Worker-prepared terrain products (shore ring, distances, mips) before the passes that would build them on the page.
+    retainTerrainDisplayPreparation(world);
     if (r.target !== 'export') setDisplayAppearanceQuality(r.quality);
     this.liveCapture = false;
     this.suspendLiveTiles();
@@ -210,8 +289,12 @@ export class BenchRenderer {
       const ran = await this.passes.run(() => passKeys(this.input()), {
         terrainData: () => this.prepareStep(() => this.terrainDataPass()), terrainLook: () => this.prepareStep(() => this.terrainLookPass()), forest: () => this.prepareStep(() => this.forestPass()), water: () => this.prepareStep(() => this.waterPass()),
         frame: () => this.prepareStep(() => this.framePass()), cartography: () => this.prepareStep(() => this.cartographyPass()), overlays: () => this.prepareStep(() => this.overlaysPass()), semantic: () => this.prepareStep(() => this.semanticPass()), city: () => this.prepareStep(() => this.cityPass()) });
-      if (this.gpuActive) await this.gpu!.variantReady();
+      this.request.mark('fields-ready');
+      const programs = this.preparePrograms();
+      // Live ground already has a last/preview variant. Exact consumers explicitly await it.
+      if (r.target !== 'view2d') await programs;
       if (this.vectorsDirty) await this.refreshVectors();
+      this.presentationKey = JSON.stringify([scene.revisions, world.stats['v2.waterEditRevision'], world.stats['v2.editRevision'], r, effectiveKey, forestKey, layers, getLanguage(), getDistanceUnit(), getDisplayQuality()]);
       this.stats.passes = ran;
     } catch (error) {
       // Restore the previous renderer state; every pass re-runs next time (a partial update must not look current).
@@ -219,13 +302,36 @@ export class BenchRenderer {
       this.passes.reset(); this.vectorsDirty = false;
       throw error;
     } finally {
-      this.preparing = false; this.gpu?.setLivePaused(false);
+      this.preparing = false; this.gpu?.setLivePaused(this.suspended);
       this.previousFrame?.element.remove(); this.previousFrame = undefined;
       this.surface.style.visibility = ''; if (this.liveGround) this.liveGround.style.visibility = '';
       this.liveShown = undefined; this.groundShown = undefined;
     }
     this.stats.style = r.ground.style; this.stats.renderer = this.gpuActive ? 'TerrainGl + CityBench' : 'RustBench raster + CityBench';
     this.stats.terrainBackend = this.gpuActive ? terrainRendererBackend(this.gpu!) : 'cpu';
+  }
+  private preparePrograms(): Promise<void> {
+    const request = this.request, gpu = this.gpuActive ? this.gpu : undefined;
+    const work = gpu ? gpu.variantReady() : Promise.resolve();
+    const pending = this.programWork = work.then(() => {
+      if (this.programWork !== pending || this.request !== request) return;
+      this.programWork = undefined;
+      if (!this.forestJob) request?.mark('programs-ready');
+      if (!this.disposed) this.invalidate();
+    }, error => {
+      if (this.programWork === pending) { this.programWork = undefined; this.programError = error; this.invalidate(); }
+      throw error;
+    });
+    // An exact consumer observes the original rejection; live rendering reports it on its next frame.
+    void pending.catch(() => {});
+    return pending;
+  }
+  async exactReady(): Promise<void> {
+    while (this.forestJob) await this.forestJob;
+    await this.programWork;
+    if (this.programError) throw this.programError;
+    if (this.gpuActive) await this.gpu!.variantReady();
+    this.request?.mark('programs-ready');
   }
   private layers(): any {
     const r = this.resolved!, l = this.exportLayers;
@@ -237,12 +343,13 @@ export class BenchRenderer {
     await run();
   }
   private retainLiveFrame(): void {
+    if (this.suspended) return;
     clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.livePending = this.groundPending = undefined;
     const shown = this.groundShown ?? this.liveShown;
     if (!shown || this.surface.parentElement !== this.element) return;
     const frozen = document.createElement('div');
     frozen.style.cssText = `position:absolute;inset:0;z-index:1;background:${this.paper};pointer-events:none`;
-    if (this.gpuActive) this.gpu!.redrawNow(shown.view, shown.w, shown.h, false, Math.min(2, shown.dpr));
+    if (this.gpuActive) { this.gpu!.redrawNow(shown.view, shown.w, shown.h, false, Math.min(2, shown.dpr)); this.markGroundDrawn(); }
     for (const source of [this.liveGround, this.surface]) {
       if (!source) continue;
       const copy = document.createElement('canvas'); copy.width = source.width; copy.height = source.height;
@@ -366,11 +473,11 @@ export class BenchRenderer {
     const job = Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
     // Progressive display: a live map that already shows woods shows the new town at once, the woods follow when ready.
     if (this.forestShown && this.resolved!.target !== 'export') {
-      const gpu = this.gpu!, world = this.world;
+      const gpu = this.gpu!, world = this.world, request = this.request;
       const update: Promise<void> = job.then(([field, occupation]) => {
-        if (this.disposed || this.gpu !== gpu || this.world !== world || !this.gpuActive) return;
-        gpu.setForest(field, occupation); this.dropBackground(); this.invalidate();
-      }, error => console.warn('Forest update failed:', error)).finally(() => { if (this.forestJob === update) { this.forestJob = undefined; this.invalidate(); } });
+        if (this.disposed || this.gpu !== gpu || this.world !== world || this.request !== request || !this.gpuActive) return;
+        gpu.setForest(field, occupation); this.dropBackground(); void this.preparePrograms(); this.invalidate();
+      }, error => { this.programError = error; }).finally(() => { if (this.forestJob === update) { this.forestJob = undefined; this.invalidate(); } });
       this.forestJob = update;
       return;
     }
@@ -451,6 +558,7 @@ export class BenchRenderer {
   /** Overlay renderer (names, roads, land use, painted/vegetation symbols); the natural layers it does not own are masked, not faked. */
   private async cartographyPass(): Promise<void> {
     const world = this.world!, r = this.resolved!, layers = this.exportLayers, scene = this.scene!;
+    const productKey = JSON.stringify([passKeys(this.input()).cartography, mapSeasonKey(), getLanguage(), getDistanceUnit(), scene.revisions.cities]);
     // Before the dispose: 3D tiles may paint through the current renderer during this wait.
     const brushes = r.cartography.painted ? await paintedBrushes() ?? undefined : undefined;
     const shown = this.shownWorld();
@@ -463,6 +571,19 @@ export class BenchRenderer {
     // Same overlay configuration on the same map (a town build or edit): keep the renderer and its tiles, repaint only the changed areas.
     const config = JSON.stringify([r.keys.cartography, v.terrain, mapSeasonKey(), cityOverlayLandKey(r), landuse, cartographic, !!brushes, r.palette.colors, r.vegetation.symbols, r.composition.networks.roads.look,
       layers.decor, layers.roads, layers.city, layers.landuse, layers.labels, layers.streets, layers.background, layers.terrain, layers.water, r.city.visible, shown.seed, world.mapSize, world.options.biome]);
+    if (this.cartographyKey !== productKey && this.cartographyState?.config !== config) {
+      const hit = this.retained.take<CartographyProduct>('product:' + productKey);
+      // Move the requested product out first: storing the outgoing style must not
+      // evict the very entry this switch is about to use.
+      this.storeCartography();
+      this.cartographyKey = productKey;
+      if (hit) {
+        this.cartography = hit.renderer; this.overlay = hit.overlay; this.cartographyState = hit.state; this.physical = hit.physical;
+        this.stats.cartographyUpdate = 'retained'; this.passes.reset('overlays'); return;
+      }
+      this.overlay = document.createElement('canvas');
+    }
+    this.cartographyKey = productKey;
     const previous = this.cartographyState;
     if (this.cartography && previous && previous.config === config && previous.scene !== built) {
       const started = performance.now();
@@ -474,6 +595,7 @@ export class BenchRenderer {
         const next: Scene = { ...built, dirty: rects };
         if (this.cartography.update(shown, next)) {
           this.cartographyState = { config, scene: built, world: shown };
+          if (this.physical) this.physical.key = productKey;
           this.stats.cartographyUpdate = { dirty: rects.length, area: Math.round(rects.reduce((sum, d) => sum + (d.maxX - d.minX) * (d.maxY - d.minY), 0) / (world.mapSize * world.mapSize) * 1000) / 10, ms: Math.round(performance.now() - started) };
           performance.measure('v2:cartography-dirty', { start: started });
           this.passes.reset('overlays');
@@ -487,16 +609,26 @@ export class BenchRenderer {
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
     this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.world!) } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
-      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}:${this.contourRevision}|w${this.waterAboveLand() ? this.waterMaskVersion : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
+      semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}:${this.contourRevision}|w${this.waterAboveLand() ? JSON.stringify([this.resolved!.keys.water, mapSeasonKey(), this.vectorView?.region]) : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
       invalidate: () => this.invalidate(), brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
     const renderer = this.cartography;
     this.cartographyState = { config, scene: built, world: shown };
     // The 3D drape tiles take the physical land use without the semantic hook: their contours are inked here, at the tile's scale.
-    this.physical = { key: passKeys(this.input()).cartography, preview: (target, box) => renderer.drawCachedMap(target, box), paint: (target, box, options, defer) => { const ground = renderer.drawGround(target, box, options); return this.drapeContours(target, box, displayQualityFor(!!options?.live) === 'light', defer) || ground; } };
+    this.physical = { key: productKey, ready: (box, pixels) => this.contoursAt(pixels / (box.maxX - box.minX), box), preview: (target, box) => renderer.drawCachedMap(target, box), paint: (target, box, options, defer) => { const ground = renderer.drawGround(target, box, options); return this.drapeContours(target, box, displayQualityFor(!!options?.live) === 'light', defer) || ground; } };
     this.passes.reset('overlays');
   }
   /** Overlay renderer inputs: a matching configuration reuses the renderer through a dirty-region update. */
   private cartographyState?: { config: string; scene: Scene; world: World };
+  private storeCartography(): void {
+    if (this.cartography && this.cartographyState) {
+      const product: CartographyProduct = { renderer: this.cartography, overlay: this.overlay, state: this.cartographyState, physical: this.physical };
+      product.renderer.suspendLive();
+      this.retained.put('product:' + this.cartographyKey, product,
+        product.renderer.retainedBytes() + product.overlay.width * product.overlay.height * 4,
+        () => { product.renderer.dispose(); product.overlay.width = product.overlay.height = 0; });
+    }
+    this.cartography = undefined; this.cartographyState = undefined; this.physical = undefined;
+  }
   /** The physical land use of the overlay above (composition mask, painted brushes, path caches) for the 3D ground tiles: no second scene. */
   physicalGround(): PhysicalGround | undefined { return this.physical; }
   /** Labels, legend and cartouche on the overlay renderer; the explicit-layers export raster. */
@@ -552,17 +684,16 @@ export class BenchRenderer {
     const fine = farLight || topographic ? undefined : cityFineContours(this.native!, look.landform, sc, viewport);
     let sets = fine?.blocks;
     if (!sets) {
-      let done: (() => void) | undefined, landed = false;
-      const ready = defer ? () => { landed = true; done?.(); } : this.contoursReady;
-      sets = [cityContourPaths(this.native!, look.landform, sc, topographic, ready)].filter(paths => paths.step);
-      if (defer && topographic && (landed || cityContourPathsPending(this.native!, look.landform, sc))) { done = defer(); if (landed) done(); }
+      sets = [cityContourPaths(this.native!, look.landform, sc, topographic)].filter(paths => paths.step);
     }
+    if (cityContoursPending(this.native)) this.afterContours(defer?.() ?? this.contoursReady);
     if (!sets.length) return false;
     ctx.save(); ctx.strokeStyle = pal.contour; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.globalAlpha = pal.contourOpacity * 0.7; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
-    if (!farLight) for (const set of sets) if (set.thin) ctx.stroke(contourPath(set, 'thin'));
+    const recording = ctx instanceof RecordingContext;
+    if (!farLight) for (const set of sets) if (set.thin) ctx.stroke(contourPath(set, 'thin', recording));
     ctx.globalAlpha = pal.contourOpacity; ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, pal.contourIndexW / 1.6 * weight);
-    for (const set of sets) if (set.index) ctx.stroke(contourPath(set, 'index'));
+    for (const set of sets) if (set.index) ctx.stroke(contourPath(set, 'index', recording));
     ctx.restore(); return true;
   }
   /** Raster of the vector water last used to cut the land use: overlay tiles repaint when a finer one arrives. */
@@ -604,7 +735,7 @@ export class BenchRenderer {
   private async cityPass(): Promise<void> {
     const v = this.scene!.revisions, key = JSON.stringify([v.cities, v.settlements, v.terrain]), shared = this.shared;
     if (shared.city?.key === key) { this.city = shared.city.map; return; }
-    const map = createNativeCityMap(this.world!, this.invalidate);
+    const map = createNativeCityMap(this.world!, () => { this.cityRevision++; this.restoredFrameKey = ''; this.invalidate(); });
     if (this.ownsShared) { shared.city?.map.dispose(); shared.city = { key, map }; } else { this.exportCity?.dispose(); this.exportCity = map; }
     this.city = map;
   }
@@ -646,6 +777,8 @@ export class BenchRenderer {
   }
   /** No GPU readback, intermediate bitmap or full-frame copy in the live display path. */
   drawLive(view: View, w: number, h: number, dpr: number): void {
+    if (this.suspended) return;
+    // A failed program is reported by settled()/exactReady() (the appearance status); the live view keeps its stand-in.
     initializeDisplayQuality();
     if (this.preparing) {
       const previous = this.previousFrame;
@@ -659,13 +792,26 @@ export class BenchRenderer {
       return;
     }
     const previousView = this.liveRequested;
+    const frameKey = this.frameKey(view, w, h, dpr);
+    if (this.restoredFrameKey === frameKey) { this.notePresented(); return; }
+    this.restoredFrameKey = '';
+    const cached = this.retained.get<HTMLCanvasElement>('frame:' + frameKey);
+    if (cached && !this.programWork && !this.forestJob) {
+      this.surface.width = cached.width; this.surface.height = cached.height;
+      this.surface.style.cssText = `width:${w}px;height:${h}px`;
+      this.surface.getContext('2d')!.drawImage(cached, 0, 0);
+      this.liveGround?.remove(); this.liveGround = undefined; this.groundShown = undefined;
+      this.element.append(this.surface); this.liveShown = { view: { ...view }, w, h, dpr };
+      this.restoredFrameKey = frameKey; this.stats.frameCache = 'hit'; this.notePresented(); return;
+    }
+    this.stats.frameCache = cached ? 'pending' : 'miss';
     if (this.liveCapture) {
       const frame = this.liveShown;
       if (frame && frame.w === w && frame.h === h && frame.dpr === dpr && frame.view.cx === view.cx && frame.view.cy === view.cy && frame.view.scale === view.scale) return;
       this.liveCapture = false;
     }
     const navigating = !!previousView && (previousView.cx !== view.cx || previousView.cy !== view.cy || previousView.scale !== view.scale);
-    if (navigating) { noteDisplayNavigation(); this.suspendLiveTiles(); }
+    if (navigating) { noteDisplayNavigation(); this.suspendLiveTiles(); this.movingUntil = performance.now() + LIVE_SETTLE_MS; }
     this.liveRequested = { ...view };
     const ground = this.gpuActive ? terrainRendererCanvas(this.gpu!, this.gpuCanvas) : undefined;
     const groundChanged = ground !== this.liveGround;
@@ -683,14 +829,17 @@ export class BenchRenderer {
       const moved = !!previous && previous.w === w && previous.h === h && previous.dpr === dpr
         && (previous.view.cx !== view.cx || previous.view.cy !== view.cy || previous.view.scale !== view.scale);
       const pending = { view: { ...view }, w, h, dpr };
-      this.gpu!.redrawNow(view, w, h, moved || !!this.groundPending, Math.min(2, dpr));
+      const tg = performance.now();
+      this.gpu!.redrawNow(view, w, h, moved || !!this.groundPending, Math.min(2, dpr)); this.markGroundDrawn();
+      noteLivePart('ground', tg);
       this.groundShown = pending;
       if (moved) {
         this.groundPending = pending;
         clearTimeout(this.groundTimer);
         this.groundTimer = setTimeout(() => {
           const p = this.groundPending; this.groundPending = undefined;
-          if (p && !this.disposed && this.gpuActive) this.gpu!.redrawNow(p.view, p.w, p.h, false, Math.min(2, p.dpr));
+          if (p && !this.disposed && this.gpuActive) { this.gpu!.redrawNow(p.view, p.w, p.h, false, Math.min(2, p.dpr)); this.markGroundDrawn(); }
+          if (p && !this.disposed) this.invalidate();
         }, LIVE_SETTLE_MS);
       }
     }
@@ -698,7 +847,16 @@ export class BenchRenderer {
     // A costly overlay (parchment woods, symbols, contours, Canvas 2D city) follows a moving view as a compositor
     // transform of its last bitmap, and is repainted once the view rests: pan and zoom never wait for a full repaint.
     const shown = this.liveShown;
-    if (shown && (this.cartography || this.fantasy || this.liveCost > LIVE_DEFER_MS) && shown.w === w && shown.h === h && shown.dpr === dpr
+    // GPU vector engine: the overlay is a retained list replayed with the view matrix, so a moving view repaints every
+    // frame (no stretched bitmap, no tiles); the frame cache is only fed once the view rests.
+    const gpuLive = !!this.cartography?.liveRetained() && !this.fantasy && this.liveCost <= LIVE_DEFER_MS;
+    if (gpuLive && navigating) {
+      this.liveMoving = true;
+      try { this.paintLive(view, w, h, dpr, false); } finally { this.liveMoving = false; }
+      this.liveTimer = setTimeout(() => { if (!this.disposed && this.world) this.paintLive(view, w, h, dpr); }, LIVE_SETTLE_MS);
+      return;
+    }
+    if (shown && !gpuLive && (this.cartography || this.fantasy || this.liveCost > LIVE_DEFER_MS) && shown.w === w && shown.h === h && shown.dpr === dpr
       && (this.livePending || navigating || shown.view.cx !== view.cx || shown.view.cy !== view.cy || shown.view.scale !== view.scale)) {
       this.suspendLiveTiles();
       // Downsample the retained CPU overlay once per gesture; the ground owns its own resolution policy.
@@ -722,30 +880,93 @@ export class BenchRenderer {
     }
     this.paintLive(view, w, h, dpr);
   }
-  private paintLive(view: View, w: number, h: number, dpr: number): void {
+  private paintLive(view: View, w: number, h: number, dpr: number, store = true): void {
     clearTimeout(this.liveTimer); this.livePending = undefined;
     const t = performance.now();
-    this.drawInto(this.surface, view, w, h, dpr, true);
+    LiveTileFill.track(this, () => this.drawInto(this.surface, view, w, h, dpr, true));
+    noteLivePart('frame', t);
     // A decaying peak: one cheap repaint from warm caches must not make the next zoom step (a cold level) paint inline.
     this.liveCost = Math.max(performance.now() - t, this.liveCost * .8); this.liveShown = { view: { ...view }, w, h, dpr };
     this.surface.style.transform = '';
+    this.notePresented();
+    if (store) this.storePresentedFrame(view, w, h, dpr);
+  }
+  private frameKey(view: View, w: number, h: number, dpr: number): string {
+    return JSON.stringify([this.presentationKey, view, w, h, dpr, getLanguage(), getDistanceUnit(), getDisplayQuality(), getVectorEngine(), this.contourRevision, this.cityRevision]);
+  }
+  /** True from a ground redraw to the end of its task (the only window in which the ground canvas can be copied). */
+  private groundDrawnThisTask = false;
+  private markGroundDrawn(): void {
+    if (this.groundDrawnThisTask) return;
+    this.groundDrawnThisTask = true; queueMicrotask(() => { this.groundDrawnThisTask = false; });
+  }
+  private storePresentedFrame(view: View, w: number, h: number, dpr: number): void {
+    if (this.pendingWork() || this.resolved?.target !== 'view2d') return;
+    const key = this.frameKey(view, w, h, dpr);
+    if (this.cachedFrameKey === key && this.retained.get('frame:' + key)) return;
+    const bytes = Math.round(w * dpr) * Math.round(h * dpr) * 4;
+    if (bytes > this.retained.maxFrameBytes) return;
+    const image = document.createElement('canvas'); image.width = Math.round(w * dpr); image.height = Math.round(h * dpr);
+    const ctx = image.getContext('2d')!;
+    // The GPU ground buffer is not preserved: it can only be copied in the task that drew it. A frame stored from a
+    // timer (the rest repaint) redraws it here first, or the cached frame keeps an empty ground and a later restore of
+    // this view showed the overlay alone (the map "disappeared" until the next pan or zoom, most visibly on satellite).
+    if (this.gpuActive && this.liveGround && !this.groundDrawnThisTask) { this.gpu!.redrawNow(view, w, h, false, Math.min(2, dpr)); this.markGroundDrawn(); }
+    if (this.gpuActive && this.liveGround) {
+      // The GPU ground is laid out with an overscan around the view (liveGround.ts): copy it where it is displayed.
+      // Stretched to the view, the cached frame showed the ground 16% smaller than the overlay (a "zoom-out" after
+      // every zoom, doubled rivers on vector styles). A CSS-transformed preview is not this view's frame: no store.
+      const style = this.liveGround.style;
+      if (style.transform && style.transform !== 'none') return;
+      const px = (value: string, fallback: number): number => { const n = parseFloat(value); return Number.isFinite(n) ? n : fallback; };
+      ctx.drawImage(this.liveGround, px(style.left, 0) * dpr, px(style.top, 0) * dpr, px(style.width, w) * dpr, px(style.height, h) * dpr);
+    }
+    ctx.drawImage(this.surface, 0, 0);
+    this.retained.put('frame:' + key, image, bytes, () => { image.width = image.height = 0; }, true);
+    this.cachedFrameKey = key; this.stats.frameCache = 'stored';
+    this.stats.retainedBytes = this.retained.bytes; this.stats.frameBytes = this.retained.frameBytes;
+  }
+  private notePresented(): void {
+    if (this.preparing) return;
+    const request = this.request;
+    request?.mark('first-useful-frame');
+    if (!this.programWork && !this.forestJob && !this.programError) request?.mark('programs-ready');
+    if (this.pendingWork() === 0 && !request?.has('visible-complete')) {
+      requestAnimationFrame(() => { if (this.request === request && this.pendingWork() === 0) request?.mark('visible-complete'); });
+    }
   }
   private suspendLiveTiles(): void {
     this.cartography?.suspendLive();
     if (this.fantasy) suspendFantasyRaster(this.fantasy);
   }
   /** Resolves once the progressive updates (woods after a town build) are on screen. */
-  async settled(): Promise<void> { while (this.forestJob) await this.forestJob; }
+  async settled(): Promise<void> {
+    await this.exactReady();
+    while (!this.disposed && !this.suspended && (this.pendingWork() || !this.request?.has('visible-complete'))) {
+      if (this.programError) throw this.programError;
+      this.invalidate(); await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    }
+  }
   /** Display work still owed to the last live frame (missing overlay tiles); 0 once the map is complete. */
-  pendingWork(): number { return this.preparing || this.forestJob ? 1 : (this.cartography?.lastStats().rasterPending ?? 0) + cityContoursPending(this.native); }
+  pendingWork(): number {
+    if (this.restoredFrameKey) return 0;
+    return Number(this.preparing) + Number(!!this.forestJob) + Number(!!this.programWork) + Number(!!this.programError)
+      + Number(!!this.vectorRequest) + Number(!!this.livePending) + Number(!!this.groundPending)
+      + Number(!!(this.stats.city as { pending?: boolean } | undefined)?.pending)
+      + LiveTileFill.pending(this) + (this.cartography?.lastStats().rasterPending ?? 0) + cityContoursPending(this.native) + this.contourWaiters.size;
+  }
   /** Explicit readback for screenshots/illustration; ordinary navigation never calls it. */
   prepareCapture(): void {
+    if (this.pendingWork()) throw new Error('HD loading… Wait for the renderer before capturing.');
+    if (this.programError) throw this.programError;
+    const capture = new RenderReadiness('capture'); capture.mark('programs-ready');
     const frame = this.livePending ?? this.liveShown;
     this.suspendLiveTiles(); clearTimeout(this.liveTimer); this.livePending = undefined;
     if (frame && this.world) {
       this.drawInto(this.surface, frame.view, frame.w, frame.h, frame.dpr, false);
       this.surface.style.transform = ''; this.liveShown = frame; this.liveCapture = true;
     } else if (this.gpuActive) this.gpu!.redrawForCapture();
+    capture.mark('capture-complete');
   }
   private drawInto(canvas: HTMLCanvasElement, view: View, w: number, h: number, dpr: number, live: boolean): HTMLCanvasElement {
     const r = this.resolved!, size = this.world!.mapSize;
@@ -762,7 +983,9 @@ export class BenchRenderer {
     const fantasy = this.fantasy && isFantasyStyle(r.ground.style) ? this.fantasy : undefined;
     // Wash under the water, stamps over it.
     if (fantasy) drawFantasyRaster(ctx, fantasy, viewRect(view, w, h), view.scale * dpr, KEEP_NONE);
+    let t0 = performance.now();
     const vectors = this.vectorRaster(view, w, h, dpr);
+    if (live) t0 = noteLivePart('water', t0);
     if (vectors) ctx.drawImage(vectors.image, vectors.region.x, vectors.region.y, vectors.region.width, vectors.region.height);
     // The export overlay is one whole-map raster: only where it is at least as fine as the frame.
     const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.width * 1.01 ? this.exportOverlay : undefined;
@@ -774,30 +997,43 @@ export class BenchRenderer {
       this.paintRural(ctx, viewRect(view, w, h), 1 / view.scale); ctx.drawImage(overlay, 0, 0, size, size);
     }
     ctx.restore();
+    let t = performance.now();
     if (!overlay && this.cartography) { if (this.overlay.width !== canvas.width) this.overlay.width = canvas.width; if (this.overlay.height !== canvas.height) this.overlay.height = canvas.height; this.cartography.draw(view, { live }); ctx.drawImage(this.overlay, 0, 0, w, h); }
+    if (live) t = noteLivePart('cartography', t);
     // Illustrated: stamps above roads, rivers and field edges (anchors stay clear of them, crowns may overhang); towns and labels stay on top.
     if (fantasy && !overlay) {
       ctx.save(); ctx.translate(w / 2 - view.cx * view.scale, h / 2 - view.cy * view.scale); ctx.scale(view.scale, view.scale);
       drawFantasyRaster(ctx, fantasy, viewRect(view, w, h), view.scale * dpr, undefined, false, true, live, live); ctx.restore();
     }
+    if (live) t = noteLivePart('fantasy', t);
     if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, { ...this.exportLayers, labels: false }, this.cityHooks);
-    if (this.cartography) { ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.cartography.drawText(ctx, view, w, h); ctx.restore(); }
+    if (live) t = noteLivePart('city', t);
+    if (this.cartography) { ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.cartography.drawText(ctx, view, w, h, this.liveMoving || performance.now() < this.movingUntil); ctx.restore(); }
+    if (live) noteLivePart('text', t);
     return canvas;
   }
   /** The vector raster for this frame: the view raster when it fits, else the whole-map one while a
    * view raster at the frame's density is prepared (the frame is redrawn when it is ready). */
+  /** True while a moving view repaints every frame (GPU vector engine): costly one-off work waits for the rest frame. */
+  private liveMoving = false;
+  /** Until then the view counts as moving (a gesture's frames, including redraws between wheel steps): labels follow the map. */
+  private movingUntil = 0;
   private vectorRaster(view: View, w: number, h: number, dpr: number): { image: HTMLCanvasElement; region: ViewRasterRegion } | undefined {
     if (!this.vectors) return undefined;
     const size = this.world!.mapSize, rect = viewRect(view, w, h), density = view.scale * dpr;
     if (viewRasterFits(this.vectorView?.region, rect, density, size)) return this.vectorView;
     if (viewRasterFits(this.vectorBase?.region, rect, density, size, Infinity)) return this.vectorBase;
-    void this.requestVectors(viewRasterRegion(rect, density, size));
+    // A moving GPU view keeps the coarser water raster: the SVG rasterisation of a new region waits for the rest frame.
+    if (!this.liveMoving) void this.requestVectors(viewRasterRegion(rect, density, size));
     return this.vectorView && viewRasterFits({ ...this.vectorView.region, density }, rect, density, size) ? this.vectorView : this.vectorBase;
   }
+  /** UTF-8 of the vector SVG body, encoded once per body. */
+  private vectorBytes?: { text: string; bytes: Uint8Array };
   private requestVectors(region: ViewRasterRegion): Promise<void> {
     if (this.vectorRequest) return this.vectorRequest;
     const vectors = this.vectors;
-    const request: Promise<void> = imageOf(svgOf(vectors, region)).then(image => {
+    if (this.vectorBytes?.text !== vectors) this.vectorBytes = { text: vectors, bytes: new TextEncoder().encode(vectors) };
+    const request: Promise<void> = imageOf(svgPartsOf(this.vectorBytes.bytes, region)).then(image => {
       if (this.disposed || this.vectors !== vectors) return;
       this.vectorView = { image, region }; this.waterMaskVersion++; this.invalidate();
     }, () => undefined).finally(() => { if (this.vectorRequest === request) this.vectorRequest = undefined; });
@@ -805,6 +1041,7 @@ export class BenchRenderer {
   }
   /** Terrain-pass bitmap for 3D; invalidated with the ground, shared without PNG encoding and image decoding. */
   groundBackground(): HTMLCanvasElement | undefined {
+    if (this.programWork || this.forestJob || this.programError) return undefined;
     if (this.gpuActive) return this.backgroundImage ??= this.gpu!.captureMap(1024);
     return undefined;
   }
@@ -826,13 +1063,13 @@ export class BenchRenderer {
     return this.backgroundHref;
   }
   async capture(size: number, layers?: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
+    const capture = new RenderReadiness('capture');
     if (layers) await this.set(this.world!, this.settings!, this.resolved!, layers);
-    await this.settled();
+    await this.exactReady();
     if (this.gpuActive) await this.gpu!.variantReady();   // draw() is synchronous: it would create a missing pipeline in place
+    capture.mark('programs-ready');
     const view = { cx: this.world!.mapSize / 2, cy: this.world!.mapSize / 2, scale: size / this.world!.mapSize };
-    const contours = this.contourLook();
-    if (contours && this.resolved!.composition.recipe.ground.variant === 'topographic')
-      await cityContourPathsReady(this.native!, contours.landform, view.scale);
+    await this.contoursAt(view.scale, viewRect(view, size, size));
     // Vectors at the export density before the synchronous draw.
     if (this.vectors && !viewRasterFits(this.vectorView?.region, viewRect(view, size, size), view.scale, this.world!.mapSize)
       && !viewRasterFits(this.vectorBase?.region, viewRect(view, size, size), view.scale, this.world!.mapSize, Infinity)) {
@@ -840,7 +1077,7 @@ export class BenchRenderer {
     }
     // The city plan on WebGL2 (same engine as the live view) is uploaded before the synchronous draw.
     await this.city?.prepare(this.resolved!, { ...this.exportLayers, labels: false });
-    return this.draw(view, size, size, 1);
+    const image = this.draw(view, size, size, 1); capture.mark('capture-complete'); return image;
   }
-  dispose(): void { this.disposed = true; this.suspendLiveTiles(); this.unlistenQuality(); clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.previousFrame?.element.remove(); this.gpu?.dispose(); this.cartography?.dispose(); this.exportCity?.dispose(); if(this.ownsShared){this.shared.city?.map.dispose();this.shared.cache.clear();} if(this.ownsMaterialContext)this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();this.materialContext=undefined;this.world = undefined; }
+  dispose(): void { this.disposed = true; this.suspendLiveTiles(); this.unlistenQuality(); this.retained.clear(); clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.previousFrame?.element.remove(); this.gpu?.dispose(); this.cartography?.dispose(); this.exportCity?.dispose(); if(this.ownsShared){this.shared.city?.map.dispose();this.shared.cache.clear();} if(this.ownsMaterialContext)this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();this.materialContext=undefined;this.world = undefined; }
 }

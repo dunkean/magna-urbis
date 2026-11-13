@@ -430,7 +430,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       progress?.('Rust natif · génération du relief et érosion…',{stage:'terrain-generation',detail:`Service Rust local · calcul du champ physique ${definition.n} × ${definition.n}`});
       const nativeSettings = settings.procedural?.biome ? { ...settings, coastMask, erosionTuning: { ...settings.erosionTuning, incision: (settings.erosionTuning?.incision ?? 1) * erosionBiome(settings).water, thermal: (settings.erosionTuning?.thermal ?? 1) * erosionBiome(settings).thermal } } : settings;
       const result = await prepareNativeTerrain(nativeSettings.sketch && !surfaceInput ? { ...nativeSettings, sketch: undefined } : nativeSettings, runtime!);
-      nativeRelief = await NativeReliefEngine.build(runtime!, { kind: 'surface', seed: coastSeed, width: settings.width }, settings.procedural?await finishSource(result.height,true):result.height, engineTuning);
+      nativeRelief = await NativeReliefEngine.build(runtime!, { kind: 'surface', seed: coastSeed, width: settings.width }, surfaceInput==='surface'?result.height:settings.procedural?await finishSource(result.height,true):result.height, engineTuning);
       generationBackend = 'native';
       generationReason = 'Relief et côtes calculés par le service Rust natif ; surface conservée pour le rendu GPU et l’eau.';
       nativeEnvironmentMs = result.prepareMs;
@@ -717,7 +717,10 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       data.hydrologySurfaceMs = performance.now() - surfaceStarted;
     }
     if (kind === 'overview') {
-      const n = reliefMeta().source_resolution(), height = await physicalHeightField();
+      const n = reliefMeta().source_resolution();
+      // Preserve imported/painted metre samples. Re-evaluating height_at applies the
+      // renderer's reconstruction filter and would smooth the saved global source again.
+      const height = surfaceInput === 'surface' ? heightmapSurface(parseTerrainSketch(settings.sketch), n) : await physicalHeightField();
       if (water && showErosion && conditioned?.delta) {
         const delta = await sourceDelta(conditioned.delta, conditioned.m, n);
         for (let i = 0; i < height.length; i++) height[i] += height[i] <= 0 ? Math.min(0, delta[i]) : delta[i];

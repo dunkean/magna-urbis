@@ -65,9 +65,11 @@ describe('topographic contour density', () => {
       cityContourPaths(terrain, 'hills', 1, true, ready);
       expect(messages).toHaveLength(1); expect(messages[0].topographic).toBe(true);
       const paths = { step: pending.step, thin: 'M5,5L15,5', index: 'M5,25L15,25' };
-      worker!.onmessage!({ data: { id: messages[0].id, paths } });
+      // The worker sends UTF-8 typed path commands (cityContours.ts TypedContourPaths).
+      const encoder = new TextEncoder();
+      worker!.onmessage!({ data: { id: messages[0].id, paths: { step: paths.step, thin: encoder.encode(paths.thin), index: encoder.encode(paths.index) } } });
       expect(cityContoursPending(terrain)).toBe(0); expect(ready).toHaveBeenCalledOnce();
-      expect(cityContourPaths(terrain, 'hills', 1, true, ready)).toBe(paths);
+      expect(cityContourPaths(terrain, 'hills', 1, true, ready)).toEqual(paths);
     } finally { vi.unstubAllGlobals(); }
   });
 });

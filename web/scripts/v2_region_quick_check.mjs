@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Browser acceptance for the first region: quick choices, real vector terrain and no urban stages. */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -150,7 +151,7 @@ try {
   const beforeLanguage = await recipe();
   assert.equal(beforeLanguage.terrain.motifSize, 12500);
   assert.equal(beforeLanguage.options.biome, 'forest'); assert.equal(beforeLanguage.terrain.relief, 'hills');
-  await page.locator('#language-select').selectOption('fr');
+  await chooseWorkshopPreference(page, 'language', 'fr');
   assert.equal(await page.locator('html').getAttribute('lang'), 'fr');
   assert.equal(await page.locator('#terrain-scale').inputValue(), '12.5');
   assert.equal(await page.locator('#terrain-hydrology-toggle .terrain-option-badge').textContent(), 'Vectoriel');
@@ -160,7 +161,7 @@ try {
     await page.locator('#mobile-toggle').click();
   report.checks.mobileFirstFold = await firstFold('mobile-first-fold-fr');
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.locator('#language-select').selectOption('en');
+  await chooseWorkshopPreference(page, 'language', 'en');
   assert.deepEqual(await recipe(), beforeLanguage);
   report.checks.liveLanguages = { french: true, english: true, recipePreserved: true, editedScaleKm: 12.5, editedScaleMetres: 12500 };
 

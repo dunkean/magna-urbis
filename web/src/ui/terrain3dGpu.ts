@@ -1,3 +1,4 @@
+import { boxMips, rasterMips } from './boxMips';
 import { waterSeasonUniforms } from '../render/seasonPalette';
 /**
  * WebGPU backend of the 3D terrain view: Terrain3d (terrain3d.ts) with its GPU hooks overridden, and the
@@ -91,20 +92,6 @@ class Pool {
   destroy(): void { for (const chunk of this.chunks) chunk.buffer.destroy(); this.chunks = []; }
 }
 
-/** Box-filtered mip chain of an 8-bit image, as glGenerateMipmap (forest rasters, brush atlas). */
-function boxMips(data: Uint8Array, width: number, height: number, channels: number, layers = 1): { data: Uint8Array; width: number; height: number }[] {
-  const levels = [{ data, width, height }];
-  while (width > 1 || height > 1) {
-    const w = Math.max(1, width >> 1), h = Math.max(1, height >> 1), previous = levels[levels.length - 1].data, next = new Uint8Array(w * h * channels * layers);
-    for (let l = 0; l < layers; l++) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < channels; c++) {
-      const x0 = Math.min(width - 1, 2 * x), x1 = Math.min(width - 1, 2 * x + 1), y0 = Math.min(height - 1, 2 * y), y1 = Math.min(height - 1, 2 * y + 1);
-      const at = (px: number, py: number): number => previous[((l * height + py) * width + px) * channels + c];
-      next[((l * h + y) * w + x) * channels + c] = (at(x0, y0) + at(x1, y0) + at(x0, y1) + at(x1, y1) + 2) >> 2;
-    }
-    levels.push({ data: next, width: w, height: h }); width = w; height = h;
-  }
-  return levels;
-}
 const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
 /** IEEE half of a float (round toward zero), for the RG16F shore ring. */
 function toHalf(v: number): number {
@@ -158,7 +145,8 @@ const DEPTH_WGSL = `
 export interface GpuImage { texture: GPUTexture; view: GPUTextureView }
 const image = (texture: WebGLTexture): GpuImage => texture as GpuImage;
 type Entry = { pipeline?: GPURenderPipeline; failed?: boolean };
-const groundKey = (ground: number, v2: number, forest: number, brushes: number, water = 0): string => `ground.${ground}.${v2}.${forest}.${brushes}.${water}`;
+// Natural water is a runtime parameter (uNaturalWater), not a pipeline: Satellite and Satellite-2 share one ground.
+const groundKey = (ground: number, v2: number, forest: number, brushes: number): string => `ground.${ground}.${v2}.${forest}.${brushes}`;
 const PREVIEW_GROUND = groundKey(0, 0, 0, 0);
 
 /** Device-wide objects of the 3D view: modules, layouts, samplers, pipelines. */
@@ -223,6 +211,7 @@ class Gpu3d {
     this.pipelines.set(`${samples}:${key}`, { pipeline: await this.device.createRenderPipelineAsync(this.descriptor(key, samples)) });
     console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms (prepare)`);
   }
+  ready(key: string, samples: number): boolean { return !!this.pipelines.get(`${samples}:${key}`)?.pipeline; }
   /** Complete a requested look before it is captured or first shown. */
   async settled(key: string, samples = SAMPLES): Promise<void> {
     for (;;) {
@@ -249,12 +238,12 @@ class Gpu3d {
         fragment: { module: this.modules[fs], entryPoint: 'main', targets: target }, depthStencil: { ...depthStencil(true), ...(key.endsWith('.snow') ? { depthBias: -2, depthBiasSlopeScale: -1 } : {}) }, multisample };
     }
     const vertex: GPUVertexState = { module: this.modules.terrainVs, entryPoint: 'main', buffers: PATCH_BUFFERS };
-    if (key === 'map' || key === 'map.water') return { label: key, layout: this.pipelineLayouts.terrain, vertex,
-      fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target, constants: { [WGSL.WGSL3D_OVERRIDES.uNaturalWater]: key==='map.water'?1:0 } }, depthStencil: depthStencil(true), multisample };
-    const [ground, v2, forest, brushes, water] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
+    if (key === 'map') return { label: key, layout: this.pipelineLayouts.terrain, vertex,
+      fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+    const [ground, v2, forest, brushes] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
     return { label: key, layout: this.pipelineLayouts.terrain, vertex, depthStencil: depthStencil(true), multisample,
       fragment: { module: this.modules.groundFs, entryPoint: 'main', targets: target,
-        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes, [o.uNaturalWater]: water } } };
+        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes } } };
   }
   private mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
   /** Fills mip levels 1.. of every layer of a 2D (array) texture from level 0. */
@@ -317,6 +306,12 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
   return shared.then(gpu => !!gpu);
 }
 
+/** Starts creating a ground pipeline (frames at rest) before the 3D view is opened, on the device the view
+ * will use: the 2D map calls it while idle once its own look is ready (terrainGpu.ts prewarmLikely). */
+export function prewarmTerrain3dGround(renderV2: number, forest: number, brushes: number): void {
+  void prepareTerrain3dGpu(false).then(ok => { if (ok && ready && !ready.lost) ready.pipeline(groundKey(1, renderV2, forest, brushes), SAMPLES); }, () => {});
+}
+
 /** The WebGPU 3D view on `canvas`, or undefined while (or when) prepareTerrain3dGpu has no device.
  * `onDeviceLost` is called once if its device is lost (the view then stops drawing). */
 export function createTerrain3dGpu(canvas: HTMLCanvasElement, onChange: () => void, onRender?: () => void, options: Terrain3dOptions = {}, onDeviceLost?: () => void): Terrain3d | undefined {
@@ -345,7 +340,20 @@ class Terrain3dGpu extends Terrain3d {
   private brushes!: { image: GpuImage; full: boolean };
   private ring?: { layer: object; image: GpuImage; x: number; y: number; width: number };
   private lastGroundPipelines = new Map<number, GPURenderPipeline>();
-  private get samples(): number { return this.frameInteracting || this.frameQuality > 0 ? 1 : SAMPLES; }
+  /** One sample while moving, once the single-sample ground exists: the multisampled one (the one shown at rest)
+   * is compiled first, and until the other is ready the moving frames keep it rather than a stand-in material. */
+  private get samples(): number {
+    if (!(this.frameInteracting || this.frameQuality > 0)) return SAMPLES;
+    if (this.useMapShader) return 1;
+    const key = this.groundKeyNow();
+    if (this.gpu.ready(key, 1)) return 1;
+    this.gpu.pipeline(key, 1);
+    return SAMPLES;
+  }
+  private groundKeyNow(): string {
+    const settings = this.groundSettings;
+    return groundKey(+!!settings, settings?.renderV2 ?? 0, +!!this.forest, +!!settings?.forestBrushes);
+  }
   private pipeline(key: string): GPURenderPipeline | undefined { return this.gpu.pipeline(key, this.samples); }
   private readonly redraw = (): void => this.request();
   private onDeviceLost?: () => void;
@@ -396,7 +404,7 @@ class Terrain3dGpu extends Terrain3d {
     return { texture, view: texture.createView({ dimension: '2d-array' }) };
   }
   private rgbaImage(raster: { n: number; rgba: Uint8Array }, mipmaps: boolean): GpuImage {
-    return this.image(raster.n, raster.n, 'rgba8unorm', raster.rgba, 4, mipmaps ? boxMips(raster.rgba, raster.n, raster.n, 4).map(l => l.data) : undefined);
+    return this.image(raster.n, raster.n, 'rgba8unorm', raster.rgba, 4, mipmaps ? rasterMips(raster.rgba, raster.n, raster.n, 4) : undefined);
   }
   private indexBuffer(indices: Uint16Array): { buffer: GPUBuffer; count: number } {
     const buffer = this.device.createBuffer({ label: 'patch indices', size: Math.ceil(indices.byteLength / 4) * 4, usage: GPUBufferUsage.INDEX, mappedAtCreation: true });
@@ -507,9 +515,9 @@ class Terrain3dGpu extends Terrain3d {
   }
   /** The ground variant once created; meanwhile the last drawn one, or the preview, stands in. */
   private terrainPipeline(): GPURenderPipeline | undefined {
-    if (this.useMapShader) return this.pipeline(this.lookSettings.waterLook==='natural'?'map.water':'map') ?? this.pipeline('map');
+    if (this.useMapShader) return this.pipeline('map');
     const settings = this.groundSettings, forest = !!this.forest;
-    const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes, +(this.lookSettings.waterLook==='natural')));
+    const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes));
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) { this.lastGroundPipelines.set(this.samples, target); return target; }
     return settings ? this.pipeline(PREVIEW_GROUND) : this.lastGroundPipelines.get(this.samples) ?? this.pipeline(PREVIEW_GROUND);
@@ -517,9 +525,11 @@ class Terrain3dGpu extends Terrain3d {
   /** Unlike the live preview, a newly opened view must have its actual material available. */
   async prepareVariant(): Promise<void> {
     const settings = this.groundSettings;
-    const key = this.useMapShader ? this.lookSettings.waterLook === 'natural' ? 'map.water' : 'map'
-      : groundKey(+!!settings, settings?.renderV2 ?? 0, +!!this.forest, +!!settings?.forestBrushes, +(this.lookSettings.waterLook === 'natural'));
-    await Promise.all([1, SAMPLES].map(samples => this.gpu.settled(key, samples)));
+    const key = this.useMapShader ? 'map'
+      : groundKey(+!!settings, settings?.renderV2 ?? 0, +!!this.forest, +!!settings?.forestBrushes);
+    // The view opens on the multisampled ground (frames at rest); the single-sample one follows in the background.
+    await this.gpu.settled(key, SAMPLES);
+    this.gpu.pipeline(key, 1);
   }
   /** Brush atlas (bindForestBrushes): a 1×1 placeholder until a brush look first needs the full array. */
   private brushAtlas(enabled: boolean): GPUTextureView {
@@ -557,7 +567,7 @@ class Terrain3dGpu extends Terrain3d {
     p.setArray('matrix', frame.matrix); p.set('exaggeration', c.exaggeration); p.setArray('eye', frame.eye);
     p.set('raisedBlend',raisedBlend);
     p.set('fogDistance', Math.max(c.distance * 2, 100)); p.set('showTileBounds', this.tileBounds ? 1 : 0);
-    p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
+    p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('uNaturalWater',this.lookSettings.waterLook==='natural'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
     p.set('displayWaterBand',layer.width*.016);
     p.setArray('uWaterSeason', waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
     const canopy = settings ?? this.forestSettings;

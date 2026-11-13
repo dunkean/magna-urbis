@@ -3,13 +3,18 @@ import { getDistanceUnit, setDistanceUnit, onUnitsChange, formatDistance, unitFa
 import { mapPresentation, settlementDisplayName } from './mapPresentation';
 import './ui.css';
 import './editing.css';
+import './workbench.css';
+import { mountSceneControls } from './sceneControls';
+import { applySceneClock, DEFAULT_SCENE } from './sceneClock';
+import { mountEditingTools } from './editingTools';
 import logo from '../ui/assets/logo-magna-urbis.png';
 import { CULTURE_LABELS, SITE_ARCHETYPES, type Options } from '../gen/options';
 import { STYLE_LIST, type MapStyle } from '../render/styles';
 import { isMapStyle } from '../render/styles';
 import { TERRAIN_STYLE_LIST, styleTraits, type TerrainStyle } from '../render/terrainStyle';
 import { mountRenderControls, currentComposition, writeAppearanceControl, PRESET_OPTIONS } from './renderControls';
-import { withGroundVariant } from '../render/composition';
+import { withGroundVariant, HIDDEN_STYLE_IDS, GROUND_VARIANTS } from '../render/composition';
+import { showBrowserAdvice } from '../ui/browserAdvice';
 import { ruralSemanticLegend } from '../render/semanticLayer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
 import { applyAppearancePatch } from '../render/appearanceRecipe';
@@ -37,8 +42,8 @@ import { mountTerrainControls } from './terrainControls';
 import { batchUrbanSync, mountUrbanControls, type UrbanControls, type UrbanControlParts } from './urbanControls';
 import { mountStageChain, type StageChain } from './stageChain';
 import { stagesForAction, stageById, type StageDef, type StageFamily } from './stageRegistry';
-import { mountHeightmapSource, mountHeightmapFit } from './heightmapLibrary';
-import { mountSettingsPanel, refreshBackends, backendStatus, backendCaption } from './settingsPanel';
+import { mountHeightmapSource } from './heightmapLibrary';
+import { mountSettingsPanel, refreshBackends, backendStatus } from './settingsPanel';
 import { mountNeuralModelManager } from './neuralModelManager';
 import { mountDesktopModules } from './desktopModules';
 import { mountDesktopUpdates } from './desktopUpdates';
@@ -60,6 +65,7 @@ import { rerollSeed } from '../../../rust/bridge/generationSeed';
 import { mountCityCodeSharing } from './cityCodeSharing';
 import { mountV2TestHook } from './testHook';
 import { armAutosave, takeAutosave, scheduleAutosave, mountNewButton } from './autosave';
+showBrowserAdvice();
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]!));
@@ -68,7 +74,8 @@ registerMessages({'Cartographic maps':{en:'Cartographic maps',fr:'Cartes graphiq
 registerMessages({'Render3D · Multiscale':{en:'Render3D · Multiscale',fr:'Render3D · Multi-échelle'},'Render v2 - Satellite':{en:'Render v2 - Satellite',fr:'Render v2 - Satellite'},'Render v2 - Substrate':{en:'Render v2 - Substrate',fr:'Render v2 - Substrat'},'Render v2 - Moisture':{en:'Render v2 - Moisture',fr:'Render v2 - Humidité'},'Render v2 - Vegetation':{en:'Render v2 - Vegetation',fr:'Render v2 - Végétation'},'Render v2 - Snow / ice':{en:'Render v2 - Snow / ice',fr:'Render v2 - Neige / glace'}});
 registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Implanter et construire':{en:'Place and build',fr:'Implanter et construire'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redessiner la carte':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
 const icon = (id: IconId, size = 22): string => `<img class="v2-icon" src="${iconUrl(id) ?? ''}" alt="" width="${size}" height="${size}" aria-hidden="true">`;
-const renderStyles = [...TERRAIN_STYLE_LIST, { id: 'copernicus', label: 'Elevation · DEM', traits: styleTraits('copernicus') }];
+const hiddenVariants: readonly string[] = HIDDEN_STYLE_IDS.flatMap(look => GROUND_VARIANTS[look]);
+const renderStyles = [...TERRAIN_STYLE_LIST.filter(style => !hiddenVariants.includes(style.id)), { id: 'copernicus', label: 'Elevation · DEM', traits: styleTraits('copernicus') }];
 const renderStyleOptions = (): string => [['Cartographic maps',renderStyles.filter(style=>style.traits.family==='map')],['Terrain materials',renderStyles.filter(style=>style.traits.family==='material')],['Painted fantasy maps',renderStyles.filter(style=>style.traits.family==='brush')],['Diagnostics',renderStyles.filter(style=>style.traits.family==='diagnostic')]].map(([label,styles])=>`<optgroup data-render-label="${label}" label="${translate(String(label))}">${(styles as typeof renderStyles).map(style=>`<option value="${style.id}">${esc(style.label)}</option>`).join('')}</optgroup>`).join('');
 type Item = string | readonly [string, string];
 function options(items: readonly Item[]): string { return items.map(item => { const [value,label] = typeof item === 'string' ? [item,item] : item; return `<option value="${esc(value)}">${esc(label)}</option>`; }).join(''); }
@@ -77,6 +84,7 @@ const tri: Item[] = [['auto','Automatique'],['yes','Oui'],['no','Non']];
 const BIOME_LABELS: readonly Item[] = [['temperate','Campagne tempérée'],['forest','Forêt tempérée'],['desert','Désert & oasis'],['steppe','Steppe'],['tropical','Forêt tropicale'],['tundra','Toundra'],['underdark','Outreterre'],['underdark-caverns','Outreterre & cavernes']];
 const layerNames: Record<keyof ExportLayers,string> = { background:'Fond de carte', terrain:'Relief et courbes', water:'Hydrographie', landuse:'Végétation et cultures', city:'Bâtiments et terrains', streets:'Rues et ponts urbains', roads:'Routes régionales', labels:'Toponymes', decor:'Cadre et légende' };
 let settings: V2Settings = defaultSettings();
+applySceneClock(settings, DEFAULT_SCENE);
 let world: World | undefined;
 let pristine: World | undefined;
 /** Inspection can replace the display without discarding the completed project. */
@@ -173,15 +181,18 @@ if(localEdition){settings.generation='procedural';settings.runtime={...settings.
 setHTML($('#app'), `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>L’atelier des régions</p></div><span class="version">V2 · ALPHA</span>
-  <span class="header-divider"></span><span class="header-caption">Du relief à la dernière maison.</span>
-  <nav class="header-menu" id="header-menu" aria-label="Map tools"><div class="glass style-control"><span class="style-label">RENDU</span><select id="map-style" aria-label="Style de carte">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div><label class="glass inspector-mode"><input id="inspect-mode" type="checkbox"> Modifier villes, quartiers et bâtiments</label></nav>
-  <div class="header-tools"><span class="edition">${localEdition ? 'Édition locale' : 'Édition web'}</span><a class="science-link" href="./scientific/index.html" target="_blank" rel="noopener">L’atlas scientifique ↗</a><button id="hardware-open" title="Réglages, moteurs et activité">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Réglages</span></button><button id="import-open">Ouvrir</button><button id="export-open">Exporter ↗</button></div>
+  <div class="project-actions"><button id="import-open">Ouvrir</button><button id="export-open">Exporter ↗</button></div>
+  <div class="header-tools"><button id="run-chain" type="button" title="Générer toute la chaîne : relief, peuplements et villes" aria-label="Générer toute la chaîne : relief, peuplements et villes">${icon('family-settlements',22)}<span>Toute la chaîne</span></button><span class="edition">${localEdition ? 'Édition locale' : 'Édition web'}</span><button id="hardware-open" title="Réglages, moteurs et activité">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Réglages</span></button></div>
 </header>
+<section class="workbench-bar" aria-label="Scene and editing tools">
+  <div class="view-strip"><div class="style-control"><label class="strip-label" for="map-style">Appearance</label><select id="map-style" aria-label="Style de carte">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div><div id="scene-controls" class="scene-controls"></div></div>
+  <nav class="header-menu" id="header-menu" aria-label="Map tools"><span class="strip-label">Edit map</span><button id="edit-navigate" type="button" aria-pressed="true">Navigate</button><label class="inspector-mode"><input id="inspect-mode" type="checkbox">Buildings</label><div id="network-tool-slot"></div><button id="rivers-open" type="button" aria-pressed="false">Rivers</button><button id="labels-open" type="button" aria-pressed="false">Names & labels</button><span class="tool-spacer"></span><output id="active-tool" aria-live="polite">Navigate</output><button id="edit-done" type="button" hidden>Finish editing</button></nav>
+</section>
 <button class="mobile-toggle" id="mobile-toggle" aria-expanded="false" aria-controls="sidebar">☰ Atelier</button>
 <main class="workspace">
   <aside class="sidebar mobile-closed" id="sidebar" aria-label="Chaîne de génération">
     <div id="terrain-controls"></div>
-    <div class="sidebar-footer"><div class="footer-actions"><button class="primary generate" id="generate-region"><i class="art art-terrain" aria-hidden="true"></i><span id="generate-label">Créer le relief</span></button><button id="run-chain" title="Générer toute la chaîne : relief, peuplements et villes">Toute la chaîne</button></div><div class="footer-note"><span class="status-dot"></span><span id="footer-status" class="grow">Relief et eau, en un clic</span><button id="expert-open" class="quiet small">Recette JSON</button></div></div>
+    <div class="sidebar-footer"><div class="footer-actions"><button class="primary generate" id="generate-region"><i class="art art-terrain" aria-hidden="true"></i><span id="generate-label">Créer le relief</span></button><button id="relief-editor-open" type="button" aria-haspopup="dialog" aria-controls="relief-paint-dialog"><img src="${new URL('./assets/relief-paint-v1.webp',import.meta.url).href}" alt="" width="30" height="30"><span>Edit relief</span></button></div><div class="footer-note"><span class="status-dot"></span><span id="footer-status" class="grow">Relief et eau, en un clic</span><button id="expert-open" class="quiet small">Recette JSON</button></div></div>
   </aside>
   <div id="stage-staging" hidden>
     <div class="stage-field" data-control="widget:seed"><label class="label" for="seed">Graine de la région</label><div class="row seed-row"><input id="seed" data-option="seed" type="text" maxlength="200" aria-label="Graine de la région"><button id="random-seed" title="Nouvelle graine" aria-label="Nouvelle graine"><i class="art art-dice"></i></button></div><p class="hint" id="extent-hint"></p></div>
@@ -198,6 +209,7 @@ setHTML($('#app'), `
     <button id="terrain-only"></button><button id="region-only"></button><button id="heightmap-import-quick"></button>
   </div>
   <section class="map-area" aria-label="Carte interactive">
+    <aside id="editor-dock" class="editor-dock glass" hidden aria-labelledby="editor-title"><header><div><span class="eyebrow">Edit map</span><h2 id="editor-title">Edit map</h2></div><button id="editor-close" type="button" aria-label="Fermer">×</button></header><div id="editor-content"><div id="edit-buildings"><p class="hint">Select a town, district or building on the map to edit its properties.</p></div><div id="edit-roads" hidden></div><div id="edit-rivers" hidden></div><div id="edit-labels" hidden></div></div></aside>
     <div class="canvas-wrap" id="map"><canvas id="map-canvas" aria-label="Carte générée : glisser pour déplacer, molette pour zoomer"></canvas></div>
     <div class="empty-map" id="empty-map"><div class="serif">Terra incognita</div><p>Votre prochaine région commence ici.</p></div>
     <div class="map-compass" aria-hidden="true"><small>N</small><b>✧</b></div>
@@ -211,7 +223,7 @@ setHTML($('#app'), `
 <dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">Reprendre une région</span><h2>Ouvrir & combiner</h2></div><button data-close="import-dialog" aria-label="Fermer">×</button></div><p class="hint">Un projet contient la carte, les paramètres et les modifications. Une recette permet de retrouver la même région avec la même version du moteur.</p><div class="file-card"><h3>Projet ou recette Magna Urbis V2</h3><p class="hint">JSON complet ou graines + paramètres. Les grilles d’altitude sont conservées dans les projets.</p><input id="project-file" type="file" accept=".json,application/json" aria-label="Importer un projet ou une recette V2"></div><div class="file-card"><h3>Heightmap → territoire</h3><p class="hint">PNG, JPEG ou WebP en niveaux de gris, cadrés au carré. Ajustez l’altitude et le niveau de mer avant de créer le terrain. Le relief importé remplace le relief actuel.</p><input id="heightmap-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Importer une heightmap"><button id="clear-heightmap" class="quiet small">Retirer le relief importé</button><p class="hint" id="import-height-info">Aucune heightmap importée.</p></div><div class="dialog-actions"><button data-close="import-dialog">Fermer</button></div></dialog>
 <dialog id="export-dialog"><div class="dialog-head"><div><span class="eyebrow">Emporter votre région</span><h2>Exporter à votre façon</h2></div><button data-close="export-dialog" aria-label="Fermer">×</button></div><p class="hint">Une carte complète, un recadrage ou seulement les éléments utiles à votre table de jeu.</p><div class="control-grid"><div><label class="label" for="export-format">Format</label><select id="export-format"><option value="png">Image PNG</option><option value="svg">Carte vectorielle SVG</option><option value="project">Projet complet · JSON</option><option value="recipe">Graines + paramètres + modifications</option><option value="seed">Graine seule · JSON</option><option value="heightmap">Heightmap · PNG 8 bits</option></select></div><div><label class="label" for="export-style">Style</label><select id="export-style">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div></div><div id="export-map-options"><h3>Éléments à inclure</h3><div class="export-layers">${EXPORT_LAYER_NAMES.map(k=>`<label class="checkline"><input type="checkbox" data-layer="${k}" checked>${layerNames[k]}</label>`).join('')}</div><div class="control-grid"><div><label class="label" for="export-resolution">Bord le plus long</label><select id="export-resolution"><option value="1600">1 600 px · rapide</option><option value="3000" selected>3 000 px · standard</option><option value="4096">4 096 px · détaillé</option></select></div><label class="checkline"><input id="export-crop" type="checkbox" checked>Choisir la zone à exporter</label></div></div><p class="hint" id="export-note" style="margin-top:15px">Les exports visuels utilisent la carte actuelle, sans relancer la génération.</p><div class="dialog-actions"><button data-close="export-dialog">Annuler</button><button class="primary" id="export-go">Exporter</button></div></dialog>
 <dialog id="expert-dialog"><div class="dialog-head"><div><span class="eyebrow">La recette de la région</span><h2>Paramètres experts</h2></div><button data-close="expert-dialog" aria-label="Fermer">×</button></div><p class="hint">Paramètres globaux, réglages locaux par clé stable, plans de croissance et préférences de site. Les données du terrain importé sont conservées séparément.</p><label class="label" for="expert-json">Recette JSON</label><textarea id="expert-json" spellcheck="false"></textarea><p class="warning" id="expert-error" role="alert"></p><div class="dialog-actions"><button data-close="expert-dialog">Annuler</button><button class="primary" id="expert-apply">Appliquer la recette</button></div></dialog>
-<dialog id="hardware-dialog"><div class="dialog-head"><div><span class="eyebrow">L’atelier au travail</span><h2>Réglages & moteurs</h2></div><button data-close="hardware-dialog" aria-label="Fermer">×</button></div><p class="hint">Capacités détectées sur cet appareil. Le moteur effectivement utilisé est indiqué dans le journal de chaque génération.</p><div id="hardware-details"></div><h3>Journal de génération</h3><pre class="job-log" id="job-log">L’atelier est prêt.</pre><div class="dialog-actions"><button id="hardware-refresh">Actualiser les connexions</button><button data-close="hardware-dialog">Fermer</button></div></dialog>
+<dialog id="hardware-dialog"><div class="dialog-head"><div><span class="eyebrow">L’atelier au travail</span><h2>Réglages & moteurs</h2></div><button data-close="hardware-dialog" aria-label="Fermer">×</button></div><p class="hint">Choose the engine for each process. Available hardware and the last execution are shown separately.</p><details class="section preferences-section"><summary>Preferences & documentation</summary><div id="workbench-preferences" class="workbench-preferences"></div><a class="science-link" href="./scientific/index.html" target="_blank" rel="noopener">L’atlas scientifique ↗</a></details><div id="hardware-details"></div><details class="section"><summary>Journal de génération</summary><pre class="job-log" id="job-log">L’atelier est prêt.</pre></details><div class="dialog-actions"><button id="hardware-refresh">Actualiser les connexions</button><button data-close="hardware-dialog">Fermer</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>`);
 
 const canvas = $<HTMLCanvasElement>('#map-canvas');
@@ -221,24 +233,29 @@ const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minima
 });
 let city3d:V2Urban3d|undefined;
 let renderTimer:ReturnType<typeof setTimeout>|undefined,renderRevision=0;
+const sceneControls=mountSceneControls($('#scene-controls'),{getSettings:()=>settings,onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 insertHTML($('.style-control'),'beforeend','<span id="render-status" class="hint" role="status" aria-live="polite" hidden></span><div id="render-controls" hidden></div>');
 const renderControls=mountRenderControls($('#render-controls'),{getSettings:()=>settings,getWorld:()=>world,getStyleSelectors:()=>[$<HTMLSelectElement>('#map-style')],getTarget:()=>document.querySelector('#view3d')?.getAttribute('aria-pressed')==='true'?'view3d':'view2d',onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 async function refreshAppearance():Promise<void>{
+  sceneControls.sync();
   const revision=++renderRevision,appearanceStart=performance.now();
   renderControls.sync();
-  const status=$('#render-status');delete status.dataset.error;status.hidden=false;setText(status,getLanguage()==='fr'?'Préparation du rendu…':'Preparing the renderer…');
-  // Progress card (also visible over the 3D view) while the new render style or view is prepared; generation owns it when busy.
-  const fr=getLanguage()==='fr',card=$('#progress-card'),cancel=$<HTMLButtonElement>('#cancel-job'),step=(label:string,detail:string)=>{if(busy)return;card.hidden=false;cancel.hidden=true;setText($('#progress-label'),label);setText($('#progress-detail'),detail);setText($('#progress-time'),'');$<HTMLProgressElement>('#progress').removeAttribute('value');};
-  step(fr?'Changement du rendu…':'Changing the render…',fr?'Préparation du moteur de rendu':'Preparing the renderer');
+  const status=$('#render-status');delete status.dataset.error;status.hidden=false;
+  setText(status,getLanguage()==='fr'?'Chargement HD…':'HD loading…');
   try{
-    await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));await client.setAppearance(settings);
-    if(revision===renderRevision){
-      step(fr?'Dessin de la carte…':'Drawing the map…',fr?'Application du style à la carte':'Applying the style to the map');
-      syncDisplayWidgets();
-      if(city3d?.active){step(fr?'Mise à jour de la vue 3D…':'Updating the 3D view…',fr?'Sol et matériaux 3D':'3D ground and materials');await client.prepare3dBackground();}city3d?.refresh();if(city3d?.active)await city3d.prepare();renderControls.sync();
+    await client.setAppearance(settings);
+    if(revision!==renderRevision)return;
+    syncDisplayWidgets();
+    if(city3d?.active){
+      await client.prepare3dBackground();city3d.refresh();await city3d.prepare();
+      await client.waitFor3d(city3d);
+    }else{
+      await client.displaySettled();
     }
+    if(revision===renderRevision)renderControls.sync();
   }
-  catch(error){if(revision===renderRevision)reportAppearanceError(error);}finally{if(revision===renderRevision){if(status.dataset.error!=='true')status.hidden=true;if(!busy){card.hidden=true;}cancel.hidden=false;performance.measure('v2:appearance',{start:appearanceStart});}}
+  catch(error){if(revision===renderRevision)reportAppearanceError(error);}
+  finally{if(revision===renderRevision){if(status.dataset.error!=='true')status.hidden=true;performance.measure('v2:appearance',{start:appearanceStart});}}
 }
 function reportAppearanceError(error:unknown):void{
   const message=error instanceof Error?error.message:String(error);
@@ -253,6 +270,7 @@ setHTML($('#export-style'),renderStyleOptions());
 setHTML($('#map-style'),PRESET_OPTIONS.map(o=>`<option value="${o.value}"${o.value==='custom'?' disabled':''}>${esc(o.label)}</option>`).join(''));
 /** The top-bar preset and the export style read appearance.composition; the layer toggles are the shared render form (quick controls of the Map rows). */
 function syncDisplayWidgets():void{
+  sceneControls.sync();
   const recipe=currentComposition(settings,world??undefined);
   $<HTMLSelectElement>('#map-style').value=recipe.preset;$<HTMLSelectElement>('#export-style').value=recipe.ground.variant;
 }
@@ -269,13 +287,14 @@ $('#preview-close').onclick = async () => {
 $('#view3d').onclick=async()=>{
   window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'3d'}));
   if(!world){toast(getLanguage()==='fr'?'Créez d’abord le territoire.':'Create the terrain first.');return;}
-  if(city3d?.active){const mapView=city3d.toMapView();city3d.hide();if(mapView)client.viewer.setView(mapView);setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;return;}
+  if(city3d?.active){const mapView=city3d.toMapView();city3d.hide();client.set3dActive(false);if(mapView)client.viewer.setView(mapView);setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;editingTools.sync();return;}
   $<HTMLButtonElement>('#view3d').disabled=true;
   // The progress card stays until the 3D view has drawn a complete first frame (tiles ready, no pending job):
   // the view needs seconds after it is shown, and a vanished card looked like a freeze.
   const fr3d=getLanguage()==='fr',card3d=$('#progress-card'),cancel3d=$<HTMLButtonElement>('#cancel-job');
   const step3d=(detail:string)=>{if(busy)return;card3d.hidden=false;cancel3d.hidden=true;setText($('#progress-label'),fr3d?'Ouverture de la vue 3D…':'Opening the 3D view…');setText($('#progress-detail'),detail);setText($('#progress-time'),'');$<HTMLProgressElement>('#progress').removeAttribute('value');};
-  const open3dStart=performance.now();
+  const open3dStart=performance.now(),request3d=client.begin3dRequest();
+  client.set3dActive(true);
   try{
     step3d(fr3d?'Fond de carte':'Map ground');
     await client.prepare3dBackground();
@@ -283,17 +302,14 @@ $('#view3d').onclick=async()=>{
     if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),getBackgroundImage:()=>client.groundBackground(),getPhysicalGround:()=>client.physicalGround(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
       for(const settlement of world?.settlements??[]){const urban=townUrban(world!,settlement.key),index=urban?.buildings.findIndex(b=>(b as UrbanBuilding&{nativeId?:string}).nativeId===id)??-1;if(urban&&index>=0){showBuilding({settlement:settlement.key,index,building:urban.buildings[index]});break;}}
     }});}
-    await city3d.prepare();city3d.show();city3d.fromMapView(client.viewer.getView());performance.measure('v2:3d:shown',{start:open3dStart});setText($('#view3d'),'2D');$('#view3d').setAttribute('aria-pressed','true');$('#capture3d').hidden=false;
+    await city3d.prepare();city3d.show();city3d.fromMapView(client.viewer.getView());performance.measure('v2:3d:shown',{start:open3dStart});setText($('#view3d'),'2D');$('#view3d').setAttribute('aria-pressed','true');$('#capture3d').hidden=false;editingTools.sync();
     step3d(fr3d?'Relief, bâtiments et arbres':'Terrain, buildings and trees');
-    const view3d=city3d,until=performance.now()+90_000;
-    for(;;){
-      await new Promise(resolve=>setTimeout(resolve,200));
-      const lod=view3d.stats().lod as {tiles:number;ready:number;pending:number}|undefined;
-      if(!view3d.active||performance.now()>until||lod&&lod.tiles>0&&lod.ready>=lod.tiles&&lod.pending===0)break;
-      if(lod&&lod.tiles>0)step3d(`${fr3d?'Tuiles':'Tiles'} ${lod.ready}/${lod.tiles}`);
-    }
+    const view3d=city3d,status3d=$('#render-status');status3d.hidden=false;
+    setText(status3d,fr3d?'Chargement HD…':'HD loading…');
+    const coverageTimer=setInterval(()=>{if(request3d.has('first-covered-frame')&&!busy)card3d.hidden=true;},40);
+    try{await client.waitFor3d(view3d,request3d);}finally{clearInterval(coverageTimer);status3d.hidden=true;}
     performance.measure('v2:3d:tiles',{start:open3dStart});
-  }catch(error){toast(String(error),true);}finally{if(!busy)card3d.hidden=true;cancel3d.hidden=false;$<HTMLButtonElement>('#view3d').disabled=false;}
+  }catch(error){if(!city3d?.active)client.set3dActive(false);toast(String(error),true);}finally{if(!busy)card3d.hidden=true;cancel3d.hidden=false;$<HTMLButtonElement>('#view3d').disabled=false;}
 };
 $('#capture3d').onclick=async()=>{try{if(city3d?.active)download(await city3d.capture(),`magna-urbis-${settings.options.seed}.3d.png`);}catch(error){toast(String(error),true);}};
 const terrainControls=mountTerrainControls($('#terrain-controls'),{getSettings:()=>settings,onChange:()=>{touchRecipe();regionControls?.sync();syncUrbanBackend();},disabled:()=>busy,context:{getWorld:()=>world,onApply:()=>void generate('terrain')}});
@@ -304,8 +320,8 @@ const regionControls=mountRegionControls($('#region-controls'),{getSettings:()=>
 window.addEventListener('v2-edit-mode',event=>{if((event as CustomEvent<string>).detail!=='placement')pendingRegionPosition=undefined;});
 let inspectorForms:UrbanControls[]=[];
 /* The staged chain takes over the sidebar: the forms above are moved into their stage rows. */
-const backendBindings={localServer:()=>settings.runtime?.localServer??bootRuntime.localServer??'http://127.0.0.1:8791',pythonServer:()=>settings.runtime?.pythonServer??bootRuntime.pythonServer??'http://127.0.0.1:8793',log,getSettings:()=>settings,busy:()=>busy,onRuntimeChange:()=>{touchRecipe();terrainControls.sync();regionControls?.sync();syncUrbanBackend();scheduleChainSync();}};
-mountSettingsPanel($('#hardware-details'),backendBindings);
+const backendBindings={localServer:()=>settings.runtime?.localServer??bootRuntime.localServer??'http://127.0.0.1:8791',pythonServer:()=>settings.runtime?.pythonServer??bootRuntime.pythonServer??'http://127.0.0.1:8793',log,getSettings:()=>settings,getWorld:()=>world,busy:()=>busy,onRuntimeChange:()=>{touchRecipe();terrainControls.sync();regionControls?.sync();syncUrbanBackend();scheduleChainSync();}};
+const settingsPanel=mountSettingsPanel($('#hardware-details'),backendBindings);
 const desktopModulesHost=document.createElement('div');$('#hardware-details').after(desktopModulesHost);
 mountDesktopModules(desktopModulesHost,()=>void inspectHardware());
 mountDesktopUpdates($('.header-tools'),desktopModulesHost);
@@ -324,7 +340,7 @@ function runStage(stage:StageDef):void{
   if(stage.id==='map-naming'){void redrawNames();return;}
   const run=stage.run;
   if(run.action==='display'){void refreshAppearance();return;}
-  if(run.action==='mask'){terrainControls.sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click();return;}
+  if(run.action==='mask'){terrainControls.openEditor();return;}
   if(run.action==='town'){
     const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
     runCities(backend==='typescript'?undefined:run.townStage, stage.id);return;
@@ -347,7 +363,6 @@ const chain:StageChain=mountStageChain({
   heightmap:{
     source:host=>mountHeightmapSource(host,{getSettings:()=>settings,onLoaded:()=>{touchRecipe();terrainControls.sync();chain.sync();toast(getLanguage()==='fr'?'Heightmap chargée. Créez le relief pour l’utiliser.':'Heightmap loaded. Create the relief to use it.');},
       importFile:()=>$<HTMLButtonElement>('#terrain-import-heightmap').click(),importImage:()=>$<HTMLInputElement>('#heightmap-file').click(),onError:error=>toast(String(error),true)}),
-    fit:host=>mountHeightmapFit(host,{getSettings:()=>settings,onChange:()=>{touchRecipe();terrainControls.sync();}}),
   },
   onFamily:family=>{window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'family'}));setText($('#generate-label'),familyActions[family][0]);syncPlacesPanel(family);},
 });
@@ -356,7 +371,7 @@ const mapControls=mountMapControls(chain.body('map-naming'),chain.body('map-expo
   onNames:()=>{void redrawNames();},onExport:()=>dialog('#export-dialog'),
 });
 let labelBaseline:World|undefined;
-const labelEditor=mountMapLabelEditor(chain.body('map-naming'),{
+const labelEditor=mountMapLabelEditor($('#edit-labels'),{
   getWorld:()=>previewBase?undefined:world,getSettings:()=>settings,onChange:redrawEditedLabels,onNames:()=>{void redrawNames();},
 });
 labelEditor.sync();
@@ -366,13 +381,11 @@ function redrawEditedLabels():void{
   void redrawNames();
 }
 registerMessages({'Names & labels':{en:'Names & labels',fr:'Noms et étiquettes'}});
-insertHTML($('.style-control'),'beforeend','<button class="edit-open" id="labels-open" type="button">Names & labels</button>');
-$('#labels-open').onclick=()=>{selectTab('map');const body=chain.body('map-naming');const title=body.closest('.stage-row')?.querySelector<HTMLButtonElement>('.stage-title');if(title?.getAttribute('aria-expanded')!=='true')title?.click();body.scrollIntoView({block:'nearest'});};
-const riverEditorHost=document.createElement('div');riverEditorHost.id='river-editor';$('#family-region .family-general').append(riverEditorHost);
+const riverEditorHost=document.createElement('div');riverEditorHost.id='river-editor';$('#edit-rivers').append(riverEditorHost);
 const networkHost={map:$('#map'),getWorld:()=>previewBase?undefined:world,setWorld:applyDirectMapEdit,getView:()=>client.viewer.getView(),getSettings:()=>settings,busy:()=>busy,toast};
 const riverEditor=mountNetworkEditor({...networkHost,panel:riverEditorHost,tools:['rivers']});
-const roadEditor=mountNetworkEditor({...networkHost,panel:$('#family-settlements .family-general'),tools:['roads','draw'],getSettings:()=>settings});
-$('#header-menu').prepend($('.v2-network-shortcuts'));
+const roadEditor=mountNetworkEditor({...networkHost,panel:$('#edit-roads'),tools:['roads','draw'],getSettings:()=>settings});
+$('#network-tool-slot').append($('.v2-network-shortcuts'));
 const townMover=mountTownMoveEditor({map:$('#map'),toolbar:$('.v2-network-shortcuts'),getWorld:networkHost.getWorld,getView:networkHost.getView,busy:()=>busy,error:reportAppearanceError,
   commit:async(next,key,dx,dy)=>{
     const scope=settings.urban?.local?.[key];
@@ -417,7 +430,7 @@ const urbanParts:[string,UrbanControlParts][]=[
 // Model and service URLs (terrain schema) belong to Settings, next to the service checks.
 $('#hardware-dialog .dialog-actions').before($('#settings-endpoints-box'));
 const neuralModelHost = document.createElement('div');
-$('#hardware-dialog > h3').before(neuralModelHost);
+$('#hardware-dialog .dialog-actions').before(neuralModelHost);
 const neuralModelManager = mountNeuralModelManager(neuralModelHost, () => new URL(settings.runtime?.neuralAssets ?? './neural/', location.href).href);
 const modelShortcut = document.createElement('button'); modelShortcut.type = 'button'; modelShortcut.className = 'small'; modelShortcut.id = 'neural-models-open';
 setText(modelShortcut, 'Downloaded neural models'); chain.body('relief-neural-base').append(modelShortcut);
@@ -430,6 +443,7 @@ $('#places-collapse').onclick=()=>{const panel=$('#places-panel'),collapsed=pane
 function disposeInspectorForms():void{inspectorForms.forEach(form=>form.dispose());inspectorForms=[];}
 function syncUrbanBackend():void{const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';$('#urban-controls').hidden=backend==='typescript';}
 insertHTML($('#inspect-mode').parentElement!, 'beforeend', `<select id="inspect-target" aria-label="Niveau à inspecter" style="width:90px;padding:3px 5px;font-size:10px"><option value="auto">Auto</option><option value="quarter">Quartier</option><option value="parcel">Parcelle</option><option value="house">Maison</option></select>`);
+const editingTools=mountEditingTools({canEdit:()=>!!world&&!busy&&!previewBase&&!city3d?.active});
 // Layer toggles live in the Display stages (widget:layer-*).
 insertHTML($('#hardware-details'), 'afterend', `<details class="section"><summary>Adresses des services locaux</summary><p class="hint">L’édition installable lance Rust automatiquement. Python peut utiliser le service local existant. Les adresses restent sur votre machine.</p><label class="label" for="rust-server">Rust natif</label><input id="rust-server" type="url" value="${esc(bootRuntime.localServer)}"><label class="label" for="python-server">Python neuronal</label><input id="python-server" type="url" value="${esc(bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Enregistrer & vérifier</button><p class="hint">Configuration de Python et des modèles : <a href="./scientific/index.html#calcul" target="_blank" rel="noopener">lire l’atlas ↗</a></p></details>`);
 insertHTML($('#project-file'), 'beforebegin', `<label class="label" for="import-scope">Que reprendre dans ce fichier ?</label><select id="import-scope"><option value="complete">Le projet complet · carte + recette + modifications</option><option value="terrain">Le territoire · garder ma recette de villes</option><option value="urban">La recette des villes · garder mon territoire</option></select><p class="hint" style="margin:8px 0 14px">Les compositions conservent le terrain exact et réinitialisent les géométries urbaines : reconstruisez les lieux avec la recette choisie.</p>`);
@@ -472,14 +486,14 @@ function setBusy(value: boolean): void {
   if(value)window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'busy'}));
   labelEditorHostInert(value);
   busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
-  for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
-  for (const id of ['generate-region','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
+  for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector','#editor-content']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
+  for (const id of ['generate-region','run-chain','relief-editor-open','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option],#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
   document.querySelectorAll<HTMLButtonElement>('[data-relief],#inspector button').forEach(e=>e.disabled=value);
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
   terrainControls.sync();regionControls.sync();urbanControls.sync();inspectorForms.forEach(form=>form.sync());if(!value)syncUrbanBackend();
   $<HTMLButtonElement>('#cancel-job').disabled=false;
-  syncCitySelection();mapControls.sync();riverEditor.sync();roadEditor.sync();townMover.sync();
+  syncCitySelection();mapControls.sync();riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();
 }
 function labelEditorHostInert(value:boolean):void{const panel=document.querySelector<HTMLElement>('.map-label-editor');if(panel)panel.inert=value;}
 async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<void> {
@@ -521,7 +535,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
 function updateWorld(): void {
   if (!world) return;
   labelEditor.sync();
-  riverEditor.sync();roadEditor.sync();townMover.sync();
+  riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();
   mapControls.sync();
   disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
   const towns = (world.settlements ?? []).map(place=>({...place,name:settlementDisplayName(world!,place.key,settings)}));
@@ -554,7 +568,7 @@ function showInspector(key: string, focus = false): void {
   const urban = townUrban(world,key), local = settings.local[key] ?? {};
   const current = { ...settings.options, sprawl: settings.options.sprawl ?? 1, population: s.population, culture: s.culture, ...local } as Record<string, unknown>;
   $('#inspector').hidden = false;
-  setHTML($('#inspector'), `<button class="close" aria-label="Fermer l’inspecteur">×</button><span class="eyebrow">Réglages locaux</span><h2>${nameHTML(s.name,s.main?'Ville principale':s.key)}</h2><p class="hint">${reachedPopulation(key,s.population)?populationMarkup(key,s.population):`${numberHTML(s.population)} habitants`} · <span>${esc(s.archetype)}</span></p>${populationShortfallText(reachedPopulation(key,s.population),popFormat())?`<p class="warning">${esc(populationShortfallText(reachedPopulation(key,s.population),popFormat()))}</p>`:''}<div class="breadcrumbs">Territoire › ${nameHTML(s.name,s.key)}</div><p class="inspect-note">Les champs affichent les valeurs actuelles. Les étapes précédentes et les autres lieux sont conservés.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="10" max="5000000" value="${current.population}"></div><div><label class="label">Étalement</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Enceinte</label><select id="local-walls">${options([['none','Aucune'],['single','Simple'],['double','Double'],['auto','Automatique']])}</select><button class="primary" id="build-town">${urban?'Reconstruire ce lieu':'Construire ce lieu'}</button><p class="hint" style="margin-top:8px">${urban ? `${urban.quarters.length} quartiers · ${urban.parcels.length} parcelles · ${urban.buildings.length} bâtiments` : 'Implantation réservée · construction à la demande'}</p><details class="section"><summary>Étapes de cette ville</summary><ol class="pipeline-list"><li>Plan & emprise<span>Population, culture et site.</span></li><li>Quartiers & rues<span>Croissance, tracé, hiérarchie.</span></li><li>Îlots & parcelles<span>Foncier, accès et occupations.</span></li><li>Édifices & maisons<span>Typologies, enveloppes et monuments.</span></li></ol></details><details class="section"><summary>Recette locale complète</summary><p class="hint">Tous les paramètres urbains exposés : plan de croissance, monuments, défenses, préférences. Les paramètres de relief sont globaux.</p><textarea id="local-json" spellcheck="false">${esc(JSON.stringify(local,null,2))}</textarea><button id="local-apply" class="small">Appliquer</button><button id="local-reset" class="quiet small">Rétablir les réglages par défaut</button></details><div class="section"><label class="checkline"><input type="checkbox" id="inspect-house" ${$<HTMLInputElement>('#inspect-mode').checked?'checked':''}>Choisir une maison sur la carte</label><p class="hint">Zoomez, puis cliquez sur une emprise de bâtiment pour éditer son toit, sa hauteur ou sa géométrie.</p></div><div id="building-inspector"></div>`);
+  setHTML($('#inspector'), `<button class="close" aria-label="Fermer l’inspecteur">×</button><span class="eyebrow">Réglages locaux</span><h2>${nameHTML(s.name,s.main?'Ville principale':s.key)}</h2><p class="hint">${reachedPopulation(key,s.population)?populationMarkup(key,s.population):`${numberHTML(s.population)} habitants`} · <span>${esc(s.archetype)}</span></p>${populationShortfallText(reachedPopulation(key,s.population),popFormat())?`<p class="warning">${esc(populationShortfallText(reachedPopulation(key,s.population),popFormat()))}</p>`:''}<div class="breadcrumbs">Territoire › ${nameHTML(s.name,s.key)}</div><p class="inspect-note">Les champs affichent les valeurs actuelles. Les étapes précédentes et les autres lieux sont conservés.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="10" max="5000000" value="${current.population}"></div><div><label class="label">Étalement</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Enceinte</label><select id="local-walls">${options([['none','Aucune'],['single','Simple'],['double','Double'],['auto','Automatique']])}</select><button class="primary" id="build-town">${urban?'Reconstruire ce lieu':'Construire ce lieu'}</button><p class="hint" style="margin-top:8px">${urban ? `${urban.quarters.length} quartiers · ${urban.parcels.length} parcelles · ${urban.buildings.length} bâtiments` : 'Implantation réservée · construction à la demande'}</p><details class="section"><summary>Étapes de cette ville</summary><ol class="pipeline-list"><li>Plan & emprise<span>Population, culture et site.</span></li><li>Quartiers & rues<span>Croissance, tracé, hiérarchie.</span></li><li>Îlots & parcelles<span>Foncier, accès et occupations.</span></li><li>Édifices & maisons<span>Typologies, enveloppes et monuments.</span></li></ol></details><details class="section"><summary>Recette locale complète</summary><p class="hint">Tous les paramètres urbains exposés : plan de croissance, monuments, défenses, préférences. Les paramètres de relief sont globaux.</p><textarea id="local-json" spellcheck="false">${esc(JSON.stringify(local,null,2))}</textarea><button id="local-apply" class="small">Appliquer</button><button id="local-reset" class="quiet small">Rétablir les réglages par défaut</button></details><div id="building-inspector"></div>`);
   $('#inspector .close').onclick = ()=>{ $('#inspector').hidden=true; };
   for (const name of ['culture','population','sprawl','walls']) { const input = $<HTMLInputElement|HTMLSelectElement>(`#local-${name}`); input.value = String(current[name] ?? ''); input.onchange=()=>{ const next = { ...settings.local[key] } as Record<string,unknown>; if (input.value==='') delete next[name]; else next[name]=name==='population'||name==='sprawl'?Number(input.value):input.value; settings.local[key]=next; touchRecipe(); }; }
   $('#build-town').onclick=()=>void generate('town',key);
@@ -582,7 +596,6 @@ function showInspector(key: string, focus = false): void {
   }catch(e){toast(String(e),true);}});
   $('#local-apply').onclick=()=>{ try { const patch=JSON.parse($<HTMLTextAreaElement>('#local-json').value); const candidate={...settings,local:{...settings.local,[key]:patch}}; validateSettings(candidate); settings=candidate; touchRecipe(); toast('Recette locale enregistrée. Reconstruisez ce lieu pour l’appliquer.'); }catch(e){toast(String(e),true);} };
   $('#local-reset').onclick=()=>{delete settings.local[key];touchRecipe();showInspector(key);};
-  $<HTMLInputElement>('#inspect-house').onchange=e=>{$<HTMLInputElement>('#inspect-mode').checked=(e.target as HTMLInputElement).checked;};
   if (focus) client.viewer.setView({cx:s.center.x,cy:s.center.y,scale:Math.min(3,Math.min($('#map').clientHeight,$('#map').clientWidth)/Math.max(600,s.radius*3))});
 }
 function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
@@ -663,7 +676,7 @@ document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').f
 }));
 $('#random-seed').onclick=()=>{migrateUrbanSeeds(settings);settings.options.seed=Array.from(crypto.getRandomValues(new Uint32Array(2)),n=>n.toString(36)).join('-');mods=[];touchRecipe();syncControls();};
 $<HTMLInputElement>('#town-count').onchange=e=>{settings.settlementCount=Number((e.target as HTMLInputElement).value);if(settings.region?.placement){delete settings.region.placement.counts;settings.region.placement.mode='counts';}touchRecipe();regionControls.sync();};
-$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
+$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#relief-editor-open').onclick=()=>terrainControls.openEditor();$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
 $('#cancel-job').onclick=()=>{cancelled=true;client.cancel();const local=settings.runtime?.backend==='native'||settings.runtime?.source==='neural-python'||settings.urban?.backend==='native';const message=local?'Attente annulée. La carte précédente est conservée ; le service local peut terminer son calcul en arrière-plan.':'Calcul annulé. La carte précédente est conservée.';log(message);setBusy(false);toast(message);};
 $('#zoom-in').onclick=()=>client.viewer.zoomBy(1.5);$('#zoom-out').onclick=()=>client.viewer.zoomBy(1/1.5);$('#fit-map').onclick=()=>client.viewer.fit();
 $<HTMLSelectElement>('#map-style').onchange=e=>writeRecipe('preset',(e.target as HTMLSelectElement).value);
@@ -763,14 +776,15 @@ $('#export-go').onclick=async()=>{
   }catch(e){toast(String(e),true);}finally{$<HTMLButtonElement>('#export-go').disabled=false;}
 };
 async function inspectHardware():Promise<void>{
-  try{const status=await refreshBackends(backendBindings);setUserText($('#hardware-caption'),backendCaption(status),'Réglages');chain.sync();}
+  settingsPanel.render();
+  try{await refreshBackends(backendBindings);chain.sync();}
   catch(e){log(String(e));}
 }
 $('#hardware-open').onclick=()=>{dialog('#hardware-dialog');void inspectHardware();};$('#hardware-refresh').onclick=()=>void inspectHardware();
 $('#services-apply').onclick=()=>{try{const localServer=loopbackServer($<HTMLInputElement>('#rust-server').value),pythonServer=loopbackServer($<HTMLInputElement>('#python-server').value);settings.runtime={compute:'auto',backend:'rust',source:'procedural',...settings.runtime,localServer,pythonServer};connectLocal=true;touchRecipe();syncControls();void inspectHardware();}catch(e){toast(String(e),true);}};
 window.addEventListener('beforeunload',()=>{clearTimeout(renderTimer);renderControls.dispose();city3d?.dispose();terrainControls.dispose();urbanControls.dispose();regionControls.dispose();neuralModelManager.dispose();disposeInspectorForms();client.destroy();});
 registerMessages({'Units':{en:'Units',fr:'Unités'},'Metric (m / km)':{en:'Metric (m / km)',fr:'Métrique (m / km)'},'Imperial (ft / mi)':{en:'Imperial (ft / mi)',fr:'Impérial (ft / mi)'},'Yards (yd / mi)':{en:'Yards (yd / mi)',fr:'Yards (yd / mi)'}});
-insertHTML($('.header-tools'),'afterbegin',`<label class="language-control"><span class="sr-only">Language</span><select id="language-select" aria-label="Language">${LANGUAGES.map(item=>`<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><label class="language-control"><span class="sr-only">Units</span><select id="units-select" aria-label="Units"><option value="m">Metric (m / km)</option><option value="ft">Imperial (ft / mi)</option><option value="yd">Yards (yd / mi)</option></select></label>`);
+insertHTML($('#workbench-preferences'),'afterbegin',`<label class="language-control"><span>Language</span><select id="language-select" aria-label="Language">${LANGUAGES.map(item=>`<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><label class="language-control"><span>Units</span><select id="units-select" aria-label="Units"><option value="m">Metric (m / km)</option><option value="ft">Imperial (ft / mi)</option><option value="yd">Yards (yd / mi)</option></select></label>`);
 $<HTMLSelectElement>('#language-select').onchange=event=>setLanguage((event.target as HTMLSelectElement).value as Language);
 $<HTMLSelectElement>('#units-select').value=getDistanceUnit();
 $<HTMLSelectElement>('#units-select').onchange=event=>setDistanceUnit((event.target as HTMLSelectElement).value as DistanceUnit);
@@ -820,6 +834,7 @@ await cityCodeSharing.restoreFromLocation();
   }
   armAutosave(() => ({ settings, mods, view: world ? client.viewer.getView() : undefined, ui: { tab: currentTab, mode3d: !!city3d?.active, camera: city3d?.active ? city3d.getCamera() : undefined } }));
   mountNewButton($('#import-open'));
+  $('#export-open').before($('#city-code-open'));
 }
 void inspectHardware();
 // Keep source, dimensions and coasts editable before the first generation.

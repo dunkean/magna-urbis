@@ -79,6 +79,13 @@ const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
   topographic: { blocks: false, ground: 'topographic', contours: true, vegetation: 'none', rural: 'outlines', urban: 'off', depth: 'readable', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places', 'water', 'nature', 'pins'), density: 'high' }) },
   satellite: { blocks: false, ground: 'satellite', contours: false, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'natural', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans', halo: 'strong' }) },
 };
+/** Styles kept in the code but removed from every selector until they are tuned: the single switch. */
+export const HIDDEN_STYLE_IDS: readonly StyleId[] = ['illustration'];
+export const isHiddenPreset = (id: PresetId): boolean => (HIDDEN_STYLE_IDS as readonly string[]).includes(id);
+/** A saved recipe that asks for a hidden style falls back to the default preset. */
+export function withoutHiddenStyle(recipe: CompositionRecipe | undefined): CompositionRecipe | undefined {
+  return recipe && (HIDDEN_STYLE_IDS.includes(recipe.ground.look) || isHiddenPreset(recipe.preset as PresetId)) ? presetComposition('parchment') : recipe;
+}
 /** A fresh recipe filled by a preset. */
 export function presetComposition(id: PresetId): CompositionRecipe {
   const base = id === 'satellite-light' ? 'satellite' : id === 'parchment-light' ? 'parchment' : id;
@@ -236,5 +243,4 @@ export function validateComposition(value: unknown): asserts value is Compositio
     if(!record(text.levels))throw new Error('appearance.composition.text.levels: expected an object.');
     for(const [key,level] of Object.entries(text.levels))if(!(NAME_LEVELS as readonly string[]).includes(key)||typeof level!=='number'||!Number.isFinite(level)||level<0||level>100)throw new Error('appearance.composition.text.levels: expected values in 0–100.');
   }
-
 }

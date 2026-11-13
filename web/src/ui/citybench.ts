@@ -21,7 +21,7 @@ import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
 import { CITY_LOD_OFF } from '../render/cityCanvas';
-import { cityContourPaths, type CityContourPaths } from '../render/cityContours';
+import { cityContourPaths, cityContourPathsReady, type CityContourPaths } from '../render/cityContours';
 import { renderRustTerrain, terrainContourWidths } from '../../../rust/bridge/terrainRender';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { isTerrainStyle, styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
@@ -299,6 +299,8 @@ async function drawBackground(d: Decor): Promise<void> {
   const renderSettings = { ...settings, v2Season: r.ground.season, v2Calendar: r.ground.calendar, forest };
   const painting = fantasyStyle ? prepareFantasyTerrain(t, fantasyStyle, renderSettings, fantasyOptions) : undefined;
   const fantasyRaster = painting ? await prepareFantasyRaster(painting, settlements.landuse) : undefined;
+  // Contours come from the contour worker: wait for them before the ticket check, as the other inputs.
+  const contourPaths = r.ground.contours && r.ground.layers.relief ? await cityContourPathsReady(t, relief, 2048 / t.width, false) : undefined;
   if (ticket !== backgroundTicket || decor !== d) return;
   // The key is retained only by the call that applies it: retained before the await, a newer call with the same key
   // returned early while this one was superseded, and the look was never applied (v7: "satellite" shots drawn in parchment).
@@ -307,7 +309,6 @@ async function drawBackground(d: Decor): Promise<void> {
   if(c.ambience==='night' && r.ground.traits.family==='material')scene.svg=moonlightSvg(scene.svg,'city-ground-night');
   // The rural land use and the contours are vector layers painted per 3D tile (drapedGround): baked into this 2048 px
   // snapshot they were magnified into pixel staircases on every close 3D view.
-  const contourPaths = r.ground.contours && r.ground.layers.relief ? cityContourPaths(t, relief, 2048 / t.width) : undefined;
   drapedGround = { key, contours: contourPaths && { thin: new Path2D(contourPaths.thin), index: new Path2D(contourPaths.index), color: terrainStyle(c.variant, r.palette.colors).palette.contour } };
   backgroundSnapshot = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 ${t.width} ${t.width}">${scene.svg}</svg>`)}`;
   if (groundRenderer && !r.ground.traits.fantasy) {

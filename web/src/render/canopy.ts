@@ -12,7 +12,7 @@ export type CanopyKind = 'forest' | 'orchard' | 'conifer';
 /** A filled shape, or with `line` a closed ink contour of that width (glyph units). */
 interface LeafShape { points: Vec2[]; fill: string; alpha: number; line?: number; /** Polyline: the contour stays open. */ open?: boolean }
 export const CANOPY_MARGIN = 12;
-const SPRITE_BYTES = 32 * 1024 * 1024;  // broadleaf, conifer and orchard atlases at 4x
+const SPRITE_BYTES = 48 * 1024 * 1024;  // broadleaf, conifer, mixed and orchard atlases at 4x
 
 function mix(a: string, b: string, t: number): string {
   if (!/^#[\da-f]{6}$/i.test(a) || !/^#[\da-f]{6}$/i.test(b)) return a;
@@ -233,12 +233,17 @@ export class CanvasCanopy {
   draw(ctx: CanvasRenderingContext2D, marks: Mark[], kind: CanopyKind, scale: number, dpr: number, conifer?: (m: Mark) => boolean): void {
     if (!marks.length) return;
     // Engraved sprites stay in the atlas (at most 4 texels per metre): they are bitmaps, not paths.
-    const resolution = Math.min(this.engraved ? 4 : Infinity, Math.max(1, 2 ** Math.ceil(Math.log2(Math.max(1, scale * dpr)))));
+    const resolution = this.resolutionFor(scale, dpr);
     if (kind === 'forest' && conifer) {
-      const needles = this.atlas('conifer', resolution), leaves = this.atlas('forest', resolution);
-      for (const m of marks) {
-        const k = conifer(m) ? 'conifer' : 'forest';
-        this.stamp(ctx, m, k, k === 'conifer' ? needles : leaves, resolution);
+      // One atlas for both crowns (conifers in the lower half): a mixed stand stays one image source, one GPU sprite batch.
+      const mixed = this.mixedAtlas(resolution);
+      if (mixed) { for (const m of marks) { const c = conifer(m); this.stamp(ctx, m, c ? 'conifer' : 'forest', mixed, resolution, c ? 12 : 0); } }
+      else {
+        const needles = this.atlas('conifer', resolution), leaves = this.atlas('forest', resolution);
+        for (const m of marks) {
+          const k = conifer(m) ? 'conifer' : 'forest';
+          this.stamp(ctx, m, k, k === 'conifer' ? needles : leaves, resolution);
+        }
       }
       ctx.globalAlpha = 1; return;
     }
@@ -247,15 +252,52 @@ export class CanvasCanopy {
     ctx.globalAlpha = 1;
   }
 
-  private stamp(ctx: CanvasRenderingContext2D, m: Mark, kind: CanopyKind, atlas: { image: CanvasImageSource } | undefined, resolution: number): void {
+  /** Atlas texels per metre `draw` uses at this scale. */
+  resolutionFor(scale: number, dpr: number): number {
+    return Math.min(this.engraved ? 4 : Infinity, Math.max(1, 2 ** Math.ceil(Math.log2(Math.max(1, scale * dpr)))));
+  }
+  /** What `draw` stamps for `marks`, as data: the atlas and 8 floats per mark (sx, sy, sw, sh, dx, dy, dw, dh), same
+   * order, alpha 1. Undefined where `draw` paints vector glyphs instead (no atlas at this resolution). */
+  spriteData(marks: readonly Mark[], kind: CanopyKind, scale: number, dpr: number, conifer?: (m: Mark) => boolean): { image: CanvasImageSource; data: Float32Array } | undefined {
+    const resolution = this.resolutionFor(scale, dpr), mixed = kind === 'forest' && !!conifer;
+    const atlas = mixed ? this.mixedAtlas(resolution) : this.atlas(kind, resolution);
+    if (!atlas) return undefined;
+    const cell = 20 * resolution, data = new Float32Array(marks.length * 8);
+    for (let i = 0; i < marks.length; i++) {
+      const m = marks[i], { variant, tone } = canopyAppearance(this.seed, m), o = i * 8;
+      data[o] = variant * cell; data[o + 1] = (tone + (mixed && conifer!(m) ? 12 : 0)) * cell; data[o + 2] = cell; data[o + 3] = cell;
+      data[o + 4] = m.x - 10 * m.r; data[o + 5] = m.y - 10 * m.r; data[o + 6] = 20 * m.r; data[o + 7] = 20 * m.r;
+    }
+    return { image: atlas.image, data };
+  }
+
+  private stamp(ctx: CanvasRenderingContext2D, m: Mark, kind: CanopyKind, atlas: { image: CanvasImageSource } | undefined, resolution: number, row = 0): void {
     const { variant, tone } = canopyAppearance(this.seed, m), cell = 20 * resolution;
     if (atlas) {
       ctx.globalAlpha = 1;
-      ctx.drawImage(atlas.image, variant * cell, tone * cell, cell, cell, m.x - 10 * m.r, m.y - 10 * m.r, 20 * m.r, 20 * m.r);
+      ctx.drawImage(atlas.image, variant * cell, (tone + row) * cell, cell, cell, m.x - 10 * m.r, m.y - 10 * m.r, 20 * m.r, 20 * m.r);
     } else {
       ctx.save(); ctx.translate(m.x, m.y); ctx.scale(m.r, m.r);
       this.paint(ctx, this.glyph(kind, variant, tone)); ctx.restore();
     }
+  }
+
+  /** Broadleaf atlas over the conifer atlas, rows 0-11 and 12-23; undefined where either is. */
+  private mixedAtlas(resolution: number): { image: CanvasImageSource; bytes: number } | undefined {
+    const key = `mixed:${resolution}`, cell = 20 * resolution;
+    let atlas = this.cache.get(key);
+    if (atlas) { this.cache.delete(key); this.cache.set(key, atlas); return atlas; }
+    const leaves = this.atlas('forest', resolution), needles = this.atlas('conifer', resolution);
+    if (!leaves || !needles) return undefined;
+    const width = 24 * cell, height = 24 * cell, canvas = this.makeCanvas(width, height), cx = canvas?.getContext('2d');
+    if (!canvas || !cx) return undefined;
+    cx.drawImage(leaves.image, 0, 0); cx.drawImage(needles.image, 0, 12 * cell);
+    atlas = { image: canvas as unknown as CanvasImageSource, bytes: width * height * 4 };
+    while (this.bytes + atlas.bytes > SPRITE_BYTES && this.cache.size) {
+      const first = this.cache.keys().next().value!; this.bytes -= this.cache.get(first)!.bytes; this.cache.delete(first);
+    }
+    this.cache.set(key, atlas); this.bytes += atlas.bytes;
+    return atlas;
   }
 
   private atlas(kind: CanopyKind, resolution: number): { image: CanvasImageSource; bytes: number } | undefined {

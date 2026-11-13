@@ -1,5 +1,6 @@
 import { displayQualityFor } from '../render/displayQuality';
 import { FramePreparation } from './framePreparation';
+import { projectedTexturePixels } from './terrain3dTextureSize';
 import { waterSeasonUniforms } from '../render/seasonPalette';
 import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
@@ -24,7 +25,7 @@ import { reportRenderStats } from '../render/renderMode';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import type { BuildingVector, Building3dVisual, Building3dScene } from '../render/urbanBuildingGeometry';
 import type { BuildingFrame } from './urbanBuilding3d';
-import { withBuildingOccupation } from './forestOccupation';
+import { occupationMergeSlot, withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
@@ -75,6 +76,11 @@ export interface Terrain3dOptions {
   fastMapShader?: boolean;
   /** Synchronous city cartography painting shares the frame budget with terrain meshes. */
   tileJobsPerFrame?: number;
+  /** Tile jobs in flight at once (default 2). Most of a drape tile now waits on workers, so more can overlap. */
+  tileJobsConcurrent?: number;
+  /** Off-thread building merge of the forest occupation (V2: the display-preparation worker). Without it, or when it
+   * fails, the merge runs synchronously as before; with it, the unmerged occupation shows until the merge lands. */
+  mergeOccupation?: (source: ForestOccupation, scene: Building3dScene) => Promise<ForestOccupation | undefined>;
   /** Set by terrain3dRenderer.ts when the view draws into its own canvas laid over the owner's (a backend
    * switch): the owner's element, which keeps receiving the input and carries the status attributes. */
   element?: HTMLElement;
@@ -687,6 +693,8 @@ export class Terrain3d {
   private mergedOccupation?: ForestOccupation;
   private mergedOccupationSource?: ForestOccupation;
   private mergedOccupationScene?: Building3dScene;
+  /** Off-thread occupation merges in flight (counted as pending tile work). */
+  private occupationMerges = 0;
   private indices!: WebGLBuffer;
   private seams!: WebGLBuffer;
   private clippedIndices = new Map<string, { buffer: WebGLBuffer; count: number }>();
@@ -864,13 +872,13 @@ export class Terrain3d {
    * ground material (the projected map, quick to compile), stands in. */
   private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
     const forest = !!this.forest;
-    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes, uNaturalWater: +(this.lookSettings.waterLook==='natural'),
+    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes,
       uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank) };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(glLandDetailUnit(this.gl) === undefined ? withoutLandDetail(fragmentShader) : fragmentShader, constants)], wait);
     const target = variant(v, false);
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGround = target;
-    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uNaturalWater: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
+    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
     if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
     // A material transition uses the lightweight preview, without an old
     // forest/material variant that may be costly or expect different inputs.
@@ -956,10 +964,10 @@ export class Terrain3d {
     if(settings?.renderV2 && !previous?.renderV2 && !this.textureSource){
       this.deleteTexture(this.material);this.material=this.uploadTexture(new Uint8Array([0,0,0,0]));
     }
-    if (previous?.displacement !== settings?.displacement || previous?.seed !== settings?.seed
-      || previous?.sourceCell !== settings?.sourceCell
-      || previous?.climate.temperature !== settings?.climate.temperature
-      || previous?.climate.precipitation !== settings?.climate.precipitation) this.clearPatches();
+    if (!!previous?.displacement !== !!settings?.displacement || settings?.displacement && (previous?.seed !== settings.seed
+      || previous?.sourceCell !== settings.sourceCell
+      || previous?.climate.temperature !== settings.climate.temperature
+      || previous?.climate.precipitation !== settings.climate.precipitation)) this.clearPatches();
     this.limitCamera();
     this.request();
   }
@@ -989,8 +997,18 @@ export class Terrain3d {
     this.forestSettings = settings ?? { seed: 0, climate: { temperature: 18, precipitation: 1000 }, lighting: DEFAULT_TERRAIN_LIGHTING };
     this.forestField = field; this.forestOccupation = occupation;
     if (this.mergedOccupationSource !== occupation || this.mergedOccupationScene !== this.buildingScene) {
-      this.mergedOccupationSource = occupation; this.mergedOccupationScene = this.buildingScene;
-      this.mergedOccupation = withBuildingOccupation(occupation, this.buildingScene);
+      const source = occupation, scene = this.buildingScene, merge = this.options.mergeOccupation;
+      this.mergedOccupationSource = source; this.mergedOccupationScene = scene;
+      const buildings = scene?.occupationBuildings ?? scene?.buildings;
+      if (!merge || !source || !scene || !buildings?.length || occupationMergeSlot(source, scene).value) this.mergedOccupation = withBuildingOccupation(source, scene);
+      else {
+        // The merge of a whole town took ~0.5 s on the page at opening (an average machine: seconds): off-thread now.
+        this.mergedOccupation = source; this.occupationMerges++;
+        const current = (): boolean => !this.disposed && this.mergedOccupationSource === source && this.mergedOccupationScene === scene;
+        void merge(source, scene).catch(() => current() ? withBuildingOccupation(source, scene) : undefined).then(result => {
+          if (current() && result) { this.mergedOccupation = result; this.setForest(this.forestField, this.forestOccupation); }
+        }).finally(() => { this.occupationMerges--; this.request(); });
+      }
     }
     occupation = this.mergedOccupation;
     if (field !== this.forest?.field) {
@@ -1042,6 +1060,7 @@ export class Terrain3d {
   protected contextLost(): boolean { return this.gl.isContextLost(); }
   setTileLoader(loader: ((tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>) | undefined, requireHeights = false): void {
     if (this.requireHeights !== requireHeights) { this.requireHeights = requireHeights; this.clearPatches(); }
+    if (this.tileLoader === loader) return;
     this.tileLoader = loader; this.invalidateTiles();
   }
   /** Repaint the ground textures: all of them, the tiles overlapping a world `region`, or one tile by its key.
@@ -1055,10 +1074,8 @@ export class Terrain3d {
   private applyStaleTiles(): void {
     const stale = this.staleTiles; if (!stale) return;
     this.staleTiles = undefined;
-    if (stale === 'all') {
-      ++this.epoch;
-      this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
-    }
+    // A material revision cancels tile work through patch.revision below. Geometry jobs,
+    // height grids and tree placement belong to the surface epoch, which stays intact.
     // Without a loader nothing would replace them: the whole-map material takes over at once.
     const drop = !this.tileLoader;
     for (const patch of this.patches.values()) {
@@ -1074,7 +1091,12 @@ export class Terrain3d {
       }
     }
   }
-  getLodInfo(): typeof this.lod { return { ...this.lod, pending: this.jobs.size + this.preparation.pending + (this.staleTiles ? 1 : 0) }; }
+  getLodInfo(): typeof this.lod & { covered: boolean } {
+    const missing = !!this.tileLoader && this.desired.some(p => p.tile.level > 0 && (p.status === 'idle' || p.status === 'loading' || p.preview && !this.frameInteracting));
+    const covered = this.active && this.lod.tiles > 0 && this.displayedPieces.length > 0
+      && this.displayedPieces.every(piece => !!(piece.source as RenderPiece).patch.vao);
+    return { ...this.lod, covered, pending: this.jobs.size + this.preparation.pending + Number(missing) + Number(!!this.staleTiles) + this.occupationMerges };
+  }
 
   private clearPatches(): void {
     ++this.epoch;
@@ -1427,11 +1449,13 @@ export class Terrain3d {
     const queue = this.requireHeights ? [...new Set([...this.geometryNeeded, ...this.desired])] : this.desired;
     let started = 0;
     for (const patch of queue) {
-      if (this.jobs.size >= 2 || started >= (this.options.tileJobsPerFrame ?? 2)) break;
+      if (this.jobs.size >= (this.options.tileJobsConcurrent ?? 2) || started >= (this.options.tileJobsPerFrame ?? 2)) break;
       if (patch.tile.level === 0) continue;
       const preview = (this.useMapShader || !!this.lookSettings.paperMap) && this.frameInteracting && !this.requireHeights;
+      const footprint = patch.tile.width * this.frameGeometry().focal / Math.max(this.camera.distance, 1);
+      const pixels = projectedTexturePixels(TILE_PIXELS, footprint, this.dpr(), this.captureMode || this.requireHeights);
       // A moving preview never displaces a completed full tile.
-      if (patch.status === 'ready' && (patch.preview && !preview || this.captureMode && !patch.exact)) patch.status = 'idle';
+      if (patch.status === 'ready' && (patch.preview && !preview || this.captureMode && !patch.exact || !preview && (patch.texturePixels ?? 0) < pixels)) patch.status = 'idle';
       if (patch.status !== 'idle') continue;
       const job = {}, epoch = this.epoch, revision = patch.revision, loader = this.tileLoader, exact = this.captureMode;
       const current = (): boolean => epoch === this.epoch && revision === patch.revision && !this.disposed && this.patches.get(patch.tile.key) === patch;
@@ -1440,8 +1464,6 @@ export class Terrain3d {
       // In its own task: a synchronous tile paint must not hold back the frame that asked for it.
       void new Promise<void>(resolve => setTimeout(resolve)).then(() => {
         if (epoch !== this.epoch || revision !== patch.revision || this.disposed) throw new Error('Tuile abandonnée.');
-        const far = patch.tile.width * this.frameGeometry().focal / Math.max(this.camera.distance, 1) < 384;
-        const pixels = !exact && (this.useMapShader || this.lookSettings.paperMap) && far && (preview || displayQualityFor(true) === 'light') ? 256 : TILE_PIXELS;
         return loader({ ...patch.tile, pixels, preview, exact,
           prepare: work => this.preparation.run(work, current,
             () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y)) });

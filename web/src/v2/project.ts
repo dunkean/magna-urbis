@@ -10,6 +10,7 @@ import { effectiveTerrainSettings } from './terrainSettings';
 import { sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
 import { projectJsonChunks } from './projectJson';
 import { validateAppearance } from './appearance';
+import { validateSceneClock } from './sceneClock';
 import { NAME_FAMILIES } from '../gen/names/types';
 import { TOPONYM_PROFILES } from '../gen/names/profiles';
 import { URBAN_SEED_STAGES } from './urbanSeeds';
@@ -94,6 +95,7 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     finite(physicalWidth, 'étendue TypeScript', capability.minWidth, capability.maxWidth);
   } else sourceDefinition(effectiveTerrainSettings(physicalSettings, physicalWidth));
   if (value.appearance !== undefined) validateAppearance(value.appearance);
+  if (value.scene !== undefined) validateSceneClock(value.scene);
   if (value.naming !== undefined) {
     if (!isRecord(value.naming)) throw new Error('Nommage invalide.');
     checkEnum(value.naming.mode, ['cultural', 'localized'], 'mode des toponymes');

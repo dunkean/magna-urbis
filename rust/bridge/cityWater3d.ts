@@ -25,11 +25,17 @@ float cityWaterDepth(vec2 world,float footprint,float cover){
   return clamp(.07*bank,.4,6.)*cover;
 }
 vec3 cityWaterAt(vec3 base,vec3 surface,vec2 world,float footprint,float cover){
-  if(surface.x<0.)return v2WaterAt(base,surface,world,footprint,cover,1.,-surface.x);
-  vec3 water=v2WaterColor(v2Local(surface,world,0.,footprint),world,footprint,cover,3.,cityWaterDepth(world,footprint,cover));
-  water=mix(water,water*vec3(.86,.70,.48),waterTea());
-  water=mix(water,vec3(.38,.62,.62),.45*waterGlacial());
-  water=mix(water,vec3(.45,.38,.25),.275*waterSediment());
+  // Sea (as v2WaterAt) and inland water share one v2Local and one v2WaterColor call: the shader compilers inline
+  // each call whole, and two copies of both made the 3D ground the slowest shader to compile.
+  bool sea=surface.x<0.;
+  if(sea&&(uV2WaterVisible==0||cover<=0.))return base;
+  float depth=-surface.x;if(!sea)depth=cityWaterDepth(world,footprint,cover);
+  vec3 water=v2WaterColor(v2Local(surface,world,0.,footprint),world,footprint,cover,sea?1.:3.,depth);
+  if(!sea){
+    water=mix(water,water*vec3(.86,.70,.48),waterTea());
+    water=mix(water,vec3(.38,.62,.62),.45*waterGlacial());
+    water=mix(water,vec3(.45,.38,.25),.275*waterSediment());
+  }
   return mix(base,water,cover);
 }
 `;

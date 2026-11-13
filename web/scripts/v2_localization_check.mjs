@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Eight-language and imperial-input regression against the real V2 page. */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -18,7 +19,7 @@ try {
   const context=await browser.newContext({locale:'fr-FR',viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto(`${server.resolvedUrls.local[0]}v2.html?empty`,{waitUntil:'domcontentloaded'});
-  await page.locator('#language-select').waitFor();
+  await page.locator('#language-select').waitFor({ state: 'attached' });
   assert.equal(await page.locator('html').getAttribute('lang'),'en');
   assert.equal(await page.locator('#language-select option').count(),8);
   assert.equal(await page.locator('#map-naming-language,#map-naming-display-language').count(),0);
@@ -39,7 +40,7 @@ try {
   },{i18n:`/@fs/${web.replaceAll('\\','/')}/src/v2/i18n.ts`});
   const checks=[];
   for(const language of ['en','fr','es','pt','zh','ar','ru','ja']){
-    await page.locator('#language-select').selectOption(language);
+    await chooseWorkshopPreference(page, 'language', language);
     assert.equal(await page.locator('html').getAttribute('lang'),language);
     assert.equal(await page.locator('html').getAttribute('dir'),language==='ar'?'rtl':'ltr');
     assert.equal(await page.locator('#seed').inputValue(),'Maison — TsingTao 42');
@@ -49,7 +50,7 @@ try {
     const bounds=await spacingCaption.boundingBox();
     assert(bounds&&bounds.width>=65&&bounds.height<100,`${language}: spacing caption collapsed`);
     for(const unit of ['m','ft','yd']){
-      await page.locator('#units-select').selectOption(unit);
+      await chooseWorkshopPreference(page, 'units', unit);
       const factor={m:1,ft:.3048,yd:.9144}[unit];
       const displayed=Number(await page.locator('#fixture-width').inputValue());
       assert(Math.abs(displayed-30/factor)<1e-6);
@@ -61,18 +62,18 @@ try {
     }
     checks.push({language,label,dir:await page.locator('html').getAttribute('dir')});
   }
-  await page.locator('#units-select').selectOption('ft');
+  await chooseWorkshopPreference(page, 'units', 'ft');
   await page.locator('#fixture-width').fill('100');await page.locator('#fixture-width').dispatchEvent('input');
   assert(Math.abs(await page.evaluate(()=>window.unitFixture.width)-30.48)<1e-10);
   await page.locator('#fixture-motif').fill('2');await page.locator('#fixture-motif').dispatchEvent('input');
   assert(Math.abs(await page.evaluate(()=>window.unitFixture.motif)-3218.688)<1e-8);
-  await page.locator('#units-select').selectOption('yd');
+  await chooseWorkshopPreference(page, 'units', 'yd');
   assert(Math.abs(Number(await page.locator('#fixture-width').inputValue())-100/3)<1e-6);
   await page.evaluate(()=>document.querySelector('#unit-fixture').remove());
   await page.screenshot({path:resolve(out,'ja-yards.png')});
-  await page.locator('#language-select').selectOption('ar');
+  await chooseWorkshopPreference(page, 'language', 'ar');
   await page.screenshot({path:resolve(out,'ar-yards.png')});
-  await page.reload({waitUntil:'domcontentloaded'});await page.locator('#language-select').waitFor();
+  await page.reload({waitUntil:'domcontentloaded'});await page.locator('#language-select').waitFor({ state: 'attached' });
   assert.equal(await page.locator('#language-select').inputValue(),'ar');
   assert.equal(await page.locator('#units-select').inputValue(),'yd');
   assert.equal(await page.locator('#terrain-width-unit').inputValue(),'yd');

@@ -155,6 +155,9 @@ export interface PlaceOptions {
   visScale?: number;
   /** Screen rectangles kept free of labels (cartouche, legend). */
   reserved?: { x0: number; y0: number; x1: number; y1: number }[];
+  /** Labels shown by the previous placement: within a priority level they are placed first, so a new view keeps the
+   * names already on screen and the set changes as little as possible (no labels swapping places after each zoom). */
+  previous?: ReadonlySet<MapLabel>;
 }
 
 function straight(l: MapLabel, glyphs: LGlyph[], total: number, x0: number, y: number, size: number, spacing: number): PlacedMapLabel {
@@ -179,7 +182,8 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
     if (vis < l.st.minScale || vis > l.st.maxScale) return;
     cands.push({ l, i });
   });
-  cands.sort((a, b) => b.l.st.priority - a.l.st.priority || a.i - b.i);
+  const kept = (l: MapLabel): number => o.previous?.has(l) ? 1 : 0;
+  cands.sort((a, b) => b.l.st.priority - a.l.st.priority || kept(b.l) - kept(a.l) || a.i - b.i);
   const placed: PlacedMapLabel[] = [];
   const boxes: Box[] = [...(o.reserved ?? [])];
   const free = (bs: Box[]): boolean => {

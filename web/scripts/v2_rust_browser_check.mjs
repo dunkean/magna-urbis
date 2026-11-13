@@ -70,7 +70,7 @@ try {
   const inspect = async (kind, data, selector, nativeRequestId) => {
     await page.locator('[data-town="main"]').click();
     // The inspector covers the east half of a focused small settlement.
-    await page.locator('#inspector > .close').click();
+    await page.locator('#editor-close').click();
     await page.locator('#inspect-mode').check(); await page.locator('#inspect-target').selectOption(kind);
     const place = data.world.settlements.find(s => s.main), box = await page.locator('#map').boundingBox();
     const scale = Math.min(3, Math.min(box.height, box.width) / Math.max(600, place.radius * 3));

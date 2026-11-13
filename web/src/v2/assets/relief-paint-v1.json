@@ -1,0 +1,8 @@
+{
+  "tool": "built-in image_gen",
+  "date": "2026-11-13",
+  "original": "relief-paint-v1.png",
+  "runtime": "relief-paint-v1.webp",
+  "processing": "Original preserved; runtime icon resized to 128 × 128 and encoded as lossless WebP with alpha.",
+  "prompt": "Use case: stylized-concept. Asset type: a single premium hand-painted UI icon for Magna Urbis medieval fantasy cartography desktop app, displayed at 36 pixels. Subject: a small square grayscale mountain heightmap terrain tile with dimensional mountain ridges and a winding valley, with one antique brass and warm ivory paintbrush laid diagonally across its front corner, brush tip touching the mountain tile, clearly conveying painting and editing terrain. Style: dimensional watercolor and gouache strategy-game inventory art matching existing Magna Urbis terrain icons, stone gray peaks, moss-green edge, antique gold accents, soft upper-left lighting, bold readable silhouette, subtly painted dark contour. Square canvas, one centered compact isolated object occupying central 65 percent, generous empty alpha gutters. Truly transparent background, no frame, no background plate, no text, letters, numbers, logos, watermark, or floating particles."
+}

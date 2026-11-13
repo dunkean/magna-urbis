@@ -1002,14 +1002,14 @@ float forestCrownSnow(ForestCanopy hit,vec2 sun,float bough){
   return v2GroundSnow*hold*(.7+.3*fract(hit.tint*4.37));
 }
 // Same forest hit, outline, dome normal, seasonal limbs and shadow for the planted grid.
-void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light){
+void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hit){
   ForestStand st=p.st;vec3 l=normalize(light),nGround=m.normal;
   float leaf=uRenderV2>0?v2SeasonLeaf():1.,snow=uRenderV2>0?v2GroundSnow:0.;
   vec3 crown=forestSnowed(mix(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.),vec3(.31,.27,.23),1.-leaf),snow*.3);
   float cover=.31*mix(.35,1.,leaf)*forestHeightGate(forestField(st.p,0.).g*50.);
   vec3 normal=nGround;float shade=cover*.45;
   if(p.crownVis>0.&&uQuality==0){
-    ForestCanopy hit=forestCanopyAt(p,l);float tint=hit.tint;
+    float tint=hit.tint;
     float body=mix(forestBareCrown(hit.rel,hit.slope,tint,p.radius/max(p.fp,.01)),1.,leaf);
     float resolved=hit.cover*body;
     crown=forestCrownColor(st,forestGuide(),0.,vec2(tint*2.-1.,0.),0.);
@@ -1030,7 +1030,11 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   forestResolvedCover=0.;forestResolvedShade=0.;forestMapCover=0.;
   ForestPrep p=forestPrep(world,footprint);
   if(!p.valid)return;
-  if(p.st.orchard){applyOrchard(m,p,light);return;}
+  // One canopy evaluation shared by the orchard and the forest paths (both need it exactly when crowns are visible
+  // at full quality): the shader compilers inline every call, and without the auxiliary pass (3D) each call is the
+  // whole near-crown search.
+  ForestCanopy hit;if(p.crownVis>0.&&uQuality==0)hit=forestCanopyAt(p,normalize(light));
+  if(p.st.orchard){applyOrchard(m,p,light,hit);return;}
   ForestStand st=p.st;float fp=p.fp,openA=p.openA,forcedA=p.forcedA,hedgeA=p.hedgeA,crownVis=p.crownVis,radius=p.radius,reveal=p.reveal;
   // Render reference. Its colour, macro woods included, stays authoritative
   // while the forest is unresolved; k carries the Render3D ground detail
@@ -1149,7 +1153,6 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   float occlusion=mix(m.occlusion*mix(1.,.72,stand),.8,canopy)*(1.-.08*galleryArea);
   float roughness=mix(m.roughness,.9,canopy);
   if(crownVis>0.){
-    ForestCanopy hit=forestCanopyAt(p,l);
     // Water sees the crowns as displayed: resolved and revealed.
     forestResolvedCover=hit.cover*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
     float shade=hit.shade;

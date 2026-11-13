@@ -5,6 +5,8 @@ import type { Palette } from './styles';
 import type { RenderColors } from './customColors';
 import { terrainStyle, type TerrainStyle } from './terrainStyle';
 import { waterSampler, waterFunctionGlsl, type WaterStyle } from './waterStyle';
+import { productKey, measureDisplayProduct } from './displayProduct';
+import { floatPyramid } from './floatPyramid';
 
 // Compatibility for the Neural Earth material adapter; displayed water uses the style ramp.
 export const RENDER_WATER_SHORE = terrainStyle('render').water.stops[0][1];
@@ -13,17 +15,26 @@ vec3 surfaceWater(float depth,float ice){return mix(materialWater(depth/120.),ve
 `;
 
 const distances = new WeakMap<Float32Array, Map<string, Float32Array>>();
+export function retainLakeDistances(field: Float32Array, n: number, width: number, referenceWidth: number, result: Float32Array): void {
+  if (result.length !== n * n) return;
+  let entries = distances.get(field);
+  if (!entries) { entries = new Map(); distances.set(field, entries); }
+  const key = productKey(n, width, referenceWidth);
+  if (!entries.has(key)) entries.set(key, result);
+}
 /** Distance into open water, in metres; camera-independent like the sea band. */
 export function lakeDistances(field: Float32Array, n: number, width: number, referenceWidth = width): Float32Array {
-  const key = `${n}:${width}:${referenceWidth}`;
+  const key = productKey(n, width, referenceWidth);
   let cache = distances.get(field);
   if (!cache) { cache = new Map(); distances.set(field, cache); }
   let result = cache.get(key);
   if (!result) {
+    result = measureDisplayProduct('lake', () => {
     const surface = resampleTerrainSurface({ w: n, data: field }, n);
     const depth = new Float32Array(surface.length);
     for (let i = 0; i < surface.length; i++) depth[i] = -surface[i];
-    result = coastDistances(depth, n, width / n, referenceWidth);
+    return coastDistances(depth, n, width / n, referenceWidth);
+    });
     cache.set(key, result);
   }
   return result;
@@ -38,17 +49,31 @@ export function waterMaterialPixels(distance: Float32Array, material: WaterStyle
   }
   return pixels;
 }
-const worldDistances = new WeakMap<World['terrain'], { width: number; values: Float32Array }>();
+/** Raw lake and distance mips share the same immutable numeric cache as terrain heights. */
+export function lakeDistancePyramid(field: Float32Array, n: number, width: number, referenceWidth = width): Float32Array[] {
+  return floatPyramid(lakeDistances(field, n, width, referenceWidth), n);
+}
+const worldDistances = new WeakMap<Uint8Array, Map<string, Float32Array>>();
+export function retainPlanningWaterDistances(water: Uint8Array, n: number, width: number, values: Float32Array): void {
+  if (values.length !== n * n) return;
+  let entries = worldDistances.get(water);
+  if (!entries) { entries = new Map(); worldDistances.set(water, entries); }
+  const key = productKey(n, width);
+  if (!entries.has(key)) entries.set(key, values);
+}
+export function planningWaterDistances(water: Uint8Array, n: number, width: number): Float32Array {
+  const retained = worldDistances.get(water)?.get(productKey(n, width));
+  if (retained) return retained;
+  const values = measureDisplayProduct('planning-water', () => {
+    const signed = Float32Array.from(water, value => value === 1 || value === 2 ? -1 : 1);
+    return coastDistances(signed, n, width / n, width);
+  });
+  retainPlanningWaterDistances(water, n, width, values); return values;
+}
 /** Legacy application adapter. Sea and lake masks are colored by the same ramp. */
 export function worldWaterPixels(world: World, palette: Palette): { rgb: Uint8Array; n: number } {
   const t = world.terrain, n = t.height.w;
-  let cached = worldDistances.get(t);
-  if (!cached || cached.width !== world.mapSize) {
-    const signed = Float32Array.from(t.water, value => value === 1 || value === 2 ? -1 : 1);
-    cached = { width: world.mapSize, values: coastDistances(signed, n, world.mapSize / n, world.mapSize) };
-    worldDistances.set(t, cached);
-  }
-  return { rgb: waterMaterialPixels(cached.values, palette.water, world.mapSize), n };
+  return { rgb: waterMaterialPixels(planningWaterDistances(t.water, n, world.mapSize), palette.water, world.mapSize), n };
 }
 
 const images = new WeakMap<Float32Array, Map<string, string>>();
@@ -74,16 +99,21 @@ export function lakeMaterialSvg(field: Float32Array, n: number, width: number, p
 
 /** A retained world-space material surface; crops translate its origin, never its scale. */
 export interface WaterSurface { distance: Float32Array; n: number; width: number; x: number; y: number; referenceWidth: number }
-const seaSurfaces = new WeakMap<Float32Array, WaterSurface>();
+const seaSurfaces = new WeakMap<Float32Array, Map<string, WaterSurface>>();
 export function seaDistanceSurface(data: { height: Float32Array; resolution: number; width: number; x: number; y: number; field?: { data: Float32Array; n: number }; waterSurface?: WaterSurface }, referenceWidth = data.width): WaterSurface {
   if (data.waterSurface) return data.waterSurface;
   const field = data.field ?? { data: data.height, n: data.resolution };
-  const cached = seaSurfaces.get(field.data);
-  if (cached && cached.width === data.width && cached.referenceWidth === referenceWidth && cached.x === data.x && cached.y === data.y) return cached;
+  const key = productKey(field.n, data.x, data.y, data.width, referenceWidth);
+  let entries = seaSurfaces.get(field.data);
+  if (!entries) { entries = new Map(); seaSurfaces.set(field.data, entries); }
+  const cached = entries.get(key);
+  if (cached) return cached;
+  const result = measureDisplayProduct('sea', () => {
   const n = Math.min(1024, Math.max(512, field.n));
   const surface = resampleTerrainSurface({ w: field.n, data: field.data }, n);
-  const result = { distance: coastDistances(surface, n, data.width / n, referenceWidth), n, width: data.width, x: data.x, y: data.y, referenceWidth };
-  seaSurfaces.set(field.data, result);
+  return { distance: coastDistances(surface, n, data.width / n, referenceWidth), n, width: data.width, x: data.x, y: data.y, referenceWidth };
+  });
+  entries.set(key, result);
   return result;
 }
 export function seaMaterialSvg(surface: WaterSurface, x: number, y: number, style: TerrainStyle, extent = surface.width, colors?: RenderColors): string {

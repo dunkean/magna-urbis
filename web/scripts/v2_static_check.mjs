@@ -44,7 +44,10 @@ try {
   await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 180000 });
   assert.match(await page.locator('#footer-status').textContent(), /Carte prête/);
   assert.match(await page.locator('#job-log').textContent(), /rust-wasm-cpu/);
+  await page.locator('#hardware-open').click();
+  await page.locator('.preferences-section summary').click();
   const [science] = await Promise.all([context.waitForEvent('page'), page.locator('.science-link').click()]);
+  await page.locator('#hardware-dialog [data-close]').first().click();
   await science.waitForLoadState('networkidle');
   assert.match(await science.locator('body').textContent(), /Magna Urbis/);
   await science.locator('img').evaluateAll(async images => {

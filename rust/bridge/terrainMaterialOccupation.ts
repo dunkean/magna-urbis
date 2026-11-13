@@ -235,24 +235,16 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   }
   float tendedShare=wField+wOrchard+wGarden+wTown+wLane;
   paperTendedShare+=tendedShare;
-  vec4 tended=vec4(0.);float fieldShare=0.;vec2 fieldSlope=vec2(0.);float pool;
-  if(wField>0.){
-    if(uHasLandDetail==1){float rough;vec3 c=landField(world,footprint,green,bare,dry,fieldSlope,rough);tended+=wField*vec4(clamp(c*micro,0.,1.),rough);fieldShare=wField;}
-    else tended+=wField*occupationMaterial(1,world,footprint,bare,micro,dry,green,pool);
-  }
-  if(wOrchard>0.)tended+=wOrchard*occupationMaterial(4,world,footprint,bare,micro,dry*.5,green,pool);
-  if(wGarden>0.)tended+=wGarden*occupationMaterial(5,world,footprint,bare,micro,dry*.5,green,pool);
-  if(wTown>0.)tended+=wTown*occupationMaterial(7,world,footprint,bare,micro,0.,green,pool);
-  if(wLane>0.)tended+=wLane*occupationMaterial(9,world,footprint,bare,micro,0.,green,pool);
+  vec4 tended=vec4(0.);float fieldShare=0.;vec2 fieldSlope=vec2(0.);
+  if(wField>0.&&uHasLandDetail==1){float rough;vec3 c=landField(world,footprint,green,bare,dry,fieldSlope,rough);tended+=wField*vec4(clamp(c*micro,0.,1.),rough);fieldShare=wField;}
   // Wild classes meet along ragged lines: only their lookup wanders.
   float wildShare=1.-tendedShare-hardShare;
-  vec4 wild=vec4(0.);float marsh=0.,poolShare=0.;
+  float wMeadow=0.,wPasture=0.,wHeath=0.,wMarsh=0.;
   if(wildShare>.001){
     uint salt=uMaterialSeed+1091u;
     vec2 wander=vec2(surfaceNoise(vec3(world/43.,0.),salt),surfaceNoise(vec3(world/43.,0.),salt+1u))*16.
       +vec2(surfaceNoise(vec3(world/13.,0.),salt+2u),surfaceNoise(vec3(world/13.,0.),salt+3u))*6.;
     vec2 wgrid=(uv+wander/uOccupationRect.z)*uOccupationN-.5,wf=fract(wgrid);ivec2 wbase=ivec2(floor(wgrid));
-    float wMeadow=0.,wPasture=0.,wHeath=0.,wMarsh=0.;
     for(int y=0;y<2;y++)for(int x=0;x<2;x++){
       int cls=int(texelFetch(uOccupation,clamp(wbase+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
       float weight=(x==0?1.-wf.x:wf.x)*(y==0?1.-wf.y:wf.y);
@@ -261,10 +253,26 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
     // The lookup wandered onto a plot or a road: this ground is still grass.
     wMeadow+=max(0.,1.-wMeadow-wPasture-wHeath-wMarsh);
     paperCommonsShare=wHeath*wildShare;
-    if(wMeadow>0.)wild+=wMeadow*occupationMaterial(2,world,footprint,bare,micro,dry,green,pool);
-    if(wPasture>0.)wild+=wPasture*occupationMaterial(3,world,footprint,bare,micro,dry,green,pool);
-    if(wHeath>0.)wild+=wHeath*occupationMaterial(6,world,footprint,bare,micro,0.,green,pool);
-    if(wMarsh>0.){wild+=wMarsh*occupationMaterial(10,world,footprint,bare,micro,0.,green,pool);poolShare=wMarsh*pool*wildShare;marsh=wMarsh*wildShare;}
+  }
+  // Every class material from one loop, in the order of the former separate calls (tended field, orchard, garden,
+  // town, lane; wild meadow, pasture, heath, marsh): the shader compilers inline each call, and nine inlined
+  // occupationMaterial calls were about a third of the satellite ground shader, tens of seconds of D3D compilation.
+  vec4 wild=vec4(0.);float marsh=0.,poolShare=0.;
+  for(int i=0;i<9;i++){
+    int cls;float w,d;
+    if(i==0){cls=1;w=uHasLandDetail==1?0.:wField;d=dry;}
+    else if(i==1){cls=4;w=wOrchard;d=dry*.5;}
+    else if(i==2){cls=5;w=wGarden;d=dry*.5;}
+    else if(i==3){cls=7;w=wTown;d=0.;}
+    else if(i==4){cls=9;w=wLane;d=0.;}
+    else if(i==5){cls=2;w=wMeadow;d=dry;}
+    else if(i==6){cls=3;w=wPasture;d=dry;}
+    else if(i==7){cls=6;w=wHeath;d=0.;}
+    else{cls=10;w=wMarsh;d=0.;}
+    if(w<=0.)continue;
+    float pool;vec4 c=w*occupationMaterial(cls,world,footprint,bare,micro,d,green,pool);
+    if(i<5)tended+=c;
+    else{wild+=c;if(cls==10){poolShare=w*pool*wildShare;marsh=w*wildShare;}}
   }
   float covered=tendedShare+wildShare;
   vec4 target=tended+wild*wildShare;

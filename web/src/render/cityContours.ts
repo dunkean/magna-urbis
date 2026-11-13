@@ -1,7 +1,7 @@
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import type { Relief } from '../gen/options';
 import type { World } from '../gen/types';
-import { sampleGrid, slopeGrid } from '../gen/core/grid';
+import { sampleGrid, slopeGrid, gradientAt, type Grid } from '../gen/core/grid';
 import { contourSet, CONTOUR_INTERVAL } from './contours';
 import { contourLevels } from '../../../rust/bridge/renderGeometry';
 import { chaikin, simplify, polylineLength } from '../gen/core/geom';
@@ -9,7 +9,7 @@ import { chaikin, simplify, polylineLength } from '../gen/core/geom';
 export interface CityContourPaths { step: number; thin: string; index: string }
 /** One square of fine contours (Path2D strings); neighbours share their border samples, so lines meet. */
 export interface FineBlock { thin: string; index: string }
-interface Entry { terrain: TerrainData; world: World; relief: Relief; slope: number; range: number; paths: Map<string, CityContourPaths>; smoothed: Map<number, Float32Array>; blocks: Map<string, FineBlock>; pending: Set<string>; idle?: number; warmScale?: number }
+interface Entry { terrain: TerrainData; world: World; relief: Relief; slope: number; range: number; paths: Map<string, CityContourPaths>; smoothed: Map<number, Float32Array>; blocks: Map<string, FineBlock>; pending: Set<string>; idle?: number; warmScale?: number; last?: Map<boolean, CityContourPaths> }
 const cache = new WeakMap<TerrainData, Entry>();
 /** Thin lines stay this many pixels apart on a typical slope: a contour map reads the shape, not a hatching. */
 const LINE_GAP_PX = 18;
@@ -43,6 +43,16 @@ function typicalSlope(data: Float32Array): number {
   sample.sort((a, b) => a - b);
   return sample[Math.floor(sample.length * .75)] ?? 0;
 }
+/** Same Float32 samples/percentile as slopeGrid + typicalSlope, without a page-sized slope raster. */
+function typicalTerrainSlope(height: Grid): number {
+  const stride = Math.max(1, Math.floor(height.data.length / 20000)), sample: number[] = [];
+  for (let i = 0; i < height.data.length; i += stride) {
+    const [gx, gy] = gradientAt(height, i % height.w, Math.floor(i / height.w));
+    sample.push(Math.fround(Math.hypot(gx, gy)));
+  }
+  sample.sort((a, b) => a - b);
+  return sample[Math.floor(sample.length * .75)] ?? 0;
+}
 /** Box blur of the height field, three passes (close to a gaussian): lines flow at the scale they are read, without the grid's steps. */
 function smoothedHeight(height: { w: number; h: number; data: Float32Array }, radius: number): Float32Array {
   const { w, h } = height; let from: Float32Array = height.data, to: Float32Array = new Float32Array(from.length);
@@ -63,19 +73,31 @@ function smoothedHeight(height: { w: number; h: number; data: Float32Array }, ra
 
 function entryOf(terrain: TerrainData, relief: Relief): Entry {
   let entry = cache.get(terrain);
-  if (!entry || entry.relief !== relief) {
-    const height = { w: terrain.resolution, h: terrain.resolution, cell: terrain.width / terrain.resolution, data: terrain.height }, slope = slopeGrid(height);
+  if (!entry || entry.relief !== relief || entry.world.terrain.height.data !== terrain.height
+    || entry.world.terrain.height.w !== terrain.resolution || entry.world.terrain.height.cell !== terrain.width / terrain.resolution) {
+    const started = performance.now();
+    const height = { w: terrain.resolution, h: terrain.resolution, cell: terrain.width / terrain.resolution, data: terrain.height };
+    const asyncPage = typeof document !== 'undefined' && typeof Worker !== 'undefined' && !workerFailed;
+    const slope = asyncPage ? { ...height, data: new Float32Array() } : slopeGrid(height);
     let lo = Infinity, hi = -Infinity;
     for (const value of terrain.height) if (value > 0) { lo = Math.min(lo, value); hi = Math.max(hi, value); }
-    entry = { terrain, world: { terrain: { height, slope }, options: { relief } } as unknown as World, relief, slope: typicalSlope(slope.data), range: Math.max(0, hi - lo), paths: new Map(), smoothed: new Map(), blocks: new Map(), pending: new Set() }; cache.set(terrain, entry);
+    entry = { terrain, world: { terrain: { height, slope }, options: { relief } } as unknown as World, relief,
+      slope: asyncPage ? typicalTerrainSlope(height) : typicalSlope(slope.data), range: Math.max(0, hi - lo),
+      paths: new Map(), smoothed: new Map(), blocks: new Map(), pending: new Set() }; cache.set(terrain, entry);
+    performance.measure('displayprep:contour-metadata:build', { start: started });
   }
   return entry;
 }
 /** The height field smoothed at the scale it is read (cached per radius). */
 function smoothedFor(entry: Entry, metresPerPixel: number): Float32Array {
   const height = entry.world.terrain.height, radius = Math.min(10, Math.max(1, Math.round(metresPerPixel * 5 / height.cell)));
+  // Worker normally owns this; a worker-unavailable fallback still needs the exact slope raster.
+  if (entry.world.terrain.slope.data.length !== height.data.length) entry.world.terrain.slope = slopeGrid(height);
   let data = entry.smoothed.get(radius);
-  if (!data) { data = smoothedHeight(height, radius); entry.smoothed.set(radius, data); }
+  if (!data) {
+    data = smoothedHeight(height, radius); entry.smoothed.set(radius, data);
+    if (entry.smoothed.size > 3) entry.smoothed.delete(entry.smoothed.keys().next().value!);
+  }
   return data;
 }
 const reliefOf = (landform: string): Relief => landform === 'flat' || landform === 'hills' || landform === 'valley' ? landform : 'mountains';
@@ -86,24 +108,33 @@ function contourKey(entry: Entry, scale: number, topographic = false): { key: st
   return { key: `${topographic}:${step}:${metresPerPixel}`, step, metresPerPixel };
 }
 
-export type ContourWorkerRequest = { id: number; landform: string; scale: number; topographic?: boolean; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
-export type ContourWorkerResponse = { id: number; paths?: CityContourPaths; error?: string };
+export type ContourView = { minX: number; minY: number; maxX: number; maxY: number };
+/** UTF-8 encoded canonical SVG path commands; no point-object graph crosses the worker boundary. */
+export interface TypedContourPaths { step: number; thin: Uint8Array; index: Uint8Array }
+export type ContourWorkerRequest = { id: number; landform: string; scale: number; topographic?: boolean; fine?: ContourView; terrain?: Pick<TerrainData, 'height' | 'resolution' | 'width' | 'caveMask'> };
+export type ContourWorkerResponse = { id: number; paths?: TypedContourPaths; blocks?: { key: string; thin: Uint8Array; index: Uint8Array }[]; error?: string };
 let warmer: Worker | undefined, workerEntry: WeakRef<Entry> | undefined, warmId = 0, workerFailed = false;
-const warming = new Map<number, { entry: Entry; key: string; ready?: Set<() => void> }>();
-
-/** Topographic extraction, smoothing and path encoding all run in the existing worker. */
-function queueTopographic(entry: Entry, scale: number, key: string, ready: () => void): void {
-  if (entry.pending.has(key)) {
-    for (const job of warming.values()) if (job.entry === entry && job.key === key) job.ready?.add(ready);
+interface ContourJob { entry: Entry; key: string; ready: Set<() => void>; background: boolean; scale: number; topographic: boolean; fine: boolean }
+const warming = new Map<number, ContourJob>();
+const canQueue = (): boolean => typeof document !== 'undefined' && typeof Worker !== 'undefined' && !workerFailed;
+const decode = new TextDecoder();
+function queueContours(entry: Entry, scale: number, key: string, topographic: boolean, ready?: () => void, fine?: ContourView, background = false): void {
+  for (const job of warming.values()) if (job.entry === entry && job.key === key) {
+    if (ready) job.ready.add(ready);
+    if (!background && job.background) { job.background = false; entry.pending.add(key); }
     return;
   }
   try {
     ensureWarmer();
     const id = ++warmId, t = entry.terrain;
-    const request: ContourWorkerRequest = { id, landform: entry.relief, scale, topographic: true };
-    if (workerEntry?.deref() !== entry) { request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask }; workerEntry = new WeakRef(entry); }
-    entry.pending.add(key); warming.set(id, { entry, key, ready: new Set([ready]) }); warmer!.postMessage(request);
-  } catch { stopWarmer(); ready(); }
+    const request: ContourWorkerRequest = { id, landform: entry.relief, scale, topographic, fine };
+    if (workerEntry?.deref() !== entry) {
+      request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask }; workerEntry = new WeakRef(entry);
+    }
+    if (!background) entry.pending.add(key);
+    warming.set(id, { entry, key, ready: new Set(ready ? [ready] : []), background, scale, topographic, fine: !!fine });
+    warmer!.postMessage(request);
+  } catch { stopWarmer(); ready?.(); }
 }
 function ensureWarmer(): void {
   if (warmer) return;
@@ -111,50 +142,53 @@ function ensureWarmer(): void {
   warmer.onmessage = ({ data }: MessageEvent<ContourWorkerResponse>) => {
     const job = warming.get(data.id); if (!job) return;
     warming.delete(data.id); job.entry.pending.delete(job.key);
-    if (data.paths && !job.entry.paths.has(job.key)) job.entry.paths.set(job.key, data.paths);
+    if (data.paths) {
+      const paths = { step: data.paths.step, thin: decode.decode(data.paths.thin), index: decode.decode(data.paths.index) };
+      job.entry.paths.set(job.key, paths);
+      if (!job.background) { (job.entry.last ??= new Map()).set(job.topographic, paths); warmNeighbours(job.entry, job.scale, job.topographic); }
+    }
+    if (data.blocks) for (const block of data.blocks) {
+      if (job.entry.blocks.size >= FINE_BLOCK_LIMIT) job.entry.blocks.delete(job.entry.blocks.keys().next().value!);
+      job.entry.blocks.set(block.key, { thin: decode.decode(block.thin), index: decode.decode(block.index) });
+    }
     if (data.error) stopWarmer();
-    for (const ready of job.ready ?? []) ready();
+    for (const ready of job.ready) ready();
   };
   warmer.onerror = stopWarmer;
+  warmer.onmessageerror = stopWarmer;
 }
+/** Only requested work gates visible completion; speculative neighbour bands do not. */
 export const cityContoursPending = (terrain: TerrainData | undefined): number => terrain ? cache.get(terrain)?.pending.size ?? 0 : 0;
-/** Whether the topographic contours of this zoom band are still in the worker (the last call drew none). */
-export function cityContourPathsPending(terrain: TerrainData, landform: string, scale: number): boolean {
+export function cityContourPathsPending(terrain: TerrainData, landform: string, scale: number, topographic = true): boolean {
   const entry = cache.get(terrain);
-  return !!entry && entry.relief === reliefOf(landform) && entry.pending.has(contourKey(entry, scale, true).key);
+  return !!entry && entry.relief === reliefOf(landform) && (entry.pending.has(contourKey(entry, scale, topographic).key)
+    || [...warming.values()].some(job => job.entry === entry && job.fine && job.scale === scale));
 }
-
-/** Warm the neighbouring zoom levels off the main thread, using the exact same contour builder.
- * The first level still draws synchronously; later levels are copied into its normal cache. */
-function warmNeighbours(entry: Entry, scale: number): void {
-  if (typeof document === 'undefined' || typeof Worker === 'undefined' || typeof requestIdleCallback === 'undefined' || workerFailed) return;
-  if ([scale / 2, scale * 2].every(next => { const { key } = contourKey(entry, next); return entry.paths.has(key) || entry.pending.has(key); })) return;
+/** Prewarm just two adjacent bands, only after the first requested level has landed. */
+function warmNeighbours(entry: Entry, scale: number, topographic = false): void {
+  if (!canQueue() || typeof requestIdleCallback === 'undefined') return;
   entry.warmScale = scale;
   if (entry.idle !== undefined) return;
   entry.idle = requestIdleCallback(() => {
     entry.idle = undefined;
-    try {
-      ensureWarmer();
-      for (const next of [entry.warmScale! / 2, entry.warmScale! * 2]) {
-        const { key } = contourKey(entry, next);
-        if (entry.paths.has(key) || entry.pending.has(key)) continue;
-        const id = ++warmId, request: ContourWorkerRequest = { id, landform: entry.relief, scale: next };
-        if (workerEntry?.deref() !== entry) {
-          const t = entry.terrain;
-          // Clone only the samples the worker reads; never transfer the live renderer's buffers.
-          request.terrain = { height: t.height, resolution: t.resolution, width: t.width, caveMask: t.caveMask };
-          workerEntry = new WeakRef(entry);
-        }
-        entry.pending.add(key); warming.set(id, { entry, key }); warmer!.postMessage(request);
-      }
-    } catch { stopWarmer(); }
+    // Every zoom level of the map, nearest first, once, in the worker: a zoom then only picks a prepared set instead of
+    // tracing the whole map again (the per-level interval and smoothing are what change between levels).
+    const at = Math.log2(entry.warmScale!), lo = Math.floor(Math.log2(Math.max(1e-6, 800 / entry.terrain.width))) - 1, hi = Math.log2(WARM_MAX_SCALE);
+    const levels: number[] = [];
+    for (let e = lo; e <= hi; e++) levels.push(e);
+    levels.sort((a, b) => Math.abs(a - at) - Math.abs(b - at));
+    for (const e of levels) {
+      const next = 2 ** e, { key } = contourKey(entry, next, topographic);
+      if (!entry.paths.has(key)) queueContours(entry, next, key, topographic, undefined, undefined, true);
+    }
   });
 }
+/** Closest zoom (screen px per metre) whose contours are prepared ahead; closer views trace on demand. */
+const WARM_MAX_SCALE = 4;
 function stopWarmer(): void {
   workerFailed = true; warmer?.terminate(); warmer = undefined; workerEntry = undefined;
-  const jobs = [...warming.values()];
-  warming.clear();
-  for (const job of jobs) { job.entry.pending.delete(job.key); for (const ready of job.ready ?? []) ready(); }
+  const jobs = [...warming.values()]; warming.clear();
+  for (const job of jobs) { job.entry.pending.delete(job.key); for (const ready of job.ready) ready(); }
 }
 
 /** Same samples, slope filtering and index levels as Terrain Bench, without repainting its raster; smoothing follows the zoom. */
@@ -164,11 +198,14 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
   const entry = entryOf(terrain, relief);
   // One detail level per doubling of the zoom, so the cache stays small and a zoom step does not redraw every line.
   const { metresPerPixel, step, key } = contourKey(entry, scale, topographic), retained = entry.paths.get(key);
-  if (!topographic) warmNeighbours(entry, scale);
-  if (retained) return retained;
-  if (topographic && onReady && typeof document !== 'undefined' && typeof Worker !== 'undefined' && !workerFailed) {
-    queueTopographic(entry, scale, key, onReady);
-    return { step, thin: '', index: '' };
+  if (onReady) for (const job of warming.values()) if (job.entry === entry && job.fine) job.ready.add(onReady);
+  if (retained) { (entry.last ??= new Map()).set(topographic, retained); warmNeighbours(entry, scale, topographic); return retained; }
+  // Ordinary contours of the live view stay synchronous (tens of milliseconds, often already prepared by the neighbour
+  // prewarm below): an asynchronous level landing later bumped the overlay's contour revision, which keys every raster
+  // tile, so each zoom redrew the whole map twice. Topographic levels and callers that wait (onReady) use the worker.
+  if (canQueue() && (topographic || onReady)) {
+    queueContours(entry, scale, key, topographic, onReady);
+    return entry.last?.get(topographic) ?? { step, thin: '', index: '' };
   }
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, metresPerPixel) } } } as World;
@@ -179,11 +216,11 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
 }
 
 /** Async captures wait for the same retained paths as the live overlay. */
-export function cityContourPathsReady(terrain: TerrainData, landform: string, scale: number): Promise<CityContourPaths> {
+export function cityContourPathsReady(terrain: TerrainData, landform: string, scale: number, topographic = true): Promise<CityContourPaths> {
   return new Promise(resolve => {
-    const ready = () => resolve(cityContourPaths(terrain, landform, scale, true));
-    const paths = cityContourPaths(terrain, landform, scale, true, ready), entry = cache.get(terrain);
-    if (!entry || !entry.pending.has(contourKey(entry, scale, true).key)) resolve(paths);
+    const ready = () => resolve(cityContourPaths(terrain, landform, scale, topographic));
+    const paths = cityContourPaths(terrain, landform, scale, topographic, ready), entry = cache.get(terrain);
+    if (!entry || !entry.pending.has(contourKey(entry, scale, topographic).key)) resolve(paths);
   });
 }
 
@@ -195,7 +232,7 @@ export interface CityFineContours { step: number; blocks: FineBlock[] }
  * Contours of a close view, below the base interval (cityContourInterval `fine`): only the blocks under `view` are traced,
  * each over its own height range, so a 1 m interval never walks the whole map. Undefined when the view keeps the base interval.
  */
-export function cityFineContours(terrain: TerrainData, landform: string, scale: number, view: { minX: number; minY: number; maxX: number; maxY: number }): CityFineContours | undefined {
+export function cityFineContours(terrain: TerrainData, landform: string, scale: number, view: ContourView, onReady?: () => void): CityFineContours | undefined {
   if (terrain.caveMask.length || landform === 'cavern') return undefined;
   const relief = reliefOf(landform), entry = entryOf(terrain, relief), step = cityContourInterval(relief, scale, entry.slope, true);
   if (step >= baseInterval(relief) * .999) return undefined;
@@ -204,6 +241,18 @@ export function cityFineContours(terrain: TerrainData, landform: string, scale: 
   const bx0 = Math.max(0, Math.floor(view.minX / span)), bx1 = Math.min(last, Math.floor(view.maxX / span));
   const by0 = Math.max(0, Math.floor(view.minY / span)), by1 = Math.min(last, Math.floor(view.maxY / span));
   if (bx1 < bx0 || by1 < by0 || (bx1 - bx0 + 1) * (by1 - by0 + 1) > 64) return undefined;
+  if (canQueue() && onReady) {
+    const blocks: FineBlock[] = [];
+    let missing = false;
+    for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+      const block = entry.blocks.get(`${step}:${metresPerPixel}:${bx}:${by}`);
+      if (block) blocks.push(block); else missing = true;
+    }
+    if (!missing) return { step, blocks };
+    const key = `fine:${step}:${metresPerPixel}:${bx0}:${by0}:${bx1}:${by1}`;
+    queueContours(entry, scale, key, false, onReady, view);
+    return undefined;
+  }
   const data = smoothedFor(entry, metresPerPixel), u = Math.min(terrain.width / 1600, metresPerPixel * 1.5), blocks: FineBlock[] = [];
   for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
     const key = `${step}:${metresPerPixel}:${bx}:${by}`;
@@ -216,6 +265,22 @@ export function cityFineContours(terrain: TerrainData, landform: string, scale: 
     blocks.push(block);
   }
   return { step, blocks };
+}
+/** Captures can await requested fine blocks without starting synchronous page smoothing. */
+export function cityFineContoursReady(terrain: TerrainData, landform: string, scale: number, view: ContourView): Promise<CityFineContours | undefined> {
+  return new Promise(resolve => {
+    const ready = () => resolve(cityFineContours(terrain, landform, scale, view));
+    const fine = cityFineContours(terrain, landform, scale, view, ready);
+    if (fine || !cityContourPathsPending(terrain, landform, scale, false)) resolve(fine);
+  });
+}
+/** Worker transport for fine blocks; computed by the identical synchronous builder in that realm. */
+export function cityFineContourBlocks(terrain: TerrainData, landform: string, scale: number, view: ContourView): { key: string; block: FineBlock }[] {
+  const fine = cityFineContours(terrain, landform, scale, view);
+  if (!fine) return [];
+  const entry = entryOf(terrain, reliefOf(landform));
+  const requested = new Set(fine.blocks);
+  return [...entry.blocks].filter(([, block]) => requested.has(block)).map(([key, block]) => ({ key, block }));
 }
 /** Index lines every 5th level when that is a round height (1 m -> 5 m), else every 10th (0.5 m -> 5 m). */
 function indexInterval(step: number): number {

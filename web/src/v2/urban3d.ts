@@ -4,7 +4,7 @@ import { decorWater3d } from '../ui/decorWater3d';
 import { paintSeaCover } from '../render/seaCover';
 import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';
 /** Exact City Bench renderer inside V2; no iframe, geometry regeneration or surrogate houses. */
-import { v2DisplayForest, v2ForestOccupation } from './displayForest';
+import { v2DisplayForest, v2DisplayForestAsync, v2ForestOccupation, withBuildingOccupationAsync } from './displayForest';
 import type { World } from '../gen/types';
 import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
@@ -274,7 +274,8 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   const heightSampler = () => {
     const world = options.getWorld(); if (!world) return;
     const settings = options.getSettings(), view = v2Terrain3dView(settings), height = v2Terrain3dSurface(world, settings).height;
-    const key = JSON.stringify([view.ground, view.refinement, settings.terrain?.refine, settings.terrain?.detailNoise, settings.terrain?.climate, settings.terrain?.climateValues, world.seed]);
+    const material = v2Terrain3dGround(world, settings, view.ground);
+    const key = JSON.stringify([!!material?.displacement, material?.displacement ? [material.seed, material.sourceCell, material.climate] : null, height.x, height.y, height.width, height.n]);
     if (sampleOf !== height.data || key !== sampleKey) { sampleOf = height.data; sampleKey = key; sampler = createV2Terrain3dSampler(world, settings, view.ground); }
     return sampler;
   };
@@ -318,6 +319,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
         { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar });
     },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
+    mergeOccupation: withBuildingOccupationAsync,
     getForest: () => {
       // An Illustrated ground has its canopy in the raster draped as the map.
       const settings = options.getSettings(), world = options.getWorld(), r = world && v2Resolved3d(settings, world), field = r && !r.traits.fantasy && v2DisplayForest(world!, settings, r, () => view.refresh());
@@ -343,7 +345,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
     getTextured: options.getTextured, setTextured: options.setTextured, onCamera: options.onCamera, details: service });
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
-    prepare: () => { update(); return view.prepare(); },
+    prepare: async () => { update(); const world = options.getWorld(), settings = options.getSettings(); if (world) await v2DisplayForestAsync(world, settings, v2Resolved3d(settings, world)); await view.prepare(); },
     show: () => { update(); view.show(); refreshFurniture3d(options.host); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); refreshFurniture3d(options.host); },
     focus: (point, radius) => view.focus(point, radius), getCamera: () => view.getCamera(), setCamera: camera => view.setCamera(camera),
     toMapView: () => view.toMapView(), fromMapView: mapView => view.fromMapView(mapView),

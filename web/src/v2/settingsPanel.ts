@@ -2,7 +2,9 @@
  * generation actually used; unavailable choices stay visible, disabled, with the reason. */
 import { detectPlatform, loopbackServer, type PlatformCapabilities } from './platform';
 import { getRenderMode, setRenderMode, onRenderMode, type RenderMode, type RenderStats } from '../render/renderMode';
-import { registerMessages, setText, translate } from './i18n';
+import { registerMessages, setText, translate, onLanguageChange } from './i18n';
+import type { World } from '../gen/types';
+import { executionOverview } from './executionOverview';
 import { iconImg, type IconId } from './stageIcons';
 import type { V2Settings } from './contracts';
 import { runtimeChoiceStates, runtimeValues, setRuntimeChoice, type RuntimeKey } from './runtimeChoices';
@@ -32,7 +34,7 @@ const T = {
   gpuMode: copy('GPU · WebGL2 everywhere possible', 'GPU · WebGL2 partout où c’est possible'), cpuMode: copy('CPU · Canvas 2D', 'CPU · Canvas 2D'), autoMode: copy('Automatic', 'Automatique'),
   noNative: copy('No Magna Urbis Rust service answered on this address. Start it with npm run dev:v2:local.', 'Aucun service Rust Magna Urbis ne répond à cette adresse. Lancez-le avec npm run dev:v2:local.'),
   noPython: copy('No Python/CUDA neural service answered on this address (npm run neural:python).', 'Aucun service neuronal Python/CUDA ne répond à cette adresse (npm run neural:python).'),
-  execution: copy('Execution', 'Exécution'), engine: copy('Engine', 'Moteur'), compute: copy('Compute', 'Calcul'), neuralRuntime: copy('Neural runtime', 'Runtime neuronal'),
+  execution: copy('Next execution', 'Prochaine exécution'), engine: copy('Engine', 'Moteur'), compute: copy('Compute', 'Calcul'), neuralRuntime: copy('Neural runtime', 'Runtime neuronal'),
   advanced: copy('Advanced overrides', 'Forçages avancés'), follow: copy('Follow engine', 'Suivre le moteur'),
   engRust: copy('Rust · in the browser', 'Rust · dans le navigateur'), engNative: copy('Rust · native service', 'Rust · service natif'), engTs: copy('TypeScript · classic', 'TypeScript · classique'),
   cAuto: copy('Automatic · best available', 'Automatique · meilleur disponible'), cCpu: copy('CPU', 'CPU'), cGpu: copy('GPU', 'GPU'),
@@ -45,6 +47,34 @@ const T = {
   refresh: copy('Check again', 'Vérifier à nouveau'),
   cores: copy('{n} logical cores', '{n} cœurs logiques'), lastPath: copy('Last frame: {path}', 'Dernière image : {path}'),
   used: copy('The log of each generation records the backend actually used.', 'Le journal de chaque génération indique le moteur réellement utilisé.'),
+};
+const OVERVIEW = {
+  title: copy('Processes & engines', 'Traitements et moteurs'), process: copy('Process', 'Traitement'), configured: copy('Configured', 'Configuré'), actual: copy('Last execution', 'Dernière exécution'),
+  none: copy('Not run yet', 'Pas encore exécuté'), capabilities: copy('Available hardware & services', 'Matériel et services disponibles'),
+  help: copy('Changing a choice affects the next run. The last execution reads the retained map and may use different engines. Automatic compute can fall back to CPU.', 'Un choix s’applique au prochain calcul. La dernière exécution provient de la carte conservée et peut utiliser d’autres moteurs. Le calcul automatique peut se replier sur le CPU.'),
+};
+for (const [en, fr] of [
+  ['Terrain generation', 'Génération du relief'], ['Water & rivers', 'Eau et rivières'], ['City construction', 'Construction des villes'], ['Map rendering', 'Rendu de la carte'],
+  ['Independent of generation', 'Indépendant de la génération'], ['Vector water', 'Hydrologie vectorielle'], ['Disabled', 'Désactivé'],
+  ['auto', 'automatique'], ['cpu', 'CPU'], ['gpu', 'GPU'], ['wasm', 'Rust · CPU navigateur'], ['native', 'Rust · service natif'],
+  ['rust-wasm-cpu', 'Rust · CPU navigateur'], ['rust-native-cpu', 'Rust · CPU natif'], ['rust-native', 'Rust · service natif'],
+  ['typescript-cpu', 'TypeScript · CPU'], ['rust-webgpu', 'Rust · WebGPU'], ['gpu-f32', 'GPU · FP32'], ['vector-cpu', 'Vectoriel · CPU'],
+  ['disabled', 'Désactivé'], ['Not recorded', 'Non enregistré'],
+] as const) copy(en, fr);
+const BACKEND_LABELS: Record<string, string> = {
+  'rust-wasm-cpu': copy('Rust · browser CPU', 'Rust · CPU navigateur'),
+  'rust-native-cpu': copy('Rust · native CPU', 'Rust · CPU natif'),
+  'rust-native': T.engNative, 'typescript-cpu': copy('TypeScript · CPU', 'TypeScript · CPU'),
+  'rust-webgpu': copy('Rust · browser GPU', 'Rust · GPU navigateur'),
+  'wasm': copy('Rust · browser CPU', 'Rust · CPU navigateur'), 'native': T.engNative,
+  'vector-cpu': copy('Vector water · CPU', 'Hydrologie vectorielle · CPU'),
+  'gpu-f32': 'GPU · FP32', 'cpu': 'CPU', 'gpu': 'GPU',
+  'compact-cpu': copy('Rust · CPU · compact terrain', 'Rust · CPU · relief compact'),
+  'compact-gpu-f32': copy('WebGPU · compact terrain', 'WebGPU · relief compact'),
+  'gpu-noise-f32': copy('WebGPU · fine noise', 'WebGPU · bruit fin'),
+  'gpu-noise-all-f32': copy('WebGPU · all noise', 'WebGPU · tous les bruits'),
+  'gpu-erosion-f32': copy('WebGPU · erosion', 'WebGPU · érosion'),
+  'neural': copy('Neural model', 'Modèle neuronal'),
 };
 
 function readThreads(): ThreadsMode {
@@ -62,7 +92,7 @@ const listeners = new Set<(status: BackendStatus) => void>();
 export const backendStatus = (): BackendStatus => status;
 export const onBackendStatus = (listener: (status: BackendStatus) => void): (() => void) => { listeners.add(listener); return () => listeners.delete(listener); };
 
-export interface SettingsPanelBindings { localServer(): string; pythonServer(): string; log(message: string): void; getSettings?(): V2Settings; onRuntimeChange?(): void; busy?(): boolean }
+export interface SettingsPanelBindings { localServer(): string; pythonServer(): string; log(message: string): void; getSettings?(): V2Settings; getWorld?(): World | undefined; onRuntimeChange?(): void; busy?(): boolean }
 /** Probes are read-only: GET /status on the loopback services, a WebGPU adapter request. */
 export async function refreshBackends(bindings: SettingsPanelBindings): Promise<BackendStatus> {
   let caps: PlatformCapabilities;
@@ -84,13 +114,14 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
   host.classList.add('backend-board');
   const render = () => {
     const s = status; host.replaceChildren();
-    const section = (title: string) => { const h = document.createElement('h3'); h.className = 'backend-section'; setText(h, title); host.append(h); };
+    let container = host;
+    const section = (title: string) => { const h = document.createElement('h3'); h.className = 'backend-section'; setText(h, title); container.append(h); };
     const row = (icon: IconId, name: string, state: 'ok' | 'off' | 'wait', stateText: string, detail: string, extra?: HTMLElement) => {
       const item = document.createElement('div'); item.className = 'backend-row'; item.dataset.state = state;
       const label = document.createElement('div'); label.className = 'backend-name'; const strong = document.createElement('strong'); setText(strong, name);
       const small = document.createElement('small'); small.dataset.l10nKeep = ''; small.textContent = detail; label.append(strong, small);
       const pill = document.createElement('span'); pill.className = 'backend-pill'; setText(pill, stateText);
-      item.append(iconImg(icon, 30), label, pill); if (extra) item.append(extra); host.append(item);
+      item.append(iconImg(icon, 30), label, pill); if (extra) item.append(extra); container.append(item);
     };
     const select = (id: string, current: string, options: [string, string, string | undefined][], onChange: (value: string) => void): HTMLSelectElement => {
       const element = document.createElement('select'); element.id = id;
@@ -105,20 +136,40 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
       const choice = (parent: HTMLElement, key: RuntimeKey, label: string, options: [string, string][]) => {
         const wrap = document.createElement('div'); wrap.className = 'backend-control'; wrap.dataset.runtimeChoice = key;
         const id = `exec-${key}`, name = document.createElement('label'); name.htmlFor = id; setText(name, label);
-        const element = select(id, values[key], options.map(([value, text]) => [value, text, states[key][value]?.enabled === false ? states[key][value].reason : undefined] as [string, string, string | undefined]), value => { setRuntimeChoice(settings, key, value); bindings.onRuntimeChange?.(); render(); });
+        const element = select(id, values[key], options.map(([value, text]) => [value, text, states[key][value]?.enabled === false ? states[key][value].reason : undefined] as [string, string, string | undefined]), value => { setRuntimeChoice(bindings.getSettings!(), key, value); bindings.onRuntimeChange?.(); render(); });
         element.disabled = busy; wrap.append(name, element); parent.append(wrap);
+        const reason = states[key][values[key]];
+        if (reason?.enabled === false && reason.reason) { const note = document.createElement('small'); note.className = 'backend-choice-note'; setText(note, reason.reason); wrap.append(note); }
       };
       const exec = document.createElement('div'); exec.className = 'backend-execution'; exec.id = 'settings-execution'; host.append(exec);
       choice(exec, 'engine', T.engine, [['rust', T.engRust], ['native', T.engNative], ['typescript', T.engTs]]);
       choice(exec, 'compute', T.compute, [['auto', T.cAuto], ['cpu', T.cCpu], ['gpu', T.cGpu]]);
-      choice(exec, 'neural', T.neuralRuntime, [['auto', T.nAuto], ['python', T.nPython]]);
+      choice(exec, 'urban', T.city, [['', T.follow], ['typescript', T.uTs], ['rust', T.uRust], ['native', T.uNative]]);
+      if (settings.generation === 'neural') choice(exec, 'neural', T.neuralRuntime, [['auto', T.nAuto], ['python', T.nPython]]);
       const adv = document.createElement('details'); adv.className = 'backend-advanced'; adv.open = advancedOpen; adv.ontoggle = () => { advancedOpen = adv.open; };
       const summary = document.createElement('summary'); setText(summary, T.advanced); adv.append(summary); exec.append(adv);
       choice(adv, 'sampling', T.sampling, [['', T.follow], ['wasm', T.sCpu], ['gpu-f32', T.sGpu]]);
       choice(adv, 'generationCompute', T.genCompute, [['', T.follow], ['cpu', T.gCpu], ['gpu', T.gFine], ['gpu-all', T.gAll], ['gpu-erosion', T.gEro]]);
       choice(adv, 'hydrology', T.hydrology, [['auto', T.hAuto], ['cpu', T.cCpu], ['gpu', T.cGpu]]);
-      choice(adv, 'urban', T.city, [['', T.follow], ['typescript', T.uTs], ['rust', T.uRust], ['native', T.uNative]]);
+      section(OVERVIEW.title);
+      const table = document.createElement('table'); table.className = 'backend-routing';
+      const head = table.createTHead().insertRow();
+      for (const label of [OVERVIEW.process, OVERVIEW.configured, OVERVIEW.actual]) { const th = document.createElement('th'); th.scope = 'col'; setText(th, label); head.append(th); }
+      const body = table.createTBody(), stats = (window as unknown as { magnaRenderStats?: RenderStats }).magnaRenderStats;
+      const human = (value: string) => {
+        if (BACKEND_LABELS[value]) return translate(BACKEND_LABELS[value]);
+        let label = translate(value);
+        for (const key of [T.engNative, T.engRust, T.engTs, 'Vector water']) label = label.replace(key, translate(key));
+        return label.split(' · ').map(part => translate(part)).join(' · ');
+      };
+      for (const route of executionOverview(settings, bindings.getWorld?.(), stats?.path)) {
+        const tr = body.insertRow(); tr.dataset.process = route.process;
+        for (const value of [route.process, route.configured, route.actual ?? (bindings.getWorld?.() ? 'Not recorded' : OVERVIEW.none)]) { const td = tr.insertCell(); td.textContent = human(value); }
+      }
+      const help = document.createElement('p'); help.className = 'backend-routing-note'; setText(help, OVERVIEW.help); host.append(table, help);
     }
+    const available = document.createElement('details'); available.className = 'section backend-capabilities';
+    const availableTitle = document.createElement('summary'); setText(availableTitle, OVERVIEW.capabilities); available.append(availableTitle); host.append(available); container = available;
     section(T.browser);
     const threadsUnavailable = !s.isolated || !s.sharedMemory ? T.isolation : undefined;
     const threads = document.createElement('div'); threads.className = 'backend-control';
@@ -147,10 +198,10 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
     const stats = (window as unknown as { magnaRenderStats?: RenderStats }).magnaRenderStats;
     row(stats?.path === 'gpu' || getRenderMode() === 'gpu' ? 'backend-gpu' : 'backend-cpu', T.render, 'ok', T.active,
       stats ? translate(T.lastPath).replace('{path}', `${stats.path}${stats.reason ? ` (${stats.reason})` : ''} · ${stats.drawCalls} draw calls`) : `render=${getRenderMode()}`, renderControl);
-    const note = document.createElement('p'); note.className = 'hint'; setText(note, T.used); host.append(note);
+    const note = document.createElement('p'); note.className = 'hint'; setText(note, T.used); container.append(note);
     const again = document.createElement('button'); again.type = 'button'; again.className = 'small'; setText(again, T.refresh); again.onclick = () => void refreshBackends(bindings).then(render); host.append(again);
   };
-  onBackendStatus(render); onRenderMode(render);
+  onBackendStatus(render); onRenderMode(render); onLanguageChange(render);
   render(); return { render };
 }
 /** Header caption: the most capable available path, e.g. "Rust local · GPU". */

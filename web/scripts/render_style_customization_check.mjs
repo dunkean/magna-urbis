@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Preset stars track actual overrides, including restoration and shared bench URLs. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ try {
   await page.locator('#map-style').selectOption('atlas'); await star('#map-style', false);
   const azimuth = '[data-setting-path="appearance.composition.effects.lighting.azimuth"]'; await reveal(azimuth); await page.locator(azimuth).fill('90');
   await star('#map-style', true); await star('[data-setting-path="appearance.terrainStyle"]', true); await star('#export-style', true);
-  await page.locator('#language-select').selectOption('fr'); await star('#map-style', true);
+  await chooseWorkshopPreference(page, 'language', 'fr'); await star('#map-style', true);
   await page.locator('#map-style').selectOption('parchment'); await star('#map-style', true);
   await reveal(azimuth); await page.locator(azimuth).fill('315'); await page.locator(azimuth).blur(); await star('#map-style', false);
   const road = '[data-render-color="road"]'; await reveal(road); await page.locator(road).fill('#ab1234'); await star('#map-style', true);

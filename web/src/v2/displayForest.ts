@@ -7,72 +7,83 @@ import { buildForestField, type ForestField, type ForestOccupation, type LandDet
 import type { LandUseLayer, World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { buildingOccupationShapes, forestOccupation, packOccupationShapes, withOccupationShapes } from '../ui/forestOccupation';
+import { buildingOccupationShapes, forestOccupation, packOccupationShapes, withOccupationShapes, occupationMergeSlot } from '../ui/forestOccupation';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { landDetail, withLandDetail } from '../ui/landDetail';
-import OccupationWorker from './occupation.worker?worker';
+import { retainTerrainDisplayPreparation, runDisplayJob, registerDisplayLanduse, displayWorkerEpoch, type WorkerOccupation } from './displayPrep';
+import { productRevision } from '../render/displayProduct';
 import { forestCorridors } from '../render/forestRoom';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
+import { executionRuntime } from '../ui/executionProfile';
 
 /** Fields are terrain products: keyed by the terrain object (kept across town builds, see terrainIntern.ts), not the World. */
 const cache = new WeakMap<object, Map<string, ForestField>>();
-const occupations = new WeakMap<LandUseLayer, ForestOccupation | undefined>();
-/** Product identity is the land-use revision; neither appearance nor visibility is an input. */
-export function v2ForestOccupation(world: World): ForestOccupation | undefined {
-  const landuse = world.landuse; if (!landuse) return;
-  if (!occupations.has(landuse)) occupations.set(landuse, withLandDetail(forestOccupation(landuse, undefined, undefined, forestCorridors(world, false)), landuse));
-  return occupations.get(landuse);
-}
 type OccupationParts = { occupation: Promise<ForestOccupation | undefined>; detail: Promise<LandDetail | undefined> };
-const computing = new WeakMap<LandUseLayer, OccupationParts>();
-/** The two rasters of v2ForestOccupation, each in its own worker when called from the page (the occupation alone feeds the
- * building merge, so it never waits for the holdings detail). Same bytes as the sync version. */
-export function v2ForestOccupationParts(world: World): OccupationParts {
-  const landuse = world.landuse;
-  if (!landuse || occupations.has(landuse) || typeof document === 'undefined') {
-    const whole = v2ForestOccupation(world);
-    return { occupation: Promise.resolve(whole && { ...whole, detail: undefined }), detail: Promise.resolve(whole?.detail) };
-  }
-  let parts = computing.get(landuse);
-  if (!parts) {
-    const run = <T>(name: 'occupation' | 'detail'): Promise<T | undefined> => new Promise<T | undefined>((resolve, reject) => {
-      let worker: Worker;
-      try { worker = new OccupationWorker(); } catch (error) { reject(error); return; }
-      worker.onmessage = ({ data }) => { worker.terminate(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };
-      worker.onerror = event => { worker.terminate(); reject(event); };
-      worker.postMessage({ landuse, part: name, ...(name === 'occupation' ? { corridors: forestCorridors(world, false) } : {}) });
-    });
-    const occupation = run<ForestOccupation>('occupation').catch(() => forestOccupation(landuse, undefined, undefined, forestCorridors(world, false)));
-    const detail = run<LandDetail>('detail').catch(() => landDetail(landuse));
-    parts = { occupation, detail };
-    void Promise.all([occupation, detail]).then(([o, d]) => { occupations.set(landuse, o && { ...o, detail: d }); });
-    computing.set(landuse, parts);
-  }
-  return parts;
+interface OccupationEntry { whole?: ForestOccupation; complete?: boolean; parts?: OccupationParts }
+const workerOccupations = new WeakMap<Uint8Array, WorkerOccupation>();
+const occupations = new WeakMap<LandUseLayer, Map<string, OccupationEntry>>();
+function occupationEntry(world: World): OccupationEntry | undefined {
+  retainTerrainDisplayPreparation(world);
+  const landuse = world.landuse; if (!landuse) return;
+  const region = world.debug?.v2RustRegion as { placement?: { activities?: object }; roads?: { nodes?: object } } | undefined;
+  const key = `1:${productRevision(world.roads)}:${productRevision(region?.placement?.activities)}:${productRevision(region?.roads?.nodes)}`;
+  let entries = occupations.get(landuse); if (!entries) { entries = new Map(); occupations.set(landuse, entries); }
+  let entry = entries.get(key); if (!entry) { entry = {}; entries.set(key, entry); if (entries.size > 4) entries.delete(entries.keys().next().value!); }
+  return entry;
 }
-/** Same product as v2ForestOccupation, rastered in two workers when called from the page. */
+/** Land-use/corridor revision, independent from presentation and visibility. Synchronous consumers reuse the async product. */
+export function v2ForestOccupation(world: World): ForestOccupation | undefined {
+  const entry = occupationEntry(world); if (!entry) return;
+  if (!entry.complete) { entry.whole = withLandDetail(forestOccupation(world.landuse!, undefined, undefined, forestCorridors(world, false)), world.landuse!); entry.complete = true; }
+  return entry.whole;
+}
+/** One preparation lane for occupation, holdings, footprint merges and display forest overrides. */
+export function v2ForestOccupationParts(world: World): OccupationParts {
+  const entry = occupationEntry(world), landuse = world.landuse;
+  if (!entry || !landuse) return { occupation: Promise.resolve(undefined), detail: Promise.resolve(undefined) };
+  if (entry.complete || typeof Worker === 'undefined' || typeof document === 'undefined') {
+    const whole = v2ForestOccupation(world);
+    return entry.parts ??= { occupation: Promise.resolve(whole && { ...whole, detail: undefined }), detail: Promise.resolve(whole?.detail) };
+  }
+  if (!entry.parts) {
+    const registered = registerDisplayLanduse(landuse), revision = productRevision(entry);
+    const occupation = registered.ready.then(() => runDisplayJob('occupation', { landuseRevision: registered.revision, revision, corridors: forestCorridors(world, false) }))
+      .then(result => {
+        if (result) workerOccupations.set(result.rgba, { landuseRevision: registered.revision, revision, epoch: registered.epoch });
+        return result;
+      }).catch(() => forestOccupation(landuse, undefined, undefined, forestCorridors(world, false)));
+    // Let every occupation subscriber post its dependent merge before sending optional detail.
+    // A main-thread task boundary preserves that order even when the page is CPU-throttled.
+    const detail = occupation.then(() => new Promise<void>(resolve => setTimeout(resolve, 0)))
+      .then(() => registered.ready).then(() => runDisplayJob('detail', { landuseRevision: registered.revision })).catch(() => landDetail(landuse));
+    entry.parts = { occupation, detail };
+    void Promise.all([occupation, detail]).then(([o, d]) => { entry.whole = o && { ...o, detail: d }; entry.complete = true; });
+  }
+  return entry.parts;
+}
 export async function v2ForestOccupationAsync(world: World): Promise<ForestOccupation | undefined> {
   const parts = v2ForestOccupationParts(world), [occupation, detail] = await Promise.all([parts.occupation, parts.detail]);
   return occupation && { ...occupation, detail };
 }
-/** withBuildingOccupation, rastered in the occupation worker when called from the page: only the packed
- * footprints and the base planes cross; the holdings detail stays here. Same bytes and key. */
+/** One merge per base-plane/accepted-footprint revision; 3D's sync consumer reads the same slot. */
 export function withBuildingOccupationAsync(base: ForestOccupation | undefined, scene: Building3dScene): Promise<ForestOccupation | undefined> {
+  if (!(scene.occupationBuildings ?? scene.buildings).length) return Promise.resolve(base);
+  const slot = occupationMergeSlot(base, scene);
+  if (slot.value) return Promise.resolve(slot.value.detail === base?.detail ? slot.value : { ...slot.value, detail: base?.detail });
+  if (slot.pending) return slot.pending.then(value => value && (value.detail === base?.detail ? value : { ...value, detail: base?.detail }));
   const shapes = buildingOccupationShapes(scene);
   if (!shapes) return Promise.resolve(base);
-  if (typeof document === 'undefined') return Promise.resolve(withOccupationShapes(base, shapes));
-  return new Promise(resolve => {
-    const local = (): void => resolve(withOccupationShapes(base, shapes));
-    let worker: Worker;
-    try { worker = new OccupationWorker(); } catch { local(); return; }
-    worker.onmessage = ({ data }) => { worker.terminate(); if (data.error) local(); else resolve({ ...data.result, detail: base?.detail }); };
-    worker.onerror = () => { worker.terminate(); local(); };
-    const packed = packOccupationShapes(shapes);
-    worker.postMessage({ source: base && { x: base.x, y: base.y, width: base.width, n: base.n, rgba: base.rgba, key: base.key }, shapes: packed }, [packed.buffer]);
-  });
+  const local = (): ForestOccupation => withOccupationShapes(base, shapes);
+  const packed = packOccupationShapes(shapes);
+  const ref = base && workerOccupations.get(base.rgba), retained = ref?.epoch === displayWorkerEpoch() ? ref : undefined;
+  const job = typeof Worker === 'undefined' || typeof document === 'undefined' ? Promise.resolve(local())
+    : runDisplayJob('merge', { retained, source: !retained && base ? { x: base.x, y: base.y, width: base.width, n: base.n, rgba: base.rgba, key: base.key } : undefined, shapes: packed }, [packed.buffer]).catch(local);
+  slot.pending = job.then(result => slot.value = { ...result, detail: base?.detail }).finally(() => { slot.pending = undefined; });
+  return slot.pending;
 }
 const pending = new WeakMap<object, Map<string, Promise<ForestField | undefined>>>();
 function displayForestRequest(world: World, settings: V2Settings, resolved: ResolvedAppearance): { key: string; build: () => Promise<ForestField> } | ForestField | undefined {
+  retainTerrainDisplayPreparation(world);
   if (!resolved.composition.vegetation.procedural) return;
   const configuration = effectiveTerrainSettings(settings, world.mapSize), overrides = resolved.vegetation.forest;
   const { enabled: _enabled, ...parameters } = overrides, forest = { ...configuration.forest, ...parameters, enabled: true };
@@ -81,13 +92,16 @@ function displayForestRequest(world: World, settings: V2Settings, resolved: Reso
   const climate = configuration.climateValues!, clearingProfile = resolved.traits.forestClearingProfile;
   // A town's own seed variations never move the woods of the whole map.
   const seed = seedSubset(world.seed, step => !step.startsWith('city/'));
-  const key = JSON.stringify([forest, climate, seed, clearingProfile]);
   const raster = decor?.raster;
-  return { key, build: () => buildForestField(cityForestInput(seed, climate,
+  const key = JSON.stringify([forest, climate, seed, clearingProfile, productRevision(raster?.height ?? world.terrain.height.data),
+    productRevision(raster?.water ?? world.terrain.water), raster?.n ?? world.terrain.height.w, raster?.width ?? world.mapSize]);
+  const input = cityForestInput(seed, climate,
     raster ? { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }
       : { x: 0, y: 0, width: world.mapSize, n: world.terrain.height.w, data: world.terrain.height.data },
     raster?.water ?? world.terrain.water, { clearingProfile,
-      ...(decor ? { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, decor.raster.width) } : {}) }), forest) };
+      ...(decor ? { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, decor.raster.width) } : {}) });
+  return { key, build: () => typeof Worker === 'undefined' || typeof document === 'undefined'
+    ? buildForestField(input, forest) : runDisplayJob('forest', { input, settings: forest, runtime: executionRuntime }).catch(() => buildForestField(input, forest)) };
 }
 const isField = (v: unknown): v is ForestField => !!v && typeof (v as ForestField).rgba !== 'undefined';
 /** Repaint the forest over retained heights (Rust: native or WASM, hence async). Never call terrain or settlement generation. */

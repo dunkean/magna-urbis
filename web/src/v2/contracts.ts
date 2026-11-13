@@ -87,6 +87,8 @@ export interface V2Appearance {
 
 /** V2 owns orchestration, while geometry is still produced by the existing engines. */
 export interface V2Settings {
+  /** Display-only calendar and apparent solar time; absent preserves historical manual lighting. */
+  scene?: import('./sceneClock').SceneClock;
   options: Options;
   extent: 'auto' | number;
   /** Total requested places, including the main settlement; 0 lets the core decide. */

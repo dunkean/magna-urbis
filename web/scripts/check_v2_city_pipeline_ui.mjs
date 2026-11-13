@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Real workers: separate placement, batch urban stops, subset preservation and bilingual scope UI. */
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
@@ -91,7 +92,7 @@ try {
   assert.match(await page.locator('[data-town="west"] .settlement-stage').textContent(), /routes et quartiers/);
   await page.locator('#row-city-composition').scrollIntoViewIfNeeded();
   await page.screenshot({ path: resolve(out, 'cities-fr.png'), fullPage: true });
-  await page.locator('#language-select').selectOption('en');
+  await chooseWorkshopPreference(page, 'language', 'en');
   assert.match(await page.locator('#city-scope-count').textContent(), /2 \/ 3 cities/);
   assert.match(await page.locator('#family-tab-cities').textContent(), /Cities/);
   await page.locator('#cities-select-none').click();

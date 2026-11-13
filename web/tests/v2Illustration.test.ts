@@ -8,7 +8,7 @@ vi.mock('../../illustration/web/index.mjs', () => ({
   captureViewport: mocked.viewport,
   mountIllustration: ({ capture }: { capture: () => Promise<any> }) => {
     mocked.capture = capture;
-    return { button: { setAttribute() {}, title: '' }, dialog: {}, open() {}, dispose() {} };
+    return { button: { setAttribute() {}, title: '' }, dialog: { classList: { add() {} }, querySelector: () => ({ open: false, insertBefore() {} }) }, open() {}, dispose() {} };
   },
 }));
 vi.mock('../src/v2/i18n', () => ({ registerMessages() {}, setText() {}, translate: (text: string) => text }));

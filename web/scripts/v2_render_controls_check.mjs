@@ -1,3 +1,4 @@
+import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 /** Configure every retained-map render family without invoking generation. */
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -70,7 +71,7 @@ try {
   await page.locator('#render-settings').evaluate(element => { element.open = true; });
   await page.locator('#render-settings .v2-render-popup').evaluate(element => { element.scrollTop = 0; });
   await page.screenshot({ path: resolve(output, 'desktop-render-panel-en.png') });
-  await page.locator('#language-select').selectOption('fr');
+  await chooseWorkshopPreference(page, 'language', 'fr');
   assert.match(await page.locator('#render-settings>summary').textContent(), /Apparence/);
   assert.deepEqual(await recipe(), selected);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -79,7 +80,7 @@ try {
   const bounds = await page.locator('#render-settings .v2-render-popup').boundingBox();
   assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391 && bounds.y >= 0 && bounds.y + bounds.height <= 845, JSON.stringify(bounds));
   await page.screenshot({ path: resolve(output, 'mobile-render-panel-fr.png') });
-  await page.locator('#language-select').selectOption('en'); await page.setViewportSize({ width: 1440, height: 1000 });
+  await chooseWorkshopPreference(page, 'language', 'en'); await page.setViewportSize({ width: 1440, height: 1000 });
   assert.deepEqual(await recipe(), selected);
   assert.deepEqual(await page.evaluate(() => window.__renderGenerationActions), []);
   assert.deepEqual(report.errors, []);

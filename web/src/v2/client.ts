@@ -1,6 +1,7 @@
+import EngineWorker from './engine.worker?worker';
+import { RenderReadiness } from '../render/renderReadiness';
 import { getLanguage } from './i18n';
 import { getDistanceUnit } from './units';
-import EngineWorker from './engine.worker?worker';
 import RenderWorker from '../ui/renderWorker?worker';
 import { internTerrain } from './terrainIntern';
 import { createViewer, type Viewer } from '../ui/viewer';
@@ -50,6 +51,34 @@ export class StudioClient {
   private brushSourcesSent = false;
   private appearanceWork:Promise<void>=Promise.resolve();
   private appearanceRequest=0;
+  private readiness?: RenderReadiness;
+  private view3dActive = false;
+  set3dActive(value: boolean): void {
+    if (this.view3dActive && !value) this.canvas.dataset.renderPending = '1';
+    this.view3dActive = value; this.viewer.setPaused(value); this.bench?.setSuspended(value);
+    if (value) { clearTimeout(this.benchMiniTimer); this.benchMiniTimer = undefined; }
+  }
+  begin3dRequest(): RenderReadiness { return this.readiness = new RenderReadiness('3d'); }
+  /** Coarse coverage releases the opening card; exact visible refinement has its own mark. */
+  async waitFor3d(view: { active: boolean; stats(): { programsReady?: boolean; lod?: { tiles: number; ready: number; pending: number; covered?: boolean } } }, request = this.readiness): Promise<void> {
+    request?.mark('fields-ready');
+    // Material setters queue a draw; status from the preceding style is not its readiness.
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const until = performance.now() + 90_000;
+    for (;;) {
+      if (!view.active || request !== this.readiness) return;
+      const stats = view.stats(), lod = stats.lod;
+      if (stats.programsReady) request?.mark('programs-ready');
+      if (lod?.covered) { request?.mark('first-useful-frame'); request?.mark('first-covered-frame'); }
+      if (lod && lod.tiles > 0 && lod.ready >= lod.tiles && lod.pending === 0 && stats.programsReady && !this.bench?.derivedPending()) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        if (request === this.readiness) { request?.mark('first-covered-frame'); request?.mark('visible-complete'); }
+        return;
+      }
+      if (performance.now() > until) throw new Error('The 3D view did not finish drawing within 90 seconds.');
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
   private benchMiniRevision = -1;
   /** One resolution per (settings, world, preview): show() and applyAppearance() share it. */
   private resolutions: { settings: V2Settings; world: World | undefined; preview: boolean; resolved: ResolvedAppearance }[] = [];
@@ -118,6 +147,9 @@ export class StudioClient {
   }
   run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
+    // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
+    void import('./benchRenderer').catch(() => undefined);
+    void import('../ui/terrainRenderer').then(module => module.prewarmTerrainRenderer(), () => undefined);
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject };
@@ -168,7 +200,9 @@ export class StudioClient {
     if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
     this.render?.terminate();this.render=null;await this.init();
   }
-  async show(world: World, keepView = false): Promise<void> {
+  async show(world: World, keepView = false, requested?: RenderReadiness): Promise<void> {
+    const nextRequest = requested ?? new RenderReadiness(this.view3dActive ? '3d' : '2d');
+    this.readiness = nextRequest;
     if (!renderGeometryReady()) await loadRenderGeometry(); // synchronous Rust render geometry (city ground, coast, contours)
     const mapChanged = this.world?.mapSize !== world.mapSize;
     if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
@@ -182,10 +216,12 @@ export class StudioClient {
     const useBench=!!settings&&resolved!.path==='composite';
     if(useBench){
       const {BenchRenderer}=await import('./benchRenderer');
-      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world){this.benchMiniRevision=-1;}if(this.benchActive&&this.world)this.viewer.contentChanged(this.world.mapSize,true);});
+      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world){this.benchMiniRevision=-1;}if(this.benchActive&&this.world&&!this.view3dActive)this.viewer.contentChanged(this.world.mapSize,true);});
+      this.bench.setSuspended(this.view3dActive);
       this.bench.resourceSource=w=>this.resources(w);
       this.benchPreparing++;
-      try{await this.bench.set(world,settings!,resolved!);}finally{this.benchPreparing--;}
+      const request = nextRequest;
+      try{await this.bench.set(world,settings!,resolved!,{},this.view3dActive ? new RenderReadiness('2d') : request);}finally{this.benchPreparing--;}
       if(!this.benchActive)this.render?.postMessage({type:'release'});
       this.benchActive=true;
       this.viewer.setDirectSource({element:this.bench.element,draw:frame=>this.drawBench(frame)});
@@ -217,7 +253,7 @@ export class StudioClient {
   private drawBench(frame:FrameRequest):{mini?:HTMLCanvasElement;ms:number;band:number;scale:number}{
     const started=performance.now();
     const renderer=this.bench;
-    if(!renderer||!this.benchActive)return{ms:0,band:0,scale:frame.view.scale};
+    if(!renderer||!this.benchActive||this.view3dActive)return{ms:0,band:0,scale:frame.view.scale};
     let mini:HTMLCanvasElement|undefined;
     // The whole-map miniature costs as much as a full frame: the live view shows first, the miniature follows in a later frame.
     if(frame.mini&&!this.benchPreparing&&(this.benchMiniRevision!==this.appearanceRevision||this.benchMiniSize!==frame.mini)){
@@ -232,6 +268,10 @@ export class StudioClient {
     renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
     this.canvas.dataset.renderer=String(renderer.stats.renderer);this.canvas.dataset.renderStyle=String(renderer.stats.style);
     this.canvas.dataset.terrainBackend=String(renderer.stats.terrainBackend);
+    this.canvas.dataset.renderRequest=String(renderer.requestId??'');
+    this.canvas.dataset.renderCache=String(renderer.stats.frameCache??'miss');
+    this.canvas.dataset.renderFrameBytes=String(renderer.retainedStorage().frames);
+    this.canvas.dataset.renderRetainedBytes=String(renderer.retainedStorage().bytes);
     this.canvas.dataset.cityRender=JSON.stringify(renderer.stats.city??{});this.canvas.dataset.renderPending=String(renderer.pendingWork());this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
     return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
   }
@@ -249,8 +289,9 @@ export class StudioClient {
   /** Appearance changes redraw retained geometry. They never enter the generation worker. */
   setAppearance(settings:V2Settings):Promise<void>{
     const request=++this.appearanceRequest;
+    const readiness = new RenderReadiness(this.view3dActive ? '3d' : '2d');
     const snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined};
-    const work=this.appearanceWork.catch(()=>{}).then(()=>request===this.appearanceRequest?this.applyAppearance(snapshot):undefined);this.appearanceWork=work;return work;
+    const work=this.appearanceWork.catch(()=>{}).then(()=>{if(request!==this.appearanceRequest)return;this.readiness=readiness;return this.applyAppearance(snapshot);});this.appearanceWork=work;return work;
   }
   private async applyAppearance(settings:V2Settings):Promise<void>{
     const previousSettings=this.appearanceSettings,previousDisplay=this.display;
@@ -260,7 +301,7 @@ export class StudioClient {
     this.display={...this.display,...resolvedDisplayOptions(display),colors:display.palette.colors};
     const needsBench=this.resolve(settings,this.world??undefined,true).path==='composite';
     if(this.render&&!needsBench&&display.cartography.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
-    if(this.world&&(!this.render||this.benchActive||needsBench))await this.show(this.world,true);
+    if(this.world&&(!this.render||this.benchActive||needsBench))await this.show(this.world,true,this.readiness);
     else if(this.world){if(!sameDisplay(previousDisplay,this.display))this.render?.postMessage({type:'display',display:this.display});this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
     else if(this.render&&!needsBench&&!sameDisplay(previousDisplay,this.display))this.render.postMessage({type:'display',display:this.display});
     } catch(error) {
@@ -273,7 +314,7 @@ export class StudioClient {
     // A style switch may still be setting up the bench and compiling its look. Capturing earlier
     // would cache the old map or its preview, or enter a second synchronous pipeline compilation.
     for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
-    if(this.benchActive){if(!this.bench?.groundBackground())this.bench?.backgroundUrl();return;}
+    if(this.benchActive){await this.bench?.exactReady();if(!this.bench?.groundBackground())this.bench?.backgroundUrl();return;}
     if(!this.world)return;
     const key=JSON.stringify(this.display);
     if(this.classicBackground?.world===this.world&&this.classicBackground.key===key)return;

@@ -1,33 +1,16 @@
 import { FRACTAL_ROTATIONS } from '../../../rust/bridge/terrainAdjust';
 import type { HeightLayer, TerrainLook } from './terrainGl';
 import { createTerrain3dNoiseSampler } from './terrain3dNoise';
+import { floatPyramid } from '../render/floatPyramid';
 
 /** Box-filtered pyramid of a square grid, largest first (the engine's Surface). */
 export function heightPyramid(data: Float32Array, n: number): Float32Array[] {
-  const levels = [data];
-  let size = n;
-  while (size > 1 && size % 2 === 0) {
-    const previous = levels[levels.length - 1], half = size / 2, next = new Float32Array(half * half);
-    for (let y = 0; y < half; y++) for (let x = 0; x < half; x++) {
-      const i = 2 * y * size + 2 * x;
-      next[y * half + x] = (previous[i] + previous[i + 1] + previous[i + size] + previous[i + size + 1]) * .25;
-    }
-    levels.push(next); size = half;
-  }
-  return levels;
+  return floatPyramid(data, n);
 }
 
 interface PreparedLayer { layer: HeightLayer; levels: Float32Array[]; cell: number; inset: number }
-const pyramids = new WeakMap<Float32Array, { n: number; levels: Float32Array[] }>();
 function prepare(layer: HeightLayer, base: boolean): PreparedLayer {
-  let levels = [layer.data];
-  if (base) {
-    let cached = pyramids.get(layer.data);
-    if (!cached || cached.n !== layer.n) {
-      cached = { n: layer.n, levels: heightPyramid(layer.data, layer.n) }; pyramids.set(layer.data, cached);
-    }
-    levels = cached.levels;
-  }
+  const levels = base ? heightPyramid(layer.data, layer.n) : [layer.data];
   return { layer, levels, cell: layer.width / layer.n, inset: base ? 0 : 2 * layer.width / layer.n };
 }
 

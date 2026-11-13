@@ -51,6 +51,8 @@ export interface Viewer {
   setView(v: View): void;
   zoomBy(factor: number): void;
   invalidate(): void;
+  /** Keep shared products/camera while another view covers this viewer. */
+  setPaused(paused: boolean): void;
   getView(): View;
   /** Wait until the displayed pixels represent the current camera, including worker replies. */
   waitForFrame(): Promise<void>;
@@ -69,7 +71,7 @@ export function createViewer(o: ViewerOptions): Viewer {
   let mapSize = 1000;
   let view: View = { cx: 500, cy: 500, scale: 0.5 };
   let w = 1, h = 1, dpr = 1;
-  let dirty = false, raf = 0, destroyed = false;
+  let dirty = false, raf = 0, destroyed = false, paused = false;
   // async mode state
   let bmCtx: ImageBitmapRenderingContext | null = null;
   let shown: { view: View; w: number; h: number } | null = null;
@@ -102,7 +104,7 @@ export function createViewer(o: ViewerOptions): Viewer {
   };
   const invalidate = (): void => {
     dirty = true;
-    if (!raf && !destroyed) raf = requestAnimationFrame(frame);
+    if (!raf && !destroyed && !paused) raf = requestAnimationFrame(frame);
   };
 
   /** Pan/zoom the displayed bitmap to the current view (CSS transform: compositor only). */
@@ -138,6 +140,7 @@ export function createViewer(o: ViewerOptions): Viewer {
 
   function frame(): void {
     raf = 0;
+    if (paused) return;
     if (!dirty) return;
     dirty = false;
     view = clampView(view, mapSize, w, h);
@@ -310,6 +313,7 @@ export function createViewer(o: ViewerOptions): Viewer {
       invalidate();
     },
     fit, setView: set, zoomBy: (f) => zoomBy(f), invalidate,
+    setPaused(value: boolean) { paused = value; if (!paused) invalidate(); },
     getView: () => view,
     async waitForFrame() {
       const started = performance.now();

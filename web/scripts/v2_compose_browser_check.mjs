@@ -101,7 +101,7 @@ try {
   await page.locator('[data-town="main"]').click();
   await input('#local-sprawl', 1.3);
   report.checks.localTownLog = await job('#build-town');
-  await page.locator('#inspector .close').click();
+  await page.locator('#editor-close').click();
   await page.locator('#map-style').selectOption('atlas');
   await page.locator('.display-menu > summary').click();
   await page.locator('[data-setting-path="appearance.composition.ground.contours"]').uncheck();

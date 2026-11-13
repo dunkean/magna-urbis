@@ -5,8 +5,6 @@ import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestR
 import { PROCEDURAL_RECIPE_VERSION, isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
 import { COMPACT_VERSION } from '../../../rust/bridge/terrainPhasor';
 import { CLIMATE_ZONE_BASE, CLIMATE_ZONE_VALUES } from '../../../rust/bridge/terrainClimate';
-import { seaDistanceSurface } from '../render/terrainWater';
-import { loadRenderGeometry } from '../../../rust/bridge/renderGeometry';
 import { Rng } from '../gen/core/rng';
 import { urbanSeed } from './urbanSeeds';
 import { seedRoot, seedSubset, stepSeed } from '../../../rust/bridge/generationSeed';
@@ -43,6 +41,7 @@ import { fingerprintBytes, fingerprintNumbers } from './terrainFingerprint';
 import { cloneV2TerrainForStage, cloneV2WorldForGeneration } from './worldState';
 import { proceduralSignatures, stableKey } from '../../../rust/bridge/terrainCheckpoints';
 import { TERRAIN_STAGE_OUTPUTS } from './terrainStagePreview';
+import { startTerrainDisplayPreparation } from './displayPrep';
 export { defaultSettings, adaptedExtent } from './settings';
 export type { V2Settings, V2Progress, ProgressCallback, V2Project } from './contracts';
 const forestFields = new Map<string, { field: ForestField; cover: Float32Array }>();
@@ -217,15 +216,15 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       if (!generated.terrain) throw new Error('The Rust adapter did not return the retained terrain and water network.');
       report(onProgress,'terrain-projection','PrÃ©paration de la carte, des cÃ´tes et du rÃ©seau hydrographiqueâ€¦',0,0);
       nativeTerrain = projectEngineTerrain(generated.terrain);
-      // The renderer reads this instead of searching the coast on the main thread.
-      if (!generated.terrain.waterSurface) await loadRenderGeometry();
-      generated.terrain.waterSurface ??= seaDistanceSurface(generated.terrain, generated.terrain.width);
+      // Overlap style-independent display fields with cover, regional and urban generation.
+      if (includeCover) startTerrainDisplayPreparation(nativeTerrain, options.mapSize!);
     } else if (!options.importedHeight && settings.runtime?.compute === 'gpu') {
       throw new Error('Le moteur TypeScript fonctionne sur CPU. Choisissez Rust pour utiliser le GPU.');
     }
     terrain = nativeTerrain ?? terrainForExtent({ ...options, seed: configuration.seed }, options.mapSize!, new Rng('magna-urbis:' + configuration.seed)).terrain;
     // Rust results retain their own hydrology; only the explicitly selected classic engine runs TS drainage.
     (terrain as TerrainLayer & { v2EngineStats?: Record<string, string | number> }).v2EngineStats = engineStats;
+    if (includeCover) startTerrainDisplayPreparation(terrain, options.mapSize!);
     report(onProgress, 'terrain-cache', 'Enregistrement du relief et de lâ€™hydrologieâ€¦', 1, 3);
     if (!terrainStage || includeCover) persisted = await cache.put(key, terrain);
   }
@@ -236,6 +235,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       stats: { 'v2.stage': 'terrain', 'v2.previewStage': terrainStage!, 'v2.engine': V2_ENGINE_VERSION, 'v2.terrainKey': key,
         ...((terrain as V2TerrainLayer).v2EngineStats ?? {}), 'v2.cache': hit?.source ?? 'miss', 'v2.persisted': 0, 'ms.total': Math.round(performance.now() - t0) } };
   }
+  startTerrainDisplayPreparation(terrain, options.mapSize!);
   report(onProgress, 'biome', 'Classification du biome et du couvert naturelâ€¦', 2, 3);
   const retained = terrain as V2TerrainLayer;
   if (nativeEngine) {

@@ -1,6 +1,7 @@
 import type { World } from '../gen/types';
 import type { Palette } from './styles';
 import type { CanvasLike } from './canvas';
+import { RecordingContext } from './gpu/recorder';
 import { BRUSH_ATLAS, BRUSH_CELL, brushCell, brushColorMatrix, brushMotif, type BrushImages, type BrushKind } from './brushes';
 
 const PATTERN_BYTES = 16 * 1024 * 1024;
@@ -43,7 +44,8 @@ export class CanvasBrushes {
     const motif = brushMotif(this.world, kind);
     // Exact world origin and width; only sampling resolution changes with zoom/DPR. No viewport seam.
     const width = Math.min(1024, Math.max(1, Math.ceil(motif.width * Math.max(1, Math.min(8, scale * dpr)))));
-    const key = `${kind}:${width}`;
+    // Native and recorded patterns never mix: one motif cache entry per engine.
+    const key = `${ctx instanceof RecordingContext ? 'rec' : 'cpu'}:${kind}:${width}`;
     const old = this.motifs.get(key);
     if (old) { this.motifs.delete(key); this.motifs.set(key, old); return old.pattern; }
     try {

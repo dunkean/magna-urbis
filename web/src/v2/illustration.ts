@@ -59,6 +59,10 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
     return { image: await captureViewport(element), guides: {}, context };
   } });
   setText(mounted.button, '✦ Illustrer');
+  mounted.dialog.classList.add('workbench-illustration');
+  mounted.dialog.querySelector<HTMLDetailsElement>('[data-local-tuning]')!.open = false;
+  const header = mounted.dialog.querySelector('header')!, close = mounted.dialog.querySelector('[data-illustration-close]')!;
+  for (const action of ['[data-generate]', '[data-cancel]']) header.insertBefore(mounted.dialog.querySelector(action)!, close);
   mounted.button.setAttribute('data-i18n-title', 'Créer une illustration de cette vue');
   mounted.button.title = translate('Créer une illustration de cette vue');
   return mounted;

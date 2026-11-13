@@ -22,8 +22,15 @@ export function fitView(mapSize: number, w: number, h: number): View {
 }
 /** Keep scale in range and the view center inside the map. */
 export function clampView(v: View, mapSize: number, w: number, h: number, maxScale = MAX_SCALE): View {
-  const scale = Math.max(fitScale(mapSize, w, h) * 0.5, Math.min(maxScale, v.scale));
-  return { cx: Math.max(0, Math.min(mapSize, v.cx)), cy: Math.max(0, Math.min(mapSize, v.cy)), scale };
+  // Zooming out stops a little past the whole-map view: further out the map is a speck with nothing to read.
+  const scale = Math.max(fitScale(mapSize, w, h) * 0.8, Math.min(maxScale, v.scale));
+  // A map narrower than the view stays whole on screen: wheel steps past the zoom limit used to keep shifting the
+  // centre around the cursor, sliding the map out of view.
+  const axis = (c: number, px: number): number => {
+    const slack = (px / scale - mapSize) / 2;
+    return slack > 0 ? Math.max(mapSize / 2 - slack, Math.min(mapSize / 2 + slack, c)) : Math.max(0, Math.min(mapSize, c));
+  };
+  return { cx: axis(v.cx, w), cy: axis(v.cy, h), scale };
 }
 /** Zoom by `factor`, keeping the world point under screen (sx, sy) fixed. */
 export function zoomAt(v: View, factor: number, sx: number, sy: number, w: number, h: number): View {
