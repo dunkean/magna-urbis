@@ -3678,6 +3678,7 @@ fn generate_once(
         warnings.extend(network::clean_options(&mut streets, center, radius, true, &centers, cfg, surface));
     }
     lap("clean+exits");
+    routing::tally("clean+exits");
     {
         // Main centre first; every quarter routes to its nearest centre.
         let mut ordered: Vec<_> = structure.as_ref().map_or_else(Vec::new, |s| {

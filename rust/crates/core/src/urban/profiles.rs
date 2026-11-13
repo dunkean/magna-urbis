@@ -130,7 +130,7 @@ mod tests {
     fn every_culture_has_replayable_native_recipes_and_a_profile() {
         let cat = catalogue();
         let cultures = cat["cultures"].as_object().unwrap();
-        assert_eq!(cultures.len(), 79);
+        assert_eq!(cultures.len(), 80);
         for (id, c) in cultures {
             let p = profile(id);
             assert!(

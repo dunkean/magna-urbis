@@ -9,6 +9,8 @@ import { bindTree, registerMessages, setDynamicText, setText, translate } from '
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { houseControlDefaults, workshopControlDefaults, morphologyTemplate, urbanCatalogue, urbanChoiceNames, urbanControlFields, urbanField, urbanFieldNames, urbanName, urbanSectionNames, URBAN_ZONES, type UrbanParameterField } from './urbanControlSchema';
 import './urbanControls.css';
+import { mountMixEditor, mountStyleSheetEditor, type UrbanZone } from './styleMixEditor';
+import type { StyleFacet, StyleMix } from '../../../rust/bridge/urbanConfig';
 import { CITY_ARCHITECTURES, DEFAULT_CITY_ARCHITECTURE, type CityArchitecture } from '../render/cityContract';
 
 const architectureNames: Record<CityArchitecture, string> = { silhouette: 'City volumes', compact: 'Compact plans (houses generator)', detailed: 'Detailed houses (houses generator)' };
@@ -168,8 +170,8 @@ const textMessages: Record<string, string> = {
   'The free workshop requires the fantasy historical policy and a fantasy house model. Dimensions stay exact.': 'L’atelier libre requiert la politique historique fantasy et un modèle de maison fantasy. Les dimensions restent exactes.',
   'Clear the free workshop': 'Supprimer l’atelier libre', 'Load native architecture catalogue': 'Charger le catalogue architectural natif', 'Loading native house catalogue…': 'Chargement du catalogue natif des maisons…', 'Native catalogue ready': 'Catalogue natif prêt', 'Catalogue unavailable: {error}': 'Catalogue indisponible : {error}',
   'Names, roles, resources and lore are identifiers used by the generator; resource lists accept commas or line breaks.': 'Les noms, rôles, ressources et éléments de contexte sont des identifiants utilisés par le générateur ; les listes acceptent les virgules ou retours à la ligne.',
-  'Cultural rules by growth zone': 'Règles culturelles par zone de croissance', 'Mixed architectural styles': 'Styles architecturaux mélangés', 'Whole settlement': 'Tout le lieu', 'Core': 'Cœur', Middle: 'Extension', Edge: 'Périphérie', Faubourg: 'Faubourg', Village: 'Village',
-  'Inherit architecture styles': 'Hériter des styles architecturaux', 'Add a style': 'Ajouter un style', 'Remove style': 'Supprimer le style', 'Weight': 'Poids', 'Spread': 'Répartition', Lot: 'Lot', Block: 'Îlot', Quarter: 'Quartier', 'Quarter identifier': 'Identifiant de quartier', 'Add quarter styles': 'Ajouter les styles du quartier',
+  'Cultural rules by growth zone': 'Règles culturelles par zone de croissance', 'Mixed architectural styles': 'Styles architecturaux mélangés', 'Whole settlement': 'Tout le lieu',
+  'Inherit architecture styles': 'Hériter des styles architecturaux', 'Add a style': 'Ajouter un style', 'Remove style': 'Supprimer le style', 'Quarter identifier': 'Identifiant de quartier', 'Add quarter styles': 'Ajouter les styles du quartier',
   'Native outline coordinates (metres)': 'Coordonnées du contour natif (mètres)', 'Outer boundary': 'Contour extérieur', 'Hole': 'Trou', 'Add vertex': 'Ajouter un sommet', 'Remove vertex': 'Supprimer le sommet', 'Add hole': 'Ajouter un trou', 'Remove hole': 'Supprimer le trou', 'Clear outline override': 'Supprimer la modification du contour',
   'At least three finite vertices per ring are required.': 'Chaque anneau requiert au moins trois sommets finis.', 'Generate through': 'Générer jusqu’à', Architecture: 'Architecture', 'City volumes': 'Volumes de la ville', 'Compact plans (houses generator)': 'Plans compacts (générateur houses)', 'Detailed houses (houses generator)': 'Maisons détaillées (générateur houses)', Layout: 'Plan', Parcels: 'Parcelles', Programme: 'Programme', Buildings: 'Bâtiments',
   'Merge into neighbours': 'Fusionner avec les voisins', 'Keep as a garden': 'Conserver en jardin',
@@ -274,7 +276,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     }); forms.push(form);
     if (key === 'programme') message(details, 'Names, roles, resources and lore are identifiers used by the generator; resource lists accept commas or line breaks.');
   }
-  if (global) { if (extra('phases')) mountPhaseControls(); if (extra('mixtures')) mountHouseMixtures(); if (extra('archetypes')) mountSiteArchetypes(); }
+  if (global) { if (extra('phases')) { mountPhaseControls(); mountStyleSheet(); } if (extra('mixtures')) mountHouseMixtures(); if (extra('archetypes')) mountSiteArchetypes(); }
   if (scope.kind === 'quarter' || scope.kind === 'parcel') mountOutline();
   if ((global || scope.kind === 'building') && extra('catalogue')) mountCatalogue();
   function sync(): void { root.inert = !!parts?.disabled?.(); effectiveCache = scopes().map(s => memoEffectiveValues(getSettings(), s)); effects.forEach(effect => effect()); forms.forEach(form => form.sync()); }
@@ -288,31 +290,21 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
       forms.push(mountParameterForm(body, fields.map(f => ({ ...f, emptyLabel: 'Automatic', id: `urban-${scopeId}-${f.path.replaceAll('.', '-')}` })), { getValue: path => effective(path) ?? effective(path.startsWith('parcels.') ? 'parcels.operator' : `layout.${path.split('.').at(-1)}`), isMixed, setValue: set }));
     }
   }
+  /** The style sheet of hybrid cities (`layout.styleSheet`), next to the cultural rules by growth zone. */
+  function mountStyleSheet(): void {
+    const mixPath = (facet: StyleFacet, zone?: UrbanZone) => `layout.styleSheet.${facet}.${zone ? `zones.${zone}` : 'city'}`;
+    const editor = mountStyleSheetEditor(root, {
+      getMix: (facet, zone) => effective(mixPath(facet, zone)) as StyleMix | undefined,
+      setMix: (facet, zone, mix) => set(mixPath(facet, zone), mix),
+      defaultCulture: () => getSettings().options.culture, path: 'layout.styleSheet',
+    });
+    effects.push(editor.sync);
+  }
   function mountHouseMixtures(): void {
     const box = section(root, 'Mixed architectural styles');
     const mountMix = (path: string, title: string): void => {
-      const area = section(box, title), rows = document.createElement('div'); area.append(rows);
-      let identity = '';
-      const render = () => {
-        const value = effective(path) as HouseMix | undefined, nextIdentity = JSON.stringify(value);
-        if (nextIdentity === identity) return; identity = nextIdentity; rows.replaceChildren();
-        if (!value) return;
-        const spread = document.createElement('label'); const caption = document.createElement('span'); setText(caption, 'Spread');
-        const select = document.createElement('select'); select.dataset.settingPath = `${path}.spread`;
-        for (const id of ['lot', 'block', 'quarter']) { const option = document.createElement('option'); option.value = id; setText(option, id[0].toUpperCase() + id.slice(1)); select.append(option); } select.value = value.spread;
-        select.onchange = () => set(path, { ...value, spread: select.value }); spread.append(caption, select); rows.append(spread);
-        value.styles.forEach((style, i) => {
-          const row = document.createElement('div'); row.className = 'urban-mix-row';
-          const culture = document.createElement('select'); culture.setAttribute('aria-label', translate('Culture')); culture.dataset.settingPath = `${path}.styles.${i}.culture`;
-          for (const id of Object.keys(urbanCatalogue.cultures)) culture.append(new Option(id, id)); culture.value = style.culture;
-          const weight = document.createElement('input'); weight.type = 'number'; weight.min = '0'; weight.step = 'any'; weight.value = String(style.weight); weight.setAttribute('aria-label', translate('Weight')); weight.dataset.settingPath = `${path}.styles.${i}.weight`;
-          const update = () => { const n = Number(weight.value); if (!Number.isFinite(n) || n < 0) return; const styles = clone(value.styles); styles[i] = { culture: culture.value, weight: n }; set(path, { ...value, styles }); };
-          culture.onchange = update; weight.onchange = update; row.append(culture, weight);
-          button(row, 'Remove style', () => { const styles = value.styles.filter((_, j) => i !== j); set(path, styles.length ? { ...value, styles } : undefined); }); rows.append(row);
-        }); bindTree(rows);
-      };
-      button(area, 'Add a style', () => { const current = effective(path) as HouseMix | undefined; set(path, { spread: current?.spread ?? 'lot', styles: [...current?.styles ?? [], { culture: getSettings().options.culture, weight: 100 }] }); });
-      button(area, 'Use cultural styles', () => set(path, undefined)); effects.push(render);
+      const editor = mountMixEditor(section(box, title), { get: () => effective(path) as HouseMix | undefined, set: mix => set(path, mix), defaultCulture: () => getSettings().options.culture, path, labels: { add: 'Add a style', remove: 'Remove style', reset: 'Use cultural styles' } });
+      effects.push(editor.sync);
     };
     mountMix('houses.houses.city', 'Whole settlement');
     for (const zone of URBAN_ZONES) mountMix(`houses.houses.zones.${zone}`, zone[0].toUpperCase() + zone.slice(1));

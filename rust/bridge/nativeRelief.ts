@@ -25,7 +25,7 @@ interface Meta {
   region: { x: number; y: number; width: number; resolution: number; minHeight: number | null; maxHeight: number | null } | null;
   arrays: { name: string; type: 'f32' | 'u8'; count: number }[];
 }
-type Header = { op: 'build' | 'edit' | 'coast' | 'read'; [key: string]: unknown };
+type Header = { op: 'build' | 'edit' | 'coast' | 'underdark' | 'read'; [key: string]: unknown };
 
 const MISSING = '[relief_session_missing]';
 /** NaN tuning (relief default) travels as null. */
@@ -60,6 +60,9 @@ export class NativeReliefEngine {
   coast(mask: number, mode: string, coastTuning?: Float64Array, surface?: Float32Array): Promise<void> {
     return this.mutate({ op: 'coast', mask, mode, surface: !!surface, ...(coastTuning ? { tuning: finite(coastTuning) } : {}) }, surface);
   }
+
+  /** `carve_underdark`: the retained relief becomes caves and tunnels. */
+  carveUnderdark(seed: string): Promise<void> { return this.mutate({ op: 'underdark', seed }); }
 
   async sampleRegion(x: number, y: number, extent: number, resolution: number): Promise<NativeReliefRegion> {
     const { meta, arrays } = await this.send({ op: 'read', region: { x, y, extent, resolution } });

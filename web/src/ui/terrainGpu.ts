@@ -25,7 +25,7 @@ import { boxMips, rasterMips } from './boxMips';
 import { LiveGround } from './liveGround';
 import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
-import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
+import { shoreRingPixels } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
@@ -35,6 +35,7 @@ import { terrainLights } from '../render/terrainLighting';
 import { groundCoverActive } from '../render/materialLook';
 import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
 import { styleTraits, terrainStyle } from '../render/terrainStyle';
+import { biomePalette } from '../render/biomes';
 import { waterUniforms } from '../render/waterStyle';
 import { retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { paintRetainedWaterView, retainedRegime, type RetainedRegime } from './retainedWaterRegime';
@@ -80,14 +81,6 @@ class Params {
       view[field.offset / 4 + element * stride + component] = view === this.u32 ? values[k] >>> 0 : values[k];
     }
   }
-}
-
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-/** IEEE half of a float (round toward zero), for the RG16F shore ring. */
-function toHalf(v: number): number {
-  f32[0] = v; const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
-  if (e <= 0) return e < -10 ? s : s | ((m | 0x800000) >> (14 - e));
-  return e >= 31 ? s | 0x7bff : s | (e << 10) | (m >> 13);
 }
 
 const TERRAIN_TEXTURES = Object.keys(WGSL.WGSL_TEXTURES).filter(name => name !== 'uLayer');
@@ -307,7 +300,9 @@ export class TerrainGpu implements TerrainRenderer {
   private lake?: GpuImage; private lakeMode = 0; private lakeN = 0;
   private overlay?: GpuImage;
   private coastDistance?: GpuImage;
-  private shoreRing?: { layer: object; image: GpuImage; x: number; y: number; width: number };
+  private shoreRing?: { layer: object; revision: number; image: GpuImage; x: number; y: number; width: number };
+  /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
+  private readonly ringChanged = (): void => this.request();
   private forest?: ForestImages;
   private occupation?: { data: ForestOccupation; image: GpuImage };
   private landDetail?: { data: LandDetail; image: GpuImage };
@@ -484,7 +479,7 @@ export class TerrainGpu implements TerrainRenderer {
     let cave: GpuImage | undefined;
     if (layer.cave?.length) {
       const mask = new Uint8Array(layer.cave.length);
-      for (let i = 0; i < mask.length; i++) if (layer.cave[i]) mask[i] = 255;
+      mask.set(layer.cave);
       cave = this.image(layer.n, layer.n, 'r8unorm', mask, 1);
     }
     return { layer, levels, texture, view, cave: cave?.texture, caveView: cave?.view, alpha: 1, fadeStart: 0 };
@@ -737,7 +732,7 @@ export class TerrainGpu implements TerrainRenderer {
    * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand. */
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
   }
   private terrainPipeline(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha', wait: boolean): GPURenderPipeline | undefined {
     return this.gpu.pipeline(this.gpu.terrainKey(v, pass, blend), () => this.gpu.terrainDescriptor(v, pass, blend), wait);
@@ -824,7 +819,8 @@ export class TerrainGpu implements TerrainRenderer {
     if (surface.canvas.width !== width || surface.canvas.height !== height) { surface.canvas.width = width; surface.canvas.height = height; }
     const { view } = state, px = 1 / (view.scale * dpr);
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
-    const definition = terrainStyle(look.style, look.colors), pal = definition.palette, water = terrainStyle(look.waterLook === 'natural' ? 'render3d' : look.waterStyle ?? look.style, look.waterLook === 'natural' ? undefined : look.colors).water;
+    // Underdark map grounds take the underdark hypsometry (render/biomes.ts), as the 2D overlay does.
+    const definition = terrainStyle(look.style, look.colors), pal = look.underdark && definition.traits.family === 'map' ? biomePalette(definition.palette, 'underdark') : definition.palette, water = terrainStyle(look.waterLook === 'natural' ? 'render3d' : look.waterStyle ?? look.style, look.waterLook === 'natural' ? undefined : look.colors).water;
     const p = this.terrainParams;
     this.slots.used = 0;
     const encoder = device.createCommandEncoder({ label: 'terrain map' });
@@ -843,18 +839,22 @@ export class TerrainGpu implements TerrainRenderer {
       p.set('uOrigin', origin[0], origin[1]);
       p.set('uPx', px); p.set('uDpr', stylePixelRatio);
       p.set('uGroundCapture', look.groundCapture ? 1 : 0);
-      p.set('uNight', look.ambience === 'night' ? 1 : 0); p.set('uNaturalWater', look.waterLook === 'natural' ? 1 : 0);
+      p.set('uNight', look.ambience === 'night' ? 1 : 0); p.set('uUnderdark', look.underdark ? 1 : 0); { const g = look.townGlow ?? new Float32Array(0), a = new Float32Array(64); for (let k = 0; k < Math.min(16, g.length / 3 | 0); k++) a.set(g.subarray(k * 3, k * 3 + 3), k * 4); p.setArray('uTownGlow', a); p.set('uTownGlowCount', Math.min(16, g.length / 3 | 0)); } { const f = look.farmBeds ?? new Float32Array(128); p.setArray('uFarmBeds', f); let n = 0; for (let k = 0; k < 32; k++) if (f[k * 4 + 2] > 0) n = k + 1; p.set('uFarmBedCount', n); } p.set('uNaturalWater', look.waterLook === 'natural' ? 1 : 0);
       p.set('uMapW', look.mapWidth);
       p.set('uRelief', look.layers.relief ? 1 : 0); p.set('uWaterVisible', look.layers.water !== false ? 1 : 0);
       p.set('uMaterialSeed', look.seed >>> 0);
       p.set('uMaterialClimate', look.climate?.temperature ?? 18, look.climate?.precipitation ?? 1000);
       const mode = lookMode(look);
       this.bindForest(p, textures, this.lookVariant(look).forest);
-      if (mode >= 2 && this.base && this.shoreRing?.layer !== this.base.layer) {
-        this.releaseImage(this.shoreRing?.image);
-        const grid = shoreRingFor(this.base.layer), half = new Uint16Array(grid.data.length);
-        for (let i = 0; i < half.length; i++) half[i] = toHalf(grid.data[i]);
-        this.shoreRing = { layer: this.base.layer, image: this.image(grid.n, grid.n, 'rg16float', half, 4), x: grid.x, y: grid.y, width: grid.width };
+      // Shore ring and relief light (rgba16float: shore distance, openness, sky occlusion, horizon tangent toward
+      // the light); a new light azimuth re-bakes the last channel off the frame path and bumps the revision.
+      if (mode >= 2 && this.base) {
+        const pixels = shoreRingPixels(this.base.layer, look.lighting.azimuth, this.ringChanged);
+        if (this.shoreRing?.layer !== this.base.layer || this.shoreRing.revision !== pixels.revision) {
+          this.releaseImage(this.shoreRing?.image);
+          const grid = pixels.grid;
+          this.shoreRing = { layer: this.base.layer, revision: pixels.revision, image: this.image(grid.n, grid.n, 'rgba16float', pixels.half, 8), x: grid.x, y: grid.y, width: grid.width };
+        }
       }
       textures.uShoreRing = this.shoreRing?.image.view ?? empty;
       p.set('uShoreRingRect', this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);

@@ -31,7 +31,7 @@ export const terrainSourceFields: ParameterField[] = [
 export const reliefChoices = simple([
   ['flat', 'Plain', 'Plaine'], ['hills', 'Hills', 'Collines'], ['valley', 'Valley', 'Vallée'], ['canyon', 'Canyon', 'Canyon'],
   ['mountains', 'Mountains', 'Montagnes'], ['mixed', 'Hills and mountains', 'Collines et montagnes'], ['plateau', 'Plateau', 'Plateau'],
-  ['high-mountains', 'High mountains', 'Hautes montagnes'], ['volcano', 'Volcano', 'Volcan'], ['caldera', 'Caldera', 'Caldeira'], ['cavern', 'Cavern', 'Caverne'],
+  ['high-mountains', 'High mountains', 'Hautes montagnes'], ['volcano', 'Volcano', 'Volcan'], ['caldera', 'Caldera', 'Caldeira'],
 ]);
 /** One-line landscape help per climate zone, shown as the climate strip tooltip. */
 export const climateZoneHelp: Record<string, string> = {
@@ -57,8 +57,11 @@ export const terrainBasicFields: ParameterField[] = [
     ['custom', 'Custom climate', 'Climat personnalisé'],
   ])),
   { path: 'options.biome', id: 'terrain-biome', type: 'select', label: copy('Region biome', 'Biome de la région'), options: simple([
-    ['temperate', 'Temperate countryside', 'Campagne tempérée'], ['forest', 'Woodland', 'Forêt'], ['desert', 'Desert and oases', 'Désert et oasis'], ['steppe', 'Steppe', 'Steppe'], ['tropical', 'Tropical forest', 'Forêt tropicale'], ['tundra', 'Tundra', 'Toundra'], ['underdark', 'Underdark', 'Outreterre'], ['underdark-caverns', 'Underdark with caverns', 'Outreterre avec cavernes'],
+    ['temperate', 'Temperate countryside', 'Campagne tempérée'], ['forest', 'Woodland', 'Forêt'], ['desert', 'Desert and oases', 'Désert et oasis'], ['steppe', 'Steppe', 'Steppe'], ['tropical', 'Tropical forest', 'Forêt tropicale'], ['tundra', 'Tundra', 'Toundra'], ['underdark', 'Underdark', 'Outreterre'],
   ]) },
+  { path: 'options.layer', id: 'terrain-layer', type: 'select', label: copy('World layer', 'Couche du monde'), options: simple([
+    ['surface', 'Surface', 'Surface'], ['underdark', 'Underdark', 'Outreterre'],
+  ]), help: copy('Carves the relief into caves and tunnels. The climate zone still shapes the base relief and the water.', 'Creuse le relief en grottes et tunnels. La zone climatique façonne toujours le relief de base et l’eau.') },
   select('islandMode', 'Island layout', 'Organisation des îles', simple([
     ['island', 'Single island', 'Île unique'], ['archipelago', 'Archipelago', 'Archipel'], ['peninsula', 'Peninsula', 'Presqu’île'],
   ]), ['Used when all eight sea directions are selected.', 'Utilisé lorsque les huit directions maritimes sont sélectionnées.']),

@@ -82,6 +82,9 @@ export interface CanvasRendererDeps {
   terrain?: (world: World, pal: Palette) => CanvasImageSource | null;
   /** Keep the map background transparent when composing a separate overlay. */
   transparentBackground?: boolean;
+  /** The ground under the overlay draws the cave rock itself (Underdark on material grounds, terrainGl.ts): the overlay
+   * keeps clipping to the cave floor but paints no rock walls. Read per frame. */
+  groundCaverns?: () => boolean;
   dpr?: number;
   now?: () => number;
   tileSize?: number;
@@ -1344,22 +1347,33 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       if (natural) {
         // Layers of one rank share a width: one painter call each, tracks first.
         if (tracks.length) strokeNaturalRoad(ctx, merged(tracks), 'track', roadWidth('track', tracks[0].width, sc), sc, roadStyle);
-        for (const kind of ['minor', 'major'] as const) { const ls = roads.filter((l) => l.kind === kind); if (ls.length) strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, roadStyle); }
+        // Earth and gravel first, then the paved lengths of the same rank (roadPavement.ts).
+        for (const kind of ['minor', 'major'] as const) for (const pavement of ['earth', 'asphalt'] as const) {
+          const ls = roads.filter((l) => l.kind === kind && (l.pavement ?? 'earth') === pavement);
+          if (ls.length) strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, pavement === 'earth' ? roadStyle : { ...roadStyle, pavement });
+        }
         return;
       }
+      // Drawn maps keep their inks: a paved trunk road is a firmer cased road with a centre line, once wide enough to hold it.
+      const pavedCentre = (width: (l: LineLayer) => number): void => {
+        const ls = roads.filter((l) => l.pavement === 'asphalt' && l.kind === 'major' && width(l) * sc >= 4.5);
+        if (ls.length) strokeLines(ls, pal.roadEdge, () => px(.8), Math.min(1, .7 * inkAlpha));
+      };
       if (roadStyle.look === 'wash') {
         // Pale translucent bands with a faint edge, as the bench draws them (terrainRoads.ts).
         for (const kind of ['minor', 'major'] as const) {
           const ls = roads.filter((l) => l.kind === kind), rank = kind === 'major' ? 'highway' : 'local', width = (l: LineLayer): number => Math.max(px(BLEND_ROAD_PX[rank]), l.width);
           strokeLines(ls, pal.roadEdge, (l) => width(l) + px(1.6), BLEND_ROAD_ALPHA[rank] * .22 * inkAlpha);
           strokeLines(ls, pal.roadFill, width, Math.min(1, BLEND_ROAD_ALPHA[rank] * inkAlpha));
+          if (kind === 'major') pavedCentre(width);
         }
         strokeLines(tracks, trackInk(ruralInk(pal), pal.roadFill), () => Math.min(lw(1.3, 0.85), px(2.2)), Math.min(1, pal.rural.track * inkAlpha), [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
         return;
       }
       const surface = (l: LineLayer) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width);
-      strokeLines(roads, pal.roadEdge, (l) => { const r = surface(l); return r.fill + (r.casing - r.fill) * Math.max(1, roadStyle.emphasis); }, Math.min(1, inkAlpha));
+      strokeLines(roads, pal.roadEdge, (l) => { const r = surface(l); return r.fill + (r.casing - r.fill) * Math.max(1, roadStyle.emphasis) * (l.pavement === 'asphalt' ? 1.5 : 1); }, Math.min(1, inkAlpha));
       strokeLines(roads, pal.roadFill, (l) => surface(l).fill);
+      pavedCentre((l) => surface(l).fill);
       strokeLines(tracks, trackInk(ruralInk(pal), pal.roadFill), () => Math.min(lw(1.3, 0.85), px(2.2)), Math.min(1, pal.rural.track * inkAlpha), [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
     };
 
@@ -2060,8 +2074,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
       ctx.restore();
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-      const solid = exactCavernPath('solid'), floor = exactCavernPath('floor');
-      ctx.fillStyle = cavernWallFill(pal); if (solid) ctx.fill(solid, 'nonzero');
+      const groundRock = deps.groundCaverns?.() ?? false;
+      // The GPU ground paints the rock: erase whatever the overlay drew inside it (streams and tracks under the vault).
+      if (groundRock) { const rock = exactCavernPath('solid'); if (rock) { ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = '#000'; ctx.fill(rock, 'nonzero'); ctx.globalCompositeOperation = 'source-over'; } }
+      const solid = groundRock ? null : exactCavernPath('solid'), floor = exactCavernPath('floor');
+      if (solid) { ctx.fillStyle = cavernWallFill(pal); ctx.fill(solid, 'nonzero'); }
       if (solid) {
         ctx.save(); ctx.clip(solid, 'nonzero');
         const rock = getCavernRock(); if (rock) ctx.drawImage(rock, 0, 0, S, S);

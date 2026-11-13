@@ -1,3 +1,4 @@
+import { underdarkFarmBeds } from '../../../rust/bridge/terrainRenderUnderdark';
 import { cityGroundSettings, cityGroundLook } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
 import { decorWater3d } from '../ui/decorWater3d';
@@ -63,7 +64,7 @@ let resolution: { key: string; resolved: ResolvedAppearance } | undefined;
 /** The 3D view's resolved appearance (target 'view3d'). Memoized on the inputs it reads: callable from draw callbacks. */
 export function v2Resolved3d(settings: V2Settings, world?: World): ResolvedAppearance {
   const o = settings.options, cities = world ? renderScene(world, settings).capabilities.nativeCities : false;
-  const key = JSON.stringify([settings.appearance, o.style, o.contours, o.landuse, o.labels, o.legend, settings.terrain?.forest, cities]);
+  const key = JSON.stringify([settings.appearance, o.style, o.biome, o.contours, o.landuse, o.labels, o.legend, settings.terrain?.forest, cities]);
   if (resolution?.key !== key) resolution = { key, resolved: resolveSettingsAppearance(settings, world, 'view3d') };
   return resolution.resolved;
 }
@@ -104,7 +105,7 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
   // The seasonal water regime as in 2D (vectorWaterRender.ts): same network, display threshold and calendar.
   const vector = renderScene(world, settings).terrain.water, effective = effectiveTerrainSettings(settings, world.mapSize);
   const regimeDisplay: WaterDisplay | undefined = vector && shown ? { style: ink ? r.palette.mapStyle : 'render3d', colors: r.palette.colors, showLakes: lakes, showOxbows: r.ground.oxbows,
-    riverArea: vector.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: 'none', season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar } } : undefined;
+    riverArea: vector.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: 'none', season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar, landIce: !ink && r.ground.traits.satelliteVariant > 0 } } : undefined;
   const climate = regimeDisplay?.season?.zone ? waterClimate(regimeDisplay.season) : undefined, active = !!climate && (climate.aridity > 0 || climate.ice > 0), frozenLakes = active && climate!.ice >= .5;
   const exactRivers = !!vector?.rivers && regimeDisplay?.riverMode === 'vector';
   // A decor world hands its smoothed banks to the 3D view (getRetainedWater): its rivers come from them alone, never
@@ -164,7 +165,9 @@ export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {
   const config = effectiveTerrainSettings(settings, world.mapSize), r = v2Resolved3d(settings, world), native = renderScene(world, settings).nativeTerrain;
-  return cityGroundSettings(r, ground, { seed: world.seed, climate: config.climateValues!, climateZone: config.climateZone,
+  return cityGroundSettings(r, ground, { seed: world.seed, climate: config.climateValues!, climateZone: config.climateZone, underdark: world.options.biome === 'underdark',
+    townGlow: world.options.biome === 'underdark' ? Float32Array.from((world.settlements ?? []).slice(0, 16).flatMap(s => [s.center.x, s.center.y, Math.max(120, (s.radius ?? 200) * 1.6)])) : undefined,
+    farmBeds: world.options.biome === 'underdark' ? underdarkFarmBeds(world.landuse?.farmsteads, world.settlements) : undefined,
     sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell, relief: config.relief });
 }
 export function createV2Terrain3dSampler(world: World, settings: V2Settings, ground: City3dGround): ReturnType<typeof createTerrainSurfaceSampler> {
@@ -316,7 +319,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       const settings = options.getSettings(), r = v2Resolved3d(settings, world); if (!r.composition.networks.water.visible) return;
       const effective = effectiveTerrainSettings(settings, world.mapSize);
       return decorWater3d(decor, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.ground.lakes, r.palette.colors,
-        { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar });
+        { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar, landIce: r.composition.networks.water.look !== 'ink' && r.ground.traits.satelliteVariant > 0 });
     },
     getSurface: () => { const world = options.getWorld(); return world && v2Terrain3dSurface(world, options.getSettings()); }, getHeightSampler: heightSampler,
     mergeOccupation: withBuildingOccupationAsync,

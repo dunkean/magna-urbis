@@ -2,6 +2,7 @@ import type { World, Vec2 } from '../gen/types';
 import type { NameEntry } from '../gen/names/types';
 import { nativeCityRecords } from './nativeProducts';
 import { roleLabel } from '../render/cityRoles';
+import { districtRoleLabel } from '../render/cityCanvas';
 import { renameParts } from '../gen/names/rename';
 import { presentName, setSettlementName } from '../gen/names';
 
@@ -49,7 +50,7 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
       }
       for (const district of layout.structure?.districts ?? []) {
         const anchor=centroid(districtRings.get(district.id) ?? []);
-        if (anchor && (district.label || district.role)) out.push({id:`urban:${prefix}:district:${encodeURIComponent(layout.key)}:${district.id}`, text:district.label || roleLabel(district.role!), anchor, kind:'district'});
+        if (anchor && (district.label || district.role)) out.push({id:`urban:${prefix}:district:${encodeURIComponent(layout.key)}:${district.id}`, text:district.role ? districtRoleLabel(district.role, district.label) : district.label!, anchor, kind:'district'});
       }
     }
     for (const partition of city.partitions ?? []) {
@@ -58,7 +59,7 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
       const allocation = parcel.id ? allocations.get(parcel.id) : undefined;
       const landmark = allocation?.landmark || parcel.use === 'market' || !!allocation?.role && /^(defence\.(keep|castle|kasbah|fort|fortress)|elite\.palace|worship\.(cathedral|temple\.major)|commerce\.market)(\.|$)/.test(allocation.role);
       const anchor = landmark ? centroid([parcel.shape.outer]) : center(parcel.shape.outer);
-      const text = landmark ? allocation?.label || (allocation?.role ? roleLabel(allocation.role) : parcel.use === 'market' ? 'Marché' : 'Monument') : '';
+      const text = landmark ? (allocation?.role ? roleLabel(allocation.role, undefined, allocation.culture) : allocation?.label || (parcel.use === 'market' ? roleLabel('commerce.market') : 'Monument')) : '';
       if (anchor) out.push({ id: `urban:${prefix}:parcel:${encodeURIComponent(partition.key)}:${encodeURIComponent(parcel.id ?? String(index))}`, text, anchor, kind: 'parcel' });
       }
     }

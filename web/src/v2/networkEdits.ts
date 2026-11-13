@@ -18,7 +18,7 @@ import type { V2Settings } from './contracts';
 import { dist, distToPolyline, polylineLength, resample } from '../gen/core/geom';
 import { cellIndex, forCellsNearPolyline } from '../gen/core/field';
 import { sampleGrid } from '../gen/core/grid';
-import { ROAD_MARGIN } from '../render/forestRoom';
+import { roadCorridor } from '../render/forestRoom';
 import { deleteGridRiver, type GridRiverDeletion } from './gridRiverDeletion';
 
 export type RegionalRoad = NonNullable<World['roads']>[number];
@@ -382,7 +382,7 @@ function commit(d: Draft, extra: { terrain?: TerrainLayer; site?: World['site'] 
     const corridors = world.landuse.forestCorridors;
     next.landuse = { ...world.landuse, ...(corridors ? { forestCorridors: [
       ...corridors.filter(c => !d.changes.some(change => change.old && samePath(change.old, c.path))),
-      ...d.changes.flatMap(change => change.next ? [{ path: change.next.path, half: change.next.width / 2 + ROAD_MARGIN }] : []),
+      ...d.changes.flatMap(change => change.next ? [roadCorridor(change.next.path, change.next.width)] : []),
     ] } : {}) };
   }
   if (world.names) {

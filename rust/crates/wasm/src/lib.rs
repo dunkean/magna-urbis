@@ -607,6 +607,8 @@ impl TerrainEngine {
     pub fn erosion_spacing(&self) -> Option<f64> { self.generator.erosion_spacing() }
     pub fn physical_height_field(&self) -> Vec<f32> { self.generator.physical_height_field() }
     pub fn physical_cave_field(&self) -> Vec<u8> { self.generator.physical_cave_field() }
+    /// Underdark: carve the retained relief into caves and tunnels (rock mask in `physical_cave_field`).
+    pub fn carve_underdark(&mut self, seed: &str) -> Result<(), JsValue> { self.generator.carve_underdark(seed).map_err(|e| JsValue::from_str(&e)) }
     pub fn sampling_parameters(&self) -> Vec<f64> {
         self.generator.sampling_parameters()
     }

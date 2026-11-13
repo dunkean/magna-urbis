@@ -100,7 +100,9 @@ export interface RoadOutput {
 export interface SettlementRegion { seed: string; temperature: number; precipitation: number; biome: string; x: number; y: number }
 /** Full-extent, cell-centred ground elevation in metres. Planning and routing stay on the capped raster below. */
 export interface PhysicalTerrain { n: number; height: Float32Array; interpolation?: 'bspline'; floor?: number }
-export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; region?: SettlementRegion; physical?: PhysicalTerrain; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
+export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; region?: SettlementRegion; physical?: PhysicalTerrain; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array;
+  /** JS-side only (never sent to Rust): 1 = cave rock. Rust sees rock as water class 2 at ground level (unbuildable, impassable); land use must not treat it as wet. */
+  rock?: Uint8Array }
 export function validatePhysicalTerrain(physical: PhysicalTerrain | undefined): void {
   if (!physical) return;
   const { n, height } = physical;
@@ -155,6 +157,7 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
     }
     return sum / ((x1 - x0) * (y1 - y0));
   };
+  let rock: Uint8Array | undefined;
   const vector = t.water, hydro = t.hydrology;
   const lakes = vector ? vector.lakeField : undefined;
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
@@ -163,7 +166,9 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
     if (height[i] <= 0) { water[i] = 1; waterLevel[i] = 0; }
     if (t.caveMask.length || t.field?.cave?.length) {
       const cave = t.field?.cave ?? t.caveMask, cn = t.field?.cave ? t.field.n : t.resolution;
-      if (cave[Math.min(cn - 1, Math.floor(py / width * cn)) * cn + Math.min(cn - 1, Math.floor(px / width * cn))]) water[i] = 2;
+      // The physical cave field is a soft mask (128 on the wall); the region mask is 0/1.
+      const v = cave[Math.min(cn - 1, Math.floor(py / width * cn)) * cn + Math.min(cn - 1, Math.floor(px / width * cn))];
+      if (t.field?.cave ? v >= 128 : v) { water[i] = 2; (rock ??= new Uint8Array(n * n))[i] = 1; }
     }
     if (vector) {
       const h = vector.hydro, c = Math.min(h.n - 1, Math.floor(py / width * h.n)) * h.n + Math.min(h.n - 1, Math.floor(px / width * h.n));
@@ -214,5 +219,5 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
   const field = t.field?.n === sn && t.field.data.length === source.length ? t.field : undefined;
   const physical = field ? { n: sn, height: field.data, interpolation: 'bspline' as const, floor: field.floor }
     : sn !== n ? { n: sn, height: source } : undefined;
-  return { width, n, height, water, waterLevel, riverWidth, riverIds, ...(physical ? { physical } : {}) };
+  return { width, n, height, water, waterLevel, riverWidth, riverIds, ...(rock ? { rock } : {}), ...(physical ? { physical } : {}) };
 }

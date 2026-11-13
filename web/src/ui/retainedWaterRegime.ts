@@ -14,6 +14,7 @@ import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
 import { riverState, waterClimate, waterRegimeActive, type WaterClimate, type WaterSeason } from '../render/waterRegime';
 import type { RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { regimeInk } from './vectorWaterRender';
+import { styleTraits } from '../render/terrainStyle';
 
 /** Channel widths (m) of the smallest drawn brook and of a large regional trunk. */
 const W0 = 4, W1 = 120;
@@ -154,6 +155,21 @@ function masked(ctx: CanvasRenderingContext2D, field: HTMLCanvasElement, width: 
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(s, 0, 0); ctx.restore();
 }
 
+const openCodes = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+/** The regime code with every course open. A satellite ground freezes its water in its shader, from the snow of
+ * the land at the water's altitude (terrainRenderV2Winter.ts): its painted water carries the dry beds only. */
+function openCode(code: HTMLCanvasElement): HTMLCanvasElement {
+  let open = openCodes.get(code);
+  if (!open) {
+    open = canvas(code.width);
+    const image = code.getContext('2d')!.getImageData(0, 0, code.width, code.height);
+    for (let i = 1; i < image.data.length; i += 4) image.data[i] = 255;
+    open.getContext('2d')!.putImageData(image, 0, 0);
+    openCodes.set(code, open);
+  }
+  return open;
+}
+
 const fillAll = (c: CanvasRenderingContext2D, paths: readonly RetainedWaterPath[]): void => { for (const item of paths) c.fill(item.path, item.rule); };
 const strokeAll = (c: CanvasRenderingContext2D, paths: readonly RetainedWaterPath[]): void => { for (const item of paths) c.stroke(item.path); };
 
@@ -172,7 +188,7 @@ export function paintRetainedRegime(ctx: CanvasRenderingContext2D, paths: readon
   if (mode === 'code') {
     ctx.save(); ctx.fillStyle = '#fff'; fillAll(ctx, paths);
     ctx.globalCompositeOperation = 'source-in'; ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(regime.code, 0, 0, width, width); ctx.restore();
+    ctx.drawImage(styleTraits(style).satelliteVariant > 0 ? openCode(regime.code) : regime.code, 0, 0, width, width); ctx.restore();
     return;
   }
   // The map needs an opaque base even where seasonal masks cross-fade; otherwise

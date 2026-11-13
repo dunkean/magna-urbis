@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "_doc": "Style registry (loader: forms/kit.rs). kits.<id>.house = the home vocabulary of an architectural family: plans (weights of bar | ell | tee | court | cross | aitch), growth (0..1: how much room and wealth favour the larger plans), chances of the extras (outshot, porch, turret, bay, chimney, dormer), roofs (weights of the roof kinds of a home's bodies among gable | hip | halfhip | gablet | gambrel | mansard | saltbox; empty keeps the tradition's roof), overhang (eaves past the walls, m), stack (chimney material). A culture gets its kit from cultures.<culture id>.kit, else from the first derive rule its building traits match (roof kind, wall, cover, pitch range of its tradition), else from default. A new style needs no code: give it a kit here (or reuse one), its mass-role overrides in forms/roles_*.json, its monuments in services.json, and its tissue in catalogue.json. cultures.<culture id>.traits = the building traits the tissue does not carry (read by massing.rs, never by culture name; every field is optional and neutral when absent): tradition {roof: gable | hip | shed | pyramid | cone | tent | dome | barrel | flat, pitch (degrees), storeys [lo, hi], cover, wall, gableToStreet, form: yurt | tipi | stilt} = the roof tradition when the tissue declares no arch (absent: a plain tiled gable); mediterranean (low tiled roofs whatever the material, few small openings in masonry); flavor (roof-top detail family of flat roofs: maghreb | levant | persian | pueblo | meso; a flavored culture also has few small openings in masonry); bodyScale (inhabitants' size against a human; 0: human); metricScale (scale of the whole house; 0: 1); form (exterior form of homes: tree | mushroom | longhouse | yurt | battered | mage | stilt); formShare (share of the lots that take the form, the others keep the tradition; 0: all); massiveStorey (homes are one huge storey of massive stone under a flat roof); piles (homes stand on posts whatever their form); openness (facade openness 0..1 of every wall; 0: by climate and wall); lightWallOpenness (facade openness 0..1 of the non-masonry walls of a mediterranean or flavored culture; 0: fully open). A culture may have traits without a kit (its kit is then derived).",
+  "_facets": "Reserved style facets, one entry per style id under `styles`, read by the stages as they migrate to this registry. Each facet names a source style or holds its own values, so a hybrid is a style whose facets come from different sources. houses: kit id (this file). monuments: services.json family and the role overrides of roles_*.json. rural: catalogue.json farmstead culture. siting: lot occupation (setback, side gap, courts, row | detached | perimeter | slab | tower-on-podium). plots: plot operator and dimensions (burgage | courtyard | compound | garden | whole block | superblock | cul-de-sac lots). streets: pattern (organic | grid | radial | superblock | curvilinear | cul-de-sac tree), hierarchy (widths by rank: arterial, collector, local, lane), block sizes. plan: nucleus, enclosure, zoning (centre, industry, housing, commerce, infrastructure corridors). regional: road classes between places (track | road | highway | motorway | rail) and their junctions. epochs: an ordered list of {style, share} for the growth phases of a place (an old core, a planned extension, an industrial belt, suburbs).",
+  "styles": {},
+  "default": "timber-gabled",
+  "kits": {
+    "timber-gabled": {
+      "house": {
+        "plans": { "bar": 5, "ell": 3, "tee": 1.4, "court": 0.6, "cross": 1.6, "aitch": 0.2 },
+        "growth": 0.6,
+        "outshot": 0.45, "porch": 0.18, "turret": 0.03, "bay": 0.08, "chimney": 0.85, "dormer": 0.22,
+        "roofs": { "gable": 6, "halfhip": 2, "hip": 1, "gambrel": 0.5 },
+        "overhang": 0.35, "stack": "brick"
+      }
+    },
+    "stone-slated": {
+      "house": {
+        "plans": { "bar": 5, "ell": 3, "tee": 1.2, "court": 0.8, "cross": 1.2, "aitch": 0.3 },
+        "growth": 0.6,
+        "outshot": 0.4, "porch": 0.15, "turret": 0.06, "bay": 0.05, "chimney": 0.8, "dormer": 0.15,
+        "roofs": { "gable": 6, "hip": 2, "halfhip": 1 },
+        "overhang": 0.25, "stack": "stone"
+      }
+    },
+    "low-tiled": {
+      "house": {
+        "plans": { "bar": 5, "ell": 3, "tee": 1, "court": 1.5, "cross": 0.5 },
+        "growth": 0.5,
+        "outshot": 0.2, "porch": 0.25, "turret": 0.02, "bay": 0, "chimney": 0.3, "dormer": 0,
+        "roofs": { "hip": 5, "gable": 3 },
+        "overhang": 0.45, "stack": "plaster"
+      }
+    },
+    "hipped-pavilion": {
+      "house": {
+        "plans": { "bar": 5, "ell": 2.5, "court": 1.5, "tee": 0.6 },
+        "growth": 0.5,
+        "outshot": 0.15, "porch": 0.3, "turret": 0, "bay": 0, "chimney": 0, "dormer": 0,
+        "roofs": { "gablet": 5, "hip": 3, "gable": 1.5 },
+        "overhang": 0.7, "stack": "stone"
+      }
+    },
+    "timber-northern": {
+      "house": {
+        "plans": { "bar": 6, "ell": 2, "tee": 1, "cross": 0.4 },
+        "growth": 0.4,
+        "outshot": 0.5, "porch": 0.35, "turret": 0, "bay": 0, "chimney": 0.5, "dormer": 0.05,
+        "roofs": { "gable": 7, "hip": 1, "halfhip": 1 },
+        "overhang": 0.5, "stack": "stone"
+      }
+    },
+    "thatched": {
+      "house": {
+        "plans": { "bar": 6, "ell": 1.5, "tee": 0.5 },
+        "growth": 0.3,
+        "outshot": 0.5, "porch": 0.1, "turret": 0, "bay": 0, "chimney": 0.2, "dormer": 0,
+        "roofs": { "hip": 3, "gable": 3, "halfhip": 2 },
+        "overhang": 0.5, "stack": "stone"
+      }
+    },
+    "flat-roofed": {
+      "house": {
+        "plans": { "bar": 4, "ell": 3, "court": 2, "tee": 1 },
+        "growth": 0.5,
+        "outshot": 0, "porch": 0.1, "turret": 0, "bay": 0, "chimney": 0, "dormer": 0,
+        "roofs": {},
+        "overhang": 0, "stack": "earth"
+      }
+    }
+  },
+  "derive": [
+    { "roof": ["flat"], "kit": "flat-roofed" },
+    { "cover": ["thatch", "reed", "palm", "bamboo", "bark", "turf", "hide", "felt"], "kit": "thatched" },
+    { "wall": ["timber"], "kit": "timber-gabled" },
+    { "roof": ["hip", "pyramid"], "wall": ["wood", "bamboo"], "kit": "hipped-pavilion" },
+    { "roof": ["hip", "gable"], "pitch": [0, 29], "kit": "low-tiled" },
+    { "wall": ["wood"], "kit": "timber-northern" },
+    { "wall": ["stone"], "kit": "stone-slated" },
+    { "wall": ["brick"], "pitch": [40, 90], "kit": "timber-gabled" },
+    { "wall": ["plaster", "earth", "coral"], "roof": ["hip"], "kit": "low-tiled" }
+  ],
+  "cultures": {
+    "al-andalus": { "traits": { "tradition": { "roof": "hip", "pitch": 24, "storeys": [1, 2], "cover": "tile", "wall": "plaster" }, "mediterranean": true } },
+    "aztec": { "traits": { "flavor": "meso" } },
+    "bagan": { "traits": { "tradition": { "roof": "hip", "pitch": 32, "storeys": [1, 2], "cover": "tile", "wall": "wood" } } },
+    "bastide": { "traits": { "mediterranean": true } },
+    "budj-bim": { "traits": { "tradition": { "roof": "cone", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "stone" } } },
+    "byzantine-greek": { "traits": { "mediterranean": true } },
+    "caucasian-highland": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 3], "cover": "earth", "wall": "stone" } } },
+    "dravidian-temple": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "plaster", "wall": "stone" } } },
+    "egyptian-planned": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "levant" } },
+    "elven": { "traits": { "form": "tree", "formShare": 0.5 } },
+    "ethiopian-highland": { "traits": { "tradition": { "roof": "cone", "pitch": 38, "storeys": [1, 1], "cover": "thatch", "wall": "wood" } } },
+    "flemish-cloth-town": { "traits": { "tradition": { "roof": "gable", "pitch": 52, "storeys": [3, 4], "cover": "tile", "wall": "brick", "gableToStreet": true } } },
+    "giant-hold": { "traits": { "tradition": { "roof": "gable", "pitch": 40, "storeys": [2, 3], "cover": "stone", "wall": "stone" }, "metricScale": 2.5, "massiveStorey": true } },
+    "gnomish": { "traits": { "bodyScale": 0.6 } },
+    "goblin-warren": { "traits": { "tradition": { "roof": "cone", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "stone" }, "bodyScale": 0.75 } },
+    "great-zimbabwe": { "traits": { "tradition": { "roof": "cone", "pitch": 38, "storeys": [1, 1], "cover": "thatch", "wall": "wood" } } },
+    "hadhrami-tower": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 7], "cover": "earth", "wall": "earth" }, "flavor": "persian" } },
+    "halfling": { "traits": { "bodyScale": 0.65 } },
+    "hausa-kano": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "maghreb" } },
+    "himalayan-terraces": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 3], "cover": "earth", "wall": "stone" } } },
+    "inca": { "traits": { "flavor": "meso" } },
+    "indus-planned": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "brick" }, "flavor": "levant" } },
+    "italian-comune": { "traits": { "tradition": { "roof": "hip", "pitch": 22, "storeys": [3, 5], "cover": "tile", "wall": "brick" }, "mediterranean": true } },
+    "javanese-courts": { "traits": { "tradition": { "roof": "pyramid", "pitch": 34, "storeys": [1, 1], "cover": "tile", "wall": "wood" } } },
+    "ksar-oasis": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 3], "cover": "earth", "wall": "earth" }, "flavor": "maghreb" } },
+    "levantine-tell": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "mediterranean": true, "flavor": "levant" } },
+    "lizardfolk-swamp": { "traits": { "tradition": { "roof": "cone", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "stone" }, "piles": true } },
+    "maori-pa": { "traits": { "tradition": { "roof": "gable", "pitch": 42, "storeys": [1, 2], "cover": "thatch", "wall": "wood" } } },
+    "maya": { "traits": { "flavor": "meso" } },
+    "medina": { "traits": { "flavor": "maghreb" } },
+    "merfolk-tidal": { "traits": { "tradition": { "roof": "dome", "pitch": 0, "storeys": [1, 2], "cover": "stone", "wall": "stone" }, "form": "stilt" } },
+    "mesopotamian": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "levant" } },
+    "mississippian": { "traits": { "tradition": { "roof": "hip", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "earth" } } },
+    "mongol-ordu": { "traits": { "tradition": { "roof": "tent", "pitch": 30, "storeys": [1, 1], "cover": "felt", "wall": "hide" }, "form": "yurt" } },
+    "myconid-colony": { "traits": { "form": "mushroom" } },
+    "native-iroquoian": { "traits": { "form": "longhouse" } },
+    "native-plains": { "traits": { "tradition": { "roof": "tent", "pitch": 40, "storeys": [1, 1], "cover": "hide", "wall": "hide", "form": "tipi" } } },
+    "native-pueblo": { "traits": { "flavor": "pueblo" } },
+    "newar": { "traits": { "tradition": { "roof": "hip", "pitch": 30, "storeys": [3, 4], "cover": "tile", "wall": "brick" } } },
+    "nubian-fortified": { "traits": { "tradition": { "roof": "dome", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "levant" } },
+    "oasis-caravan": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "maghreb" } },
+    "ottoman": { "traits": { "mediterranean": true, "flavor": "levant", "lightWallOpenness": 0.8 } },
+    "persian": { "traits": { "flavor": "persian" } },
+    "rajput-fort": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "plaster", "wall": "stone" } } },
+    "roman-core": { "traits": { "mediterranean": true } },
+    "rynek-town": { "traits": { "tradition": { "roof": "gable", "pitch": 45, "storeys": [2, 4], "cover": "tile", "wall": "brick" } } },
+    "sahel": { "traits": { "flavor": "maghreb" } },
+    "siberian-camp": { "traits": { "tradition": { "roof": "tent", "pitch": 36, "storeys": [1, 1], "cover": "hide", "wall": "hide" } } },
+    "slavic-gord": { "traits": { "tradition": { "roof": "gable", "pitch": 42, "storeys": [1, 2], "cover": "thatch", "wall": "wood" } } },
+    "swahili-stone-town": { "traits": { "flavor": "maghreb" } },
+    "tibetan-monastery": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 4], "cover": "earth", "wall": "stone" }, "form": "battered" } },
+    "venetian-lagoon": { "traits": { "mediterranean": true } },
+    "vietnamese-citadel": { "traits": { "tradition": { "roof": "hip", "pitch": 30, "storeys": [1, 2], "cover": "tile", "wall": "wood" } } },
+    "wizard-city": { "traits": { "form": "mage" } },
+    "yoruba": { "traits": { "tradition": { "roof": "hip", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "earth" } } }
+  }
+}

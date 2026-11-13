@@ -30,7 +30,7 @@ import { withGroundVariant, type Limitation } from '../render/composition';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import { forestOccupation } from './forestOccupation';
-import { ROAD_MARGIN } from '../render/forestRoom';
+import { roadCorridor } from '../render/forestRoom';
 import { withLandDetail } from './landDetail';
 import { decorWaterSvg } from './decorWater';
 import { decorWater3d } from './decorWater3d';
@@ -198,8 +198,8 @@ function benchForestResult() {
   const streets = settlements.urban.regionalStreets;
   if (occupationOf !== settlements.landuse || occupationStreets !== streets) {
     occupationOf = settlements.landuse; occupationStreets = streets;
-    const corridors = streets.filter(s => s.path.length > 1).map(s => ({ path: s.path, half: Math.max(3, ...s.widths) / 2 + ROAD_MARGIN }));
-    occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse, undefined, undefined, corridors), settlements.landuse) : undefined;
+    const corridors = streets.filter(s => s.path.length > 1).map(s => roadCorridor(s.path, Math.max(3, ...s.widths)));
+    occupation = settlements.landuse ? withLandDetail(forestOccupation(settlements.landuse, undefined, undefined, corridors), settlements.landuse, settlements.landCultures) : undefined;
   }
   return { field: forestField, occupation };
 }
@@ -404,7 +404,7 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
     if (!mask) { mask = Float32Array.from(raster.water, value => value === 2 ? 1 : -1); lakeMasks.set(decor, mask); }
     return { height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel } : undefined, waterVisible: r.composition.networks.water.visible };
   },
-  getSemantic: () => { const s = resolveBenchAppearance({}, 'view3d').composition.landuse; return { landuse: settlements.landuse, ...s }; },
+  getSemantic: () => { const s = resolveBenchAppearance({}, 'view3d').composition.landuse; return { landuse: settlements.landuse, cultures: settlements.landCultures, ...s }; },
   getViewSettings: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ground: r.city.ground as import('./city3d').City3dGround, plan: r.city.plan, colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement }; },
   onViewSettingsChange: value => { if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground)); for (const key of ['plan', 'colors', 'exaggeration', 'refinement'] as const) setBenchAppearanceField(`city.${key}`, value[key]); },
   getGroundSettings: ground => {

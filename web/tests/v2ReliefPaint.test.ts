@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { paintHeight, paintZone, transformHeight, grayscaleHeight, type PaintBrush } from '../src/v2/reliefPaint';
+import { paintHeight, paintZone, transformHeight, grayscaleHeight, terrainPaintDetail, type PaintBrush } from '../src/v2/reliefPaint';
+import { applyTerrainModification, validateTerrainModification } from '../../rust/bridge/terrainModification';
 import { parseTerrainZones } from '../../rust/bridge/terrainZones';
 
 const brush: PaintBrush = { radius: .18, softness: .6, strength: 50, target: 300 };
 describe('relief mini-paint data integrity', () => {
+  it('levels the broad form while preserving the original fine noise', () => {
+    const n=64,original=Float32Array.from({length:n*n},(_,i)=>100+((i%n+Math.floor(i/n))%2)*10),height=original.slice(),detail=terrainPaintDetail(original,n);
+    paintHeight(height,original,n,.5,.5,{...brush,radius:.4,softness:.01,target:300},'level',detail);
+    for(const i of [30*n+30,30*n+31,31*n+30,31*n+31])expect(height[i]-detail[i]).toBeCloseTo(300,4);
+    expect(Math.abs(height[30*n+30]-height[30*n+31])).toBeGreaterThan(5);
+  });
+  it('keeps a sculpt as offsets, without mutating or accumulating onto its generated source', () => {
+    const base=Float32Array.from({length:16**2},(_,i)=>i/7),delta=Array.from({length:16**2},(_,i)=>i%3===0?15:0),modification={version:1 as const,resolution:16,width:2400,delta};
+    const first=applyTerrainModification(base,16,modification),second=applyTerrainModification(base,16,modification);
+    expect(Array.from(first)).toEqual(Array.from(second));expect(first[0]).toBe(15);expect(base[0]).toBe(0);
+    expect(()=>validateTerrainModification({...modification,delta:[NaN]})).toThrow();
+    expect(()=>validateTerrainModification({...modification,delta:delta.map(()=>25000)})).toThrow();
+  });
   it('edits local metre samples without quantizing or changing the source outside the brush', () => {
     const original=Float32Array.from({length:32**2},(_,i)=>i/13-20.125),height=original.slice();
     paintHeight(height,original,32,.5,.5,brush,'raise');

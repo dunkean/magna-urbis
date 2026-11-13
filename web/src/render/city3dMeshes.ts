@@ -8,7 +8,7 @@ import { wetBridgeSpans } from './cityBridges';
  * Native buildings pass through unchanged; no native geometry is modified. */
 import type { ArchitectureVolume, PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseMaterial, MaterialPattern, MaterialSlots, Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
-import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Building3dVisual, type YardLine, type YardMesh, type YardStation } from './urbanBuildingGeometry';
+import { isBuildingProjection, surfaceTriangles, MINOR_VOLUME_ROLE, type Building3dScene, type Building3dVisual, type YardLine, type YardMesh, type YardStation } from './urbanBuildingGeometry';
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from '../ui/urbanBuildingProjection';
 import type { ParentMember3dVisual, Parent3dScene } from '../ui/urbanParent3d';
 import { roleFamily, type CityPalette } from './cityCanvas';
@@ -159,6 +159,18 @@ class RoofBuilder {
     const sign = nz < 0 ? -1 : 1, normal: [number, number, number] = [sign * nx / length, sign * ny / length, sign * nz / length];
     const start = this.vertices.length; this.vertices.push(...points);
     this.faces.push({ vertices: points.map((_, i) => start + i), normal, material, kind: Math.abs(normal[2]) < 0.05 ? 'gable' : Math.abs(normal[2]) > 0.999 ? 'slab' : 'pan' });
+  }
+  /** Vertical wall face above the wall top (gable end), its normal turned away from `centre`. */
+  gable(points: Vertex3[], material: string, centre: Point): void {
+    let nx = 0, ny = 0, nz = 0, mx = 0, my = 0;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      nx += (a.y - b.y) * (a.z + b.z); ny += (a.z - b.z) * (a.x + b.x); nz += (a.x - b.x) * (a.y + b.y); mx += a.x; my += a.y;
+    }
+    const length = Math.hypot(nx, ny, nz); if (length < 1e-9) return;
+    const sign = nx * (mx / points.length - centre.x) + ny * (my / points.length - centre.y) < 0 ? -1 : 1;
+    const start = this.vertices.length; this.vertices.push(...points);
+    this.faces.push({ vertices: points.map((_, i) => start + i), normal: [sign * nx / length, sign * ny / length, sign * nz / length], material, kind: 'gable' });
   }
   mesh(): RoofMesh { return { vertices: this.vertices, faces: this.faces, edges: [], groups: [] }; }
 }
@@ -319,7 +331,8 @@ function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: number, h
 /** Parapet, roof-top features, trim, facade openings and tent pole of a volume (detailed LOD only), into its roof mesh. */
 function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wallId: string, id: string): void {
   const d = v.detail ?? {}, ring = d.form === 'battered' ? scaledRing(v.shape.outer, 0.92) : v.shape.outer, n = ring.length, eave = ground + v.eave_m, out = ringArea(ring) >= 0 ? 1 : -1;
-  const parapet = v.roof === 'flat' ? d.parapet_m ?? 0 : 0;
+  // A roof given by explicit pans has no flat rim to stand a parapet on.
+  const parapet = v.roof === 'flat' && !v.pans ? d.parapet_m ?? 0 : 0;
   if (parapet > 0.05) {
     const inner = insetRing(ring, 0.3, true), top = eave + parapet;
     for (let i = 0; i < n; i++) {
@@ -375,22 +388,26 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
     return;
   }
   // Edges by length: red trim band, then a door and windows on the longest ones.
-  if (d.openings === 'none') return;
-  const facade = v.shape.outer, batter = d.form === 'battered' ? { center: ringCentre(facade), ground, height: v.eave_m } : undefined;
+  // Small decorative volumes (chimneys, dormers, porches) have no openings.
+  if (d.openings === 'none' || v.minor) return;
+  // The wall of a volume standing on another one starts at its base: openings are measured from there, and it has no door.
+  const raised = v.base_m ?? 0, foot = ground + raised, wall = v.eave_m - raised;
+  const facade = v.shape.outer, batter = d.form === 'battered' ? { center: ringCentre(facade), ground: foot, height: wall } : undefined;
   const edges = facade.map((a, i) => { const b = facade[(i + 1) % n]; return { a, b, l: Math.hypot(b.x - a.x, b.y - a.y) }; }).filter(e => e.l >= 2.2).sort((x, y) => y.l - x.l);
-  const h = hash(id), storey = v.eave_m / Math.max(1, v.floors), hut = (d.overhang_m ?? 0) > 0 || v.roof === 'cone';
+  const h = hash(id), storey = wall / Math.max(1, v.floors), hut = (d.overhang_m ?? 0) > 0 || v.roof === 'cone';
   // Openings at human size (door 1.0 × 2.1 m, window 0.9 × 1.2 m), scaled for giants by the storey and for small folk by `body_scale`.
   const body = d.body_scale, scale = d.form ? 1 : body ? body * Math.max(1, Math.min(2.5, storey / (CITY3D_LEVEL_M * body))) : Math.max(1, Math.min(2.5, storey / CITY3D_LEVEL_M));
   if (scale > 1.8) for (const e of edges) {
     facadeQuad(roof, e.a, e.b, out, 0, e.l, eave - 0.65, eave - 0.05, 0.06, 'city3d:wall:timber');
-    for (const s of [0.3, e.l - 0.8]) facadeQuad(roof, e.a, e.b, out, s, s + 0.5, ground, eave, 0.07, 'city3d:wall:timber');
+    for (const s of [0.3, e.l - 0.8]) facadeQuad(roof, e.a, e.b, out, s, s + 0.5, foot, eave, 0.07, 'city3d:wall:timber');
   }
   if (d.trim === 'red' && parapet > 0) for (const e of edges) facadeQuad(roof, e.a, e.b, out, 0.15, e.l - 0.15, eave - 0.95, eave - 0.4, 0.03, 'city3d:wall:plaster@a75e4b');
   let windows = 0;
   const cap = body ? 24 : 10;
   edges.slice(0, hut ? 1 : body ? 4 : 2).forEach((e, k) => {
     const doorW = (hut ? 0.8 : 1.0) * scale, doorH = (hut ? 1.6 : 2.1) * scale, doorAt = Math.max(0.3, Math.min(e.l - doorW - 0.3, ((h >>> (k * 3)) % 100) / 100 * e.l));
-    if (k === 0 || (h >>> 5) % 3 === 0) facadeQuad(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING, batter);
+    const door = !raised && (k === 0 || (h >>> 5) % 3 === 0);
+    if (door) facadeQuad(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING, batter);
     if (hut || d.openings === 'door') return;
     // Openness (culture data): massive warm-climate walls get fewer, smaller windows, spaced by 1/openness and thinned on the street floor.
     const medina = v.roof === 'flat', open = d.openness ?? 1, gap = (medina ? 3.4 : body ? 2.4 : 2.6) * scale / open, count = Math.floor((e.l - 1) / gap);
@@ -398,10 +415,10 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
     const sill = Math.min((medina ? body ? 1.4 : 1.8 : body ? 0.9 : 1.0) * scale, body ? storey * 0.32 : Infinity);
     for (let f = medina ? 1 : 0; f < v.floors && windows < cap; f++) for (let c = 0; c < count && windows < cap; c++) {
       const s = 0.5 + (c + 0.5) * (e.l - 1) / count - ww / 2, z0 = f * storey + sill;
-      if (z0 + wh > v.eave_m - 0.25 || (medina && (h >>> (c + f)) % 3 === 0)) continue;
+      if (z0 + wh > wall - 0.25 || (medina && (h >>> (c + f)) % 3 === 0)) continue;
       if (f === 0 && open < 1 && ((h >>> (c + 7 * k)) % 100) / 100 >= open * open) continue;
-      if (f === 0 && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3) continue;
-      facadeQuad(roof, e.a, e.b, out, s, s + ww, ground + z0, ground + z0 + wh, 0.04, OPENING, batter); windows++;
+      if (f === 0 && !raised && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3) continue;
+      facadeQuad(roof, e.a, e.b, out, s, s + ww, foot + z0, foot + z0 + wh, 0.04, OPENING, batter); windows++;
     }
   });
 }
@@ -495,7 +512,8 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           stiltPosts(roof, stiltDeck(v.shape.outer), ground, lift, wallId, materials.roof_frame);
           for (const p of stiltSupports(v.shape.outer)) featureBox(roof, p.x, p.y, 0.32, 0.32, lift + 0.45, 0, ground, materials.roof_frame);
         }
-        const base = ground + lift;
+        // `base` is the level the heights of the volume are measured from; its walls start `raisedBy` above it.
+        const base = ground + lift, raisedBy = v.base_m ?? 0;
         const form = v.detail?.form, organic = form === 'tree' || form === 'mushroom';
         // Crowns and trunks get forest-green display materials (urbanBuilding3d.ts paints them).
         const greens = form === 'tree', crown = greens ? 'city3d:tree:crown@5f8247' : materials.cladding;
@@ -503,24 +521,29 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           const points = face.points.map(p => ({ ...p, z: p.z + base }));
           if (face.holes?.length) for (const triangle of surfaceTriangles([{ outer: points, holes: face.holes }])) roof.face(triangle.map(p => ({ ...p, z: points[0].z })), crown);
           else roof.face(points, crown);
-          if (over > 0) overhang(roof, points, base + v.eave_m, centre, over, crown);
+          // Explicit pans already carry their eaves: no skirt is added to them.
+          if (over > 0 && !v.pans) overhang(roof, points, base + v.eave_m, centre, over, crown);
         }
+        for (const gable of v.gables ?? []) roof.gable(gable.map(p => ({ ...p, z: p.z + base })), wallId, centre);
         const bodyShape = organic ? { outer: scaledRing(v.shape.outer, form === 'tree' ? 0.22 : 0.3), holes: [] } : v.shape;
         if (organic) {
           flatRoof(roof, [v.shape], base + v.eave_m, crown);
           volumeDetails(roof, { ...v, shape: bodyShape, detail: { ...v.detail, overhang_m: 0.1 } }, base, greens ? 'city3d:tree:trunk@4b5a36' : body, `${building.id}:${i}:${j}`);
         } else if (form === 'battered') {
           const bottom = v.shape.outer, top = scaledRing(bottom, 0.92);
-          for (let k = 0; k < bottom.length; k++) { const n = (k + 1) % bottom.length; roof.face([{ ...bottom[k], z: base }, { ...bottom[n], z: base }, { ...top[n], z: base + v.eave_m }, { ...top[k], z: base + v.eave_m }], wallId); }
+          for (let k = 0; k < bottom.length; k++) { const n = (k + 1) % bottom.length; roof.face([{ ...bottom[k], z: base + raisedBy }, { ...bottom[n], z: base + raisedBy }, { ...top[n], z: base + v.eave_m }, { ...top[k], z: base + v.eave_m }], wallId); }
           volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
         } else volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
         const system = v.roof === 'flat' ? 'RF-FLAT' : v.roof === 'hip' || v.roof === 'pyramid' || v.roof === 'tent' ? 'RF-HIP' : 'RF-GABLE';
         // Ruin stubs and mounds (massing.rs `ruin_piece`) run their walls down to the footing: no plinth box, half the triangles.
-        const ruin = v.cover === 'ruin' && lift <= 0, z0 = ruin ? foundation.z_min_m : base;
-        const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], base, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system,
-          { ...foundation, footprint: ruin ? [] : [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
+        // A volume standing on another one has neither footing nor plinth: its walls run from its base to its eave.
+        const ruin = v.cover === 'ruin' && lift <= 0 && !raisedBy, z0 = ruin ? foundation.z_min_m : base + raisedBy;
+        const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], base + raisedBy, v.eave_m - raisedBy, Math.max(0, v.rise_m), materials, roof.mesh(), system,
+          { ...foundation, footprint: ruin || raisedBy ? [] : [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
           [{ index: 0, footprint: [bodyShape], z_m: z0, height_m: v.eave_m + base - z0 }]);
         if (form === 'battered') volume.envelope = 'open';
+        // The overview LOD drops small decorative volumes (urbanBuildingGeometry.ts).
+        if (v.minor) volume.role = MINOR_VOLUME_ROLE;
         return volume;
       });
     });

@@ -9,7 +9,7 @@ import type { V2Settings } from './contracts';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { buildingOccupationShapes, forestOccupation, packOccupationShapes, withOccupationShapes, occupationMergeSlot } from '../ui/forestOccupation';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
-import { landDetail, withLandDetail } from '../ui/landDetail';
+import { landDetail, withLandDetail, worldLandCultures } from '../ui/landDetail';
 import { retainTerrainDisplayPreparation, runDisplayJob, registerDisplayLanduse, displayWorkerEpoch, type WorkerOccupation } from './displayPrep';
 import { productRevision } from '../render/displayProduct';
 import { forestCorridors } from '../render/forestRoom';
@@ -34,7 +34,7 @@ function occupationEntry(world: World): OccupationEntry | undefined {
 /** Land-use/corridor revision, independent from presentation and visibility. Synchronous consumers reuse the async product. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const entry = occupationEntry(world); if (!entry) return;
-  if (!entry.complete) { entry.whole = withLandDetail(forestOccupation(world.landuse!, undefined, undefined, forestCorridors(world, false)), world.landuse!); entry.complete = true; }
+  if (!entry.complete) { entry.whole = withLandDetail(forestOccupation(world.landuse!, undefined, undefined, forestCorridors(world, false)), world.landuse!, worldLandCultures(world)); entry.complete = true; }
   return entry.whole;
 }
 /** One preparation lane for occupation, holdings, footprint merges and display forest overrides. */
@@ -54,8 +54,10 @@ export function v2ForestOccupationParts(world: World): OccupationParts {
       }).catch(() => forestOccupation(landuse, undefined, undefined, forestCorridors(world, false)));
     // Let every occupation subscriber post its dependent merge before sending optional detail.
     // A main-thread task boundary preserves that order even when the page is CPU-throttled.
+    // Holdings take the crops of the culture of the nearest place.
+    const cultures = worldLandCultures(world);
     const detail = occupation.then(() => new Promise<void>(resolve => setTimeout(resolve, 0)))
-      .then(() => registered.ready).then(() => runDisplayJob('detail', { landuseRevision: registered.revision })).catch(() => landDetail(landuse));
+      .then(() => registered.ready).then(() => runDisplayJob('detail', { landuseRevision: registered.revision, cultures })).catch(() => landDetail(landuse, cultures));
     entry.parts = { occupation, detail };
     void Promise.all([occupation, detail]).then(([o, d]) => { entry.whole = o && { ...o, detail: d }; entry.complete = true; });
   }

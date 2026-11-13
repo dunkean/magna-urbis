@@ -1,6 +1,7 @@
 import { generateUrbanLanduse, cityCountrysideOptions } from '../ui/urbanLanduseData';
 import { cityForestInput } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
+import { applyTerrainModification } from '../../../rust/bridge/terrainModification';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import { PROCEDURAL_RECIPE_VERSION, isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
 import { COMPACT_VERSION } from '../../../rust/bridge/terrainPhasor';
@@ -71,6 +72,8 @@ export function terrainCacheKey(settings: V2Settings): string {
   const native = runtime && (runtime.backend !== 'typescript' || runtime.source !== 'procedural');
   const compactTerrain = native ? { ...terrain,
     ...(terrain.sketch ? { sketch: { ...terrain.sketch, heights: { fingerprint128: fingerprintNumbers(terrain.sketch.heights) } } } : {}),
+    ...(terrain.drawing ? { drawing: { ...terrain.drawing, heights: { fingerprint128: fingerprintNumbers(terrain.drawing.heights) } } } : {}),
+    ...(terrain.modification ? { modification: { ...terrain.modification, delta: { fingerprint128: fingerprintNumbers(terrain.modification.delta) } } } : {}),
     ...(terrain.zones ? { zones: { ...terrain.zones, weights: { fingerprint128: fingerprintNumbers(terrain.zones.weights) } } } : {}),
   } : null;
   return stableStringify([V2_ENGINE_VERSION, settings.generation, seedSubset(o.seed, key => /^(relief-|water-)/.test(key)), adaptedExtent(settings), o.relief, o.coast,
@@ -166,6 +169,12 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       // A saved decor is the whole world: its relief, sea, lakes and rivers are kept, never regenerated.
       report(onProgress, 'terrain', `Opening the saved decor ${settings.decor.id}…`, 0, 3, 'miss');
       nativeTerrain = await (await import('./decorTerrain')).settingsDecorTerrain(settings.decor);
+      if(configuration.modification){
+        const original=retainedDecorOf(nativeTerrain)!,base=original.raster.height.slice();
+        const raster={...original.raster,height:applyTerrainModification(base,original.raster.n,configuration.modification)};
+        nativeTerrain=await(await import('./decorTerrain')).decorTerrainLayer({...original,raster},settings.decor.id);
+        (nativeTerrain as V2TerrainLayer).v2ModificationBase={n:raster.n,height:base};
+      }
       engineStats = { backend: 'decor', decor: settings.decor.id };
     } else if (nativeEngine) {
       const runtime = settings.runtime, { generateEngineHeight } = await import('./platform');
@@ -255,7 +264,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     if (forestFields.size > 3) forestFields.delete(forestFields.keys().next().value!);
     }
   }
-  const biome = options.biome === 'underdark-caverns' ? 'underdark' : options.biome;
+  const biome = options.biome;
   const coverKey = key + stableStringify([biome, nativeEngine ? configuration.forest : null]);
   const cachedCover = naturalCovers.get(coverKey);
   const landuse = cachedCover ? structuredClone(cachedCover)
@@ -433,7 +442,6 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
     workflow: 'list' as const, settlements: 'none' as const };
   const localSeed = urbanSeed(settings, key, 'composition');
   options.seed = localSeed;
-  if (options.biome === 'underdark-caverns') options.biome = 'underdark';
   const baseBridges = (world.debug?.v2BaseBridges ?? world.bridges ?? []) as NonNullable<World['bridges']>;
   world.debug ??= {};
   const townBridges = (world.debug.v2TownBridges ??= {}) as Record<string, NonNullable<World['bridges']>>;
@@ -499,7 +507,6 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
     world.landuse = rural.landuse;
   } else if (world.urban) {
     const mainOptions = { ...world.options, ...settings.local.main };
-    if (mainOptions.biome === 'underdark-caverns') mainOptions.biome = 'underdark';
     // Rust resource soil (depth, stoniness, drainage); the noise field only when no resource payload exists (TypeScript backend).
     const resources = await (await import('./region')).regionResources(world, settings);
     const rural = await generateRuralNative({ ...world, options: mainOptions }, new Rng('magna-urbis:' + world.seed), Number(world.stats['v2.regionalRoads'] ?? world.roads?.length ?? 0), undefined,

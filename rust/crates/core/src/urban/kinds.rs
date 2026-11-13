@@ -769,19 +769,29 @@ fn bank(surface: &Surface<'_>, p: Point, reach: f64) -> Option<(Point, Point)> {
     None
 }
 
-/// Plot size of one building: front × depth (m).
-fn plot_size(kind: Kind, role: &str, rng: &mut Rng) -> (f64, f64) {
-    let base = match (kind, role) {
-        (_, "isolated-mill") => (30.0, 40.0),
-        (_, "isolated-inn") => (34.0, 46.0),
-        (_, "isolated-tower") => (26.0, 28.0),
-        (_, "isolated-shrine") => (16.0, 20.0),
-        (_, "roadside-temple") => (24.0, 30.0),
-        (Kind::Single, _) => (28.0, 34.0),
-        _ => (46.0, 56.0),
+/// Plot size of one building: front × depth (m), drawn for the site (`key`).
+/// A farm's plot follows its culture's farm type (`farmsteads::plot`). Every other
+/// structure draws its area and its proportion round the size of its kind; the
+/// peoples who wall a precinct round a lone building (a caravanserai, a temple
+/// court) take a larger and squarer plot.
+fn plot_size(kind: Kind, role: &str, culture: &str, key: &str, rng: &mut Rng) -> (f64, f64) {
+    // Ground (m²) and the range of front : depth.
+    let (ground, narrow, wide): (f64, f64, f64) = match (kind, role) {
+        (_, "isolated-mill") => (1200.0, 0.6, 1.0),
+        (_, "isolated-inn") => (1560.0, 0.6, 1.3),
+        (_, "isolated-tower") => (730.0, 0.8, 1.2),
+        (_, "isolated-shrine") => (320.0, 0.7, 1.15),
+        (_, "roadside-temple") => (720.0, 0.65, 1.1),
+        (Kind::Single, _) => (950.0, 0.7, 1.1),
+        _ => return super::farmsteads::plot(culture, &format!("{key}:{}", rng.next_u32())),
     };
-    let j = rng.range(0.9, 1.12);
-    (base.0 * j, base.1 * rng.range(0.92, 1.1))
+    let precinct = matches!(
+        super::activities::family_of(culture).map_or("", |f| f.0),
+        "islamic" | "chinese" | "indian" | "ancient" | "classical" | "mesoamerican" | "andean"
+    );
+    let ground = ground * rng.range(0.9, 1.35) * if precinct { 1.2 } else { 1.0 };
+    let shape = if precinct { rng.range(narrow.max(0.85), wide.max(1.0)) } else { rng.range(narrow, wide) };
+    ((ground * shape).sqrt(), (ground / shape).sqrt())
 }
 
 struct Plan {
@@ -1230,7 +1240,18 @@ fn homestead(
     if cfg.programme.intent == "activity" {
         return activity_plot(site, cfg, near, obstacles, surface);
     }
-    let (w, d) = plot_size(kind, &cfg.programme.intent, rng);
+    let intent = cfg.programme.intent.as_str();
+    let culture = culture(site, cfg);
+    let (mut w, mut d) = plot_size(kind, intent, culture, &site.key, rng);
+    // Never under the envelope the programme admits for a lone lot of this culture
+    // (a farm of a place too small for a hamlet is admitted as an isolated farm).
+    let admitted = if roles::is_isolated(intent) { intent } else { "isolated-farm" };
+    if (matches!(kind, Kind::Farmstead | Kind::Ruin) || roles::is_isolated(intent))
+        && let Some(m) = super::culture::isolated_mapping(culture, &cfg.programme.period, admitted)
+    {
+        w = w.max(m.admissibility.min_frontage + 2.0 * m.admissibility.min_access_width + 2.0);
+        d = d.max(m.admissibility.min_depth + 2.0);
+    }
     // A mill stands on its race: on the nearest bank within reach, its plot
     // backing onto the water (dry-clipped to the bank by `settle`).
     let bank = (cfg.programme.intent == "isolated-mill")

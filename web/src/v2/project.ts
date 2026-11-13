@@ -29,7 +29,7 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   for (const [key, values] of Object.entries({ size: ['hamlet', 'village', 'town', 'city', 'metropolis'], relief: ['flat', 'hills', 'valley', 'mountains'],
     coast: ['none', 'N', 'E', 'S', 'W', 'random'], river: ['none', 'stream', 'river', 'major'], style: ['parchment', 'atlas'],
     walls: ['auto', 'yes', 'no', 'none', 'single', 'double'], castle: ['auto', 'yes', 'no'],
-    biome: ['temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark', 'underdark-caverns'] })) {
+    biome: ['temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark'] })) {
     if (!partial && ['size', 'relief', 'coast', 'river', 'style', 'walls', 'castle'].includes(key) && o[key] === undefined) throw new Error(`Paramètre manquant : ${key}`);
     checkEnum(o[key], values, key);
   }

@@ -23,7 +23,7 @@ import { waterSeasonUniforms } from '../render/seasonPalette';
  */
 import { unzlibSync } from 'fflate';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
-import { shoreRingFor } from '../../../rust/bridge/terrainForestBeach';
+import { shoreRingPixels } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform, setSeasonCalendarGpu } from '../../../rust/bridge/terrainRenderV2Zones';
@@ -92,13 +92,6 @@ class Pool {
   destroy(): void { for (const chunk of this.chunks) chunk.buffer.destroy(); this.chunks = []; }
 }
 
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-/** IEEE half of a float (round toward zero), for the RG16F shore ring. */
-function toHalf(v: number): number {
-  f32[0] = v; const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
-  if (e <= 0) return e < -10 ? s : s | ((m | 0x800000) >> (14 - e));
-  return e >= 31 ? s | 0x7bff : s | (e << 10) | (m >> 13);
-}
 const mipCount = (width: number, height: number): number => Math.floor(Math.log2(Math.max(width, height, 1))) + 1;
 
 const SAMPLES = 4, DEPTH: GPUTextureFormat = 'depth32float';
@@ -338,7 +331,7 @@ class Terrain3dGpu extends Terrain3d {
   private targets?: { width: number; height: number; samples: number; color: GPUTexture; colorView: GPUTextureView; depth: GPUTexture; depthView: GPUTextureView };
   private blank!: GpuImage; private emptyUnfilterable!: GpuImage;
   private brushes!: { image: GpuImage; full: boolean };
-  private ring?: { layer: object; image: GpuImage; x: number; y: number; width: number };
+  private ring?: { layer: object; revision: number; image: GpuImage; x: number; y: number; width: number };
   private lastGroundPipelines = new Map<number, GPURenderPipeline>();
   /** One sample while moving, once the single-sample ground exists: the multisampled one (the one shown at rest)
    * is compiled first, and until the other is ready the moving frames keep it rather than a stand-in material. */
@@ -376,6 +369,7 @@ class Terrain3dGpu extends Terrain3d {
     this.brushes = { image: this.arrayImage(1, 1, 1, [new Uint8Array([255, 128])]), full: false };
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
     this.macroTexture = this.uploadMacroField(this.layer);
+    this.caveTexture = this.uploadCaveMask(this.layer);
     this.buildings = new UrbanBuildingPassGpu(gpu, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
     this.selectTerrainProgram(false);
@@ -424,6 +418,12 @@ class Terrain3dGpu extends Terrain3d {
     return cached;
   }
 
+  protected override uploadCaveMask(layer?: HeightLayer): WebGLTexture | undefined {
+    if (!layer?.cave?.length || layer.cave.length !== layer.n * layer.n) return undefined;
+    const mask = new Uint8Array(layer.cave.length);
+    mask.set(layer.cave);
+    return this.image(layer.n, layer.n, 'r8unorm', mask, 1);
+  }
   protected override uploadMacroField(layer?: HeightLayer): WebGLTexture {
     const n = layer?.n ?? 1;
     return this.image(n, n, 'r32float', layer?.data ?? new Float32Array(1), 4);
@@ -480,7 +480,7 @@ class Terrain3dGpu extends Terrain3d {
     this.pipeline('tree');
   }
   private recordTrees(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
-    if (!this.treeCount || !this.gpuTreeBuffer) return;
+    if (!this.treeCount || !this.gpuTreeBuffer || this.groundSettings?.underdark) return;
     const pipeline = this.pipeline('tree'); if (!pipeline) return;
     const p = this.treeParams, c = this.camera;
     p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
@@ -516,7 +516,7 @@ class Terrain3dGpu extends Terrain3d {
   /** The ground variant once created; meanwhile the last drawn one, or the preview, stands in. */
   private terrainPipeline(): GPURenderPipeline | undefined {
     if (this.useMapShader) return this.pipeline('map');
-    const settings = this.groundSettings, forest = !!this.forest;
+    const settings = this.groundSettings, forest = !!this.forest && !settings?.underdark;
     const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes));
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) { this.lastGroundPipelines.set(this.samples, target); return target; }
@@ -554,7 +554,7 @@ class Terrain3dGpu extends Terrain3d {
     const sky = this.pipeline('sky');
     if (sky) {
       this.skyParams.set('height', h);
-      this.skyParams.set('uNight', this.lookSettings.ambience==='night'?1:0);
+      this.skyParams.set('uNight', this.groundSettings?.underdark?2:this.lookSettings.ambience==='night'?1:0);
       const slot = this.params.alloc(this.skyParams.bytes);
       pass.setPipeline(sky);
       pass.setBindGroup(0, device.createBindGroup({ layout: gpu.layouts.sky, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: this.skyParams.bytes.byteLength } }] }));
@@ -586,13 +586,15 @@ class Terrain3dGpu extends Terrain3d {
       const v2 = settings.renderV2 ?? 0;
       p.set('uV2WaterVisible', settings.waterVisible === false ? 0 : 1); p.setArray('uV2GlacierSources', renderV2GlacierSources(layer, settings.climate));
       p.set('uV2Season', settings.v2Season ?? .5); setSeasonCalendarGpu(p, settings.climateZone, settings.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
-      if (v2 > 0 && this.ring?.layer !== layer) {
+      // Shore ring and relief light (rgba16float: shore distance, openness, sky occlusion, horizon tangent toward
+      // the light); a new light azimuth re-bakes the last channel off the frame path and bumps the revision.
+      const pixels = v2 > 0 ? shoreRingPixels(layer, settings.lighting.azimuth, this.ringChanged) : undefined;
+      if (pixels && (this.ring?.layer !== layer || this.ring.revision !== pixels.revision)) {
         if (this.ring) this.deleteTexture(this.ring.image);
-        const grid = shoreRingFor(layer), half = new Uint16Array(grid.data.length);
-        for (let i = 0; i < half.length; i++) half[i] = toHalf(grid.data[i]);
-        this.ring = { layer, image: this.image(grid.n, grid.n, 'rg16float', half, 4), x: grid.x, y: grid.y, width: grid.width };
+        const grid = pixels.grid;
+        this.ring = { layer, revision: pixels.revision, image: this.image(grid.n, grid.n, 'rgba16float', pixels.half, 8), x: grid.x, y: grid.y, width: grid.width };
       }
-      const ring = v2 > 0 ? shoreRingFor(layer) : undefined;
+      const ring = pixels?.grid;
       p.set('uShoreRingRect', ring?.x ?? 0, ring?.y ?? 0, ring?.width ?? 1);
       const contours = settings.contours;
       p.set('groundContours', contours ? 1 : 0); p.set('groundContourStep', contours?.step ?? 1); p.set('groundContourOpacity', contours?.opacity ?? 0);
@@ -611,6 +613,14 @@ class Terrain3dGpu extends Terrain3d {
     p.set('uHasOccupation', applied ? 1 : 0); p.set('uOccupationRect', applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);
     p.set('uOccupationN', applied?.data.n ?? 1);
     p.set('uPaperMap', settings?.paperMap ? 1 : 0);
+    // Underdark: the cave mask in the forest beach slot (terrain3d.ts), forest off.
+    p.set('uUnderdark', settings?.underdark ? 1 : 0); p.set('uHasCave', settings?.underdark && this.caveTexture ? 1 : 0);
+    { const g = settings?.townGlow ?? new Float32Array(0), a = new Float32Array(64); for (let k = 0; k < Math.min(16, g.length / 3 | 0); k++) a.set(g.subarray(k * 3, k * 3 + 3), k * 4); p.setArray('uTownGlow', a); p.set('uTownGlowCount', Math.min(16, g.length / 3 | 0)); }
+    { const f = settings?.farmBeds ?? new Float32Array(128); p.setArray('uFarmBeds', f); let n = 0; for (let k = 0; k < 32; k++) if (f[k * 4 + 2] > 0) n = k + 1; p.set('uFarmBedCount', n); }
+    if (settings?.underdark) {
+      textures.uForestBeach = this.caveTexture ? image(this.caveTexture).view : empty;
+      p.set('uHasForestBeach', 0); p.set('uForestBeachRect', layer.x, layer.y, layer.width);
+    }
     const detail = this.landDetail;
     textures.uLandDetail = detail ? image(detail.texture).view : empty;
     p.set('uHasLandDetail', detail ? 1 : 0); p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1); p.set('uLandDetailN', detail?.data.n ?? 1);
@@ -710,7 +720,7 @@ class Terrain3dGpu extends Terrain3d {
     if (this.landDetail) this.deleteTexture(this.landDetail.texture);
     this.gpuBillboardBuffer?.destroy(); if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
     for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
-    for (const texture of [this.material, this.macroTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);
+    for (const texture of [this.material, this.macroTexture, this.caveTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);
     this.fullIndices.buffer.destroy();
     for (const indices of this.patchIndexCache.values()) indices.buffer.destroy();
     this.patchIndexCache.clear();

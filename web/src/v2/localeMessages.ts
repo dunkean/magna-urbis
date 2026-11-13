@@ -2,6 +2,7 @@ import { localeExtraLatin } from './localeExtraLatin';
 import { localeExtraAsia } from './localeExtraAsia';
 import { localeExtraArRu } from './localeExtraArRu';
 import { localeNaming } from './localeNaming';
+import { localeUnderdark } from './localeUnderdark';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
 export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
@@ -502,6 +503,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "Merfolk · tidal shore and sea-cave village": "Tritones · orilla de marea y pueblo de cuevas marinas",
     "Giants · megalithic hold": "Gigantes · fortaleza megalítica",
     "Goblins · hillside warren": "Duendes · madriguera de la ladera",
+    "Modern · American grid city (Chicago, Manhattan)": "Moderna · ciudad americana en cuadrícula (Chicago, Manhattan)",
     "Medieval organic (Europe)": "Orgánico medieval (Europa)",
     "Bastide (planned grid)": "Bastide (cuadrícula planificada)",
     "Medina (North Africa)": "Medina (Norte de África)",
@@ -1910,6 +1912,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "Merfolk · tidal shore and sea-cave village": "Merfolk · costa das marés e vila de cavernas marinhas",
     "Giants · megalithic hold": "Gigantes · fortaleza megalítica",
     "Goblins · hillside warren": "Goblins · labirinto na encosta",
+    "Modern · American grid city (Chicago, Manhattan)": "Moderna · cidade americana em grelha (Chicago, Manhattan)",
     "Medieval organic (Europe)": "Orgânico medieval (Europa)",
     "Bastide (planned grid)": "Bastide (grade planejada)",
     "Medina (North Africa)": "Medina (Norte da África)",
@@ -3258,6 +3261,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "Merfolk · tidal shore and sea-cave village": "人鱼·潮岸海洞村",
     "Giants · megalithic hold": "巨人·巨石据点",
     "Goblins · hillside warren": "妖精·山坡沃伦",
+    "Modern · American grid city (Chicago, Manhattan)": "现代·美式方格网城市（芝加哥、曼哈顿）",
     "Medieval organic (Europe)": "中世纪有机（欧洲）",
     "Bastide (planned grid)": "Bastide（计划网格）",
     "Medina (North Africa)": "麦地那（北非）",
@@ -4746,6 +4750,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "Merfolk · tidal shore and sea-cave village": "ميرفولك · شاطئ المد والجزر وقرية الكهف البحري",
     "Giants · megalithic hold": "العمالقة · عقد المغليثية",
     "Goblins · hillside warren": "العفاريت · وارن التل",
+    "Modern · American grid city (Chicago, Manhattan)": "حديث · مدينة أمريكية شبكية (شيكاغو، مانهاتن)",
     "Medieval organic (Europe)": "العضوية في العصور الوسطى (أوروبا)",
     "Bastide (planned grid)": "باستيد (الشبكة المخططة)",
     "Medina (North Africa)": "المدينة المنورة (شمال أفريقيا)",
@@ -6054,6 +6059,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "Merfolk · tidal shore and sea-cave village": "Мерфолки · приливной берег и деревня в морской пещере",
     "Giants · megalithic hold": "Гиганты · мегалитическая крепость",
     "Goblins · hillside warren": "Гоблины · лабиринт на склоне холма",
+    "Modern · American grid city (Chicago, Manhattan)": "Современность · американский город с прямоугольной сеткой улиц (Чикаго, Манхэттен)",
     "Medieval organic (Europe)": "Средневековая органика (Европа)",
     "Bastide (planned grid)": "Бастида (планируемая сетка)",
     "Medina (North Africa)": "Медина (Северная Африка)",
@@ -7522,6 +7528,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "Merfolk · tidal shore and sea-cave village": "マーフォーク・潮岸と海の洞窟の村",
     "Giants · megalithic hold": "巨人・巨石ホールド",
     "Goblins · hillside warren": "ゴブリン・ヒルサイド・ウォーレン",
+    "Modern · American grid city (Chicago, Manhattan)": "近代・アメリカの碁盤目都市（シカゴ、マンハッタン）",
     "Medieval organic (Europe)": "中世のオーガニック（ヨーロッパ）",
     "Bastide (planned grid)": "バスティード（予定グリッド）",
     "Medina (North Africa)": "メディナ (北アフリカ)",
@@ -8338,4 +8345,5 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
 for (const [language, messages] of Object.entries({ ...localeExtraLatin, ...localeExtraAsia, ...localeExtraArRu })) {
   Object.assign(localeMessages[language as keyof typeof localeMessages], messages);
 }
+for(const [language,messages] of Object.entries(localeUnderdark))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeNaming))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);

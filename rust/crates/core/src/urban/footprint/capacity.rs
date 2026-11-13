@@ -691,7 +691,7 @@ fn reserved_land(
     let minimum = super::super::culture::mapping_for(culture, &cfg.programme.period)
         .map_or(0.0, |m| m.admissibility.min_area);
     let module = module.max(minimum);
-    roles::services_with_functions(culture, population, functions)
+    roles::services_scaled(culture, population, functions, cfg.singular_density)
         .iter()
         .filter(|n| roles::reserves_block(&n.entry))
         .map(|n| n.sites as f64 * module.min(n.area.max(minimum)))

@@ -90,6 +90,7 @@ const RUST_CULTURE_LABELS: Record<string, string> = {
   'merfolk-tidal': 'Merfolk · tidal shore and sea-cave village',
   'giant-hold': 'Giants · megalithic hold',
   'goblin-warren': 'Goblins · hillside warren',
+  'american-grid': 'Modern · American grid city (Chicago, Manhattan)',
 };
 /** Every culture the engine supports: the legacy TS registry plus the Rust-only cultures above
  *  (rust/crates/core/src/urban/catalogue.json is 2.7 MB, too heavy to bundle for its ids). */

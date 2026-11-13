@@ -1,0 +1,20 @@
+{
+  "_doc": "Mass roles shared by every building (loader: forms/roles.rs, struct MassRule). One entry per part label. eave: wall height above the base, one of {\"m\":[lo,hi]} metres | {\"floors\":n} lot storeys | {\"rel\":[lo,hi]} lot storeys plus a drawn offset | {\"nave\":k} times the monument's nave height | {\"width\":k} times the mass's short side | {\"main\":k} times the main body's wall height (absent: the lot's storeys). base: \"ground\" (default) | \"stack\" (on top of the mass under it) | {\"m\":x} | {\"main\":k}. roof: a kind, \"culture\", or a draw \"a|b\" among gable, hip, shed, pyramid, halfhip, gablet, gambrel, mansard, saltbox, flat, cone, dome, barrel, tent. strict: true keeps the rule's pitched roof under a flat-roof tradition (which otherwise flattens ordinary pitched kinds). pitch: degrees | [lo,hi] | {\"culture\":delta}. axis: long (default) | short | street | main | cross. high (shed): main | street | back. overhang: metres. wall / cover: a material or \"culture\". openings: none | door. minor: small decorative mass. round: sides of the regular polygon replacing the footprint. tiers: {count:[lo,hi], inset, first, skirt:{rise,overhang}, top}. composable: a long mass may break into parts of different heights. floors: storeys shown by the windows. overrides: {<culture id or monument family>: {<label>: rule}} replace a shared rule for that culture.",
+  "roles": {
+    "wing": { "eave": { "rel": [-1, 0] }, "roof": "culture" },
+    "crosswing": { "eave": { "rel": [0, 1] }, "roof": "culture" },
+    "outshot": { "eave": { "m": [2.1, 2.5] }, "roof": "shed", "pitch": [14, 24], "high": "main", "openings": "door", "floors": 1 },
+    "porch": { "eave": { "m": [2.2, 2.6] }, "roof": "shed|gable", "pitch": [20, 34], "high": "main", "axis": "cross", "openings": "none", "minor": true, "floors": 1 },
+    "bay": { "eave": { "rel": [0, 0] }, "roof": "gable", "axis": "cross", "pitch": { "culture": 4 } },
+    "turret": { "eave": { "rel": [1, 1] }, "roof": "cone", "pitch": [56, 66], "round": 12 },
+    "stair-tower": { "eave": { "rel": [1, 2] }, "roof": "pyramid", "pitch": [50, 62] },
+    "garage": { "eave": { "m": [2.4, 2.8] }, "roof": "culture", "openings": "door", "floors": 1 },
+    "annex": { "eave": { "m": [2.3, 3.0] }, "roof": "culture", "openings": "door", "floors": 1 },
+    "gallery": { "eave": { "m": [2.6, 3.2] }, "roof": "shed", "pitch": [12, 20], "high": "main", "openings": "none", "floors": 1 },
+    "platform": { "eave": { "m": [1.0, 1.6] }, "roof": "flat", "wall": "stone", "cover": "stone", "openings": "none", "floors": 1 },
+    "podium": { "eave": { "m": [1.0, 1.8] }, "roof": "flat", "wall": "stone", "openings": "none", "floors": 1 },
+    "lantern": { "base": "stack", "eave": { "width": 0.9 }, "roof": "pyramid|cone", "pitch": [45, 60], "floors": 1 },
+    "stack-flat": { "base": "stack", "eave": { "width": 0.8 }, "roof": "flat", "floors": 1 }
+  },
+  "overrides": {}
+}

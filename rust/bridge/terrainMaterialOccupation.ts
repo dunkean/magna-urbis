@@ -23,7 +23,8 @@ vec2 orchardRows(vec2 world){vec4 d=orchardDetail(world);vec2 c=d.gb*2.-1.;float
 `;
 
 export const GROUND_OCCUPATION_GLSL = `
-// Crop ramp of the raster's red channel: neighbours are plausible mixes, so filtered strips stay credible.
+// The original six-crop ramp (plough, stubble, wheat, barley, oats, beans): the town ground takes its packed earth
+// from it.
 vec3 landCropTone(float t,float green){
   vec3 plough=vec3(.36,.29,.21),stubble=vec3(.55,.49,.36),wheat=vec3(.58,.51,.32),barley=vec3(.53,.51,.32),oats=vec3(.40,.45,.25),beans=vec3(.27,.36,.20);
   vec3 c=t<.18?mix(plough,stubble,t/.18):t<.36?mix(stubble,wheat,(t-.18)/.18):t<.52?mix(wheat,barley,(t-.36)/.16):t<.72?mix(barley,oats,(t-.52)/.2):mix(oats,beans,(t-.72)/.28);
@@ -31,41 +32,100 @@ vec3 landCropTone(float t,float green){
   vec3 winter=mix(vec3(.31,.25,.19),vec3(.25,.35,.19),groundSmooth(.3,.8,t));
   return mix(winter,c,green);
 }
+// Field ramp of the land detail's red channel (web/src/ui/landDetail.ts CROP_TONES): freshly turned soil 0, plough
+// .07, grey-brown fallow .14, stubble .21, wheat .32, barley .43, rapeseed .53, sunflower .61, rye .70, oats .79,
+// clover .89, beans 1. Hue runs one way along it (browns, straw, gold, yellows, grey-green, greens), so a filtered
+// limit between two holdings is a mix of their two tones. Rapeseed and sunflower are laid over it by landField
+// (landYellowCrop, landYellowShare); underneath, the ramp runs straight from barley to rye.
+vec3 landFieldTone(float t,float green){
+  // Ripe wheat turns gold in late summer before the reaping.
+  float ph=fract(uV2Season),ripe=groundSmooth(.42,.5,ph)*(1.-groundSmooth(.62,.68,ph));
+  vec3 turned=vec3(.31,.25,.19),plough=vec3(.39,.32,.24),fallow=vec3(.44,.40,.31),stubble=vec3(.55,.49,.36);
+  vec3 wheat=mix(vec3(.58,.51,.32),vec3(.66,.55,.27),ripe),barley=vec3(.53,.51,.32);
+  vec3 rye=vec3(.45,.47,.34),oats=vec3(.40,.45,.25),clover=vec3(.33,.44,.22),beans=vec3(.31,.39,.21);
+  vec3 c=t<.07?mix(turned,plough,t/.07):t<.14?mix(plough,fallow,(t-.07)/.07):t<.21?mix(fallow,stubble,(t-.14)/.07):t<.32?mix(stubble,wheat,(t-.21)/.11)
+    :t<.43?mix(wheat,barley,(t-.32)/.11):t<.7?mix(barley,rye,(t-.43)/.27):t<.79?mix(rye,oats,(t-.7)/.09):t<.89?mix(oats,clover,(t-.79)/.1):mix(clover,beans,(t-.89)/.11);
+  // Winter: autumn-sown cereals, rye and clover stay thin and green over the soil, the rest lies bare.
+  vec3 winter=mix(vec3(.31,.25,.19),vec3(.25,.35,.19),groundSmooth(.3,.8,t));
+  return mix(winter,c,green);
+}
 // The same ramp on dry farmland, as satellite images of it show: turned or fallow strips take the local soil (darker
 // when ploughed), stubble and ripe cereals are paler than the dry grass around them, irrigated crops stay green.
 // The wet season greens the sown cereals. Holdings keep their mosaic where one straw wash over every crop would hide them.
-vec3 landDryCropTone(float t,float green,vec3 bare){
+vec3 landFieldDryTone(float t,float green,vec3 bare){
   vec3 turned=mix(bare,vec3(.40,.31,.22),.55),fallow=mix(bare,vec3(.58,.50,.37),.45),stubble=vec3(.66,.59,.42),irrigated=mix(vec3(.33,.38,.20),vec3(.25,.37,.17),green);
-  vec3 c=t<.18?mix(turned,fallow,t/.18):t<.6?mix(fallow,stubble,groundSmooth(.18,.4,t)):mix(stubble,irrigated,groundSmooth(.6,.75,t));
+  vec3 c=mix(mix(mix(turned,fallow,groundSmooth(.03,.17,t)),stubble,groundSmooth(.17,.3,t)),irrigated,groundSmooth(.7,.8,t));
   vec3 winter=mix(turned,vec3(.31,.37,.20),groundSmooth(.3,.8,t));
   return mix(winter,c,green);
 }
-// A holding: mosaic of crops, ridge and furrow, row grain, grass balks. Every band fades before its period reaches two pixels.
+// Share of rapeseed and sunflower around their ramp positions.
+float landYellowShare(float t){return groundSmooth(.45,.52,t)*(1.-groundSmooth(.62,.69,t));}
+// Rapeseed and sunflower over the year: green before their flowers, a clear yellow in season (rapeseed in late
+// spring, sunflower in high summer), then ripening and stubble. t picks one or the other.
+vec3 landYellowCrop(float t){
+  float ph=fract(uV2Season);
+  vec3 rape=mix(vec3(.28,.32,.20),vec3(.33,.42,.21),groundSmooth(.12,.22,ph));
+  rape=mix(rape,vec3(.72,.67,.24),groundSmooth(.28,.32,ph));
+  rape=mix(rape,vec3(.47,.46,.29),groundSmooth(.40,.45,ph));
+  rape=mix(rape,vec3(.55,.49,.36),groundSmooth(.58,.63,ph));
+  rape=mix(rape,vec3(.28,.32,.20),groundSmooth(.78,.88,ph));
+  vec3 sun=mix(vec3(.35,.29,.21),vec3(.35,.42,.23),groundSmooth(.3,.4,ph));
+  sun=mix(sun,vec3(.70,.59,.21),groundSmooth(.45,.5,ph));
+  sun=mix(sun,vec3(.37,.33,.24),groundSmooth(.6,.66,ph));
+  sun=mix(sun,vec3(.42,.36,.27),groundSmooth(.76,.84,ph));
+  return mix(rape,sun,groundSmooth(.555,.585,t));
+}
+// Near a strip edge, close up: the point a little inside the fragment's own holding (land detail uv), along the
+// gradient of the filtered edge distance (alpha), which points away from the nearest edge. Crop bytes and directions
+// change on the texel grid, the distance follows the true polygon edge: read there, two holdings meet along the
+// smooth zero line of the distance instead of a blurred staircase of texels. The gradient comes from three reads on
+// a symmetric stencil half a texel wide; where it is too weak to trust (on the edge itself, at junctions, in strips
+// narrower than two texels) and from afar, uv is kept. edge returns the distance (m) at uv.
+vec2 landDetailInside(vec2 uv,float footprint,out float edge){
+  float cell=uLandDetailRect.z/uLandDetailN,r=.5/uLandDetailN;
+  edge=landDetailSample(uv,0.).a*6.;
+  if(footprint<cell*2.&&edge<cell*1.2){
+    float a0=landDetailSample(uv+vec2(0.,r),0.).a,a1=landDetailSample(uv+vec2(-.8660254,-.5)*r,0.).a,a2=landDetailSample(uv+vec2(.8660254,-.5)*r,0.).a;
+    // Least squares on the stencil: g = 2/(3r) sum a_i d_i, here in metres of distance per metre.
+    vec2 g=(a0*vec2(0.,1.)+a1*vec2(-.8660254,-.5)+a2*vec2(.8660254,-.5))*6.*2./(3.*cell*.5);
+    float s=length(g);
+    if(s>.5)uv+=g/s*(cell*1.2-edge)/uLandDetailRect.z;
+  }
+  return uv;
+}
+// A holding: mosaic of crops, faint plough ridges on some turned holdings, row grain, grass balks. Every band fades
+// before its period reaches two pixels. Each holding carries its own mottle (amplitude and pattern from its byte), so
+// neighbouring fields never share one marbling, and nothing periodic spans a field beyond the rows close up.
 vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out vec2 slope,out float rough){
   slope=vec2(0.);rough=.94;
   vec2 uv=(world-uLandDetailRect.xy)/uLandDetailRect.z;
   float cell=uLandDetailRect.z/uLandDetailN;
-  vec4 d=landDetailSample(uv,max(log2(max(footprint,.001)/cell),0.));
+  float edge;
+  vec4 d=landDetailSample(landDetailInside(uv,footprint,edge),max(log2(max(footprint,.001)/cell),0.));
   if(d.a<=0.)return mix(bare,vec3(.39,.36,.22),.5);
   vec2 c2=d.gb*2.-1.;float a=.5*atan(c2.y,c2.x);
   vec2 along=vec2(cos(a),sin(a)),across=vec2(-along.y,along.x);
   float u=dot(world,across),v=dot(world,along);
   uint salt=uMaterialSeed+977u;
-  float patchy=surfaceNoise(vec3(world/70.,0.),salt);
-  float soil=surfaceNoise(vec3(world/23.,0.),salt+1u);
+  // The holding's byte moves its mottle into its own slice of the noise, smoothly, so a filtered limit stays soft.
+  float patchy=surfaceNoise(vec3(world/70.,d.r*23.),salt);
+  float soil=surfaceNoise(vec3(world/23.,d.r*23.),salt+1u);
   float crop=clamp(d.r+patchy*.012,0.,1.);
-  vec3 c=mix(landCropTone(crop,green),landDryCropTone(crop,green,bare),dry);
-  c*=1.+.035*patchy+.03*soil;
-  // Ploughland ridges: broad strips of medieval ploughing, a few metres wide, slightly wandering.
-  float wander=surfaceNoise(vec3(v/70.,u/240.,0.),salt+2u)*3.;
-  float ridgeKeep=1.-groundSmooth(2.4,5.,footprint);
+  vec3 c=mix(landFieldTone(crop,green),landFieldDryTone(crop,green,bare),dry);
+  c=mix(c,landYellowCrop(crop),landYellowShare(crop));
+  // Mottle: marked on some holdings, absent on others.
+  float mottle=groundSmooth(.25,.9,.5+.5*sin(d.r*157.+1.3));
+  c*=1.+mottle*(.025*patchy+.02*soil);
+  // Ploughland ridges: straight along the strip, faint, on part of the turned and fallow holdings only.
+  float ridgeKeep=(1.-groundSmooth(2.4,5.,footprint))*(1.-groundSmooth(.16,.24,crop))*groundSmooth(.35,.75,.5+.5*sin(d.r*97.+.4));
   if(ridgeKeep>0.){
-    float p=(u+wander)*.6283185;
-    c*=1.+.035*cos(p)*ridgeKeep;
-    slope+=across*(-sin(p)*.08*ridgeKeep);
+    float p=u*.6283185;
+    c*=1.+.018*cos(p)*ridgeKeep;
+    slope+=across*(-sin(p)*.04*ridgeKeep);
   }
   float rowKeep=1.-groundSmooth(.35,.95,footprint);
   if(rowKeep>0.){
+    float wander=surfaceNoise(vec3(v/70.,u/240.,0.),salt+2u)*3.;
     float p=(u+wander*.2)*3.3069;
     float row=cos(p);
     // Rows break up where the crop thins; grain runs along them.
@@ -78,7 +138,6 @@ vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out ve
   // Balks between strips: narrow grass lines, read at full resolution, gone before they alias.
   float keep=1.-groundSmooth(.7,2.6,footprint);
   if(keep>0.){
-    float edge=landDetailSample(uv,0.).a*6.;
     float balk=keep*(1.-groundSmooth(.25,1.05,edge+.25*soil));
     vec3 grass=mix(vec3(.33,.31,.21),vec3(.32,.38,.22),green)*(1.+.08*patchy);
     c=mix(c,grass,balk*.7);
@@ -86,7 +145,7 @@ vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out ve
   }
   // Holding limits (hedge, ditch, headland): one dark line a pixel or two wide from afar, so the patchwork of holdings
   // reads at every zoom. Close up the grass balks above draw them instead; the line fades in as the balks fade out.
-  float limit=1.-groundSmooth(0.,max(footprint*.8,1.2),landDetailSample(uv,0.).a*6.);
+  float limit=1.-groundSmooth(0.,max(footprint*.8,1.2),edge);
   // Dry farmland is not washed toward the dry grass: its own crop ramp above keeps the holdings apart from the meadows.
   c*=1.-.25*limit*groundSmooth(.7,2.6,footprint)*(1.-groundSmooth(14.,40.,footprint));
   return c;
@@ -96,14 +155,17 @@ vec3 landGrass(vec2 world,float footprint,float green,vec3 bare,bool grazed){
   uint salt=uMaterialSeed+1013u;
   float broad=surfaceNoise(vec3(world/120.,0.),salt),mid=surfaceNoise(vec3(world/34.,0.),salt+1u);
   vec3 lush=mix(vec3(.36,.38,.24),vec3(.30,.42,.21),green),rank=mix(vec3(.40,.37,.25),vec3(.40,.43,.24),green);
-  vec3 c=mix(lush,rank,clamp(.5+.55*broad+.35*mid,0.,1.));
-  if(grazed){c=mix(c,mix(vec3(.42,.39,.28),vec3(.42,.44,.27),green),.45);c*=1.+.05*mid;}
+  // Two sward communities split along a ragged line, a few percent apart; from afar their even mix, with no blobs.
+  float ragged=.12+.05*footprint;
+  float community=(1.-groundSmooth(4.,14.,footprint))*(groundSmooth(-ragged,ragged,broad+.6*mid)-.5);
+  vec3 c=mix(lush,rank,.5+community);
+  if(grazed){c=mix(c,mix(vec3(.42,.39,.28),vec3(.42,.44,.27),green),.45);c*=1.+.03*community;}
   else{
     // Mown swathes in a hay meadow, only where they resolve.
     float keep=1.-groundSmooth(.8,2.2,footprint);
     if(keep>0.)c*=1.+keep*.03*cos(dot(world,vec2(.31,.95))*1.05+2.*broad);
   }
-  return mix(bare,c,.62)*(1.+.05*mid);
+  return mix(bare,c,.62)*(1.+.035*community);
 }
 // Rough grazing and heath: bracken, gorse and bare patches that dissolve into the surrounding ground.
 vec3 landHeath(vec2 world,float footprint,float green,vec3 bare){
@@ -113,14 +175,18 @@ vec3 landHeath(vec2 world,float footprint,float green,vec3 bare){
   vec3 bracken=mix(vec3(.40,.33,.23),vec3(.34,.37,.21),green),gorse=mix(vec3(.28,.30,.20),vec3(.25,.32,.18),green);
   return mix(bare,mix(bracken,gorse,groundSmooth(.35,.75,t)),.5);
 }
-// Fen: rushes in tussocks around open pools.
+// Fen: reed and sedge mats with ragged edges, hummocks up close, open pools with a crisp shore and thin
+// meandering channels (the zero line of the broad field, about a pixel wide until it fades). From afar the same
+// share of water as the resolved pools.
 vec3 landMarsh(vec2 world,float footprint,vec3 bare,out float rough,out float pool){
   uint salt=uMaterialSeed+1061u;
   float broad=surfaceNoise(vec3(world/41.,0.),salt),mid=surfaceNoise(vec3(world/13.,0.),salt+1u);
-  float keep=1.-groundSmooth(.6,1.8,footprint);
+  float keep=1.-groundSmooth(.6,1.8,footprint),seen=1.-groundSmooth(5.,12.,footprint),ragged=clamp(.06*footprint,.04,.5);
   float tussock=keep>0.?surfaceNoise(vec3(world/2.1,0.),salt+2u)*keep:0.;
-  pool=groundSmooth(.32,.62,broad+.45*mid);
-  vec3 rush=mix(vec3(.30,.34,.20),vec3(.38,.36,.22),clamp(.5+mid,0.,1.))*(1.+.05*tussock);
+  float channel=broad-.3*mid,thread=exp2(-1100./max(footprint*footprint,1.)*channel*channel)*(1.-groundSmooth(2.5,6.,footprint));
+  pool=mix(.33,max(groundSmooth(.47-ragged,.47+ragged,broad+.45*mid+.1*tussock),.85*thread),seen);
+  float sedge=mix(.5,groundSmooth(-ragged,ragged,mid-.4*broad+.3*tussock),seen);
+  vec3 rush=mix(vec3(.30,.34,.20),vec3(.38,.36,.22),sedge)*(1.+.09*(groundSmooth(.1,.4,tussock)-.4*keep));
   vec3 water=vec3(.24,.29,.26);
   rough=mix(.78,.16,pool);
   return mix(mix(bare,rush,.6),water,pool*.55);
@@ -131,27 +197,101 @@ vec3 landOrchard(vec2 world,float footprint,float green,vec3 bare,out float roug
   return mix(bare,mix(vec3(.45,.43,.27),vec3(.42,.50,.27),green),.85);
 }
 // Town ground shares the fields' seasonal earth and lighting. Worn paths separate pale yard patches;
-// the natural floor contributes lightness only, so wetland/tropical greens cannot tint the packed earth.
+// the natural floor contributes its lightness and its soil hue, so wetland/tropical greens cannot tint the packed earth.
 vec3 landTown(vec2 world,float footprint,float green,vec3 bare){
   uint salt=uMaterialSeed+1103u;
   float mid=surfaceNoise(vec3(world/19.,0.),salt),fine=surfaceNoise(vec3(world/5.3,0.),salt+1u)*(1.-groundSmooth(1.,3.,footprint));
-  vec3 earth=mix(landCropTone(.3,green),vec3(.56,.50,.38),.25)*(1.+.08*fine),grass=mix(vec3(.46,.43,.30),vec3(.47,.44,.30),green);
-  vec3 yard=mix(earth,grass,.6*groundSmooth(-.1,.5,mid+.3*fine));
   vec3 luminance=vec3(.2126,.7152,.0722);
-  return yard*mix(1.,dot(bare,luminance)/max(dot(yard,luminance),.001),.12);
+  vec3 earth=mix(landCropTone(.3,green),vec3(.56,.50,.38),.25);
+  // Packed earth takes part of the hue of the local soil (sand, laterite, grey loam) with its green excess removed,
+  // at its own lightness: the town sits in the colours of its country and the sward still cannot tint it.
+  vec3 soil=vec3(bare.r,min(bare.g,mix(bare.r,bare.b,.35)),bare.b);
+  earth=mix(earth,soil*(dot(earth,luminance)/max(dot(soil,luminance),.001)),.4)*(1.+.08*fine);
+  // Yard grass follows the season: straw in winter, a dull green in summer.
+  vec3 grass=mix(vec3(.45,.42,.30),vec3(.41,.44,.28),green);
+  vec3 yard=mix(earth,grass,.6*groundSmooth(-.1,.5,mid+.3*fine));
+  return yard*mix(1.,dot(bare,luminance)/max(dot(yard,luminance),.001),.24);
 }
-// Kitchen plots: small beds of different greens and bare soil, with paths.
+// Garden beds in the tones of the fields beside them: dug soil, soft young greens, beans and dark leaves, leeks and
+// cabbages, oats-like greens, old straw, a pale ripening crop.
+const vec3 GARDEN_BEDS[8]=vec3[8](vec3(.34,.28,.21),vec3(.37,.42,.25),vec3(.28,.36,.21),vec3(.32,.37,.26),vec3(.40,.45,.25),vec3(.50,.45,.33),vec3(.48,.46,.31),vec3(.27,.36,.20));
+// Medieval kitchen and market gardens: each plot is its own composition, framed by its own direction and identity
+// (a hash of the land detail's red, green and blue bytes: crop tone and direction of its longest side; alpha: distance
+// to its limit), so neighbouring plots never share a lattice. Bands of blocks cut at their own places, a main path and
+// cross paths of trodden earth, beds of several widths and orientations, weedy and freshly dug blocks, a hut with its
+// dung heap, a small tree, a hedge or a wattle fence at the limit. Muted tones; every element fades into the plot's
+// mean tone before it aliases.
 vec3 landGarden(vec2 world,float footprint,float green,vec3 bare){
   vec3 mean=mix(vec3(.39,.35,.25),vec3(.33,.40,.24),green);
-  float keep=1.-groundSmooth(.7,2.,footprint);
-  if(keep<=0.)return mix(bare,mean,.7);
-  vec2 q=vec2(dot(world,vec2(.894427,.447214))/5.,dot(world,vec2(-.447214,.894427))/3.2);
-  uint h=groundHash(ivec3(ivec2(floor(q)),883),uMaterialSeed);
-  float t=float(h&255u)/255.;
-  vec3 bed=t<.3?vec3(.33,.27,.20):t<.65?vec3(.27,.38,.20):vec3(.36,.44,.25);
-  vec2 f=abs(fract(q)-.5);
-  float path=groundSmooth(.40,.47,max(f.x,f.y));
-  return mix(bare,mix(mean,mix(bed,vec3(.46,.42,.33),path),keep),.8);
+  float keep=1.-groundSmooth(.9,2.6,footprint);
+  if(keep<=0.)return mix(bare,mean,.75);
+  // The plot's frame is read inside its own plot (landDetailInside), so two plots meet along their true limit.
+  vec4 d=orchardDetail(world);float edge=6.;
+  if(uHasLandDetail==1){vec2 luv=(world-uLandDetailRect.xy)/uLandDetailRect.z;d=orchardDetail(world+(landDetailInside(luv,footprint,edge)-luv)*uLandDetailRect.z);}
+  int id=int(d.r*255.+.5)+int(d.g*255.+.5)*256+int(d.b*255.+.5)*65536;
+  vec2 c2=d.gb*2.-1.;float a=.5*atan(c2.y,c2.x);
+  vec2 along=vec2(cos(a),sin(a)),across=vec2(-along.y,along.x);
+  uint h=groundHash(ivec3(id,17,887),uMaterialSeed);
+  vec4 r=vec4(uvec4(h,h>>8,h>>16,h>>24)&255u)/255.;
+  float fw=max(footprint,.04);
+  float n=surfaceNoise(vec3(world/2.7,0.),uMaterialSeed+1123u);
+  // The plot's own frame: origin, band width, block length.
+  vec2 q=vec2(dot(world,along),dot(world,across))+r.xy*vec2(53.,37.);
+  float bandW=4.5+5.5*r.z,band=floor(q.y/bandW),fy=q.y-band*bandW;
+  uint hb=groundHash(ivec3(int(band),id,889),uMaterialSeed);
+  // Each band of blocks is cut at its own places: bricks, not a lattice.
+  float len=(6.+8.*r.w)*(.65+.7*float(hb&255u)/255.),x=q.x+float((hb>>8)&255u)/255.*len;
+  float block=floor(x/len),fx=x-block*len;
+  uint hk=groundHash(ivec3(int(block),int(band),id+891),uMaterialSeed);
+  float kind=float(hk&255u)/255.,k2=float((hk>>8)&255u)/255.,k3=float((hk>>16)&255u)/255.;
+  // Beds: the block's crop, softly varied bed by bed, lengthwise or crosswise, with dark furrows; rows close up.
+  float bedKeep=1.-groundSmooth(.3,.75,footprint);
+  float w=k2<.6?fy:fx,width=1.1+.8*k3,bed=floor(w/width),fb=w-bed*width;
+  uint hbed=groundHash(ivec3(int(bed),int(block)*64+int(band),id+893),uMaterialSeed);
+  int ci=int(hk>>24)&7,bi=int(hbed&7u);
+  vec3 soil=mix(bare,GARDEN_BEDS[0],.6);
+  vec3 crop=mix(GARDEN_BEDS[ci],GARDEN_BEDS[bi],.4*bedKeep);
+  // Out of season most beds lie dug; leeks and cabbages stay.
+  float live=mix(ci==2||ci==3?.7:.25,1.,green);
+  vec3 g=mix(soil,crop,live);
+  float furrow=(1.-groundSmooth(.15-fw*.5,.15+fw*.5,min(fb,width-fb)))*min(1.,.3/fw)*bedKeep;
+  g=mix(g,soil*.88,.6*furrow);
+  float rowKeep=1.-groundSmooth(.06,.16,footprint);
+  if(rowKeep>0.)g*=1.+rowKeep*.06*cos(w*17.95);
+  vec3 grass=mix(vec3(.40,.40,.26),vec3(.34,.40,.23),green);
+  if(kind<.66)g*=1.;
+  else if(kind<.78)g=grass*(1.+.1*n);
+  else if(kind<.9)g=mix(bare,vec3(.31,.25,.19),.6)*(1.+.1*n*bedKeep);
+  else if(kind<.94){
+    // A hut, thatched or timber-dark, with its dung heap beside it, in a corner of the block.
+    float shed=(1.-groundSmooth(2.6,2.6+fw,fx))*(1.-groundSmooth(2.2,2.2+fw,fy))*groundSmooth(.3,.3+fw,fx)*groundSmooth(.3,.3+fw,fy);
+    float heap=groundSmooth(2.9,2.9+fw,fx)*(1.-groundSmooth(4.1,4.1+fw,fx))*(1.-groundSmooth(1.4,1.4+fw,fy))*groundSmooth(.3,.3+fw,fy);
+    g=mix(g,(r.z<.5?vec3(.27,.23,.19):vec3(.40,.34,.25))*(1.+.08*n),shed);
+    g=mix(g,vec3(.27,.21,.16)*(1.+.15*n),heap);
+  }else if(kind<.97){
+    // A small tree over grass.
+    float radius=min(1.4+.8*k3,min(len,bandW)*.45);
+    float crown=1.-groundSmooth(radius-.3-fw*.5,radius+fw*.5,length(vec2(fx-len*.5,fy-bandW*.5))+.25*n);
+    g=mix(grass,vec3(.21,.28,.16)*(1.+.15*n),crown);
+  }else g=mix(GARDEN_BEDS[5],soil,.25);
+  // Paths of trodden earth: lengthwise between bands, one in three the plot's main path (wider), crosswise between blocks.
+  float dy=min(fy,bandW-fy),line=fy<bandW*.5?band:band+1.;
+  float pathW=mod(line+floor(r.x*3.),3.)<.5?1.:.5;
+  float lane=(1.-groundSmooth(pathW*.5-fw*.5,pathW*.5+fw*.5,dy+.06*n))*min(1.,pathW/fw);
+  float crosswise=(1.-groundSmooth(.2-fw*.5,.2+fw*.5,min(fx,len-fx)+.05*n))*min(1.,.4/fw);
+  vec3 trodden=mix(bare,vec3(.43,.38,.29),.6);
+  g=mix(g,trodden,.85*max(lane,crosswise));
+  // The limit: a hedge, or a wattle fence with a trodden headland inside it.
+  if(r.x<.55){
+    float hedge=1.-groundSmooth(.9-fw*.5,.9+fw*.5,edge+.2*n);
+    g=mix(g,vec3(.22,.28,.16)*(1.+.12*n),hedge);
+  }else{
+    float headland=(1.-groundSmooth(.9-fw*.5,.9+fw*.5,edge))*min(1.,.6/fw);
+    float wattle=(1.-groundSmooth(.25-fw*.5,.25+fw*.5,edge+.05*n))*min(1.,.2/fw);
+    g=mix(mix(g,trodden,.7*headland),vec3(.31,.26,.19),wattle);
+  }
+  g*=1.+.04*n;
+  return mix(bare,mix(mean,g,keep),.75);
 }
 vec4 occupationMaterial(int cls,vec2 world,float footprint,vec3 bare,vec3 micro,float dry,float green,out float pool){
   vec3 target=bare;float rough=.9;pool=0.;
@@ -165,7 +305,7 @@ vec4 occupationMaterial(int cls,vec2 world,float footprint,vec3 bare,vec3 micro,
   else if(cls==7)target=landTown(world,footprint,green,bare);
   else {target=mix(bare,vec3(.45,.40,.31),.55);rough=.91;}
   // Dry climates bleach the grass and the plots toward straw; fields take their dry crop ramp instead (landField).
-  if(cls==1)target=mix(target,landDryCropTone(.36,green,bare),dry);
+  if(cls==1)target=mix(target,landFieldDryTone(.32,green,bare),dry);
   else if(cls<=5)target=mix(target,mix(bare,vec3(.55,.47,.30),.55),.9*dry);
   // Keep the existing microdetail, slope normal, snow and sun response.
   return vec4(clamp(target*micro,0.,1.),rough);
@@ -296,7 +436,8 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
       snow=mix(snow,own,fieldShare/covered);
     }
   }
-  float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-.3*dry*wildShare/covered)*(1.-snow)*covered;
+  // Town ground is trodden: about a third of its packed earth shows through a full snow cover.
+  float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-.3*dry*wildShare/covered)*(1.-snow*(1.-.35*wTown/max(covered,.001)))*covered;
   // A holding whiter than the local mean takes its extra snow over its own cover.
   float extra=max(snow-v2GroundSnow,0.)*covered;
   if(a<=0.&&extra<=0.)return;

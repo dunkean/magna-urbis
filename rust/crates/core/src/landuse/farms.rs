@@ -1257,6 +1257,19 @@ fn ksar(x: &mut Ctx) -> Zone {
 }
 fn zone_of(x: &mut Ctx, t: &str, tags: &mut Vec<String>, plots: &mut Vec<Plot>) -> Zone {
     let si = x.si;
+    // Farm types without a constructor of their own take the one of their layout family.
+    let t = match t {
+        "cascina" | "villa-rustica" | "cortijo" | "gnome-croft" => "vierkanthof",
+        "bustan" | "agbo-ile" => "indian-court",
+        "izbah" | "tower-farm" => "ksar",
+        "newar-farm" | "mage-steading" | "giant-steading" => "l-yard",
+        "calli-court" | "joglo" | "nha-ba-gian" => "u-yard",
+        "thinnai" => "longere",
+        "plank-house" => "native-longhouse",
+        "smial-garden" | "elven-glade" | "goblin-burrow" => "haufenhof",
+        "shamba" | "wattle-homestead" | "kainga" | "winter-house" | "chum-camp" | "stone-huts" => "solar",
+        _ => t,
+    };
     match t {
         "fungal-farm" => court(
             x,

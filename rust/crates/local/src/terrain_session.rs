@@ -4,7 +4,7 @@
 //!
 //! `POST /terrain/relief`. Request: u32 LE header length, JSON header padded with
 //! spaces to a multiple of 4, then at most one raw little-endian f32 plane.
-//! Header: `session`, `op` (`build` | `edit` | `coast` | `read`), `tuning` (erosion
+//! Header: `session`, `op` (`build` | `edit` | `coast` | `underdark` | `read`), `tuning` (erosion
 //! overrides in `EROSION_TUNING` order, null = relief default) and the operation's
 //! fields. Reply: the same framing; the header carries the engine metadata and the
 //! descriptors of the planes that follow (f32 planes first, then u8 planes).
@@ -56,6 +56,12 @@ struct Coast {
     mode: String,
     #[serde(default)]
     surface: bool,
+}
+
+/// `carve_underdark`: the retained relief becomes caves and tunnels.
+#[derive(Deserialize)]
+struct Carve {
+    seed: String,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +136,12 @@ fn apply(op: &str, raw: &[u8], plane: Vec<f32>, state: &mut Session) -> ApiResul
             } else {
                 terrain.set_coast(coast.mask, &coast.mode)?;
             }
+            reply(terrain, Vec::new(), Vec::new(), Value::Null)
+        }
+        "underdark" => {
+            let carve: Carve = decode(raw)?;
+            let terrain = state.terrain.as_mut().ok_or(MISSING)?;
+            terrain.carve_underdark(&carve.seed)?;
             reply(terrain, Vec::new(), Vec::new(), Value::Null)
         }
         "read" => {
@@ -240,5 +252,22 @@ mod tests {
         assert_eq!(meta["region"]["resolution"], 64);
         assert!((meta["maxHeight"].as_f64().unwrap() - reference.max_height()).abs() < 1e-9);
         assert!((meta["minHeight"].as_f64().unwrap() - reference.min_height()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn underdark_carves_the_retained_relief() {
+        let n = 128;
+        let surface: Vec<f32> = (0..n * n)
+            .map(|i| ((i % n) as f32 * 0.09).sin() * 60.0 + ((i / n) as f32 * 0.07).cos() * 45.0 + 80.0 + (i % n) as f32)
+            .collect();
+        let sessions = Mutex::new(Sessions::default());
+        handle(&request(json!({"session": "cave-test", "op": "build", "kind": "surface", "seed": "s", "width": 4000.0}), &surface), &sessions).unwrap();
+        handle(&request(json!({"session": "cave-test", "op": "underdark", "seed": "s"}), &[]), &sessions).unwrap();
+        let read = handle(&request(json!({"session": "cave-test", "op": "read", "cave": true}), &[]), &sessions).unwrap().body;
+        let len = u32::from_le_bytes(read[..4].try_into().unwrap()) as usize;
+        let cave = &read[4 + len..];
+        assert_eq!(cave.len(), n * n);
+        // A soft rock field: both open floor and rock, with values between (the interpolated walls).
+        assert!(cave.iter().any(|&v| v < 64) && cave.iter().any(|&v| v > 192) && cave.iter().any(|&v| (100..156).contains(&v)));
     }
 }

@@ -21,6 +21,8 @@ export type ReliefSource = 'procedural' | 'neural' | 'heightmap';
 export interface Copy { en: string; fr: string }
 export interface StageContext {
   relief: ReliefSource;
+  /** A drawn heightmap is refined by the procedural pipeline. */
+  proceduralBase?: boolean;
   /** Classic TypeScript terrain engine: only its original parameters apply. */
   classicTerrain: boolean;
   /** Plain, plateau, volcano, caldera and cavern have no decomposed erosion output. */
@@ -69,7 +71,7 @@ export const FAMILIES: readonly { id: StageFamily; label: Copy; summary: Copy }[
   { id: 'map', label: { en: 'Map', fr: 'Carte' }, summary: { en: 'Appearance, names and export', fr: 'Affichage, nommage et export' } },
 ];
 
-const procedural = (c: StageContext) => c.relief === 'procedural' && !c.classicTerrain;
+const procedural = (c: StageContext) => (c.relief === 'procedural' || !!c.proceduralBase) && !c.classicTerrain;
 const neural = (c: StageContext) => c.relief === 'neural' && !c.classicTerrain;
 const always = () => true;
 const finite = (c: StageContext): Copy | undefined => c.finiteRelief
@@ -95,8 +97,8 @@ export const STAGES: readonly StageDef[] = [
     summary: { en: 'Source preparation and terrain adjustments', fr: 'Préparation de la source et ajustements du relief' },
     controls: ['widget:source-mode', 'widget:seed', 'widget:extent', 'widget:heightmap-library', 'widget:heightmap-import',
       'terrain.relief', 'terrain.motifSize', 'terrain.sampleSpacing', 'terrain.procedural.preset', 'terrain.environment', 'terrain.mountainMix', 'terrain.erosion',
-      'options.relief', 'options.coast', 'options.river', 'options.seaLevel', 'options.biome', 'widget:coasts', 'terrain.islandMode'],
-    quick: ['widget:source-mode', 'widget:extent-km', 'options.biome', 'terrain.relief'],
+      'options.relief', 'options.coast', 'options.river', 'options.seaLevel', 'options.biome', 'options.layer', 'widget:coasts', 'terrain.islandMode'],
+    quick: ['widget:source-mode', 'widget:extent-km', 'options.biome', 'options.layer', 'terrain.relief'],
     progress: ['compute', 'runtime-download', 'runtime-compile', 'runtime-ready', 'gpu-device', 'terrain-module', 'relief-engine', 'terrain-generation', 'terrain-import', 'pipeline:prepare', 'terrain-cache', 'terrain-projection', 'terrain-retain', 'terrain-sampling', 'gpu-sampling-compile', 'pipeline:retain', 'pipeline:sampling'] },
   { id: 'relief-climate', family: 'region', optional: false, when: c => !c.classicTerrain, run: terrainRun,
     label: { en: 'Input climate', fr: 'Climat de départ' },
@@ -104,8 +106,8 @@ export const STAGES: readonly StageDef[] = [
     controls: ['terrain.climate', 'terrain.climateValues.temperature', 'terrain.climateValues.temperatureStd', 'terrain.climateValues.precipitation', 'terrain.climateValues.precipitationCv'],
     quick: ['terrain.climate'] },
   { id: 'relief-mask', family: 'region', optional: true, toggle: { kind: 'mask' }, when: procedural, run: { action: 'mask' },
-    label: { en: 'Custom mask', fr: 'Masque personnalisé' },
-    summary: { en: 'Paint relief zones, brushes, import / export', fr: 'Zones peintes, pinceaux, import / export' },
+    label: { en: 'Drawing base', fr: 'Dessin de base' },
+    summary: { en: 'Coarse drawing refined by procedural noise and erosion', fr: 'Esquisse enrichie par le bruit procédural et l’érosion' },
     controls: ['widget:sketch'], quick: ['widget:paint'] },
   { id: 'relief-grids', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun,
     label: { en: 'Grids and buffers', fr: 'Grilles et tampons' }, summary: { en: 'Regional and surface grids, output sampling', fr: 'Grilles régionale et de surface, échantillonnage' },

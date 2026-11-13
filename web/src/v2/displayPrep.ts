@@ -1,7 +1,8 @@
 import type { TerrainLayer, LandUseLayer, World } from '../gen/types';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import type { ForestField, ForestFieldInput, ForestSettings, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
-import { retainShoreRing, type ForestBeachLayer, type ShoreRingGrid } from '../../../rust/bridge/terrainForestBeach';
+import type { LandCultures } from '../ui/landDetail';
+import { retainShoreRing, retainReliefField, setReliefHorizonBaker, type ForestBeachLayer, type ShoreRingGrid, type ReliefField, type ReliefHeights } from '../../../rust/bridge/terrainForestBeach';
 import { lakeDistances, retainLakeDistances, retainPlanningWaterDistances, type WaterSurface } from '../render/terrainWater';
 import type { ForestCorridor } from '../render/forestRoom';
 import { DISPLAY_PRODUCT_VERSION, measureDisplayProduct, productRevision } from '../render/displayProduct';
@@ -11,13 +12,15 @@ import type { ExecutionRuntime } from '../ui/executionProfile';
 
 export interface LakeInput { field: Float32Array; n: number; width: number; referenceWidth: number }
 export interface TerrainPrepInput { layer: ForestBeachLayer; lakes: LakeInput[]; sea?: WaterSurface; planning: { water: Uint8Array; n: number; width: number } }
-export interface TerrainPrepResult { shore: ShoreRingGrid; lakes: Float32Array[]; sea?: WaterSurface; planning: Float32Array; heightMips: Float32Array[]; lakeMips: { field: Float32Array[]; distance: Float32Array[] }[]; timings: { product: string; ms: number }[] }
+export interface TerrainPrepResult { shore: ShoreRingGrid; relief?: ReliefField; lakes: Float32Array[]; sea?: WaterSurface; planning: Float32Array; heightMips: Float32Array[]; lakeMips: { field: Float32Array[]; distance: Float32Array[] }[]; timings: { product: string; ms: number }[] }
 interface DisplayJobs {
   terrain: { input: TerrainPrepInput; output: TerrainPrepResult };
+  // Cast-shadow channel of the shore ring for one light azimuth (terrainForestBeach: reliefHorizonChannel).
+  horizon: { input: { relief: ReliefHeights; azimuth: number; resolution: number }; output: Uint16Array };
   register: { input: { revision: number; packed: PackedOccupationLanduse }; output: void };
   release: { input: { revision: number }; output: void };
   occupation: { input: { landuseRevision: number; revision: number; corridors: ForestCorridor[] }; output: ForestOccupation | undefined };
-  detail: { input: { landuseRevision: number }; output: LandDetail | undefined };
+  detail: { input: { landuseRevision: number; cultures?: LandCultures }; output: LandDetail | undefined };
   merge: { input: { retained?: WorkerOccupation; source?: Omit<ForestOccupation, 'detail'>; shapes: Float64Array }; output: ForestOccupation };
   forest: { input: { input: ForestFieldInput; settings: ForestSettings; runtime?: ExecutionRuntime }; output: ForestField };
 }
@@ -55,6 +58,8 @@ export function runDisplayJob<K extends keyof DisplayJobs>(kind: K, input: Displ
     } catch (error) { reject(error); }
   });
 }
+// A change of light azimuth re-bakes the ring's shadow channel on the preparation lane, never on a frame.
+if (typeof Worker !== 'undefined') setReliefHorizonBaker((relief, azimuth, resolution) => runDisplayJob('horizon', { relief, azimuth, resolution }));
 interface LanduseRegistration { revision: number; epoch: number; ready: Promise<void> }
 const registeredLanduse = new WeakMap<LandUseLayer, LanduseRegistration>();
 const releases = new FinalizationRegistry<{ revision: number; epoch: number }>(ref => {
@@ -116,6 +121,7 @@ export function retainTerrainDisplayPreparation(world: World): void {
   if (!prepared?.result || installed.has(prepared) || prepared.version !== DISPLAY_PRODUCT_VERSION || !sameInput(prepared.input, inputs(terrain, world.mapSize))) return;
   installed.add(prepared);
   retainShoreRing(prepared.input.layer, prepared.result.shore);
+  if (prepared.result.relief) retainReliefField(prepared.input.layer, prepared.result.relief);
   retainPlanningWaterDistances(prepared.input.planning.water, prepared.input.planning.n, prepared.input.planning.width, prepared.result.planning);
   retainFloatPyramid(prepared.input.layer.data, prepared.input.layer.n, prepared.result.heightMips);
   for (let i = 0; i < prepared.input.lakes.length; i++) {

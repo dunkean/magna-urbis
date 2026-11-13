@@ -52,13 +52,13 @@ const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settl
 const text = (value: Copy) => value.en;
 /** Live controls promoted above the stage boxes, in display order. */
 const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
-  region: ['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'terrain.climate', 'terrain.relief', 'options.relief', 'terrain.motifSize', 'widget:coasts'],
+  region: ['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'options.layer', 'terrain.climate', 'terrain.relief', 'options.relief', 'terrain.motifSize', 'widget:coasts'],
   settlements: ['main:town-count', 'main:population', 'main:culture'],
   cities: ['main:sprawl', 'main:walls'],
   map: [],
 };
 const METHOD_CONTROLS = ['terrain.procedural.preset'] as const;
-const SHARED_RELIEF_CONTROLS = new Set(['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'terrain.climate']);
+const SHARED_RELIEF_CONTROLS = new Set(['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'options.layer', 'terrain.climate']);
 
 export interface StageChainBindings {
   root: HTMLElement; staging: HTMLElement; terrain: TerrainControls; regionRoot: HTMLElement; renderRoot: HTMLElement;
@@ -92,7 +92,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const forms: ParameterForm[] = [], syncers: (() => void)[] = [];
   root.addEventListener('terrain-defaults-ready', () => { forms.forEach(form => form.sync()); });
   const rows = new Map<string, Row>();
-  const stashes: { zones?: V2TerrainSettings['zones']; coastMask?: number; heightmap?: { sketch?: V2TerrainSettings['sketch']; image?: V2Settings['options']['importedHeight'] }; neural?: string } = {};
+  const stashes: { zones?: V2TerrainSettings['zones']; drawing?: V2TerrainSettings['drawing']; coastMask?: number; heightmap?: { drawing?: V2TerrainSettings['drawing']; sketch?: V2TerrainSettings['sketch']; image?: V2Settings['options']['importedHeight'] }; neural?: string } = {};
   let pendingHeightmap = false, family: StageFamily = 'region';
   const timings = new Map<string, { ms: number; state: 'done' | 'cached' | 'stale' | 'running' | '' }>();
   const savedKeys = new Map<string, string>();
@@ -119,6 +119,9 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   advanced.append(advancedHead, advancedContent); root.append(advanced);
   const advancedButton = document.createElement('button'); advancedButton.type = 'button'; advancedButton.id = 'relief-advanced-open'; advancedButton.className = 'relief-advanced-open';
   setText(advancedButton, T.advanced); advancedButton.setAttribute('aria-controls', advanced.id); advancedButton.setAttribute('aria-expanded', 'false');
+  const modifyButton=document.createElement('button');modifyButton.type='button';modifyButton.id='relief-modify-open';modifyButton.className='relief-modify-open';modifyButton.setAttribute('aria-haspopup','dialog');modifyButton.setAttribute('aria-controls','relief-paint-dialog');
+  const modifyIcon=document.createElement('img');modifyIcon.src=new URL('./assets/relief-paint-v1.webp',import.meta.url).href;modifyIcon.alt='';modifyIcon.width=modifyIcon.height=28;
+  const modifyCaption=document.createElement('span');setText(modifyCaption,copy('Modify relief','Modifier le relief'));modifyButton.append(modifyIcon,modifyCaption);modifyButton.onclick=()=>b.terrain.openEditor('modify');
   let advancedReturn: HTMLElement = advancedButton;
   const advancedThemes = new Map<string, { section: HTMLElement }>();
   const packAdvanced = () => {
@@ -206,7 +209,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     for (const stage of stagesOf(f.id)) spine.append(buildRow(stage).element);
     panels.set(f.id, panel); scroller.append(panel);
   }
-  root.prepend(nav, scroller, advancedButton);
+  root.prepend(nav, scroller, advancedButton, modifyButton);
 
   function buildRow(stage: StageDef): Row {
     const element = document.createElement('section'); element.className = 'stage-row'; element.id = `row-${stage.id}`; element.dataset.stage = stage.id;
@@ -251,6 +254,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   function selectFamily(next: StageFamily): void {
     if (next !== 'region') closeAdvanced(false);
     advancedButton.hidden = next !== 'region';
+    modifyButton.hidden = next !== 'region';
     family = next;
     for (const [id, tab] of tabs) { tab.setAttribute('aria-selected', String(id === next)); tab.tabIndex = id === next ? 0 : -1; panels.get(id)!.hidden = id !== next; }
     scroller.scrollTop = 0; b.onFamily?.(next);
@@ -258,13 +262,13 @@ export function mountStageChain(b: StageChainBindings): StageChain {
 
   // ── Context and toggles ──────────────────────────────────────────────────
   const reliefOf = (settings: V2Settings): StageContext['relief'] => {
-    if (settings.terrain?.sketch?.processing || settings.options.importedHeight || pendingHeightmap) return 'heightmap';
+    if (settings.terrain?.drawing || settings.terrain?.sketch?.processing || settings.options.importedHeight || pendingHeightmap) return 'heightmap';
     const source = settings.runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
     return source === 'procedural' || source === 'procedural-phasor' ? 'procedural' : 'neural';
   };
   function context(): StageContext {
     const settings = get(), world = b.getWorld(), relief = String(b.terrain.access.get('terrain.relief') ?? settings.options.relief);
-    return { relief: reliefOf(settings), classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['flat', 'plateau', 'volcano', 'caldera', 'cavern'].includes(relief),
+    return { relief: reliefOf(settings), proceduralBase: !!settings.terrain?.drawing, classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['flat', 'plateau', 'volcano', 'caldera'].includes(relief),
       urban: settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript', hasTerrain: !!world, hasRegion: !!world?.settlements?.length, place: b.getPlace()?.key };
   }
   const compact = () => { const s = get(); return isCompactProcedural({ source: s.runtime?.source, procedural: s.terrain?.procedural }); };
@@ -272,7 +276,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const t = stage.toggle, settings = get();
     if (!t || t.kind === 'unavailable') return true;
     if (t.kind === 'coasts') return Number(b.terrain.access.get('terrain.coastMask') ?? 0) !== 0;
-    if (t.kind === 'mask') return !!settings.terrain?.zones;
+    if (t.kind === 'mask') return !!(settings.terrain?.drawing||settings.terrain?.zones);
     if (t.kind === 'roads') return settings.region?.roads !== null;
     const value = t.path!.startsWith('terrain.procedural.') ? readSettingPath(settings, t.path!) : b.terrain.access.get(t.path!);
     if (typeof value === 'boolean') return value;
@@ -286,7 +290,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       else b.terrain.access.set('terrain.coastMask', stashes.coastMask || 1);
     } else if (t.kind === 'mask') {
       settings.terrain ??= {};
-      if (on) { stashes.zones = settings.terrain.zones; delete settings.terrain.zones; b.onChange(); b.terrain.sync(); }
+      if (on) { stashes.zones = settings.terrain.zones;stashes.drawing=settings.terrain.drawing; delete settings.terrain.zones;delete settings.terrain.drawing; b.onChange(); b.terrain.sync(); }
+      else if (stashes.drawing) {settings.terrain.drawing=stashes.drawing;b.onChange();b.terrain.sync();}
       else if (stashes.zones) { settings.terrain.zones = stashes.zones; b.onChange(); b.terrain.sync(); }
       else paint();
     } else if (t.kind === 'roads') {
@@ -296,14 +301,15 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     } else b.terrain.access.set(t.path!, !on);
     markStale(stage.id); sync();
   }
-  const paint = () => b.terrain.openEditor();
+  const paint = () => b.terrain.openEditor('draw');
 
   // ── Relief source alternatives ───────────────────────────────────────────
   function setSource(mode: StageContext['relief']): void {
     const settings = get(), current = reliefOf(settings);
     if (mode === current && !(mode === 'heightmap' && pendingHeightmap)) { if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' }); return; }
     if (current === 'heightmap' && mode !== 'heightmap') {
-      stashes.heightmap = { sketch: settings.terrain?.sketch?.processing ? settings.terrain.sketch : undefined, image: settings.options.importedHeight };
+      stashes.heightmap = { drawing:settings.terrain?.drawing,sketch: settings.terrain?.sketch?.processing ? settings.terrain.sketch : undefined, image: settings.options.importedHeight };
+      if(settings.terrain?.drawing)delete settings.terrain.drawing;
       if (settings.terrain?.sketch?.processing) delete settings.terrain.sketch;
       delete settings.options.importedHeight; pendingHeightmap = false;
     }
@@ -312,7 +318,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     else {
       if (current === 'neural') stashes.neural = String(settings.runtime?.source);
       const stash = stashes.heightmap;
-      if (stash?.sketch) { settings.terrain ??= {}; settings.terrain.sketch = stash.sketch; }
+      if (stash?.drawing) {settings.terrain??={};settings.terrain.drawing=stash.drawing;}
+      else if (stash?.sketch) { settings.terrain ??= {}; settings.terrain.sketch = stash.sketch; }
       else if (stash?.image) settings.options.importedHeight = stash.image;
       else pendingHeightmap = true;
       if (settings.runtime?.source && settings.runtime.source !== 'procedural') b.terrain.access.set('runtime.source', 'procedural');
@@ -358,6 +365,12 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     if (path && isTerrainExpertControl(path)) expertHost(stageId).append(node); else row.body.append(node);
   };
   const tRoot = leftovers, sketchHost = b.terrain.sketchHost;
+  root.addEventListener('relief-source-changed',event=>{
+    const settings=get();stashes.drawing=settings.terrain?.drawing;stashes.zones=settings.terrain?.zones;
+    stashes.heightmap={drawing:settings.terrain?.drawing,sketch:settings.terrain?.sketch?.processing?settings.terrain.sketch:undefined,image:settings.options.importedHeight};
+    if((event as CustomEvent).detail==='draw')pendingHeightmap=true;
+    sync();
+  });
   // Composite widgets first, so their fields stay together.
   const coastPanel = tRoot.querySelector<HTMLElement>('#terrain-coast-panel'); place(coastPanel, 'relief-source');
   if (coastPanel) prepareCoastGrid(coastPanel);
@@ -467,6 +480,9 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const sidebarTools = document.createElement('section'); sidebarTools.className = 'relief-sidebar-tools'; methodPanel.after(sidebarTools);
   const importHost = document.createElement('div'); importHost.id = 'relief-import'; sidebarTools.append(importHost);
   const importSync = b.heightmap.source(importHost); syncers.push(() => { importHost.hidden = reliefOf(get()) !== 'heightmap'; importSync.sync(); importHost.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = b.busy(); }); });
+  const drawButton=document.createElement('button');drawButton.type='button';drawButton.id='relief-draw-open';drawButton.className='relief-draw-open';drawButton.setAttribute('aria-haspopup','dialog');drawButton.setAttribute('aria-controls','relief-paint-dialog');
+  const drawIcon=modifyIcon.cloneNode(true);const drawCaption=document.createElement('span');setText(drawCaption,copy('Draw relief','Dessiner le relief'));drawButton.append(drawIcon,drawCaption);drawButton.onclick=()=>b.terrain.openEditor('draw');importHost.prepend(drawButton);
+  syncers.push(()=>{drawButton.disabled=b.busy()||context().classicTerrain;modifyButton.disabled=b.busy()||!b.getWorld()||context().classicTerrain;});
   root.append(sketchHost);
   for (const path of ['options.heightScale', 'options.importSea']) {
     const field = root.querySelector<HTMLElement>(`[data-field-path="${path}"]`); if (field) importHost.append(field);
@@ -496,7 +512,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     grid.append(compass, presets); panel.append(grid);
     grid.addEventListener('click', () => { markStale('relief-source'); sync(); });
     syncers.push(() => {
-      panel.toggleAttribute('data-chain-hidden', context().relief === 'heightmap' || context().finiteRelief && b.terrain.access.get('terrain.relief') === 'cavern');
+      panel.toggleAttribute('data-chain-hidden', context().relief === 'heightmap');
     });
   }
   function prepareLandscapeStrip(field: HTMLElement, kind: 'climate' | 'relief'): void {

@@ -1,0 +1,18 @@
+{
+  "_doc": "Kits and cultures of the modern, contemporary and fictional styles. Same schema as styles.json (kits, derive, cultures: {<culture id>: {kit, traits}}); merged after it by forms/kit.rs.",
+  "kits": {
+    "brick-rowhouse": {
+      "house": {
+        "plans": { "bar": 6, "ell": 3, "tee": 1, "court": 0.6 },
+        "growth": 0.5,
+        "outshot": 0.35, "porch": 0.3, "turret": 0, "bay": 0.25, "chimney": 0.9, "dormer": 0,
+        "roofs": {},
+        "overhang": 0, "stack": "brick"
+      }
+    }
+  },
+  "derive": [],
+  "cultures": {
+    "american-grid": { "kit": "brick-rowhouse", "traits": { "tradition": { "roof": "gable", "pitch": 46, "storeys": [3, 6], "cover": "slate", "wall": "brick" } } }
+  }
+}

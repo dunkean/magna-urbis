@@ -42,6 +42,29 @@ pub(crate) struct Archetype {
     /// massing.rs part label of a free-standing building (`nave`, `tower`, `minaret`…), `building` when absent.
     #[serde(default)]
     pub part: Option<String>,
+    /// The singular building it becomes where it stands alone in a yard (`formed`).
+    #[serde(default)]
+    pub form: Option<Form>,
+}
+
+/// The form of a town lot (parcels/monuments, parcels/landmark.rs) an isolated
+/// yard building takes: a chapel is a small church, a road inn a court of ranges.
+#[derive(Deserialize)]
+pub(crate) struct Form {
+    /// Role whose form is built: a services.json role (`worship.parish`,
+    /// `commerce.inn`…) or a countryside one of parcels/monuments/rural.rs
+    /// (`rural.windmill`, `rural.barrow`…).
+    pub role: String,
+    /// Ground the form needs (m): width along its front, depth behind it.
+    pub site: [f64; 2],
+    /// Part label the culture's form must hold (`abbey-range`, `stupa`…); a
+    /// culture whose form of that role has none keeps the single ring.
+    #[serde(default)]
+    pub has: Option<String>,
+    /// Archetypes of the same yard the form already holds (a belfry, a
+    /// cloister, a stable): they join it instead of standing beside it.
+    #[serde(default)]
+    pub absorbs: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -178,6 +201,18 @@ pub(crate) fn pick(role: &str, culture: &str, ctx: LotContext, seed: &str) -> Op
     pool.last().map(|p| p.0.id.as_str())
 }
 
+/// The culture's own building tradition (typology, roof, storeys, material): the `arch`
+/// of its village preset in the catalogue, else its hamlet's, else its core's. Null when
+/// it declares none (massing.rs then reads its own table).
+pub(crate) fn culture_arch(culture: &str) -> &'static serde_json::Value {
+    let presets = &super::catalogue()["presets"];
+    ["village", "hamlet", "core"]
+        .iter()
+        .map(|recipe| &presets[format!("{culture}/{recipe}")]["params"]["arch"])
+        .find(|arch| arch.is_object())
+        .unwrap_or(&serde_json::Value::Null)
+}
+
 /// Massing of one free-standing activity building (a territorial site, no lot):
 /// the archetype's look on `ring`, in the culture's tradition. One piece.
 pub(crate) fn building_massing(archetype_id: &str, culture: &str, ring: &[super::Point], seed: &str) -> serde_json::Value {
@@ -185,7 +220,7 @@ pub(crate) fn building_massing(archetype_id: &str, culture: &str, ring: &[super:
     let parts = [(super::Shape { outer: ring.to_vec(), holes: vec![] }, a.part.as_deref().unwrap_or("building"))];
     super::massing::massing(&super::massing::Input {
         parts: &parts,
-        arch: &serde_json::Value::Null,
+        arch: culture_arch(culture),
         culture,
         zone: "village",
         role: a.role.as_deref().unwrap_or(""),
@@ -200,6 +235,7 @@ pub(crate) fn building_massing(archetype_id: &str, culture: &str, ring: &[super:
         distance: 2.0,
         seed,
         archetype: archetype_id,
+        complex: false,
     })
 }
 
@@ -225,7 +261,261 @@ pub(crate) fn site_yard(template: &str, culture: &str, key: &str, centre: super:
     if names.is_empty() {
         return vec![];
     }
-    sites::yard(&format!("activity:{key}"), culture, &names, centre, angle, &mut rng, ground, &|_| true)
+    let id = format!("activity:{key}");
+    let yard = sites::yard(&id, culture, &names, centre, angle, &mut rng, ground, &|_| true);
+    formed(&id, culture, yard, angle, ground, &|_| true)
+}
+
+/// Clear ground kept between a form's site and the other buildings of its yard (m).
+const FORM_GAP_M: f64 = 5.0;
+
+/// Part labels of a windmill body that carries the sails (parcels/monuments/rural.rs).
+const SAIL_LABELS: [&str; 4] = ["mill-buck", "mill-tower", "mill-smock", "mill-drum"];
+
+/// Sails on a windmill body raised by a mass rule: the `sails` roof feature of
+/// massing.rs (`{kind, x, y, w, d, h, angle, turn}`) on the top volume of the
+/// massing entry `piece`, the hub out of the wall (or the cap) the seed turns
+/// to the wind. A cap carries the windshaft in its slope, a gabled buck just
+/// under its eaves.
+fn add_sails(piece: &mut serde_json::Value, seed: &str) {
+    let Some(v) = piece.get_mut("volumes").and_then(|v| v.as_array_mut()).and_then(|v| v.last_mut()) else { return };
+    let ring: Vec<(f64, f64)> = v["ring"].as_array().into_iter().flatten().filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?))).collect();
+    if ring.len() < 3 {
+        return;
+    }
+    let n = ring.len() as f64;
+    let (cx, cy) = (ring.iter().map(|p| p.0).sum::<f64>() / n, ring.iter().map(|p| p.1).sum::<f64>() / n);
+    let mut r = crate::rng::Rng::new(seed).fork("sails");
+    let capped = matches!(v["roof"].as_str(), Some("cone" | "dome" | "pyramid"));
+    let side = |k: usize| {
+        let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+        (b.0 - a.0).hypot(b.1 - a.1)
+    };
+    // Any face of a round tower; one of the two gable ends (the short sides) of a buck.
+    let k = if capped {
+        ((r.float() * n) as usize).min(ring.len() - 1)
+    } else {
+        let short = (0..ring.len()).min_by(|&i, &j| side(i).total_cmp(&side(j))).unwrap_or(0);
+        if r.chance(0.5) { (short + ring.len() / 2) % ring.len() } else { short }
+    };
+    let turn = r.range(0.0, std::f64::consts::FRAC_PI_2);
+    let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+    let (mx, my) = ((a.0 + b.0) * 0.5 - cx, (a.1 + b.1) * 0.5 - cy);
+    let reach = mx.hypot(my);
+    if reach < 0.5 {
+        return;
+    }
+    let angle = my.atan2(mx);
+    let (eave, rise) = (v["eave_m"].as_f64().unwrap_or(0.0), v["rise_m"].as_f64().unwrap_or(0.0));
+    let (out, up) = if capped { (0.45 * reach + 0.5, 0.55 * rise) } else { (reach + 0.4, -0.8) };
+    let len = ((eave + up) * 0.8).min(reach * 3.2).max(3.0);
+    let round2 = |x: f64| (x * 100.0).round() / 100.0;
+    let feature = serde_json::json!({
+        "kind": "sails", "x": round2(cx + angle.cos() * out), "y": round2(cy + angle.sin() * out),
+        "w": round2(len), "d": round2(len * 0.2), "h": round2(up), "angle": round2(angle), "turn": round2(turn),
+    });
+    if !v.get("features").is_some_and(|f| f.is_array()) {
+        v["features"] = serde_json::json!([]);
+    }
+    if let Some(f) = v["features"].as_array_mut() {
+        f.push(feature);
+    }
+}
+
+/// The yard with its singular buildings as real forms. A building whose
+/// archetype names a `form` is replaced by the labelled parts of that role's
+/// building in its culture (parcels/standalone.rs), on the form's site centred
+/// where the building stood, its front on the yard's front (towards `-v`,
+/// v = `angle` + 90°). The buildings the form `absorbs` (a belfry, a cloister,
+/// a stable) join it: each gives its archetype to one part, so every template
+/// entry still stands in the yard. The other buildings step aside along their
+/// own side of the yard, `FORM_GAP_M` clear of the site. One building per
+/// part, in order, each with its own massing entry, the roofs composed across
+/// the whole form. The largest form of a yard is laid first; a form whose
+/// ground is refused (water, a cliff, `ok`), that would push a neighbour onto
+/// such ground or that the culture does not build leaves the yard as it was.
+/// A yard already formed is returned unchanged.
+pub(crate) fn formed(id: &str, culture: &str, yard: Vec<crate::settlements::activities::ActivityBuilding>, angle: f64, ground: &dyn crate::settlements::installations::Ground, ok: &dyn Fn(&[super::Point]) -> bool) -> Vec<crate::settlements::activities::ActivityBuilding> {
+    use super::Point;
+    use crate::settlements::activities::ActivityBuilding;
+    let form_of = |name: &str| archetype(name).and_then(|a| a.form.as_ref());
+    // A formed part carries its label as look; an untouched building its archetype's.
+    let plain = |b: &ActivityBuilding| archetype(&b.archetype).is_some_and(|a| a.look.as_deref() == Some(b.look.as_str()));
+    if !yard.iter().all(plain) {
+        return yard;
+    }
+    let area_of = |i: usize| form_of(&yard[i].archetype).map_or(0.0, |f| f.site[0] * f.site[1]);
+    let mut bearers: Vec<usize> = (0..yard.len()).filter(|&i| form_of(&yard[i].archetype).is_some()).collect();
+    if bearers.is_empty() {
+        return yard;
+    }
+    bearers.sort_by(|&a, &b| area_of(b).total_cmp(&area_of(a)).then(a.cmp(&b)));
+    let (u, v) = (Point { x: angle.cos(), y: angle.sin() }, Point { x: -angle.sin(), y: angle.cos() });
+    // Forms are measured in metres; a giant's site grows with its houses.
+    let scale = super::culture::house_parameters(culture).0.max(1.0);
+    let local = |p: Point, c: Point| ((p.x - c.x) * u.x + (p.y - c.y) * u.y, (p.x - c.x) * v.x + (p.y - c.y) * v.y);
+    let centre_of = |ring: &[Point]| {
+        let n = ring.len().max(1) as f64;
+        Point { x: ring.iter().map(|p| p.x).sum::<f64>() / n, y: ring.iter().map(|p| p.y).sum::<f64>() / n }
+    };
+    // Half extents along u and v of the ground a building needs: its ring, and its own form's site when it has one.
+    let reach = |j: usize, ring: &[Point]| {
+        let c = centre_of(ring);
+        let (hs, ht) = ring.iter().fold((0.0_f64, 0.0_f64), |(a, b), &p| {
+            let (s, t) = local(p, c);
+            (a.max(s.abs()), b.max(t.abs()))
+        });
+        match form_of(&yard[j].archetype) {
+            Some(f) => (hs.max(f.site[0] * scale * 0.5), ht.max(f.site[1] * scale * 0.5)),
+            None => (hs, ht),
+        }
+    };
+    let dry = |p: Point| p.x >= 0.0 && p.y >= 0.0 && p.x < ground.width() && p.y < ground.width() && ground.water_at(ground.index(p)) == 0;
+    // Dry at every corner and mid-side, admitted by the caller, on ground the culture builds on.
+    let stands = |ring: &[Point]| {
+        (0..ring.len()).all(|k| {
+            let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+            dry(a) && dry(Point { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 })
+        }) && ok(ring)
+            && ground_fits(ring, culture, ground)
+    };
+    let mut rings: Vec<Vec<Point>> = yard.iter().map(|b| b.ring.clone()).collect();
+    let mut moved = vec![false; yard.len()];
+    let mut taken = vec![false; yard.len()];
+    // What stands for each building in the end: itself (None), the parts of its form, or nothing once absorbed.
+    let mut built: Vec<Option<Vec<ActivityBuilding>>> = yard.iter().map(|_| None).collect();
+    // Sites of the forms already laid: centre and half extents along u and v.
+    let mut sites: Vec<(Point, f64, f64)> = vec![];
+    for &i in &bearers {
+        if taken[i] {
+            continue;
+        }
+        let Some(form) = form_of(&yard[i].archetype) else { continue };
+        let members: Vec<usize> = (0..yard.len()).filter(|&j| !taken[j] && (j == i || form.absorbs.iter().any(|a| *a == yard[j].archetype))).collect();
+        let centre = centre_of(&rings[members[0]]);
+        let seed = format!("{id}/form/{}", yard[i].archetype);
+        // The whole site, then a tighter one where the ground refuses it.
+        for k in [1.0, 0.8] {
+            let (hw, hd) = (form.site[0] * scale * k * 0.5, form.site[1] * scale * k * 0.5);
+            let corner = |s: f64, t: f64| Point { x: centre.x + u.x * s + v.x * t, y: centre.y + u.y * s + v.y * t };
+            let rect = [corner(-hw, -hd), corner(hw, -hd), corner(hw, hd), corner(-hw, hd)];
+            let crowded = sites.iter().any(|&(c, hs, ht)| {
+                let (s, t) = local(centre, c);
+                s.abs() < hs + hw + 1.0 && t.abs() < ht + hd + 1.0
+            });
+            if crowded || !stands(&rect) {
+                continue;
+            }
+            // The other buildings step aside, each along the side of the yard it stands on.
+            let mut next = rings.clone();
+            let mut shifted: Vec<usize> = vec![];
+            let mut clear = true;
+            for j in 0..yard.len() {
+                if taken[j] || members.contains(&j) {
+                    continue;
+                }
+                let (ds, dt) = local(centre_of(&next[j]), centre);
+                let (hs, ht) = reach(j, &next[j]);
+                let (need_s, need_t) = (hw + FORM_GAP_M + hs, hd + FORM_GAP_M + ht);
+                if ds.abs() >= need_s || dt.abs() >= need_t {
+                    continue;
+                }
+                let (ms, mt) = if ds.abs() * need_t >= dt.abs() * need_s { ((need_s - ds.abs()).copysign(ds), 0.0) } else { (0.0, (need_t - dt.abs()).copysign(dt)) };
+                for p in next[j].iter_mut() {
+                    *p = Point { x: p.x + u.x * ms + v.x * mt, y: p.y + u.y * ms + v.y * mt };
+                }
+                if !stands(&next[j]) {
+                    clear = false;
+                    break;
+                }
+                shifted.push(j);
+            }
+            if !clear {
+                continue;
+            }
+            let Some(parts) = super::parcels::standalone::parts(&form.role, culture, centre, u, v, 2.0 * hw, 2.0 * hd, 0.5, &seed) else { continue };
+            if parts.len() < members.len()
+                || form.has.as_deref().is_some_and(|label| !parts.iter().any(|p| p.1 == label))
+                || parts.iter().any(|(shape, _)| !shape.outer.iter().all(|&p| dry(p)))
+            {
+                continue;
+            }
+            // One massing for the whole form, so that its roofs join; raised at village scale.
+            let front = [corner(-hw, -hd), corner(hw, -hd)];
+            let massing = super::massing::massing(&super::massing::Input {
+                parts: &parts,
+                arch: culture_arch(culture),
+                culture,
+                zone: "village",
+                role: &form.role,
+                function: "collective",
+                landmark: true,
+                wealth: 0.5,
+                pressure: 0.0,
+                small_home: false,
+                population: 100,
+                fronts: &[front],
+                low_rural: true,
+                distance: 2.0,
+                seed: &seed,
+                archetype: "",
+                complex: true,
+            });
+            // Every absorbed building gives its archetype to one part: one of its own label
+            // when the form has it (the belfry is the tower), else the last one free
+            // (the yard's last buildings take the form's rear ranges).
+            let mut names: Vec<&str> = vec![yard[i].archetype.as_str(); parts.len()];
+            let mut free = vec![true; parts.len()];
+            for &j in members.iter().rev().filter(|&&j| j != i) {
+                let label = archetype(&yard[j].archetype).and_then(|a| a.part.as_deref());
+                let own = (0..parts.len()).find(|&p| free[p] && Some(parts[p].1) == label);
+                if let Some(p) = own.or_else(|| (0..parts.len()).rev().find(|&p| free[p])) {
+                    names[p] = yard[j].archetype.as_str();
+                    free[p] = false;
+                }
+            }
+            let mut pieces: Vec<ActivityBuilding> = parts
+                .iter()
+                .enumerate()
+                .map(|(p, (shape, label))| {
+                    let mut piece = massing.get(p).cloned().unwrap_or(serde_json::Value::Null);
+                    if SAIL_LABELS.contains(label) {
+                        add_sails(&mut piece, &seed);
+                    }
+                    ActivityBuilding { archetype: names[p].to_string(), look: label.to_string(), ring: shape.outer.clone(), massing: serde_json::Value::Array(vec![piece]) }
+                })
+                .collect();
+            // The yard's first building stays first under its own name.
+            if let Some(p) = pieces.iter().position(|b| b.archetype == yard[members[0]].archetype) {
+                pieces.swap(0, p);
+            }
+            for &j in &members {
+                taken[j] = true;
+                built[j] = Some(vec![]);
+            }
+            built[members[0]] = Some(pieces);
+            for &j in &shifted {
+                moved[j] = true;
+            }
+            rings = next;
+            sites.push((centre, hw, hd));
+            break;
+        }
+    }
+    let mut out = vec![];
+    for (j, b) in yard.into_iter().enumerate() {
+        match built[j].take() {
+            Some(pieces) => out.extend(pieces),
+            // A building that stepped aside is raised again where it now stands.
+            None if moved[j] => {
+                let ring = std::mem::take(&mut rings[j]);
+                let massing = building_massing(&b.archetype, culture, &ring, &format!("{id}/{j}"));
+                out.push(ActivityBuilding { ring, massing, ..b });
+            }
+            None => out.push(b),
+        }
+    }
+    out
 }
 
 /// The activity grammar certifies its own buildings, rather than a residential
@@ -390,7 +680,7 @@ pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f6
             continue;
         }
         let mut parts = vec![(house, "building")];
-        if super::farmsteads::build(&mut parts, &lot, culture, true, true, wealth, &seed).is_none() {
+        if super::farmsteads::build(&mut parts, &lot, culture, true, true, wealth, &seed, true).is_none() {
             continue;
         }
         parts.retain(|(p, _)| !wet(&p.outer) && ground_fits(&p.outer, culture, ground));
@@ -407,8 +697,8 @@ pub(crate) fn farm_yard(id: &str, culture: &str, centre: super::Point, angle: f6
     }
     let front = [at(-lw / 2.0, -ld / 2.0), at(lw / 2.0, -ld / 2.0)];
     let massing = super::massing::massing(&super::massing::Input {
-        parts: &best, arch: &serde_json::Value::Null, culture, zone: "rural", role: "dwelling.farm", function: "dwelling",
-        landmark: false, wealth, pressure: 0.0, small_home: false, population: 0, fronts: &[front], low_rural: true, distance: 2.0,
+        parts: &best, arch: culture_arch(culture), culture, zone: "rural", role: "dwelling.farm", function: "dwelling",
+        landmark: false, wealth, pressure: 0.0, small_home: false, population: 0, fronts: &[front], low_rural: true, distance: 2.0, complex: false,
         seed: &best_seed, archetype: "",
     });
     let kind = super::farmsteads::farm_type(culture, &best_seed);
@@ -448,10 +738,10 @@ mod tests {
         let cat: serde_json::Value = serde_json::from_str(include_str!("catalogue.json")).unwrap();
         let farm = &cat["farmstead"]["buildings"];
         let cultures: BTreeSet<&str> = cat["cultures"].as_object().unwrap().keys().map(String::as_str).collect();
-        // 317 archetypes (310 + 7 spring water buildings), unique ids, looks/ground resolve
-        assert_eq!(d.archetypes.len(), 317);
+        // 332 archetypes (310 + 7 spring water buildings + 15 countryside works and monuments), unique ids, looks/ground resolve
+        assert_eq!(d.archetypes.len(), 332);
         let ids: BTreeSet<&str> = d.archetypes.iter().map(|a| a.id.as_str()).collect();
-        assert_eq!(ids.len(), 317, "duplicate archetype id");
+        assert_eq!(ids.len(), 332, "duplicate archetype id");
         assert!(d.family_looks.values().all(|l| d.looks.contains_key(l)), "family_looks -> unknown look");
         let cats: BTreeSet<&str> = d.archetypes.iter().map(|a| a.category.as_str()).collect();
         let known_group = |x: &String| cultures.contains(x.as_str()) || d.cultures.families.contains_key(x);
@@ -464,6 +754,12 @@ mod tests {
             if let Some(r) = &a.role { assert!(services.contains(r.as_str()), "{}: role {r} not in services.json", a.id); }
             if let Some(f) = &a.farmstead { assert!(farm.get(f).is_some(), "{}: farmstead {f}", a.id); }
             assert!(a.only.iter().flatten().all(known_group), "{}: only", a.id);
+            if let Some(f) = &a.form {
+                // A countryside role (`rural.…`) is built by parcels/monuments/rural.rs alone.
+                assert!(a.kind == "building" && (f.role.starts_with("rural.") || services.contains(f.role.as_str())), "{}: form role {} not in services.json", a.id, f.role);
+                assert!(f.site.iter().all(|&m| m >= 8.0), "{}: form site", a.id);
+                assert!(f.absorbs.iter().all(|b| *b != a.id && ids.contains(b.as_str())), "{}: form absorbs", a.id);
+            }
         }
         // sites
         let pot: BTreeSet<&str> = d.potentials.iter().map(String::as_str).collect();
@@ -476,7 +772,7 @@ mod tests {
             for r in &s.claims { assert!(services.contains(r.as_str()), "{}: claim {r}", s.id); }
             assert!(s.only.iter().flatten().all(known_group), "{}: only", s.id);
         }
-        assert_eq!(d.sites.len(), 54);
+        assert_eq!(d.sites.len(), 77);
         // cultures: each of the catalogue's cultures in exactly one family
         let mut seen = BTreeSet::new();
         for f in d.cultures.families.values() {
@@ -509,6 +805,38 @@ mod tests {
         fn water_at(&self, _: usize) -> u8 { 0 }
         fn river_width_at(&self, _: usize) -> f32 { 0.0 }
         fn height_at(&self, p: super::super::Point) -> f64 { (self.0)(p.x, p.y) }
+    }
+
+    /// A country chapel is one small church (the belfry is its tower, against the nave),
+    /// a road waystation an inn round its yard, a windmill site a mill body under its
+    /// sails with the miller's house; a template without forms keeps its boxes.
+    #[test]
+    fn isolated_singular_buildings_take_their_town_forms() {
+        use super::super::Point;
+        let flat = Relief(|_, _| 10.0);
+        let culture = "european-organic";
+        let centre = Point { x: 500.0, y: 500.0 };
+        let gap = |a: &[Point], b: &[Point]| a.iter().flat_map(|p| b.iter().map(move |q| (p.x - q.x).hypot(p.y - q.y))).fold(f64::INFINITY, f64::min);
+        let chapel = site_yard("country_chapel", culture, "chapel", centre, 0.3, &flat);
+        let part = |look: &str| chapel.iter().find(|b| b.look == look).unwrap_or_else(|| panic!("no {look}: {:?}", chapel.iter().map(|b| b.look.as_str()).collect::<Vec<_>>()));
+        let (nave, tower) = (part("nave"), part("tower"));
+        assert_eq!((chapel[0].archetype.as_str(), tower.archetype.as_str()), ("chapel_nave", "chapel_belfry"));
+        assert!(gap(&nave.ring, &tower.ring) < 1.0, "the tower stands apart from its nave");
+        assert!(chapel.iter().all(|b| b.massing.as_array().is_some_and(|m| m.len() == 1 && m[0].is_object())));
+        // A formed yard is left as it is.
+        let again = formed("activity:chapel", culture, chapel.clone(), 0.3, &flat, &|_| true);
+        assert_eq!(again.iter().map(|b| &b.ring).collect::<Vec<_>>(), chapel.iter().map(|b| &b.ring).collect::<Vec<_>>());
+        let inn = site_yard("road_waystation", culture, "inn", centre, 1.1, &flat);
+        for look in ["inn-front", "inn-range", "stable-range"] {
+            assert!(inn.iter().any(|b| b.look == look), "waystation without {look}");
+        }
+        assert!(inn[0].archetype == "waystation" && inn.iter().any(|b| b.archetype == "roadside_inn"));
+        let mill = site_yard("windmill_site", culture, "mill", centre, 0.3, &flat);
+        let body = mill.iter().find(|b| SAIL_LABELS.contains(&b.look.as_str())).unwrap_or_else(|| panic!("no mill body: {:?}", mill.iter().map(|b| b.look.as_str()).collect::<Vec<_>>()));
+        assert!(body.massing[0]["volumes"].as_array().is_some_and(|v| v.last().is_some_and(|top| top["features"][0]["kind"] == "sails")), "a windmill without sails");
+        assert!(mill.iter().any(|b| b.look == "mill-dwelling"), "a windmill without its miller's house");
+        let camp = site_yard("forest_logging", culture, "camp", centre, 0.3, &flat);
+        assert!(!camp.is_empty() && camp.iter().all(|b| archetype(&b.archetype).is_some_and(|a| a.look.as_deref() == Some(b.look.as_str()))));
     }
 
     #[test]

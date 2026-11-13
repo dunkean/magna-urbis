@@ -1,5 +1,5 @@
 import type { HousingFloorNeed } from './urbanArchitecture';
-import { normalizeLayoutConfig, normalizeParcelConfig, type LayoutConfig, type ParcelConfig, type ProgrammeContext } from './urbanConfig';
+import { normalizeLayoutConfig, normalizeParcelConfig, styleSheetEmpty, type LayoutConfig, type ParcelConfig, type ProgrammeContext } from './urbanConfig';
 export * from './urbanConfig';
 import type { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import { inWorker, loadCoreWasm, recoverCoreWasm, singleWasmModule, wasmThreadsInfo, type CoreWasm, type WasmThreadsInfo } from './wasmRuntime';
@@ -118,6 +118,10 @@ function nativeLayoutConfig(config: LayoutConfig) {
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
   if (!input.parallelMerge) delete input.parallelMerge;
   if (input.outbuildings === 0.5 || input.outbuildings === undefined) delete input.outbuildings;
+  if (input.houseComplexity === 'simple' || !input.houseComplexity) delete input.houseComplexity;
+  if (input.singularDensity === 1 || input.singularDensity === undefined) delete input.singularDensity;
+  if (input.backBuildings === 0.5 || input.backBuildings === undefined) delete input.backBuildings;
+  if (!input.styleSheet || styleSheetEmpty(input.styleSheet)) delete input.styleSheet;
   if (input.shantyScale === 1 || input.shantyScale === undefined) delete input.shantyScale;
   if (!input.organicBranchVariation) delete input.organicBranchVariation;
   if (!input.ribbonWidthVariation) delete input.ribbonWidthVariation;

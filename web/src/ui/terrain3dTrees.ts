@@ -4,7 +4,7 @@
  * painted crown under a tree turns into its ground shade (uForestTrees in FOREST_PRELUDE_GLSL). Only crowns
  * within TREE_FAR of the eye are built; trees grow out of their painted crown between TREE_FAR and TREE_NEAR,
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
- * autumn hues, leaf fall, snow): the painted crown keeps the exact Render colour. Display only. */
+ * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
 import { ForestRoom } from '../render/forestRoom';
 import { FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
@@ -14,12 +14,14 @@ export const TREE_NEAR = 420, TREE_FAR = 600;
 export const TREE_MAX = 60000;
 const SEGMENTS = 12, BANDS = 6;
 export const TREE_VERTICES = SEGMENTS * BANDS * 6;
-/** Floats per instance: (x, y, ground z, r) (h, crown depth, needle, phase) (r, g, b, 0). */
+/** Floats per instance: (x, y, ground z, r) (h, crown depth, needle, phase) (r, g, b, leafless flag + .45 x snow load). */
 export const TREE_STRIDE = 12;
 
 export interface TreeInputs {
   field: ForestField; occupation?: ForestOccupation; seed: number; climate: { temperature: number; precipitation: number };
   renderV2: number; zone: number; season: number;
+  /** Calendar setting 'crownSnow' (0 bare crowns, 1 heavily laden); the zone default when absent. */
+  crownSnow?: number;
   /** Displayed water cover 0..1 at a point (tile water masks); undefined: dry. */
   water(x: number, y: number): number;
   height(x: number, y: number): number | undefined;
@@ -69,7 +71,7 @@ function patchValue(x: number, y: number, seed: number): number {
   const fine = perlin(x / 56, y / 56, 0, 0, seed);
   // mat2(.83,.39,-.21,1.27) is column-major in GLSL.
   const glade = perlin((.83 * x - .21 * y) / 210 + 43.1, (.39 * x + 1.27 * y) / 210 - 17.7, 7919, -4421, seed);
-  return clamp((.62 * fine + .78 * glade) * .998 * .6 + .5);
+  return clamp((.5 * fine + .866 * glade) * .6 + .5);
 }
 
 interface Stand { cover: number; height: number; needle: number }
@@ -122,7 +124,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
     return ((at(i, j) * (1 - fx) + at(i + 1, j) * fx) * (1 - fy) + (at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx) * fy) / 255;
   };
   const kappaOf = (height: number, needle: number): number => climate.kappaBase * mix(.55, 1, sstep(3, 10, height)) * mix(1, .85, needle);
-  const density = (c: number, kappa: number): number => clamp(c + kappa * (.985 - c), c, .985);
+  const density = (c: number, kappa: number): number => clamp(c + kappa * (1 - .5 * sstep(.55, .9, c)) * (.985 - c), c, .985);
 
   // Lattice levels a fragment at (x, y) searches (forestCanopyNear): its stand's level and the next.
   const levelsAt = (x: number, y: number): [number, number, number] | undefined => {
@@ -138,7 +140,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
   const season = inputs.season, sx = Math.max(-Math.sin(6.2831853 * season), 0);
   const at = (season % 1 + 1) % 1 * 4, winter = Math.max(0, 1 - Math.min(Math.abs(at), Math.abs(at - 4)));
   const evergreen = inputs.renderV2 > 0 ? kind[0] + kind[1] : 1, leaf = 1 - winter * (1 - evergreen) * .9;
-  const snow = inputs.renderV2 > 0 ? winter * (1 - sstep(2, 10, T)) : 0;
+  const snow = inputs.renderV2 > 0 ? winter * (1 - sstep(2, 10, T)) : 0, crownSnow = clamp(inputs.crownSnow ?? .7);
+  // Mean crown load of forestSnowLoad; the tree shader spreads it over the crown (instance colour w, fraction).
+  const snowLoad = (needle: boolean): number => .45 * snow * (needle ? mix(.24, .62, crownSnow) : mix(.2, .8, crownSnow));
   const temperate = 1 - kind[0] - kind[1] - kind[2];
   const out: number[] = [];
   // Planted trees precede the natural candidates in the same budgeted stream and GPU buffer.
@@ -180,8 +184,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         const fall = sx * temperate * .65;
         let c = [mix(.25, .22, summer) * tone, mix(.34, .37, summer) * tone, mix(.15, .16, summer) * tone];
         c = c.map((v, k) => mix(mix(v, [.47, .34, .12][k], fall), [.31, .27, .23][k] * (.85 + .3 * tint), 1 - fruitLeaf));
-        c = c.map((v, k) => mix(v, [.84, .88, .90][k], snow * .3));
-        out.push(x, y, z, radius, height, radius * .8, 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], fruitLeaf < .5 ? 1 : 0);
+        out.push(x, y, z, radius, height, radius * .8, 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], (fruitLeaf < .5 ? 1 : 0) + snowLoad(false));
         if (out.length >= TREE_MAX * TREE_STRIDE) return new Float32Array(out);
       }
     }
@@ -216,7 +219,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
           allow = (cls === 6 ? .12 : cls === 3 ? .05 : cls === 2 ? .02 : cls === 7 ? .03 : 0) * heightGate(height);
           hedge = (cls >= 1 && cls <= 3 ? .6 : 0) * sstep(3, 8, height) * (1 - dry);
           if (cls === 7 || cls === 8 || cls === 9 || cls === 11) openGallery = 0;
-          occupied = cls === 4 || cls === 8 || cls === 9 || cls === 11;
+          occupied = cls === 4 || cls === 8 || cls === 9 || cls === 11 || cls === 12;
         }
         if (forced > 0) cover = Math.max(cover, .25 * heightGate(height));
         let kappa = kappaOf(height, needle);
@@ -268,11 +271,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
           const bare = [.31 * (.85 + .3 * tint), .27 * (.85 + .3 * tint), .23 * (.85 + .3 * tint)];
           c = [mix(c[0], bare[0], 1 - leaf), mix(c[1], bare[1], 1 - leaf), mix(c[2], bare[2], 1 - leaf)];
         }
-        const load = snow * (isNeedle ? .12 : .3);
-        c = [mix(c[0], .84, load), mix(c[1], .88, load), mix(c[2], .90, load)];
-        // Real scale: the painted lattice may draw wide, tall crowns (up to 1.14 cell); a standing tree keeps the
-        // painted crown's centre and, within real sizes, its width. Stand crowns widen a little so the canopy closes.
-        const tree = Math.min(th, isNeedle ? 25 : 20), width = Math.min(r * (beyond > 0 ? 1 : 1.12), isNeedle ? 3.4 : 5.5);
+        // Same scale as the painted crown it stands on: its centre, its height and its width, up to the largest real
+        // sizes (a 28 m broadleaf with a 15 m crown, a 32 m spire). Stand crowns widen a little so the canopy closes.
+        const tree = Math.min(th, isNeedle ? 32 : 28), width = Math.min(r * (beyond > 0 ? 1 : 1.12), isNeedle ? 3.6 : 7.5);
         // Keep the whole modelled forest crown off planted parcels, including sub-texel boundary slivers.
         if (orchardRoom && open > -1.5 * radius) {
           let overlaps = false;
@@ -282,7 +283,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
           }
           if (overlaps) continue;
         }
-        out.push(cx, cy, z, width, tree, Math.min(depth * tree / th, .94 * tree), isNeedle ? 1 : 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], !isNeedle && leaf < .5 ? 1 : 0);
+        out.push(cx, cy, z, width, tree, Math.min(depth * tree / th, .94 * tree), isNeedle ? 1 : 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], (!isNeedle && leaf < .5 ? 1 : 0) + snowLoad(isNeedle));
         if (out.length >= TREE_MAX * TREE_STRIDE) return new Float32Array(out);
       }
     }
@@ -323,9 +324,13 @@ void main(){
   float angle=float(seg+dseg)*${(2 * Math.PI / SEGMENTS).toFixed(7)}+treeShape.w;
   vec2 dir=vec2(cos(angle),sin(angle));
   float trunk=max(.07*r,.12),radius,y;
+  // Snow: the mean load of the crown is the fraction of treeColor.w over .45 (its integer part is the leafless flag).
+  // It lies on the top of the crown and on a spire's bough tips; the gaps between boughs and the underside stay dark.
+  float load=fract(treeColor.w)/.45,cap=0.;
   if(ring<2){radius=trunk;y=ring==0?-.4:bottom;}
   else {
     int k=ring-2;float u=needle?NEEDLE_U[k]:BROAD_U[k];
+    cap=needle?((seg+dseg)%2==0?1.3:.45)*mix(.8,1.2,u):mix(.45,1.4,u);
     radius=r*(needle?NEEDLE_R[k]:BROAD_R[k]);y=bottom+u*(h-bottom);
     // Alternating branch tips keep spruce serrated from above while the stacked cones keep a narrow spire.
     if(needle)radius*=((seg+dseg)%2==0?1.:.68)*(1.+.045*sin(3.*angle+treeShape.w));
@@ -337,7 +342,7 @@ void main(){
   else if(needle)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
   else {float mid=.5*(bottom+h),hd=max(.5*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
   world=vec3(treeBase.x-cameraOrigin.x+local.x,treeBase.z*exaggeration-cameraOrigin.y+local.y,treeBase.y-cameraOrigin.z+local.z);
-  tint=ring<2?vec3(.24,.19,.14):treeColor.rgb;
+  tint=ring<2?vec3(.24,.19,.14):mix(treeColor.rgb,vec3(.84,.88,.90),min(load*cap,.95));
   treeLevel=ring<2?0.:clamp((y-bottom)/max(h-bottom,.1),0.,1.);
   gl_Position=matrix*vec4(world,1.);
 }`,

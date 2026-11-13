@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const web = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), arg = (name, fallback) => { const i = args.indexOf(`--${name}`); return i < 0 ? fallback : args[i + 1]; };
 const port = Number(arg('port', '')), label = arg('label', '');
-if (!Number.isInteger(port) || port < 5191 || port > 5199 || !/^[\w.-]+$/.test(label)) throw Error('Usage: --port 5191..5199 --label name [--styles a,b] [--zooms far,mid,near] [--three-d] [--season s] [--climate zone] [--relief-climate zone] [--camera-from label] [--page v2.html]');
+if (!Number.isInteger(port) || port < 5191 || port > 5199 || !/^[\w.-]+$/.test(label)) throw Error('Usage: --port 5191..5199 --label name [--styles a,b] [--zooms far,mid,near] [--three-d] [--season s] [--climate zone] [--relief-climate zone] [--camera-from label] [--recipe-patch json] [--page v2.html]');
 const styles = arg('styles', 'atlas,cadastre,topographic,satellite,parchment,illustration').split(',');
 const zooms = arg('zooms', 'far,mid,near').split(','), steps = { far: 0, mid: 5, near: 9 };
 for (const z of zooms) if (!(z in steps)) throw Error(`Unknown zoom ${z}`);
@@ -35,6 +35,8 @@ try {
   page.on('console', m => { if (m.type() === 'warning' && /WebGPU|pipeline/i.test(m.text())) { meta.notes.push(m.text().slice(0, 300)); console.log('WARN', m.text().slice(0, 300)); } });
   page.on('pageerror', e => { meta.pageErrors.push({ ms: elapsed(), message: e.message }); console.log('PAGEERROR', e.message); });
   page.on('console', m => { if(m.type()==='error') meta.consoleErrors.push({ ms: elapsed(), message: m.text().slice(0,2000), location: m.location() }); });
+  // Worker consoles (naming, composition) go to the same error list.
+  page.on('worker', w => w.on('console', m => { if(m.type()==='error') meta.consoleErrors.push({ ms: elapsed(), message: 'worker: ' + m.text().slice(0,2000) }); }));
   page.setDefaultTimeout(30000);
   // Other sessions edit this tree: a hot reload in the middle of the chain would lose the page.
   await page.route('**/@vite/client', route => route.fulfill({ contentType: 'text/javascript', body: 'export const createHotContext=()=>({accept(){},dispose(){},prune(){},invalidate(){},on(){},off(){},send(){},data:{}});export const updateStyle=(id,css)=>{let e=document.querySelector(`style[data-vite-dev-id="${id}"]`);if(!e){e=document.createElement("style");e.dataset.viteDevId=id;document.head.append(e);}e.textContent=css;};export const removeStyle=()=>{};export const injectQuery=u=>u;export const ErrorOverlay=class{};' }));
@@ -54,6 +56,15 @@ try {
   meta.recipe = JSON.parse(await page.locator('#expert-json').inputValue());
   // --climate <zone> edits the recipe like the climate strip does (zone + its classic biome); every other parameter stays.
   // --relief-climate <zone> keeps that zone's landforms and water (default map: temperate) under the new climate.
+  // --recipe-patch '<json>' deep-merges into the recipe (e.g. an underdark map: {"options":{"biome":"underdark"},"terrain":{"relief":"cavern"}}).
+  const recipePatch = arg('recipe-patch', '') ? JSON.parse(arg('recipe-patch', '')) : null;
+  if (recipePatch) {
+    const merge = (a, b) => { for (const [k, v] of Object.entries(b)) a[k] = v && typeof v === 'object' && !Array.isArray(v) && a[k] && typeof a[k] === 'object' ? merge(a[k], v) : v; return a; };
+    merge(meta.recipe, recipePatch); meta.recipePatch = recipePatch;
+    await page.locator('#expert-json').fill(JSON.stringify(meta.recipe)); await page.locator('#expert-apply').click(); await page.waitForTimeout(500);
+    const refused = await page.locator('#expert-error').textContent(); if (refused) throw Error(`Recipe refused: ${refused}`);
+    await page.locator('#expert-open').click(); meta.recipe = JSON.parse(await page.locator('#expert-json').inputValue());
+  }
   if (arg('climate', '') || arg('relief-climate', '')) {
     const zoneBiome = { temperate: 'temperate', mediterranean: 'temperate', continental: 'forest', nordic: 'forest', alpine: 'forest', arctic: 'tundra', steppe: 'steppe', desert: 'desert', savanna: 'steppe', tropical: 'tropical', wetland: 'temperate' }; // src/gen/biomes.ts climateZoneBiome
     const zone = arg('climate', ''), relief = arg('relief-climate', '');
@@ -66,7 +77,8 @@ try {
     await page.locator('#expert-open').click(); meta.recipe = JSON.parse(await page.locator('#expert-json').inputValue());
   }
   await page.evaluate(()=>document.querySelector('#expert-dialog').close());
-  if(meta.recipe.generation !== 'procedural' || !String(meta.recipe.runtime?.source).startsWith('procedural')) throw Error('Recipe did not confirm procedural source');
+  if(!args.includes('--neural') && (meta.recipe.generation !== 'procedural' || !String(meta.recipe.runtime?.source).startsWith('procedural'))) throw Error('Recipe did not confirm procedural source');
+  if(args.includes('--neural')) meta.source = String(meta.recipe.runtime?.source);
   meta.timings.readyMs = elapsed();
   await page.locator('#run-chain').click();
   await page.waitForTimeout(1500);
@@ -90,7 +102,7 @@ try {
   console.log('OPTIONS', JSON.stringify(meta.options));
   const aliases = { atlas:['atlas'], cadastre:['cadastre','plan','cadastral'], topographic:['topographic','topo','topography'], satellite:['satellite','natural','render-v2','render3d'], natural:['natural','satellite','render-v2','render3d'], parchment:['parchment'], illustration:['illustration','illustrated','fantasy'] };
   function resolveStyle(style) { const list=aliases[style]??[style]; for(const id of list) if(meta.options.some(o=>o.value===id&&!o.disabled)) return id; const words={atlas:/atlas/i,cadastre:/cadastre|plan|cadastr/i,topographic:/topo/i,satellite:/satellite|natural|render v2/i,parchment:/parch/i,illustration:/illustr/i}; const match=meta.options.find(o=>!o.disabled&&(words[style]??new RegExp(style,'i')).test(o.label)); if(!match)throw Error(`No style alias for ${style}`); meta.notes.push(`Closest style: ${style} -> ${match.value}`); return match.value; }
-  await page.addStyleTag({ content: `html,body,#app{width:100%!important;height:100%!important;overflow:hidden!important}.app-header,#sidebar,.mobile-toggle,.map-topbar,.map-bottom,.map-compass,.map-tools,.map-hint,.inspector-mode,.places-panel,.inspector,.toast,.hint,.legend-strip,.progress-card,.city3d-bar,.city3d-info,.city3d-help{visibility:hidden!important;pointer-events:none!important}.workspace{display:block!important;position:fixed!important;inset:0!important;height:100vh!important}.map-area{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}.city3d{position:absolute!important;inset:0!important}` });
+  await page.addStyleTag({ content: `html,body,#app{width:100%!important;height:100%!important;overflow:hidden!important}.app-header,#sidebar,.mobile-toggle,.map-topbar,.map-bottom,.map-compass,.map-tools,.map-hint,.inspector-mode,.places-panel,.inspector,.toast,.hint,.legend-strip,.progress-card,.city3d-bar,.city3d-info,.city3d-help,#editor-dock,#header-menu,*:has(#scene-controls):not(:has(#map-canvas)),*:has(#editor-dock):not(:has(#map-canvas)){visibility:hidden!important;pointer-events:none!important}.workspace{display:block!important;position:fixed!important;inset:0!important;height:100vh!important}.map-area{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}.city3d{position:absolute!important;inset:0!important}` });
   await page.waitForTimeout(1000);
   const settle = async(delay=3000)=>{await page.waitForFunction(()=>document.querySelector('#app')?.getAttribute('aria-busy')!=='true'&&document.querySelector('#render-status')?.hidden!==false,null,{timeout:240000});await page.waitForTimeout(delay);};
   async function shot(style, option, zoom) { if(!await page.locator('#map-canvas').count())throw Error(`Map DOM disappeared before ${style}-${zoom}`); const scaleLabel=zoom==='3d'?null:await page.locator('#scale-label').textContent(); const record={style,option,zoom,file:`${style}-${zoom}.png`,scaleLabel,approxPixelsPerMetre:scaleLabel?80/Number(scaleLabel.replace(/[^\d]/g,'')):null,...(zoom==='3d'?{camera:'Default fitted orbit camera, retained across styles; no navigation input'}:{}),renderStatus:await page.locator('#render-status').textContent().catch(()=>null),ms:elapsed()}; await page.evaluate(() => window.__v2Test?.prepareCapture()); await page.screenshot({ timeout: 200000,path:path.join(out,record.file)});meta.shots.push(record);console.log('SHOT',JSON.stringify(record));save(); }

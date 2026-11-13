@@ -17,7 +17,7 @@ import type { V2Appearance, V2Settings } from './contracts';
 import type { World } from '../gen/types';
 import { resolveAppearance, type RenderTarget, type ResolveFlags, type ResolvedAppearance } from '../render/appearanceRecipe';
 import { worldCapabilities } from './nativeProducts';
-import { presetComposition, validateComposition, withoutHiddenStyle } from '../render/composition';
+import { presetComposition, underdarkComposition, validateComposition, withoutHiddenStyle } from '../render/composition';
 
 export const CITY_LAYER_NAMES = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -92,7 +92,7 @@ export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationSt
 export function resolveSettingsAppearance(settings: V2Settings, world: World | undefined, target: RenderTarget, flags?: ResolveFlags): ResolvedAppearance {
   const o = settings.options;
   // V2 always renders a composition; a project without one starts from the preset of its map style.
-  const appearance = { style: o.style, ...settings.appearance, composition: withoutHiddenStyle(settings.appearance?.composition) ?? presetComposition(o.style === 'atlas' ? 'atlas' : 'parchment') };
+  const appearance = { style: o.style, ...settings.appearance, composition: underdarkComposition(withoutHiddenStyle(settings.appearance?.composition) ?? presetComposition(o.style === 'atlas' ? 'atlas' : 'parchment'), o.biome) };
   // The land-use painters (2D canvas, SVG export, legend) read the shared value; the recipe is its source of truth.
   setLanduseForestTone(appearance.composition.vegetation.forestTone);
   return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest },

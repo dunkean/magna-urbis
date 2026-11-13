@@ -14,6 +14,7 @@ mod priority_flood;
 mod rng;
 mod terrain_par;
 mod terrain_zones;
+pub mod underdark;
 pub mod vector_water;
 
 use erosion::{MountainCfg, erode_shape, erode_surface, mountain};

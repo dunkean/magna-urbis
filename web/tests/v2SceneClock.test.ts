@@ -58,4 +58,16 @@ describe('scene calendar and solar lighting', () => {
     const settings = defaultSettings(); settings.scene = { date: '2026-02-30', time: '12:00', latitude: 45 };
     expect(() => serializeProject(settings)).toThrow();
   });
+  it('retains the directly chosen season and moonlight across presets and project saves', () => {
+    const settings = defaultSettings(), before = terrainCacheKey(settings);
+    applySceneClock(settings, { date: '2026-07-01', time: '14:00', latitude: 45 });
+    for (const [key, value] of Object.entries({ season: .75, ambience: 'night', 'lighting.azimuth': 90, 'lighting.elevation': 30, 'lighting.strength': 1.5 }))
+      writeAppearanceControl(settings, `appearance.composition.effects.${key}`, value);
+    const effects = structuredClone(settings.appearance!.composition!.effects);
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'atlas');
+    const loaded = parseProject(serializeProject(settings)).settings;
+    expect(loaded.scene).toBeUndefined();
+    expect(loaded.appearance?.composition?.effects).toMatchObject({ season: effects.season, ambience: effects.ambience, lighting: effects.lighting });
+    expect(terrainCacheKey(settings)).toBe(before);
+  });
 });

@@ -12,11 +12,12 @@ export interface ZoneSeason {
   herb: Year<Tint>;
   /** Fullness of deciduous crowns: 0 bare, 1 in full leaf. */
   leaf: Year<number>;
-  /** Minimum sea ice concentration. */
+  /** Sea ice concentration. The satellite material treats it as a potential: the snow of the coast decides what forms. */
   seaIce: Year<number>;
   /** Water table of low flat ground, as a ratio. */
   wet: Year<number>;
-  /** Low-ground snow of the map styles; the material derives its own from temperature. */
+  /** Low-ground snow of the map styles, and through it their fresh-water ice (waterRegime.ts). The satellite material
+   * derives its snow from temperature and its fresh and sea ice from that snow (terrainRenderV2Winter.ts). */
   snow: Year<number>;
   /** Rain regime: -1 all in winter, 1 all in summer. */
   rain: number;
@@ -24,7 +25,8 @@ export interface ZoneSeason {
   cool: number;
   /** Share of conifers that are larches: gold in autumn, bare in winter. */
   larch: number;
-  /** Warming of the snow line (°C): maritime springs melt the snow long before the air proxy says so. */
+  /** Warming of the snow line (°C): maritime springs melt the snow long before the air proxy says so; negative values
+   * bring the snow early (arctic autumn). Snow, river, lake and sea ice of the satellite material all follow it. */
   thaw?: Year<number>;
 }
 const NO_ICE: Year<number> = [0, 0, 0, 0], STEADY: Year<number> = [1, 1, 1, 1];
@@ -34,8 +36,8 @@ export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
   continental: { herb: [[.85, .80, .72], [.96, 1.12, .90], [.97, 1.05, .93], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1, thaw: [0, 10.5, 0, 4] },
   nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.75, .30, 0, .05], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12, thaw: [0, 4.5, 0, 0] },
   alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: NO_ICE, wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
-  arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .82, .76, .80], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0 },
-  steppe: { herb: [[.92, .86, .76], [.86, 1.14, .82], [1.06, .98, .84], [1.04, .94, .80]], leaf: [0, .60, 1, .70], seaIce: [.30, 0, 0, 0], wet: STEADY, snow: [.60, 0, 0, .05], rain: .3, cool: 5, larch: 0 },
+  arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .82, .76, .80], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0, thaw: [0, 0, 0, -3.5] },
+  steppe: { herb: [[.92, .86, .76], [.86, 1.14, .82], [1.06, .98, .84], [1.04, .94, .80]], leaf: [0, .60, 1, .70], seaIce: [.30, 0, 0, 0], wet: STEADY, snow: [.60, 0, 0, .05], rain: .3, cool: 6, larch: 0 },
   desert: { herb: [[.90, .90, .92], [.96, 1.02, .90], [1.08, 1, .88], [1.02, .97, .90]], leaf: [.90, 1, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: 0, cool: 0, larch: 0 },
   savanna: { herb: [[1.12, 1, .74], [1.04, 1.02, .80], [.72, 1.14, .74], [.92, 1.08, .78]], leaf: [.30, .55, 1, .80], seaIce: NO_ICE, wet: [.2, .6, 1.6, 1.1], snow: NO_ICE, rain: .95, cool: 0, larch: 0 },
   tropical: { herb: [[1.10, 1.02, .82], [1, 1.02, .96], [.92, 1.06, .92], [.96, 1.04, .94]], leaf: [.85, .95, 1, 1], seaIce: NO_ICE, wet: [.7, .9, 1.3, 1.2], snow: NO_ICE, rain: .45, cool: 0, larch: 0 },
@@ -50,6 +52,8 @@ export interface SeasonCalendar {
   greenery?: number;
   /** Amplitude of the drifts that break snow into patches. */
   snowPatches?: number;
+  /** Snow held by tree crowns where the ground is snowy: 0 bare crowns, 1 heavily laden. */
+  crownSnow?: number;
 }
 export type SeasonCalendarKey = keyof SeasonCalendar;
 /** Field, labels and range of each calendar control. */
@@ -58,6 +62,7 @@ export const SEASON_CALENDAR_FIELDS: readonly { key: SeasonCalendarKey; en: stri
   { key: 'thawAutumn', en: 'Autumn thaw of the snow line (°C)', fr: 'Dégel d’automne de la limite des neiges (°C)', min: -10, max: 20, step: .5 },
   { key: 'winterCold', en: 'Winter temperature shift (°C, negative is colder)', fr: 'Décalage de température hivernale (°C, négatif = plus froid)', min: -20, max: 10, step: .5 },
   { key: 'snowPatches', en: 'Snow patchiness', fr: 'Morcellement de la neige', min: 0, max: 1, step: .05 },
+  { key: 'crownSnow', en: 'Snow on tree crowns', fr: 'Neige sur les houppiers', min: 0, max: 1, step: .05 },
   { key: 'rain', en: 'Rain regime (−1 winter, +1 summer)', fr: 'Régime des pluies (−1 hiver, +1 été)', min: -1, max: 1, step: .05 },
   { key: 'greenery', en: 'Seasonal colour strength', fr: 'Intensité des couleurs de saison', min: 0, max: 2, step: .05 },
   { key: 'leafWinter', en: 'Deciduous leaves in winter', fr: 'Feuillage caduc en hiver', min: 0, max: 1, step: .05 },
@@ -69,12 +74,12 @@ export const SEASON_CALENDAR_FIELDS: readonly { key: SeasonCalendarKey; en: stri
   { key: 'seaIceSummer', en: 'Sea ice in summer', fr: 'Banquise en été', min: 0, max: 1, step: .02 },
   { key: 'seaIceAutumn', en: 'Sea ice in autumn', fr: 'Banquise en automne', min: 0, max: 1, step: .02 },
 ];
-const SNOW_PATCHES = .4;
+const SNOW_PATCHES = .4, CROWN_SNOW = .7;
 /** The zone's own values, in calendar form. A map without a zone follows the temperate year. */
 export function zoneCalendar(zone: ClimateZone = 'temperate'): Required<SeasonCalendar> {
   const z = ZONE_SEASONS[zone], thaw = z.thaw ?? NO_ICE;
   return { thawSpring: thaw[1], thawAutumn: thaw[3], winterCold: -z.cool, rain: z.rain, leafWinter: z.leaf[0], leafSpring: z.leaf[1], leafAutumn: z.leaf[3], larch: z.larch,
-    seaIceWinter: z.seaIce[0], seaIceSpring: z.seaIce[1], seaIceSummer: z.seaIce[2], seaIceAutumn: z.seaIce[3], greenery: 1, snowPatches: SNOW_PATCHES };
+    seaIceWinter: z.seaIce[0], seaIceSpring: z.seaIce[1], seaIceSummer: z.seaIce[2], seaIceAutumn: z.seaIce[3], greenery: 1, snowPatches: SNOW_PATCHES, crownSnow: CROWN_SNOW };
 }
 const edited = (calendar?: SeasonCalendar): boolean => !!calendar && Object.values(calendar).some(value => typeof value === 'number' && Number.isFinite(value));
 /** The zone's year with the panel's edits applied; herb colours are scaled by the colour strength. */
@@ -89,7 +94,7 @@ export function calendarSeason(zone: ClimateZone = 'temperate', calendar?: Seaso
 export function seasonCalendarUniforms(zone?: ClimateZone, calendar?: SeasonCalendar): { on: number; leaf: number[]; ice: number[]; thaw: number[]; climate: number[]; snow: number[] } {
   const c = { ...zoneCalendar(zone), ...Object.fromEntries(Object.entries(calendar ?? {}).filter(([, v]) => typeof v === 'number')) } as Required<SeasonCalendar>;
   return { on: edited(calendar) ? 1 : 0, leaf: [c.leafWinter, c.leafSpring, 1, c.leafAutumn], ice: [c.seaIceWinter, c.seaIceSpring, c.seaIceSummer, c.seaIceAutumn],
-    thaw: [0, c.thawSpring, 0, c.thawAutumn], climate: [c.rain, -c.winterCold, c.larch, c.greenery], snow: [c.snowPatches, 0, 0, 0] };
+    thaw: [0, c.thawSpring, 0, c.thawAutumn], climate: [c.rain, -c.winterCold, c.larch, c.greenery], snow: [c.snowPatches, c.crownSnow, 0, 0] };
 }
 /** Sets the calendar uniforms on a WebGL program; `u` resolves a uniform location. */
 export function setSeasonCalendarGl(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null, zone?: ClimateZone, calendar?: SeasonCalendar): void {
@@ -158,6 +163,28 @@ const vec4 V2_ZONE_WET[11]=vec4[11](
   vec4(.27,.38,.18,0.),vec4(.40,.42,.28,0.),vec4(.28,.36,.20,.5),vec4(.36,.33,.22,1.),
   vec4(.30,.40,.20,3.5),vec4(.42,.40,.27,2.),vec4(.42,.46,.27,0.),vec4(.30,.40,.20,0.),
   vec4(.36,.42,.22,0.),vec4(.36,.56,.24,0.),vec4(.30,.29,.18,0.));
+// Geomorphic units of the open ground (terrainRenderV2Ground), as shares of the level unwooded ground:
+// x sand sea with dunes, y gravel plain, z rock pavement, w salt or clay pan. A zone of zeros skips the work.
+const vec4 V2_ZONE_UNITS[11]=vec4[11](
+  vec4(0.),vec4(0.,0.,.05,0.),vec4(0.),vec4(0.,.04,.08,0.),
+  vec4(0.,.06,.10,0.),vec4(0.,.14,.12,0.),vec4(0.,.05,0.,.04),vec4(.45,.30,.06,.03),
+  vec4(0.,0.,.05,.02),vec4(0.),vec4(0.));
+// Rock pavement colour (limestone pavement, lichen-covered blockfield, desert varnish, lateritic crust) and the
+// frost sorting of stony ground (polygons on level ground, stripes on slopes).
+const vec4 V2_ZONE_PAVEMENT[11]=vec4[11](
+  vec4(.45,.43,.40,0.),vec4(.63,.60,.53,0.),vec4(.45,.43,.40,0.),vec4(.34,.35,.33,.6),
+  vec4(.42,.42,.41,.8),vec4(.34,.33,.31,1.),vec4(.50,.46,.40,0.),vec4(.36,.31,.27,0.),
+  vec4(.45,.32,.24,0.),vec4(.45,.30,.22,0.),vec4(.40,.38,.34,0.));
+// Gravel plain colour and the strength of the pale sand washes in hollows.
+const vec4 V2_ZONE_GRAVEL[11]=vec4[11](
+  vec4(.50,.46,.40,0.),vec4(.66,.62,.54,0.),vec4(.50,.46,.40,0.),vec4(.58,.57,.54,0.),
+  vec4(.64,.63,.61,0.),vec4(.54,.53,.50,0.),vec4(.60,.55,.45,.25),vec4(.69,.61,.48,.8),
+  vec4(.60,.44,.32,.3),vec4(.50,.40,.30,0.),vec4(.45,.42,.36,0.));
+// Pan colour (salt pan, saline flat, clay pan) and the contrast of its polygon cracks.
+const vec4 V2_ZONE_PAN[11]=vec4[11](
+  vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),
+  vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),vec4(.76,.73,.66,.6),vec4(.85,.81,.72,1.),
+  vec4(.74,.67,.55,.7),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.));
 bool v2Zoned(){return uMaterialZone>0&&uRenderV2>0;}
 int v2Zone(){return clamp(uMaterialZone-1,0,10);}
 ${RENDER_V2_SEASON_GLSL}
@@ -168,7 +195,7 @@ uniform vec4 uV2CalIce;
 uniform vec4 uV2CalThaw;
 // x rain regime, y winter cold, z larch share, w seasonal colour strength.
 uniform vec4 uV2CalClimate;
-// x snow patchiness.
+// x snow patchiness, y snow held by tree crowns.
 uniform vec4 uV2CalSnow;
 // A map without a zone follows the temperate year.
 int v2SeasonZone(){return uMaterialZone>0?clamp(uMaterialZone-1,0,10):0;}
@@ -184,6 +211,8 @@ vec3 v2SeasonHerb(){
 float v2SeasonLeaf(){return dot(uV2Calendar==1?uV2CalLeaf:V2_SEASON_LEAF[v2SeasonZone()],v2SeasonWeights());}
 float v2SeasonSeaIce(){return dot(uV2Calendar==1?uV2CalIce:V2_SEASON_ICE[v2SeasonZone()],v2SeasonWeights());}
 float v2SeasonSnowPatches(){return uV2Calendar==1?uV2CalSnow.x:.4;}
+// Snow held by tree crowns where the ground is snowy (calendar 'crownSnow'): 0 bare crowns, 1 heavily laden.
+float v2SeasonCrownSnow(){return uV2Calendar==1?uV2CalSnow.y:.7;}
 float v2SeasonWet(){return dot(V2_SEASON_WET[v2SeasonZone()],v2SeasonWeights());}
 float v2SeasonThaw(){return dot(uV2Calendar==1?uV2CalThaw:V2_SEASON_THAW[v2SeasonZone()],v2SeasonWeights());}
 vec3 v2SeasonClimate(){return uV2Calendar==1?uV2CalClimate.xyz:V2_SEASON_CLIMATE[v2SeasonZone()];}

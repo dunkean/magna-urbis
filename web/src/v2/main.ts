@@ -74,6 +74,7 @@ registerMessages({'Cartographic maps':{en:'Cartographic maps',fr:'Cartes graphiq
 registerMessages({'Render3D · Multiscale':{en:'Render3D · Multiscale',fr:'Render3D · Multi-échelle'},'Render v2 - Satellite':{en:'Render v2 - Satellite',fr:'Render v2 - Satellite'},'Render v2 - Substrate':{en:'Render v2 - Substrate',fr:'Render v2 - Substrat'},'Render v2 - Moisture':{en:'Render v2 - Moisture',fr:'Render v2 - Humidité'},'Render v2 - Vegetation':{en:'Render v2 - Vegetation',fr:'Render v2 - Végétation'},'Render v2 - Snow / ice':{en:'Render v2 - Snow / ice',fr:'Render v2 - Neige / glace'}});
 registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Implanter et construire':{en:'Place and build',fr:'Implanter et construire'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redessiner la carte':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
 const icon = (id: IconId, size = 22): string => `<img class="v2-icon" src="${iconUrl(id) ?? ''}" alt="" width="${size}" height="${size}" aria-hidden="true">`;
+registerMessages({'Full generation':{en:'Full generation',fr:'Génération complète'}});
 const hiddenVariants: readonly string[] = HIDDEN_STYLE_IDS.flatMap(look => GROUND_VARIANTS[look]);
 const renderStyles = [...TERRAIN_STYLE_LIST.filter(style => !hiddenVariants.includes(style.id)), { id: 'copernicus', label: 'Elevation · DEM', traits: styleTraits('copernicus') }];
 const renderStyleOptions = (): string => [['Cartographic maps',renderStyles.filter(style=>style.traits.family==='map')],['Terrain materials',renderStyles.filter(style=>style.traits.family==='material')],['Painted fantasy maps',renderStyles.filter(style=>style.traits.family==='brush')],['Diagnostics',renderStyles.filter(style=>style.traits.family==='diagnostic')]].map(([label,styles])=>`<optgroup data-render-label="${label}" label="${translate(String(label))}">${(styles as typeof renderStyles).map(style=>`<option value="${style.id}">${esc(style.label)}</option>`).join('')}</optgroup>`).join('');
@@ -81,7 +82,7 @@ type Item = string | readonly [string, string];
 function options(items: readonly Item[]): string { return items.map(item => { const [value,label] = typeof item === 'string' ? [item,item] : item; return `<option value="${esc(value)}">${esc(label)}</option>`; }).join(''); }
 function field(label: string, key: string, items?: readonly Item[], attrs = ''): string { const id=`option-${key.replace(/\./g,'-')}`;return `<label class="label" for="${id}">${label}</label>${items ? `<select id="${id}" data-option="${key}">${options(items)}</select>` : `<input id="${id}" data-option="${key}" ${attrs || 'type="number"'}>`}`; }
 const tri: Item[] = [['auto','Automatique'],['yes','Oui'],['no','Non']];
-const BIOME_LABELS: readonly Item[] = [['temperate','Campagne tempérée'],['forest','Forêt tempérée'],['desert','Désert & oasis'],['steppe','Steppe'],['tropical','Forêt tropicale'],['tundra','Toundra'],['underdark','Outreterre'],['underdark-caverns','Outreterre & cavernes']];
+const BIOME_LABELS: readonly Item[] = [['temperate','Campagne tempérée'],['forest','Forêt tempérée'],['desert','Désert & oasis'],['steppe','Steppe'],['tropical','Forêt tropicale'],['tundra','Toundra'],['underdark','Outreterre']];
 const layerNames: Record<keyof ExportLayers,string> = { background:'Fond de carte', terrain:'Relief et courbes', water:'Hydrographie', landuse:'Végétation et cultures', city:'Bâtiments et terrains', streets:'Rues et ponts urbains', roads:'Routes régionales', labels:'Toponymes', decor:'Cadre et légende' };
 let settings: V2Settings = defaultSettings();
 applySceneClock(settings, DEFAULT_SCENE);
@@ -182,7 +183,7 @@ setHTML($('#app'), `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>L’atelier des régions</p></div><span class="version">V2 · ALPHA</span>
   <div class="project-actions"><button id="import-open">Ouvrir</button><button id="export-open">Exporter ↗</button></div>
-  <div class="header-tools"><button id="run-chain" type="button" title="Générer toute la chaîne : relief, peuplements et villes" aria-label="Générer toute la chaîne : relief, peuplements et villes">${icon('family-settlements',22)}<span>Toute la chaîne</span></button><span class="edition">${localEdition ? 'Édition locale' : 'Édition web'}</span><button id="hardware-open" title="Réglages, moteurs et activité">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Réglages</span></button></div>
+  <div class="header-tools"><span class="edition">${localEdition ? 'Édition locale' : 'Édition web'}</span><button id="hardware-open" title="Réglages, moteurs et activité">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Réglages</span></button></div>
 </header>
 <section class="workbench-bar" aria-label="Scene and editing tools">
   <div class="view-strip"><div class="style-control"><label class="strip-label" for="map-style">Appearance</label><select id="map-style" aria-label="Style de carte">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div><div id="scene-controls" class="scene-controls"></div></div>
@@ -192,7 +193,7 @@ setHTML($('#app'), `
 <main class="workspace">
   <aside class="sidebar mobile-closed" id="sidebar" aria-label="Chaîne de génération">
     <div id="terrain-controls"></div>
-    <div class="sidebar-footer"><div class="footer-actions"><button class="primary generate" id="generate-region"><i class="art art-terrain" aria-hidden="true"></i><span id="generate-label">Créer le relief</span></button><button id="relief-editor-open" type="button" aria-haspopup="dialog" aria-controls="relief-paint-dialog"><img src="${new URL('./assets/relief-paint-v1.webp',import.meta.url).href}" alt="" width="30" height="30"><span>Edit relief</span></button></div><div class="footer-note"><span class="status-dot"></span><span id="footer-status" class="grow">Relief et eau, en un clic</span><button id="expert-open" class="quiet small">Recette JSON</button></div></div>
+    <div class="sidebar-footer"><div class="footer-actions"><button class="primary generate" id="generate-region"><i class="art art-terrain" aria-hidden="true"></i><span id="generate-label">Créer le relief</span></button><button id="run-chain" type="button" title="Générer toute la chaîne : relief, peuplements et villes">${icon('family-settlements',24)}<span>Full generation</span></button></div><div class="footer-note"><span class="status-dot"></span><span id="footer-status" class="grow">Relief et eau, en un clic</span><button id="expert-open" class="quiet small">Recette JSON</button></div></div>
   </aside>
   <div id="stage-staging" hidden>
     <div class="stage-field" data-control="widget:seed"><label class="label" for="seed">Graine de la région</label><div class="row seed-row"><input id="seed" data-option="seed" type="text" maxlength="200" aria-label="Graine de la région"><button id="random-seed" title="Nouvelle graine" aria-label="Nouvelle graine"><i class="art art-dice"></i></button></div><p class="hint" id="extent-hint"></p></div>
@@ -340,7 +341,7 @@ function runStage(stage:StageDef):void{
   if(stage.id==='map-naming'){void redrawNames();return;}
   const run=stage.run;
   if(run.action==='display'){void refreshAppearance();return;}
-  if(run.action==='mask'){terrainControls.openEditor();return;}
+  if(run.action==='mask'){terrainControls.openEditor('draw');return;}
   if(run.action==='town'){
     const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
     runCities(backend==='typescript'?undefined:run.townStage, stage.id);return;
@@ -487,7 +488,7 @@ function setBusy(value: boolean): void {
   labelEditorHostInert(value);
   busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
   for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector','#editor-content']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
-  for (const id of ['generate-region','run-chain','relief-editor-open','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
+  for (const id of ['generate-region','run-chain','relief-draw-open','relief-modify-open','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option],#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
   document.querySelectorAll<HTMLButtonElement>('[data-relief],#inspector button').forEach(e=>e.disabled=value);
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
@@ -676,7 +677,7 @@ document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').f
 }));
 $('#random-seed').onclick=()=>{migrateUrbanSeeds(settings);settings.options.seed=Array.from(crypto.getRandomValues(new Uint32Array(2)),n=>n.toString(36)).join('-');mods=[];touchRecipe();syncControls();};
 $<HTMLInputElement>('#town-count').onchange=e=>{settings.settlementCount=Number((e.target as HTMLInputElement).value);if(settings.region?.placement){delete settings.region.placement.counts;settings.region.placement.mode='counts';}touchRecipe();regionControls.sync();};
-$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#relief-editor-open').onclick=()=>terrainControls.openEditor();$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
+$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
 $('#cancel-job').onclick=()=>{cancelled=true;client.cancel();const local=settings.runtime?.backend==='native'||settings.runtime?.source==='neural-python'||settings.urban?.backend==='native';const message=local?'Attente annulée. La carte précédente est conservée ; le service local peut terminer son calcul en arrière-plan.':'Calcul annulé. La carte précédente est conservée.';log(message);setBusy(false);toast(message);};
 $('#zoom-in').onclick=()=>client.viewer.zoomBy(1.5);$('#zoom-out').onclick=()=>client.viewer.zoomBy(1/1.5);$('#fit-map').onclick=()=>client.viewer.fit();
 $<HTMLSelectElement>('#map-style').onchange=e=>writeRecipe('preset',(e.target as HTMLSelectElement).value);

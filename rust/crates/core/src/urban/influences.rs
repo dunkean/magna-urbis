@@ -35,6 +35,18 @@ fn mask(center: Point, extent: f64, value: f64, angle: f64, chronological: bool)
 /// and recipe, as a second influence does for its share.
 pub(super) fn zone_overrides(phases: &mut [GrowthPhase], site: &Site, cfg: &LayoutConfig) {
     for p in phases.iter_mut() {
+        // The style sheet's `streets` facet: the zone takes that culture's street
+        // grammar (and, unless the other facets say otherwise, its fabric).
+        if let Some(culture) = super::forms::sheet::streets(cfg, &p.zone)
+            && culture != p.culture
+        {
+            p.culture = culture.to_owned();
+            let name = match p.zone.as_str() {
+                "village" | "core" | "faubourg" => p.zone.as_str(),
+                _ => "ring",
+            };
+            p.recipe = composition::recipe(&p.culture, site.population, name);
+        }
         let Some(o) = cfg.phase_overrides.get(&p.zone) else { continue };
         if !o.culture.is_empty() && super::catalogue()["cultures"][&o.culture].is_object() {
             p.culture = o.culture.clone();

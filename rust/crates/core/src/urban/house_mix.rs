@@ -5,7 +5,7 @@
 //! chosen means the lot's own culture. The draw is deterministic: seed + a key
 //! from the mix's `spread` (lot id, block or quarter).
 use crate::rng::Rng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Ordinary homes only: cultural silhouettes and tower houses keep their size.
@@ -14,7 +14,11 @@ pub(super) fn ordinary_home(culture: &str, arch: &serde_json::Value, seed: &str)
     let typology = arch["typology"].as_str().unwrap_or("");
     scale == 1.0
         && (matches!(form, "" | "stilt" | "battered")
-            || form == "tree" && Rng::new(seed).fork("tree-share").float() >= 0.5)
+            || {
+                // A people that mixes its form with ordinary houses: the lots that did not draw the form.
+                let share = super::forms::kit::traits(culture).form_share;
+                share > 0.0 && Rng::new(seed).fork("tree-share").float() >= share
+            })
         && !super::massing::tower_house(culture, arch)
         && !matches!(typology, "longhouse" | "maloca" | "plank-house" | "ger" | "yurt" | "tipi" | "tepee")
         && !matches!(arch["material"].as_str().unwrap_or(""), "hide" | "felt" | "fabric")
@@ -62,46 +66,139 @@ impl HomeContext<'_> {
     }
 }
 
-/// Contract the whole house together, preserving its courts and connected wings.
+/// Contract the whole house together in its own frame, preserving its courts
+/// and connected wings: `u` along the walls of its main body that follow the
+/// street, `n` away from the street. The street wall stays where it is. A
+/// free-standing house shrinks alike in width (about its own centre line)
+/// and in depth; a house standing against a side of its lot keeps its width
+/// and loses depth (down to 0.7 of it, and never under 4 m: a stronger cut
+/// then narrows it from its free side), so party walls stay shared. The map
+/// scales the frame's axes, so rectangles stay rectangles; a house between
+/// party walls on an oblique street slides along those walls instead.
 /// A concave lot or reserved hole may prevent a contraction: keep its valid plan.
 pub(super) fn scale_home(parts: &mut [(super::Shape, &'static str)], lot: &super::Parcel, area: f64) {
-    if area >= 1.0 || parts.is_empty() { return; }
-    let c = lot.front.map(|f| super::Point { x:(f[0].x+f[1].x)*0.5, y:(f[0].y+f[1].y)*0.5 })
-        .unwrap_or_else(|| super::geometry::interior_point(&parts[0].0));
-    let k = area.sqrt();
-    let ring = |r: &[super::Point]| r.iter().map(|p| super::Point {
-        x:c.x + (p.x-c.x)*k, y:c.y + (p.y-c.y)*k,
+    use super::Point;
+    // A back-lot dependency (`annex`) is not the house: it stays where it stands.
+    let house = |l: &str| l != "annex";
+    if area >= 1.0 || !parts.iter().any(|(_,l)| house(l)) { return; }
+    let dot = |a: Point, b: Point| a.x*b.x + a.y*b.y;
+    let sub = |a: Point, b: Point| Point { x:a.x-b.x, y:a.y-b.y };
+    let turn = |a: Point| Point { x:-a.y, y:a.x };
+    // The frame of the main body: its longest wall, or the walls across it
+    // when those lie closer to the street's direction.
+    let main: Vec<Point> = parts.iter().filter(|(_,l)| house(l))
+        .max_by(|a,b| super::geometry::area(&a.0).total_cmp(&super::geometry::area(&b.0)))
+        .map(|(s,_)| s.outer.clone()).unwrap_or_default();
+    let Some(wall) = (0..main.len()).map(|i| sub(main[(i+1)%main.len()], main[i]))
+        .max_by(|a,b| dot(*a,*a).total_cmp(&dot(*b,*b))).filter(|w| dot(*w,*w) > 1e-9) else { return; };
+    let len = dot(wall,wall).sqrt();
+    let mut u = Point { x:wall.x/len, y:wall.y/len };
+    if let Some(f) = lot.front {
+        let street = sub(f[1],f[0]);
+        if dot(u,street).abs() < dot(turn(u),street).abs() { u = turn(u); }
+    }
+    let mut n = turn(u);
+    if let Some(f) = lot.front {
+        let mid = Point { x:(f[0].x+f[1].x)*0.5, y:(f[0].y+f[1].y)*0.5 };
+        let centre = main.iter().fold(Point { x:0., y:0. }, |c,p| Point { x:c.x+p.x, y:c.y+p.y });
+        let centre = Point { x:centre.x/main.len() as f64, y:centre.y/main.len() as f64 };
+        if dot(n, sub(centre,mid)) < 0.0 { n = Point { x:-n.x, y:-n.y }; }
+    }
+    let points: Vec<Point> = parts.iter().filter(|(_,l)| house(l)).flat_map(|(s,_)| s.outer.iter().copied()).collect();
+    let (s0,s1) = points.iter().fold((f64::INFINITY,f64::NEG_INFINITY), |(a,b),&p| (a.min(dot(u,p)), b.max(dot(u,p))));
+    // A side of the lot (an edge running in depth) within 25 cm of the point.
+    let sides = &lot.shape.outer;
+    let on_side = |p: Point| (0..sides.len()).any(|i| {
+        let (a,e) = (sides[i], sub(sides[(i+1)%sides.len()], sides[i]));
+        let l2 = dot(e,e);
+        if l2 < 1e-9 || dot(e,n).abs() < 0.7*l2.sqrt() { return false; }
+        let k = (dot(sub(p,a),e)/l2).clamp(0.0,1.0);
+        let d = sub(p, Point { x:a.x+e.x*k, y:a.y+e.y*k });
+        dot(d,d) < 0.25*0.25
+    });
+    let left = points.iter().any(|&p| dot(u,p) <= s0+0.05 && on_side(p));
+    let right = points.iter().any(|&p| dot(u,p) >= s1-0.05 && on_side(p));
+    // Depth along `n` from the house's front: its frame level, or, for a house
+    // standing against a side of its lot, the street's own line (its side
+    // walls then slide along themselves and its street wall stays on the street).
+    let street = lot.front.map(|f| {
+        let d = sub(f[1],f[0]);
+        let l = dot(d,d).sqrt().max(1e-9);
+        (f[0], Point { x:-d.y/l, y:d.x/l })
+    });
+    let depth = |p: Point| match street {
+        Some((o,m)) if (left || right) && dot(n,m).abs() > 0.5 => dot(sub(p,o),m)/dot(n,m),
+        _ => dot(n,p),
+    };
+    let (t0,t1) = points.iter().fold((f64::INFINITY,f64::NEG_INFINITY), |(a,b),&p| (a.min(depth(p)), b.max(depth(p))));
+    let (kw,kd) = if left || right {
+        let kd = area.max(0.7).max((4.0/(t1-t0).max(1e-9)).min(1.0));
+        (area/kd, kd)
+    } else { (area.sqrt(), area.sqrt()) };
+    // Width shrinks towards the wall the house stands against, else about its centre line.
+    let c = match (left,right) { (true,false) => s0, (false,true) => s1, _ => (s0+s1)*0.5 };
+    // Without a street the depth shrinks about the middle.
+    let base = if lot.front.is_some() { t0 } else { (t0+t1)*0.5 };
+    let ring = |r: &[Point]| r.iter().map(|&p| {
+        let (ds,dt) = ((c - dot(u,p))*(1.0-kw), (base - depth(p))*(1.0-kd));
+        Point { x:p.x + u.x*ds + n.x*dt, y:p.y + u.y*ds + n.y*dt }
     }).collect();
-    let scaled: Vec<_> = parts.iter().map(|(s,l)| (super::Shape {
+    let scaled: Vec<_> = parts.iter().map(|(s,l)| if house(l) { (super::Shape {
         outer:ring(&s.outer), holes:s.holes.iter().map(|h| ring(h)).collect(),
-    }, *l)).collect();
-    if scaled.iter().all(|(s,_)| super::geometry::area(s) >= 4.0
+    }, *l) } else { (s.clone(), *l) }).collect();
+    // A porch or a bay of a composed home is small by nature.
+    let least = |l: &str| if l != "building" && super::forms::plan::is_house_part(l) { 0.8 } else { 4.0 };
+    if scaled.iter().all(|(s,l)| super::geometry::area(s) >= least(l)
         && super::geometry::difference(s, &lot.shape).iter().map(super::geometry::area).sum::<f64>() < 0.01) {
         parts.clone_from_slice(&scaled);
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HouseStyle {
     pub culture: String,
     pub weight: f64,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HouseMix {
     pub styles: Vec<HouseStyle>,
     /// `lot` (default), `block` or `quarter`.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub spread: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+/// The sources of one facet of a place (houses, monuments, farms, plots,
+/// streets): a mix for the whole place, for a growth zone or for a quarter.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HouseSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub city: Option<HouseMix>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub zones: BTreeMap<String, HouseMix>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub quarters: BTreeMap<String, HouseMix>,
+}
+
+impl HouseSettings {
+    /// No mix chosen at any level.
+    pub fn is_empty(&self) -> bool {
+        !self.city.as_ref().is_some_and(HouseMix::usable)
+            && !self.zones.values().any(HouseMix::usable)
+            && !self.quarters.values().any(HouseMix::usable)
+    }
+    /// The cultures of the place's mix with their weights (empty: no mix).
+    pub fn shares(&self) -> Vec<(&str, f64)> {
+        self.city.as_ref().map_or(vec![], |m| m.styles.iter().filter(|s| s.usable()).map(|s| (s.culture.as_str(), s.weight)).collect())
+    }
+    /// The culture carrying most weight in a zone's mix (else the place's mix); None: no mix there.
+    pub fn dominant(&self, zone: &str) -> Option<&str> {
+        let mix = [self.zones.get(zone), self.city.as_ref()].into_iter().flatten().find(|m| m.usable())?;
+        mix.styles.iter().filter(|s| s.usable()).max_by(|a, b| a.weight.total_cmp(&b.weight)).map(|s| s.culture.as_str())
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -224,8 +321,9 @@ mod tests {
         }
         assert!((parts[0].0.outer[2].y-parts[1].0.outer[0].y).abs() < 1e-6, "wings stay attached");
         lot.front = Some([super::super::Point { x:0.,y:0. }, super::super::Point { x:8.,y:0. }]);
-        lot.shape.holes.push(rectangle(10.,5.,12.,10.).outer);
-        let mut parts = vec![(rectangle(12.2,2.,20.,15.), "building")];
+        // Two bodies either side of a reserve: narrowing about their centre line would cross it.
+        lot.shape.holes.push(rectangle(9.,5.,12.4,10.).outer);
+        let mut parts = vec![(rectangle(2.,2.,8.,15.), "building"), (rectangle(12.5,2.,20.,15.), "building")];
         let original = parts.clone();
         scale_home(&mut parts, &lot, 0.8);
         assert_eq!(parts, original, "a contraction cannot invade a reserved hole");

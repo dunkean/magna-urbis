@@ -5,7 +5,28 @@
 //! by the regional road network and are not passed through this dry-land router.
 use super::{Point, Shape, Surface, geometry as g};
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
+/// Route queries since the start: lattice searches run, searches put off as fruitless, put-off
+/// searches run after all, and repeated queries answered from memory (`URBAN_PROFILE`).
+static TALLY: [AtomicUsize; 4] = [const { AtomicUsize::new(0) }; 4];
+const SEARCHED: usize = 0;
+const PUT_OFF: usize = 1;
+const RERUN: usize = 2;
+const REPEATED: usize = 3;
+/// `URBAN_ROUTE_FLOOD=off` (A/B measurement only): every search runs when asked, with no
+/// reachability flood and no remembered answer.
+fn plain_search() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var("URBAN_ROUTE_FLOOD").is_ok_and(|v| v == "off"))
+}
+pub(super) fn tally(label: &str) {
+    if std::env::var_os("URBAN_PROFILE").is_some() {
+        let [searched, put_off, rerun, repeated] = [SEARCHED, PUT_OFF, RERUN, REPEATED].map(|i| TALLY[i].load(Relaxed));
+        eprintln!("  routes up to {label}: {searched} searched, {put_off} put off, {rerun} run after all, {repeated} repeated");
+    }
+}
 
 const DIRS: [(isize, isize); 16] = [
     (1, 0),
@@ -390,9 +411,31 @@ pub(super) struct RoutePlanner<'a> {
     step: f64,
     nx: usize,
     ny: usize,
+    /// Grade of each lattice edge, the same for both of its directions: the value inspected from
+    /// the end a search first read it from.
     grades: Vec<f64>,
+    /// Grade of each lattice edge inspected from its own cell towards the next (the two
+    /// directions of an edge can differ in their last bits). Filled by the reachability flood
+    /// and read by `edge_grade`; empty until a flood runs.
+    directed: Vec<f64>,
     slots: Vec<Slot>,
     epoch: u32,
+    /// Cells the last reachability flood reached, marked with `flood_stamp`.
+    flood_seen: Vec<u32>,
+    flood_stamp: u32,
+    /// Start and grade limit of a flood that ran out of cells: its marks are every cell that
+    /// start can reach.
+    flood_whole: Option<[u64; 3]>,
+    /// Searches the flood proved fruitless and that have not run. A search fills `grades` in its
+    /// own order, so they run, in the order asked, before the next search that does run; a
+    /// planner dropped before that never pays for them.
+    put_off: Vec<(Point, Point, f64)>,
+    rerunning: bool,
+    /// No flood and no remembered answer (`plain_search`).
+    plain: bool,
+    /// Answers given for (start, end, grade limit) without a corridor. A repeated query takes the
+    /// same steps over edges the first one already cached, so it returns the same route.
+    answers: HashMap<[u64; 5], Option<Vec<Point>>>,
 }
 impl<'a> RoutePlanner<'a> {
     pub(super) fn new(surface: Surface<'a>, bounds: (f64, f64, f64, f64)) -> Self {
@@ -417,8 +460,16 @@ impl<'a> RoutePlanner<'a> {
             nx,
             ny,
             grades: vec![],
+            directed: vec![],
             slots: vec![],
             epoch: 0,
+            flood_seen: vec![],
+            flood_stamp: 0,
+            flood_whole: None,
+            put_off: vec![],
+            rerunning: false,
+            plain: plain_search(),
+            answers: HashMap::new(),
         }
     }
 
@@ -459,14 +510,119 @@ impl<'a> RoutePlanner<'a> {
         }
     }
 
+    /// Grade of the lattice edge from `cell` to `next`, inspected in that direction.
+    fn directed_grade(&mut self, cell: usize, next: usize, dir: usize) -> f64 {
+        if self.directed.is_empty() {
+            return self.inspect(self.position(cell), self.position(next)).unwrap_or(f64::INFINITY);
+        }
+        let edge = cell * HEADINGS + dir;
+        if self.directed[edge].is_nan() {
+            self.directed[edge] = self.inspect(self.position(cell), self.position(next)).unwrap_or(f64::INFINITY);
+        }
+        self.directed[edge]
+    }
+
     fn edge_grade(&mut self, cell: usize, next: usize, dir: usize) -> f64 {
         let edge = cell * HEADINGS + dir;
         if self.grades[edge].is_nan() {
-            let grade = self.inspect(self.position(cell), self.position(next)).unwrap_or(f64::INFINITY);
+            let grade = self.directed_grade(cell, next, dir);
             self.grades[edge] = grade;
             self.grades[next * HEADINGS + (dir + HEADINGS / 2) % HEADINGS] = grade;
         }
         self.grades[edge]
+    }
+
+    /// Whether no chain of passable lattice edges joins an origin to a goal. An edge is passable
+    /// here when either of its directions is within the limit; a search reads one of the two
+    /// (`edge_grade`), so every step a search can take is a step of this flood, and a goal the
+    /// flood misses is one no search reaches. Turn limits are ignored, which only admits more.
+    /// The flood writes `directed` only: `grades` keeps the order the searches fill it in.
+    fn unreachable(
+        &mut self,
+        start: Point,
+        end: Point,
+        origins: &[(usize, f64)],
+        goals: &[(usize, f64)],
+        max_grade: f64,
+    ) -> bool {
+        let key = [start.x.to_bits(), start.y.to_bits(), max_grade.to_bits()];
+        if self.flood_whole == Some(key) {
+            // Same start and limit as a flood that ran out: the same origins, all it reaches marked.
+            let stamp = self.flood_stamp;
+            return !goals.iter().any(|&(cell, _)| self.flood_seen[cell] == stamp);
+        }
+        self.flood_whole = None;
+        let cells = self.nx * self.ny;
+        if self.flood_seen.is_empty() {
+            self.flood_seen.resize(cells, 0);
+        }
+        if self.directed.is_empty() {
+            self.directed.resize(cells * HEADINGS, f64::NAN);
+        }
+        self.flood_stamp = self.flood_stamp.wrapping_add(1);
+        if self.flood_stamp == 0 {
+            self.flood_seen.fill(0);
+            self.flood_stamp = 1;
+        }
+        let stamp = self.flood_stamp;
+        let mut goal = vec![false; cells];
+        for &(cell, _) in goals {
+            goal[cell] = true;
+        }
+        // Cells nearest the end first, so a reachable goal is met after few cells. The order
+        // changes the work only: the answer is whether a goal is in the origins' component.
+        let mut open = BinaryHeap::new();
+        for &(cell, _) in origins {
+            if goal[cell] {
+                return false;
+            }
+            if self.flood_seen[cell] != stamp {
+                self.flood_seen[cell] = stamp;
+                open.push((std::cmp::Reverse(distance(self.position(cell), end).to_bits()), cell));
+            }
+        }
+        let limit = max_grade + 1e-8;
+        while let Some((_, cell)) = open.pop() {
+            let (x, y) = ((cell % self.nx) as isize, (cell / self.nx) as isize);
+            for (dir, &(dx, dy)) in DIRS.iter().enumerate() {
+                let (xx, yy) = (x + dx, y + dy);
+                if xx < 0 || yy < 0 || xx >= self.nx as isize || yy >= self.ny as isize {
+                    continue;
+                }
+                let next = yy as usize * self.nx + xx as usize;
+                if self.flood_seen[next] == stamp {
+                    continue;
+                }
+                if self.directed_grade(cell, next, dir) > limit
+                    && self.directed_grade(next, cell, (dir + HEADINGS / 2) % HEADINGS) > limit
+                {
+                    continue;
+                }
+                if goal[next] {
+                    return false;
+                }
+                self.flood_seen[next] = stamp;
+                open.push((std::cmp::Reverse(distance(self.position(next), end).to_bits()), next));
+            }
+        }
+        self.flood_whole = Some(key);
+        true
+    }
+
+    /// Run the searches put off so far, for the edge grades they cache: the next search must
+    /// find `grades` as if each had run when it was asked.
+    fn run_put_off(&mut self) {
+        if self.put_off.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.put_off);
+        self.rerunning = true;
+        for (start, end, max_grade) in pending {
+            TALLY[RERUN].fetch_add(1, Relaxed);
+            let found = self.search(start, end, max_grade, None);
+            debug_assert!(found.is_none(), "the flood rejected a goal the search reaches");
+        }
+        self.rerunning = false;
     }
 
     // A wrong-bank ramp has no path. Prove that on cells before expanding
@@ -523,6 +679,11 @@ impl<'a> RoutePlanner<'a> {
     /// Connect exact endpoints over dry land. A failed search returns no road;
     /// callers may explicitly try a separate stair limit and tag that result.
     pub(super) fn set_adaptation(&mut self, value: f64) {
+        if value != self.adaptation {
+            // Put-off searches and remembered answers belong to the cost in force so far.
+            self.run_put_off();
+            self.answers.clear();
+        }
         self.adaptation = value;
     }
 
@@ -543,6 +704,32 @@ impl<'a> RoutePlanner<'a> {
     }
 
     fn route_inner(
+        &mut self,
+        start: Point,
+        end: Point,
+        max_grade: f64,
+        shape: Option<&Shape>,
+    ) -> Option<Vec<Point>> {
+        if shape.is_some() || self.rerunning || self.plain {
+            return self.search(start, end, max_grade, shape);
+        }
+        let key = [
+            start.x.to_bits(),
+            start.y.to_bits(),
+            end.x.to_bits(),
+            end.y.to_bits(),
+            max_grade.to_bits(),
+        ];
+        if let Some(known) = self.answers.get(&key) {
+            TALLY[REPEATED].fetch_add(1, Relaxed);
+            return known.clone();
+        }
+        let answer = self.search(start, end, max_grade, None);
+        self.answers.insert(key, answer.clone());
+        answer
+    }
+
+    fn search(
         &mut self,
         start: Point,
         end: Point,
@@ -570,6 +757,21 @@ impl<'a> RoutePlanner<'a> {
         if origins.is_empty() || goals.is_empty() {
             return None;
         }
+        // A goal across water or beyond a slope has no route, and the search would expand every
+        // state it can reach to find that out. The flood settles it on cells; the search itself
+        // is put off (`put_off`). Bank lattices keep their own check below, corridors run as asked.
+        if !self.bank
+            && !self.plain
+            && shape.is_none()
+            && !self.rerunning
+            && self.unreachable(start, end, &origins, &goals, max_grade)
+        {
+            TALLY[PUT_OFF].fetch_add(1, Relaxed);
+            self.put_off.push((start, end, max_grade));
+            return None;
+        }
+        self.run_put_off();
+        TALLY[SEARCHED].fetch_add(1, Relaxed);
         if self.grades.is_empty() {
             self.grades.resize(self.nx * self.ny * HEADINGS, f64::NAN);
         }
@@ -596,10 +798,32 @@ impl<'a> RoutePlanner<'a> {
         }
         let epoch = self.epoch;
         let mut constraint_edges = shape.map(|_| vec![0_u8; self.grades.len()]);
+        // Per incoming heading, the turn cosine and the bend cost towards each outgoing heading,
+        // and the length of a step along each heading: constants of the lattice, computed once
+        // per search with the expressions the expansion uses.
+        let mut turns = [[(0.0_f64, 0.0_f64); HEADINGS]; HEADINGS];
+        let mut lengths = [0.0_f64; HEADINGS];
+        for (dir, &(dx, dy)) in DIRS.iter().enumerate() {
+            lengths[dir] = self.step * ((dx * dx + dy * dy) as f64).sqrt();
+            for (from, &incoming) in DIRS.iter().enumerate() {
+                let cosine = (incoming.0 * dx + incoming.1 * dy) as f64
+                    / (((incoming.0 * incoming.0 + incoming.1 * incoming.1) * (dx * dx + dy * dy))
+                        as f64)
+                        .sqrt();
+                // A hairpin is a built structure (retaining wall, turning
+                // space): it costs a fixed run of road, so a climb uses few
+                // hairpins and long legs instead of a lattice-sized sawtooth.
+                let hairpin = if cosine < -0.1 { HAIRPIN } else { 0.0 };
+                turns[from][dir] = (cosine, self.step * 0.35 * (1.0 - cosine).powi(2) + hairpin);
+            }
+        }
+        // Straight distance from each cell to the end, computed when first needed.
+        let mut ahead = vec![f64::NAN; self.nx * self.ny];
         let mut heap = BinaryHeap::new();
         // Initial directions are unconstrained at a junction. Subsequent states
         // retain incoming heading, so bend costs do not erase cheaper arrivals.
         for (cell, cost) in origins {
+            ahead[cell] = distance(self.position(cell), end);
             for dir in 0..HEADINGS {
                 let state = cell * HEADINGS + dir;
                 self.slots[state] = Slot {
@@ -608,7 +832,7 @@ impl<'a> RoutePlanner<'a> {
                     parent: NONE,
                 };
                 heap.push(Entry {
-                    estimate: cost + distance(self.position(cell), end),
+                    estimate: cost + ahead[cell],
                     cost,
                     state,
                 });
@@ -630,7 +854,7 @@ impl<'a> RoutePlanner<'a> {
             if entry.cost + tails[cell] < best.0 {
                 best = (entry.cost + tails[cell], entry.state);
             }
-            let incoming = DIRS[entry.state % HEADINGS];
+            let turn = &turns[entry.state % HEADINGS];
             let x = (cell % self.nx) as isize;
             let y = (cell / self.nx) as isize;
             for (dir, &(dx, dy)) in DIRS.iter().enumerate() {
@@ -638,10 +862,7 @@ impl<'a> RoutePlanner<'a> {
                 if xx < 0 || yy < 0 || xx >= self.nx as isize || yy >= self.ny as isize {
                     continue;
                 }
-                let cosine = (incoming.0 * dx + incoming.1 * dy) as f64
-                    / (((incoming.0 * incoming.0 + incoming.1 * incoming.1) * (dx * dx + dy * dy))
-                        as f64)
-                        .sqrt();
+                let (cosine, bend) = turn[dir];
                 // Allow a tight switchback on a uniformly steep flank; forcing
                 // a wider bend would require an over-grade uphill segment.
                 if cosine < -0.71 {
@@ -667,13 +888,7 @@ impl<'a> RoutePlanner<'a> {
                 if grade > max_grade + 1e-8 {
                     continue;
                 }
-                let length = self.step * ((dx * dx + dy * dy) as f64).sqrt();
-                // A hairpin is a built structure (retaining wall, turning
-                // space): it costs a fixed run of road, so a climb uses few
-                // hairpins and long legs instead of a lattice-sized sawtooth.
-                let hairpin = if cosine < -0.1 { HAIRPIN } else { 0.0 };
-                let bend = self.step * 0.35 * (1.0 - cosine).powi(2) + hairpin;
-                let cost = entry.cost + self.cost(length, grade, max_grade) + bend;
+                let cost = entry.cost + self.cost(lengths[dir], grade, max_grade) + bend;
                 let state = next * HEADINGS + dir;
                 if self.slots[state].epoch != epoch || cost < self.slots[state].cost {
                     self.slots[state] = Slot {
@@ -681,8 +896,11 @@ impl<'a> RoutePlanner<'a> {
                         cost,
                         parent: entry.state,
                     };
+                    if ahead[next].is_nan() {
+                        ahead[next] = distance(self.position(next), end);
+                    }
                     heap.push(Entry {
-                        estimate: cost + distance(self.position(next), end),
+                        estimate: cost + ahead[next],
                         cost,
                         state,
                     });
@@ -801,6 +1019,64 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn put_off_searches_leave_the_routes_and_grade_cache_of_running_them() {
+        let n = 64;
+        let width = 320.0;
+        // A slope with ripples: the two directions of an edge differ in their last bits.
+        let height: Vec<f32> = (0..n * n)
+            .map(|i| {
+                let x = (i % n) as f64 * 5.0 + 2.5;
+                let y = (i / n) as f64 * 5.0 + 2.5;
+                (0.02 * x + 1.5 * (x / 17.0).sin() + (y / 11.0).cos()) as f32
+            })
+            .collect();
+        // A river from edge to edge and a pond on its west bank.
+        let water: Vec<u8> = (0..n * n)
+            .map(|i| {
+                let (x, y) = (i % n, i / n);
+                u8::from((30..32).contains(&x) || (18..22).contains(&x) && (26..36).contains(&y))
+            })
+            .collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        let bounds = (10.0, 10.0, 310.0, 310.0);
+        let mut planner = RoutePlanner::new(surface, bounds);
+        planner.plain = false;
+        // The reference runs every search when asked: no flood, no remembered answer.
+        let mut reference = RoutePlanner::new(surface, bounds);
+        reference.plain = true;
+        let west = Point { x: 60.3, y: 150.2 };
+        let south = Point { x: 40.7, y: 250.3 };
+        let far = [Point { x: 250.1, y: 160.4 }, Point { x: 251.7, y: 120.9 }];
+        let behind_pond = Point { x: 130.6, y: 151.3 };
+        let queries = [
+            (west, far[0]),
+            (west, far[1]),
+            (west, behind_pond),
+            (west, far[0]),
+            (south, far[1]),
+            (west, Point { x: 70.5, y: 100.4 }),
+            (south, behind_pond),
+        ];
+        for (k, &(a, b)) in queries.iter().enumerate() {
+            assert_eq!(planner.route(a, b, 0.5), reference.route(a, b, 0.5), "query {k}");
+            if k == 1 {
+                assert_eq!(planner.put_off.len(), 2);
+                assert!(planner.slots.is_empty(), "a fruitless search ran");
+            }
+            if k == 2 {
+                assert!(planner.put_off.is_empty(), "the search ran before the ones put off");
+                assert!(planner.route(a, b, 0.5).is_some_and(|path| path.len() > 2));
+            }
+        }
+        planner.run_put_off();
+        assert!(reference.route(west, far[0], 0.5).is_none());
+        assert!(
+            planner.grades.iter().map(|g| g.to_bits()).eq(reference.grades.iter().map(|g| g.to_bits())),
+            "edge grades differ from those of a planner that ran every search"
+        );
     }
 
     #[test]

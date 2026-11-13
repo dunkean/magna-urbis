@@ -4,13 +4,14 @@ import { projectedTexturePixels } from './terrain3dTextureSize';
 import { waterSeasonUniforms } from '../render/seasonPalette';
 import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
-import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
+import { shoreRingPixels, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { captureWebGlFrame } from './illustrationDepth';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { ShaderVariants, specializeShader } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { UNDERDARK_GLSL } from '../../../rust/bridge/terrainRenderUnderdark';
 import { CITY_WATER_3D_GLSL } from '../../../rust/bridge/cityWater3d';
 import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
@@ -59,7 +60,13 @@ export interface Terrain3dTileContent {
    * alpha is water cover (it also clears the canopy), so tints cannot travel in it. */
   semantic?: TexImageSource;
 }
-export interface Terrain3dLookSettings { paperMap?: boolean; ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural'; waterVisible?: boolean; groundCover?: boolean }
+export interface Terrain3dLookSettings { paperMap?: boolean; ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural'; waterVisible?: boolean; groundCover?: boolean;
+  /** Underdark world: the material ground draws the cave floor, rock masses (the layer's cave mask) and cave water, no trees. */
+  underdark?: boolean;
+  /** Underdark: lantern glow around towns on the cave floor, x, y, radius (m) per town, up to 16. */
+  townGlow?: Float32Array;
+  /** Underdark: fungal farm lots (underdarkFarmBeds), up to 32. */
+  farmBeds?: Float32Array }
 export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
@@ -220,6 +227,9 @@ uniform int hasSemanticTile,hasPreviousSemanticTile;
 uniform vec4 semanticRect,previousSemanticRect;
 uniform vec4 groundRect,previousGroundRect;
 uniform int hasGroundTile,hasPreviousGroundTile;
+// Underdark: the cave mask of the surface layer (1 = rock, same grid as macroField) takes the forest beach slot
+// (uForestBeach, uForestBeachRect): no forest is drawn underground, and the WebGPU stage has no texture binding left.
+uniform int uUnderdark; uniform int uHasCave; uniform vec4 uTownGlow[16]; uniform int uTownGlowCount;
 in vec2 texcoord;
 in vec3 normal;
 in vec3 world;
@@ -244,6 +254,7 @@ float forestWaterCoverage(vec2 p){
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${groundCoverInputsGlsl(forestMaterial)}
 ${RENDER_V2_GLSL}
+${UNDERDARK_GLSL}
 vec4 groundTileSample(vec4 rect,bool previous,int slot){
   vec2 uv=rect.xy+texcoord*rect.zw;
   if(slot<0){if(previous)return texture(previousSemanticTile,uv);return texture(semanticTile,uv);}
@@ -310,13 +321,49 @@ void main() {
   vec3 base=projected.rgb;
   if(groundEnabled==1) {
     float footprint=max(.001,max(length(dFdx(physical)),length(dFdy(physical))));
+    if(uUnderdark==1){
+      // The 2D map's underground (terrainGl.ts): occlusion rings, rim and rock from the same mask; no Render v2 material.
+      vec3 s=groundMacroSurface(physical.xz);
+      float rock=0.,rim=0.,ao=0.;
+      if(uHasCave==1){
+        vec3 rect=uForestBeachRect;float cell=rect.z/float(textureSize(uForestBeach,0).x);vec2 uv=(physical.xz-rect.xy)/rect.z;
+        float raw=texture(uForestBeach,uv).r,near=0.,far=0.;
+        for(int k=0;k<4;k++){
+          vec2 d=k==0?vec2(1.,0.):k==1?vec2(-1.,0.):k==2?vec2(0.,1.):vec2(0.,-1.);
+          near+=texture(uForestBeach,uv+d*1.5*cell/rect.z).r;far+=texture(uForestBeach,uv+vec2(d.x-d.y,d.x+d.y)*.7071*4.*cell/rect.z).r;
+        }
+        float edge=max(.376*footprint/cell,1e-3);
+        rock=clamp((raw-.5)/edge+.5,0.,1.);
+        ao=clamp(.75*near*.25+.35*far*.25,0.,1.)*(1.-rock);
+        float ledge=clamp(.375*6./cell,.02,.45);
+        rim=smoothstep(.5,.5+ledge*.35,raw)*(1.-smoothstep(.5+ledge*.35,.5+ledge,raw))*clamp(cell/footprint*.25,0.,1.);
+      }
+      float cover=displayWaterVisible==0?0.:(hasCanopyWater==1||hasPreviousCanopyWater==1)?displayWaterCover(physical.xz):projected.a;
+      base=underdarkFloor(s,physical.xz,footprint,clamp(cover*1.5,0.,1.),ao);
+      float glow=0.;
+      for(int k=0;k<16;k++){if(k>=uTownGlowCount)break;vec4 g=uTownGlow[k];float d=length(physical.xz-g.xy)/max(g.z,1.);glow+=exp(-d*d*.9);}
+      base+=vec3(.20,.12,.05)*min(glow,1.2)*(1.-.5*ao);
+      if(uRenderV2==1&&(hasGroundTile==1||hasPreviousGroundTile==1)){
+        // Streets and yards of the city tiles, dimmed to the cave's light (the city lamps light them).
+        vec4 tile=mix(hasPreviousGroundTile==1?groundTileSample(previousGroundRect,true,0):vec4(0.),hasGroundTile==1?groundTileSample(groundRect,false,0):vec4(0.),textureBlend);
+        float a=clamp(tile.a,0.,1.);
+        base=mix(base,tile.rgb/max(tile.a,.001)*.32*udLight(s.yz),a);
+      }
+      float depth=s.x<0.?-s.x:6.*cover;
+      base=mix(base,underdarkWater(physical.xz,footprint,depth,1.-smoothstep(0.,.9,cover)*smoothstep(0.,3.,depth)),cover);
+      vec3 rockColor=underdarkRock(s,physical.xz,footprint,rim);
+      base=uPaperMap==1?mix(underdarkPaper(base),underdarkPaper(rockColor)*vec3(.42,.38,.36),rock):mix(base,rockColor,rock);
+    } else {
     surfaceGroundReadInputs(physical.xz,footprint);
     vec3 s=groundMacroSurface(physical.xz);
     float shore=max(s.x,0.)/max(length(s.yz),.0001);
     float openness=0.;
-    if(uRenderV2>0&&s.x>=0.&&s.x<12.&&length(s.yz)<.5){
-      vec2 ring=textureLod(uShoreRing,(physical.xz-uShoreRingRect.xy)/uShoreRingRect.z,0.).rg;
-      shore=min(shore,ring.x);openness=ring.y;
+    if(uRenderV2>0){
+      // One fetch of the baked ring per fragment: shore distance and openness (RG, read near the sea), sky
+      // occlusion and horizon tangent toward the light (BA, the relief light of v2ShadeGround).
+      vec4 ring=textureLod(uShoreRing,(physical.xz-uShoreRingRect.xy)/uShoreRingRect.z,0.);
+      if(s.x>=0.&&s.x<12.&&length(s.yz)<.5){shore=min(shore,ring.x);openness=ring.y;}
+      v2ReliefSet(ring.ba,s.yz);
     }
     GroundMaterial m;
     vec3 macro=earthMaterial(s,physical.xz,max(footprint,1.),0.,shore,openness);
@@ -354,6 +401,7 @@ void main() {
       base=mix(base,groundContourColor,a);
     }
     if(uNight==1)base=moonlight(base);
+    }
     vec4 semantic=mix(groundTileSample(previousSemanticRect,true,hasPreviousGroundTile==1?1:-1)*float(hasPreviousSemanticTile),
       groundTileSample(semanticRect,false,hasGroundTile==1?1:-1)*float(hasSemanticTile),textureBlend);
     base=base*(1.-semantic.a)+semantic.rgb;
@@ -411,7 +459,7 @@ uniform int uNight;
 out vec4 color;
 void main() {
   float t = clamp(gl_FragCoord.y / height, 0., 1.);
-  color = vec4(uNight==1?mix(vec3(.035,.046,.09),vec3(.008,.014,.04),pow(t,.8)):mix(vec3(.89, .92, .91), vec3(.49, .68, .81), pow(t, .8)), 1.);
+  color = vec4(uNight==2?mix(vec3(.022,.020,.024),vec3(.004,.004,.006),pow(t,.6)):uNight==1?mix(vec3(.035,.046,.09),vec3(.008,.014,.04),pow(t,.8)):mix(vec3(.89, .92, .91), vec3(.49, .68, .81), pow(t, .8)), 1.);
 }`;
 /** GLSL sources translated to WGSL for the WebGPU backend (web/scripts/wgsl_shaders_3d.ts). */
 export const TERRAIN_3D_GLSL = { vertex: vertexShader, ground: fragmentShader, map: TERRAIN_3D_MAP_FRAGMENT, skyVertex, skyFragment };
@@ -710,7 +758,10 @@ export class Terrain3d {
   private billboardBuffer?: WebGLBuffer;
   private billboardAtlas?: { source: HTMLCanvasElement; texture: WebGLTexture };
   protected macroTexture!: WebGLTexture;
-  private shoreRing?: { layer: object; texture: WebGLTexture };
+  protected caveTexture?: WebGLTexture;
+  private shoreRing?: { layer: object; revision: number; texture: WebGLTexture };
+  /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
+  protected readonly ringChanged = (): void => this.request();
   private empty!: WebGLTexture;
   protected waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number; water?: NonNullable<Terrain3dTileContent['water']> }>();
   /** Satellite near trees (terrain3dTrees.ts): instance count and the eye/heading they were built for. */
@@ -855,6 +906,7 @@ export class Terrain3d {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.seams); gl.bufferData(gl.ARRAY_BUFFER, (surfaceVertices + 4 * side) * 3 * 4, gl.DYNAMIC_DRAW);
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
     this.macroTexture=this.uploadMacroField(this.layer);
+    this.caveTexture=this.uploadCaveMask(this.layer);
     this.shoreRing = undefined;
     this.empty = this.uploadMacroField();
     // A restored context comes back empty: re-upload the retained forest rasters.
@@ -871,7 +923,7 @@ export class Terrain3d {
   /** The settings' ground variant once linked; meanwhile the last drawn one, or the variant without
    * ground material (the projected map, quick to compile), stands in. */
   private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
-    const forest = !!this.forest;
+    const forest = !!this.forest && !settings?.underdark;
     const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes,
       uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank) };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(glLandDetailUnit(this.gl) === undefined ? withoutLandDetail(fragmentShader) : fragmentShader, constants)], wait);
@@ -891,6 +943,17 @@ export class Terrain3d {
     if (!locations) { locations = new Map(); this.uniformLocations.set(shader, locations); }
     if (!locations.has(name)) locations.set(name, this.gl.getUniformLocation(shader, name));
     return locations.get(name)!;
+  }
+  /** Underdark rock mask of a surface layer (R8, 255 = rock, linear: the shader's rim and occlusion read its ramp). */
+  protected uploadCaveMask(layer?:HeightLayer):WebGLTexture|undefined {
+    if(!layer?.cave?.length||layer.cave.length!==layer.n*layer.n)return undefined;
+    const gl=this.gl,texture=gl.createTexture()!,mask=new Uint8Array(layer.cave.length);
+    for(let i=0;i<mask.length;i++)mask[i]=layer.cave[i];
+    gl.bindTexture(gl.TEXTURE_2D,texture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,layer.n,layer.n,0,gl.RED,gl.UNSIGNED_BYTE,mask);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    return texture;
   }
   protected uploadMacroField(layer?:HeightLayer):WebGLTexture {
     const gl=this.gl,texture=gl.createTexture()!;
@@ -939,6 +1002,7 @@ export class Terrain3d {
     this.layer = layer; this.water = water; this.waterVisible = waterVisible;
     this.billboardDirty = true;
     this.deleteTexture(this.macroTexture);this.macroTexture=this.uploadMacroField(layer);
+    if(this.caveTexture)this.deleteTexture(this.caveTexture);this.caveTexture=this.uploadCaveMask(layer);
     let low = Infinity, high = -Infinity, slope = 0;
     const cell = layer.width / layer.n;
     for (let i = 0; i < layer.data.length; i++) {
@@ -1833,7 +1897,7 @@ export class Terrain3d {
     const g = this.groundSettings, field = this.forestField;
     if (!g || !field || this.useMapShader || !((g.renderV2 ?? 0) > 0) || g.forestBrushes) return undefined;   // satellite-2 (paperMap) shares the satellite near trees
     return { field, occupation: this.occupation?.data, seed: g.seed >>> 0, climate: g.climate, renderV2: g.renderV2 ?? 0,
-      zone: renderV2ZoneUniform(g.climateZone), season: g.v2Season ?? .5, height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
+      zone: renderV2ZoneUniform(g.climateZone), season: g.v2Season ?? .5, crownSnow: g.v2Calendar?.crownSnow, height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
   }
   /** Displayed water cover at a point from the finest tile water mask holding it (nearest texel). */
   private waterAt(x: number, y: number): number {
@@ -1852,7 +1916,7 @@ export class Terrain3d {
     if (!inputs) { this.treeCount = 0; this.treeKey = ''; return; }
     const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
     const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
-    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.seed].join('|');
+    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.crownSnow, inputs.seed].join('|');
     if (key === this.treeKey && (!this.fullQualityCapture || this.treeReadyKey === key)) return;
     this.treeKey = key;
     if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; return; }
@@ -1888,7 +1952,7 @@ export class Terrain3d {
   }
   private drawTrees(frame: FrameGeometry): void {
     const gl = this.gl, p = this.treeProgram, c = this.camera;
-    if (!p || !this.treeCount) return;
+    if (!p || !this.treeCount || this.groundSettings?.underdark) return;
     gl.useProgram(p); gl.bindVertexArray(this.treeVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
     gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform4fv(this.uniform('treeFade', p), this.forestTreesUniform(frame));
@@ -2096,7 +2160,7 @@ export class Terrain3d {
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
     const night=this.lookSettings.ambience==='night';
-    gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.uniform1i(this.uniform('uNight',this.skyProgram),+night); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.uniform1i(this.uniform('uNight',this.skyProgram),this.groundSettings?.underdark?2:+night); gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.terrainProgram = this.useMapShader ? this.mapProgram! : this.groundShader(this.groundSettings);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.useProgram(this.terrainProgram);
     gl.uniform1i(this.uniform('uQuality'), this.frameQuality);
@@ -2128,13 +2192,19 @@ export class Terrain3d {
     }
     if(settings){
       gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);setSeasonCalendarGl(gl,name=>this.uniform(name),settings.climateZone,settings.v2Calendar);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
-      if((settings.renderV2??0)>0&&this.shoreRing?.layer!==layer){
+      // Shore ring and relief light (RGBA16F: shore distance, openness, sky occlusion, horizon tangent toward the
+      // light); a new light azimuth re-bakes the last channel off the frame path and bumps the revision.
+      const ringPixels=(settings.renderV2??0)>0?shoreRingPixels(layer,settings.lighting.azimuth,this.ringChanged):undefined;
+      if(ringPixels&&(this.shoreRing?.layer!==layer||this.shoreRing.revision!==ringPixels.revision)){
         if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
-        this.shoreRing={layer,texture:shoreRingTexture(gl,shoreRingFor(layer))};
+        this.shoreRing={layer,revision:ringPixels.revision,texture:shoreRingTexture(gl,ringPixels)};
       }
-      const ring=(settings.renderV2??0)>0?shoreRingFor(layer):undefined;
+      const ring=ringPixels?.grid;
       gl.activeTexture(gl.TEXTURE10);gl.bindTexture(gl.TEXTURE_2D,this.shoreRing?.texture??this.empty);
       gl.uniform1i(this.uniform('uShoreRing'),10);gl.uniform3f(this.uniform('uShoreRingRect'),ring?.x??0,ring?.y??0,ring?.width??1);
+      gl.uniform1i(this.uniform('uUnderdark'),settings.underdark?1:0);
+      {const g=settings.townGlow??new Float32Array(0),a=new Float32Array(64);for(let k=0;k<Math.min(16,g.length/3|0);k++)a.set(g.subarray(k*3,k*3+3),k*4);gl.uniform4fv(this.uniform('uTownGlow[0]'),a);gl.uniform1i(this.uniform('uTownGlowCount'),Math.min(16,g.length/3|0));}
+      {const f=settings.farmBeds??new Float32Array(128);gl.uniform4fv(this.uniform('uFarmBeds[0]'),f);let n=0;for(let k=0;k<32;k++)if(f[k*4+2]>0)n=k+1;gl.uniform1i(this.uniform('uFarmBedCount'),n);}
       const contours=settings.contours;
       gl.uniform1i(this.uniform('groundContours'),contours?1:0);
       gl.uniform1f(this.uniform('groundContourStep'),contours?.step??1);
@@ -2144,6 +2214,12 @@ export class Terrain3d {
     }
     // Textures 3 forest field, 4 occupation, 8 bank envelope.
     bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, true, 3, 4, 8, 9);
+    // Underdark: the cave mask in the forest beach slot (unit 9), forest off.
+    gl.uniform1i(this.uniform('uHasCave'),settings?.underdark&&this.caveTexture?1:0);
+    if(settings?.underdark){
+      gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,this.caveTexture??this.empty);
+      gl.uniform1i(this.uniform('uHasForestBeach'),0);gl.uniform3f(this.uniform('uForestBeachRect'),layer.x,layer.y,layer.width);
+    }
     bindLandDetail(gl, name => this.uniform(name), this.landDetail, this.empty);
     gl.uniform1i(this.uniform('uPaperMap'), settings?.paperMap ? 1 : 0);
     gl.uniform4fv(this.uniform('uForestTrees'), this.forestTreesUniform(frame));
@@ -2373,7 +2449,7 @@ export class Terrain3d {
     this.releaseMsaa();
     if (this.billboardProgram) gl.deleteProgram(this.billboardProgram); if (this.billboardVao) gl.deleteVertexArray(this.billboardVao); if (this.billboardBuffer) gl.deleteBuffer(this.billboardBuffer); if (this.billboardAtlas) gl.deleteTexture(this.billboardAtlas.texture);
     for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
-    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty);if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
+    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); if(this.caveTexture)gl.deleteTexture(this.caveTexture); gl.deleteTexture(this.empty);if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
     if (this.mapProgram) gl.deleteProgram(this.mapProgram); this.groundVariants.reset(true); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();

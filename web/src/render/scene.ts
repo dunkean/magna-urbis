@@ -24,6 +24,7 @@ import { offsetRibbon, polygonCentroid } from '../gen/core/geom';
 import { pointInRing, orientPos } from '../gen/geo/poly';
 import { TileIndex, boxesOf, chunkPolyline } from './tileindex';
 import { holdingTone } from './furrows';
+import { pavementSites, splitByPavement, type RoadPavement } from './roadPavement';
 
 export const TILE_SIZE = 250;
 
@@ -44,6 +45,8 @@ export interface LineLayer {
   kind: string;
   /** Nominal width in meters. */
   width: number;
+  /** Regional roads: surface of the place they cross (roadPavement.ts); absent = earth and gravel. */
+  pavement?: RoadPavement;
   lines: Polyline[];
   index: TileIndex;
   tileKeys?: string[];
@@ -312,8 +315,18 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
 
   // regional roads
   const roadW = { major: 8, minor: 3.6, track: 3 } as const;
+  // Surface of the made roads: that of the nearest settlement (roadPavement.ts). Tracks stay earth.
+  const paved = pavementSites(world0.settlements?.length
+    ? world0.settlements.map((s) => ({ center: s.center, culture: (s.main ? world0.urban?.culture : s.urban?.culture) ?? s.culture, era: (s as { era?: string }).era }))
+    : [{ center: { x: S / 2, y: S / 2 }, culture: world0.urban?.culture ?? world0.options.culture }]);
   for (const kind of ['track', 'minor', 'major'] as const) {
-    addLines('road-' + kind, 'road', kind, roadW[kind], (world.roads ?? []).filter((r) => r.kind === kind).map((r) => r.path));
+    const paths = (world.roads ?? []).filter((r) => r.kind === kind).map((r) => r.path);
+    if (!paved || kind === 'track') { addLines('road-' + kind, 'road', kind, roadW[kind], paths); continue; }
+    const pieces = paths.flatMap((path) => splitByPavement(path, paved));
+    addLines('road-' + kind, 'road', kind, roadW[kind], pieces.filter((p) => p.pavement === 'earth').map((p) => p.path as Polyline));
+    const name = 'road-' + kind + '-asphalt';
+    addLines(name, 'road', kind, roadW[kind], pieces.filter((p) => p.pavement === 'asphalt').map((p) => p.path as Polyline));
+    const layer = lines[lines.length - 1]; if (layer?.name === name) layer.pavement = 'asphalt';
   }
   }
 

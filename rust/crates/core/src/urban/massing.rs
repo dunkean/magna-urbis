@@ -5,7 +5,8 @@
 //!
 //! The culture's tissue declares its roof tradition and storey range
 //! (`catalogue.json` presets, `params.arch`); cultures without one read the
-//! table below. Heights vary with the lot's zone and pressure (taller core),
+//! tradition of their style traits (`forms/styles.json`), like every other
+//! building trait of a culture: this module never tests a culture's name. Heights vary with the lot's zone and pressure (taller core),
 //! wealth, street corners and a per-lot draw (adjoining houses of one row
 //! differ); rear wings and annexes stand lower, landmark parts by role.
 //! Proportions follow measured references: storeys of 2.5 m in the
@@ -71,41 +72,18 @@ const fn t(
     }
 }
 
-/// Cultures whose tissue declares no `arch` (catalogue presets).
-fn table(culture: &str) -> Option<Tradition> {
-    Some(match culture {
-        "al-andalus" => t("hip", 24.0, [1, 2], "tile", "plaster"),
-        "bagan" => t("hip", 32.0, [1, 2], "tile", "wood"),
-        "budj-bim" | "goblin-warren" | "lizardfolk-swamp" => t("cone", 40.0, [1, 1], "thatch", "stone"),
-        "caucasian-highland" | "himalayan-terraces" => t("flat", 0.0, [2, 3], "earth", "stone"),
-        "dravidian-temple" | "rajput-fort" => t("flat", 0.0, [1, 3], "plaster", "stone"),
-        "egyptian-planned" | "hausa-kano" | "mesopotamian" | "levantine-tell" | "oasis-caravan" => {
-            t("flat", 0.0, [1, 2], "earth", "earth")
-        }
-        "indus-planned" => t("flat", 0.0, [1, 2], "earth", "brick"),
-        "ksar-oasis" => t("flat", 0.0, [2, 3], "earth", "earth"),
-        "hadhrami-tower" => t("flat", 0.0, [4, 7], "earth", "earth"),
-        "tibetan-monastery" => t("flat", 0.0, [2, 4], "earth", "stone"),
-        "nubian-fortified" => t("dome", 0.0, [1, 2], "earth", "earth"),
-        "merfolk-tidal" => t("dome", 0.0, [1, 2], "stone", "stone"),
-        "ethiopian-highland" | "great-zimbabwe" => t("cone", 38.0, [1, 1], "thatch", "wood"),
-        // A landmark or untyped lot of a tipi people is a tipi too, never a stone nave.
-        "native-plains" => Tradition { form: "tipi", ..t("tent", 40.0, [1, 1], "hide", "hide") },
-        "mongol-ordu" => t("tent", 30.0, [1, 1], "felt", "hide"),
-        "siberian-camp" => t("tent", 36.0, [1, 1], "hide", "hide"),
-        "flemish-cloth-town" => Tradition {
-            gable_to_street: true,
-            ..t("gable", 52.0, [3, 4], "tile", "brick")
-        },
-        "rynek-town" => t("gable", 45.0, [2, 4], "tile", "brick"),
-        "italian-comune" => t("hip", 22.0, [3, 5], "tile", "brick"),
-        "newar" => t("hip", 30.0, [3, 4], "tile", "brick"),
-        "vietnamese-citadel" => t("hip", 30.0, [1, 2], "tile", "wood"),
-        "giant-hold" => t("gable", 40.0, [2, 3], "stone", "stone"),
-        "javanese-courts" => t("pyramid", 34.0, [1, 1], "tile", "wood"),
-        "maori-pa" | "slavic-gord" => t("gable", 42.0, [1, 2], "thatch", "wood"),
-        "mississippian" | "yoruba" => t("hip", 40.0, [1, 1], "thatch", "earth"),
-        _ => return None,
+/// Roof tradition a culture's style traits declare, for a tissue without
+/// `arch` (`forms/styles.json`, `cultures.<id>.traits.tradition`). Its `form`
+/// makes a landmark or untyped lot of a tipi people a tipi too, never a stone nave.
+fn declared(traits: &'static super::forms::kit::CultureTraits) -> Option<Tradition> {
+    traits.tradition.as_ref().map(|d| Tradition {
+        roof: d.roof.as_str(),
+        pitch: d.pitch,
+        storeys: d.storeys,
+        cover: d.cover.as_str(),
+        wall: d.wall.as_str(),
+        gable_to_street: d.gable_to_street,
+        form: d.form.as_str(),
     })
 }
 
@@ -145,10 +123,11 @@ fn material_style(material: &str, roof: &str, typology: &str) -> (Option<&'stati
     }
 }
 
-/// Roof tradition of the lot: the tissue's `arch` first, else the table, else
-/// a plain tiled gable.
+/// Roof tradition of the lot: the tissue's `arch` first, else the culture's
+/// declared tradition, else a plain tiled gable.
 fn tradition(arch: &Value, culture: &str) -> Tradition {
-    let fallback = table(culture).unwrap_or(t("gable", 38.0, [1, 2], "tile", "plaster"));
+    let traits = super::forms::kit::traits(culture);
+    let fallback = declared(traits).unwrap_or(t("gable", 38.0, [1, 2], "tile", "plaster"));
     let Some(roof) = arch["roof"].as_str() else {
         return fallback;
     };
@@ -163,11 +142,7 @@ fn tradition(arch: &Value, culture: &str) -> Tradition {
     // Mediterranean tile roofs stay low whatever the tissue's material;
     // elsewhere a gable's pitch follows its cover (steep thatch and timber
     // towns, low plank and turf roofs).
-    let mediterranean = matches!(
-        culture,
-        "roman-core" | "byzantine-greek" | "ottoman" | "venetian-lagoon" | "italian-comune"
-            | "al-andalus" | "bastide" | "levantine-tell"
-    );
+    let mediterranean = traits.mediterranean;
     let gable_pitch = match material {
         _ if mediterranean => 24.0,
         "timber" => 50.0,
@@ -216,6 +191,13 @@ fn tradition(arch: &Value, culture: &str) -> Tradition {
     }
 }
 
+/// Roof kind, pitch (degrees), cover and wall of a lot's tradition: the
+/// building traits a style kit is chosen from (`forms::kit`).
+pub(super) fn house_traits(arch: &Value, culture: &str) -> (&'static str, f64, &'static str, &'static str) {
+    let t = tradition(arch, culture);
+    (t.roof, t.pitch, t.cover, t.wall)
+}
+
 pub(super) struct Input<'a> {
     pub parts: &'a [(Shape, &'static str)],
     pub arch: &'a Value,
@@ -239,6 +221,10 @@ pub(super) struct Input<'a> {
     pub seed: &'a str,
     /// Activity archetype id (activities.json) of a specialised service lot, "" otherwise.
     pub archetype: &'a str,
+    /// `houseComplexity: complex`: composite roofs (valleys, overhangs), the
+    /// kit's extra roof kinds, chimneys and dormers on homes. Monuments and
+    /// utility buildings always compose their roofs.
+    pub complex: bool,
 }
 
 /// Oriented box of a ring along a chosen axis: centre, unit axis, half length
@@ -335,23 +321,31 @@ pub(super) fn tower_house(culture: &str, arch: &Value) -> bool {
     arch["typology"].as_str().unwrap_or("").contains("tower") || tradition(arch, culture).storeys[0] >= 4
 }
 
-/// Pile cultures (stilt houses, merfolk, lizardfolk): small light bodies on posts.
+/// Pile cultures (stilt houses by typology or by the culture's home form, and
+/// the cultures whose traits say `piles`): small light bodies on posts.
 pub(super) fn pile_house(culture: &str, arch: &Value) -> bool {
-    tradition(arch, culture).form == "stilt" || super::culture::house_parameters(culture).1 == "stilt" || culture == "lizardfolk-swamp"
+    let traits = super::forms::kit::traits(culture);
+    tradition(arch, culture).form == "stilt" || traits.form == "stilt" || traits.piles
 }
 
 /// Inhabitants' size against a human (doors, windows, storeys): small folk build small.
 fn body_scale(culture: &str) -> f64 {
-    match culture { "gnomish" => 0.6, "halfling" => 0.65, "goblin-warren" => 0.75, _ => 1.0 }
+    let scale = super::forms::kit::traits(culture).body_scale;
+    if scale > 0.0 { scale } else { 1.0 }
 }
 
-/// Facade openness 0..1 (windows per wall): thick masonry in hot dry or Mediterranean climates has few small
-/// openings, wooden Ottoman houses somewhat more; temperate and cold cultures are fully open (1).
+/// Facade openness 0..1 (windows per wall): thick masonry in hot dry or Mediterranean climates (the
+/// Mediterranean and the flavored cultures) has few small openings, their light walls the openness the
+/// culture states (wooden Ottoman houses: somewhat more); temperate and cold cultures are fully open (1).
+/// A culture's own `openness` replaces all of this.
 fn facade_openness(culture: &str, wall: &str) -> f64 {
+    let traits = super::forms::kit::traits(culture);
+    if traits.openness > 0.0 {
+        return traits.openness;
+    }
     let masonry = matches!(wall, "stone" | "plaster" | "brick" | "earth" | "coral");
-    let warm = matches!(culture, "roman-core" | "byzantine-greek" | "venetian-lagoon" | "italian-comune" | "al-andalus" | "bastide")
-        || flavor(culture) != "other";
-    match (warm, masonry) { (true, true) => 0.5, (true, false) if culture == "ottoman" => 0.8, _ => 1.0 }
+    let warm = traits.mediterranean || !traits.flavor.is_empty();
+    match (warm, masonry) { (true, true) => 0.5, (true, false) if traits.light_wall_openness > 0.0 => traits.light_wall_openness, _ => 1.0 }
 }
 
 /// Settlement size on 0..1: 500 inhabitants (or fewer) 0, 20 000 and more 1 (unknown: 1).
@@ -396,7 +390,7 @@ fn gradient_floors(m: &Input, tr: &Tradition, floors: u32) -> u32 {
 fn small_home(m: &Input) -> bool {
     m.small_home && m.zone != "core" && !m.landmark && !m.role.contains("tower")
         && matches!(m.function, "domestic" | "mixed")
-        && m.parts.iter().all(|(_,l)| matches!(*l, "building" | "barn" | "byre") || super::farmsteads::is_outbuilding(l))
+        && m.parts.iter().all(|(_,l)| matches!(*l, "barn" | "byre" | "annex") || super::forms::plan::is_house_part(l) || super::farmsteads::is_outbuilding(l))
         && super::house_mix::ordinary_home(m.culture, m.arch, m.seed)
 }
 
@@ -799,11 +793,71 @@ struct Vol {
     stilts: f64,
     /// Inhabitants' size against a human, for doors and windows.
     body: f64,
+    /// Bottom of the volume above the building ground (m): an upper tier, a
+    /// chimney or a dormer starts above the ground.
+    base: f64,
+    /// Stands on the volume under it (resolved once the lot's volumes stand).
+    stack: bool,
+    /// Ridge axis and the high side of a shed, for the composed roof.
+    axis: Point,
+    high: Point,
+    /// The roof's true kind (`halfhip`, `gablet`, `gambrel`…); `roof.kind` is
+    /// the plain kind a renderer without the pans falls back to.
+    form_roof: &'static str,
+    /// Roof pitch (degrees) the volume was raised with.
+    pitch: f64,
+    /// Eaves past the walls (m) when the mass rule sets them.
+    eaves: Option<f64>,
+    /// Composed roof (`forms::roof`): visible pans, and wall faces above the wall top.
+    pans: Option<Vec<Vec<[f64; 3]>>>,
+    gables: Vec<Vec<[f64; 3]>>,
+    /// Small decorative volume (chimney, dormer, porch).
+    minor: bool,
+    /// `none` | `door` | "" (windows by storey).
+    openings: &'static str,
+}
+fn faces_json(faces: &[Vec<[f64; 3]>]) -> Value {
+    Value::Array(faces.iter().map(|f| Value::Array(f.iter().flat_map(|p| p.iter().map(|&c| json!(round2(c)))).collect())).collect())
 }
 impl Vol {
+    /// Whether `forms::roof` composes this volume's roof: a pitched kind on a
+    /// plain walled body (huts, tents, tree and pile houses keep their own).
+    fn composes(&self) -> bool {
+        super::forms::roof::composed(self.form_roof) && self.pans.is_none() && self.form.is_empty()
+            && self.overhang == 0.0 && self.stilts == 0.0 && self.roof.rise > 0.05
+    }
+    /// Raises the whole volume by `d` metres (a stacked part on its support).
+    fn lift(&mut self, d: f64) {
+        if d <= 0.0 {
+            return;
+        }
+        self.base += d;
+        self.eave += d;
+        for p in self.pans.iter_mut().flatten().chain(self.gables.iter_mut()).flatten() {
+            p[2] += d;
+        }
+    }
     fn json(&self) -> Value {
         let mut v = json!({"ring":ring_json(&self.ring),"floors":self.n,"eave_m":round2(self.eave),"rise_m":round2(self.roof.rise),
             "roof":self.roof.kind,"ridges":self.roof.ridges,"cover":self.cover,"wall":self.wall,"tone":round2(self.tone)});
+        if self.base > 0.0 {
+            v["base_m"] = json!(round2(self.base));
+        }
+        if let Some(pans) = &self.pans {
+            v["pans"] = faces_json(pans);
+            if !self.gables.is_empty() {
+                v["gables"] = faces_json(&self.gables);
+            }
+        }
+        if self.form_roof != self.roof.kind {
+            v["roof_form"] = json!(self.form_roof);
+        }
+        if self.minor {
+            v["minor"] = json!(true);
+        }
+        if !self.openings.is_empty() {
+            v["openings"] = json!(self.openings);
+        }
         if self.parapet > 0.0 {
             v["parapet_m"] = json!(round2(self.parapet));
         }
@@ -829,16 +883,10 @@ impl Vol {
     }
 }
 
-/// Regional family of a culture for roof-top detail.
+/// Regional family of a culture for roof-top detail (`maghreb`, `levant`,
+/// `persian`, `pueblo`, `meso`; empty: none), from its style traits.
 fn flavor(culture: &str) -> &'static str {
-    match culture {
-        "medina" | "sahel" | "ksar-oasis" | "oasis-caravan" | "hausa-kano" | "swahili-stone-town" => "maghreb",
-        "levantine-tell" | "mesopotamian" | "egyptian-planned" | "nubian-fortified" | "ottoman" | "indus-planned" => "levant",
-        "persian" | "hadhrami-tower" => "persian",
-        "native-pueblo" => "pueblo",
-        "aztec" | "maya" | "inca" => "meso",
-        _ => "other",
-    }
+    super::forms::kit::traits(culture).flavor.as_str()
 }
 
 /// Distance of `p` inside a convex ring (negative outside).
@@ -914,10 +962,12 @@ pub(super) fn massing(m: &Input) -> Value {
         return Value::Null;
     }
     let mut tr = tradition(m.arch, m.culture);
-    let (metric_scale, form) = super::culture::house_parameters(m.culture);
-    // Elven settlements mix tree dwellings and ordinary houses half and half (user: equal proportions).
-    let tree_share = form != "tree" || Rng::new(m.seed).fork("tree-share").float() < 0.5;
-    if !form.is_empty() && tree_share { tr.form = form; }
+    let traits = super::forms::kit::traits(m.culture);
+    let (metric_scale, form) = super::forms::kit::house_parameters(m.culture);
+    // A culture may give its home form to a share of its lots only (elven
+    // settlements mix tree dwellings and ordinary houses half and half).
+    let takes_form = traits.form_share <= 0.0 || Rng::new(m.seed).fork("tree-share").float() < traits.form_share;
+    if !form.is_empty() && takes_form { tr.form = form; }
     match tr.form {
         "tree" => { tr.roof = "dome"; tr.cover = "turf"; tr.wall = "wood"; }
         "mushroom" => { tr.roof = "dome"; tr.cover = "fungal"; tr.wall = "wattle"; }
@@ -926,8 +976,8 @@ pub(super) fn massing(m: &Input) -> Value {
         "battered" => { tr.roof = "flat"; tr.cover = "earth"; tr.wall = "plaster"; }
         _ => {}
     }
-    // Giant houses: one huge storey of massive stone under a flat roof (user: no storeys, flat roofs).
-    if m.culture == "giant-hold" { tr.roof = "flat"; tr.cover = "stone"; tr.wall = "stone"; tr.storeys = [1, 1]; }
+    // Massive-storey cultures (giants): one huge storey of massive stone under a flat roof.
+    if traits.massive_storey { tr.roof = "flat"; tr.cover = "stone"; tr.wall = "stone"; tr.storeys = [1, 1]; }
     if let Some(look) = super::activities::archetype(m.archetype)
         .and_then(|a| a.look.as_deref())
         .and_then(|id| super::activities::data().looks.get(id))
@@ -980,6 +1030,23 @@ pub(super) fn massing(m: &Input) -> Value {
     let main_c = super::geometry::centroid(&m.parts[main].0);
     let detail_rng = rng.fork("details");
     let look = lot_look(m, &tr);
+    // The home vocabulary of the lot's style, and the monument family whose
+    // mass rules may override the shared ones.
+    let kit = super::forms::kit::house(m.culture, super::forms::kit::Traits { roof: tr.roof, pitch: tr.pitch, cover: tr.cover, wall: tr.wall });
+    let family = super::culture::architecture_pack(m.culture).map_or("western", super::parcels::monument_family);
+    let home = !m.landmark && matches!(m.function, "domestic" | "mixed") && look.is_none();
+    // A complex home draws its roof kind once in its kit (the wings follow the body).
+    let home_roof: Option<&'static str> = (m.complex && home && matches!(tr.roof, "gable" | "hip") && tr.form.is_empty())
+        .then(|| super::forms::kit::draw(&kit.roofs, &mut Rng::new(m.seed).fork("kit-roof"), &|_| true, &|_, w| w))
+        .flatten();
+    // Towards the street from a point (the nearest frontage), for sheds and dormers.
+    let to_street = |c: Point| -> Option<Point> {
+        m.fronts.iter().map(|s| {
+            let (dx, dy) = (s[1].x - s[0].x, s[1].y - s[0].y);
+            let k = (((c.x - s[0].x) * dx + (c.y - s[0].y) * dy) / (dx * dx + dy * dy).max(1e-9)).clamp(0.0, 1.0);
+            Point { x: s[0].x + k * dx - c.x, y: s[0].y + k * dy - c.y }
+        }).min_by(|a, b| a.x.hypot(a.y).total_cmp(&b.x.hypot(b.y)))
+    };
     // A stepped landmark's preview is concentric terrace rings plus a shrine.
     // Their heights follow nesting, independent of culture, roof tradition or
     // preview order; each inner tier stands above the outer retaining wall.
@@ -987,7 +1054,7 @@ pub(super) fn massing(m: &Input) -> Value {
     let stepped = m.landmark && !terraces.is_empty() && m.parts.iter().any(|(_, label)| *label == "shrine");
     let tier_height = (terraces.iter().filter_map(|s| min_frame(&s.outer)).map(|f| 2.0 * f.half_w).fold(0.0_f64, f64::max)
         / (2.0 * (terraces.len() + 1) as f64)).clamp(1.2 * metric_scale, 4.0 * metric_scale);
-    let out: Vec<Value> = m
+    let mut pieces: Vec<Piece> = m
         .parts
         .iter()
         .enumerate()
@@ -999,11 +1066,11 @@ pub(super) fn massing(m: &Input) -> Value {
                 let tier = if *label == "shrine" { terraces.len() + 1 } else {
                     1 + terraces.iter().filter(|s| ring_area(&s.outer) > ring_area(ring) + 1e-6).count()
                 };
-                return json!({"floors":1,"eave_m":round2(tier_height * tier as f64),"rise_m":0.0,"roof":"flat",
-                    "ridges":[],"cover":"stone","wall":"stone","tone":round2(lot_tone),"openings":"none"});
+                return Piece::Raw(json!({"floors":1,"eave_m":round2(tier_height * tier as f64),"rise_m":0.0,"roof":"flat",
+                    "ridges":[],"cover":"stone","wall":"stone","tone":round2(lot_tone),"openings":"none"}));
             }
             if super::parcels::ruins::is_ruin(label) {
-                return ruin_piece(label, metric_scale * floors.min(2) as f64 * storey_m, tr.wall, lot_tone, &mut drng);
+                return Piece::Raw(ruin_piece(label, metric_scale * floors.min(2) as f64 * storey_m, tr.wall, lot_tone, &mut drng));
             }
             let mut kind = tr.roof;
             let mut pitch = (tr.pitch * pitch_k).max(0.0);
@@ -1018,7 +1085,13 @@ pub(super) fn massing(m: &Input) -> Value {
             // A farm outbuilding (farmsteads.rs): one low storey under its type's roof.
             let out = m.role.starts_with("dwelling") && super::farmsteads::is_outbuilding(label);
             let mut out_stilts = 0.0;
-            match if tribal && !out { "building" } else { *label } {
+            // The label's mass rule (forms/roles_*.json), the culture's or its
+            // monument family's override first; labels without one are raised below.
+            let rule = if out { None } else { super::forms::roles::rule(label, &[m.culture, family]) };
+            // Base of a ruled mass above the ground (m, before the metric scale).
+            let mut ruled_base = 0.0;
+            // A tent people's part without a rule of its own is one more tent.
+            match if tribal && !out && rule.is_none() { "building" } else { *label } {
                 _ if out => {
                     let o = super::farmsteads::look(m.culture, m.seed, label, &mut drng);
                     n = 1;
@@ -1028,6 +1101,20 @@ pub(super) fn massing(m: &Input) -> Value {
                     if let Some(c) = o.cover { cover = c; }
                     if let Some(w) = o.wall { wall = w; }
                     out_stilts = o.stilts;
+                }
+                _ if rule.is_some() => {
+                    let r = rule.unwrap();
+                    let width = min_frame(ring).map_or(4.0, |f| 2.0 * f.half_w.min(f.half_l)) / (metric_scale * body).max(1e-6);
+                    let lot = super::forms::roles::Lot { floors, storey: storey_m / body, nave: nave_eave, width };
+                    let (h, shown) = r.height(lot, &mut drng);
+                    n = shown;
+                    eave = Some(h);
+                    ruled_base = r.base(lot);
+                    kind = r.roof_kind(home_roof.unwrap_or(tr.roof), &mut drng);
+                    pitch = r.pitch_deg(pitch, &mut drng);
+                    wall = super::forms::roles::MassRule::material(&r.wall, tr.wall);
+                    cover = super::forms::roles::MassRule::material(&r.cover, lot_cover);
+                    composable = r.composable;
                 }
                 "tower" | "belfry" | "minaret" | "keep" => {
                     let extra = rng.int(0, 2);
@@ -1102,6 +1189,9 @@ pub(super) fn massing(m: &Input) -> Value {
                 }
                 _ => {
                     composable = true;
+                    if let Some(k) = home_roof {
+                        kind = k;
+                    }
                     // Street bodies take the lot's height, rear wings one or two
                     // floors less, small annexes one floor under a lean-to.
                     if i != main {
@@ -1122,7 +1212,8 @@ pub(super) fn massing(m: &Input) -> Value {
                 cover = if tr.roof == "flat" || tr.cover == "thatch" { tr.cover } else { "slate" };
             }
             if tr.form == "battered" { wall = tr.wall; }
-            if swap && !m.landmark {
+            // A rule that names its roof keeps it.
+            if swap && !m.landmark && rule.is_none_or(|r| matches!(r.roof.as_deref(), None | Some("culture"))) {
                 kind = match kind {
                     "gable" => "hip",
                     "hip" => "gable",
@@ -1133,7 +1224,7 @@ pub(super) fn massing(m: &Input) -> Value {
                 metric_scale * eave.map_or_else(|| n as f64 * storey_m + if shop && i == main { SHOP_EXTRA_M * body } else { 0.0 }, |e| e * body)
             };
             if min_frame(ring).is_none() {
-                return json!({"floors":n,"eave_m":round2(base_eave(n)),"rise_m":0.0,"roof":"flat","ridges":[],"cover":cover,"wall":wall,"tone":round2(lot_tone)});
+                return Piece::Raw(json!({"floors":n,"eave_m":round2(base_eave(n)),"rise_m":0.0,"roof":"flat","ridges":[],"cover":cover,"wall":wall,"tone":round2(lot_tone)}));
             }
             if !shape.holes.is_empty() && !matches!(kind, "flat" | "dome") {
                 // A court body is a ring: half the range width (area over the
@@ -1144,7 +1235,7 @@ pub(super) fn massing(m: &Input) -> Value {
                     .sum();
                 let half = (area / perimeter.max(1e-6)).min(6.0);
                 let rise = (half * pitch.to_radians().tan()).min(5.0);
-                return json!({"floors":n,"eave_m":round2(base_eave(n)),"rise_m":round2(rise),"roof":"ring","ridges":[],"cover":cover,"wall":wall,"tone":round2(lot_tone)});
+                return Piece::Raw(json!({"floors":n,"eave_m":round2(base_eave(n)),"rise_m":round2(rise),"roof":"ring","ridges":[],"cover":cover,"wall":wall,"tone":round2(lot_tone)}));
             }
             // Convex decomposition of the piece, the largest part first.
             let mut budget = 6;
@@ -1169,6 +1260,9 @@ pub(super) fn massing(m: &Input) -> Value {
                 }
                 min_frame(vr).map_or(Point { x: 1.0, y: 0.0 }, |f| f.u)
             };
+            // Ridge of the lot's main body, for parts whose rule follows or crosses it.
+            let main_axis = axis(&m.parts[main].0.outer, "gable");
+            let plain = super::forms::roof::plain;
             let mut vols: Vec<Vol> = Vec::new();
             for (pi, vr) in rings.iter().enumerate() {
                 let mut vkind = kind;
@@ -1179,15 +1273,22 @@ pub(super) fn massing(m: &Input) -> Value {
                         vkind = if kind == "gable" { "hip" } else { "gable" };
                     }
                 }
-                let u = axis(vr, vkind);
+                let u = axis(vr, plain(vkind));
+                let u = match rule.and_then(|r| r.axis.as_deref()) {
+                    Some("short") => perp(min_frame(vr).map_or(u, |f| f.u)),
+                    Some("street") => front_dir.unwrap_or(u),
+                    Some("main") => main_axis,
+                    Some("cross") => perp(main_axis),
+                    _ => u,
+                };
                 let subs = if composable && !tribal {
                     let metric: Vec<Point> = vr.iter().map(|p| Point { x: p.x / metric_scale, y: p.y / metric_scale }).collect();
-                    split_body(&metric, u, vn, vkind, &mut rng).into_iter().map(|(r, d, c)|
+                    split_body(&metric, u, vn, plain(vkind), &mut rng).into_iter().map(|(r, d, c)|
                         (r.into_iter().map(|p| Point { x: p.x * metric_scale, y: p.y * metric_scale }).collect(), d, c)).collect()
                 } else { vec![(vr.clone(), 0, false)] };
                 let multi = subs.len() > 1;
                 for (si, (mut sr, delta, cross)) in subs.into_iter().enumerate() {
-                    let one_storey = compact || m.culture == "giant-hold" && !m.landmark && *label == "building"
+                    let one_storey = compact || traits.massive_storey && !m.landmark && *label == "building"
                         || tr.form == "stilt";
                     let sn = if one_storey { 1 } else { (vn as i32 + delta).max(1) as u32 };
                     // A stepped part never rises above the lot's height (it steps down).
@@ -1219,6 +1320,15 @@ pub(super) fn massing(m: &Input) -> Value {
                         }
                         sk = "cone";
                     }
+                    // A ruled round part (turret, drum, kiln): a regular polygon inscribed in its footprint.
+                    if let Some(sides) = rule.and_then(|r| r.round)
+                        && let Some(f) = min_frame(&sr)
+                    {
+                        let c = ring_centroid(&sr);
+                        let r = depth_in(&sr, c).min(f.half_w).max(0.3);
+                        let sides = sides.clamp(5, 24);
+                        sr = (0..sides).map(|k| { let a = k as f64 * std::f64::consts::TAU / sides as f64; Point { x: c.x + r * a.cos(), y: c.y + r * a.sin() } }).collect();
+                    }
                     let su = if cross { perp(u) } else { u };
                     let c = ring_centroid(&sr);
                     let high = if i != main {
@@ -1226,8 +1336,27 @@ pub(super) fn massing(m: &Input) -> Value {
                     } else {
                         front_dir.map_or(Point { x: 0.0, y: 1.0 }, |d| Point { x: -d.x, y: -d.y })
                     };
+                    let high = match rule.and_then(|r| r.high.as_deref()) {
+                        Some("street") => to_street(c).unwrap_or(high),
+                        Some("back") => to_street(c).map_or(high, |d| Point { x: -d.x, y: -d.y }),
+                        // A lean-to rises towards the body it touches (the largest one), not
+                        // always the lot's main body: an aisle to its nave, a gallery to its hall.
+                        Some("main") => (0..m.parts.len())
+                            .filter(|&j| j != i && touches(&m.parts[j].0, shape))
+                            .max_by(|&a, &b| areas[a].total_cmp(&areas[b]))
+                            .map_or(high, |j| { let o = super::geometry::centroid(&m.parts[j].0); Point { x: o.x - c.x, y: o.y - c.y } }),
+                        _ => high,
+                    };
+                    // A ruled lean-to runs its ridge along the wall it leans on.
+                    let su = match (sk, rule.is_some_and(|r| r.high.is_some()), min_frame(&sr)) {
+                        ("shed", true, Some(f)) => {
+                            let across = perp(f.u);
+                            if (f.u.x * high.x + f.u.y * high.y).abs() <= (across.x * high.x + across.y * high.y).abs() { f.u } else { across }
+                        }
+                        _ => su,
+                    };
                     let vp = if mage { 68.0 } else { pitch * (1.0 + rng.range(-0.04, 0.04)) };
-                    let roof = roof_of(&sr, sk, vp, su, high);
+                    let roof = roof_of(&sr, plain(sk), vp, su, high);
                     let rise_cap = metric_scale * if *label == "tower" { 14.0 } else { 12.0 };
                     let roof = Roof { rise: roof.rise.min(rise_cap), ..roof };
                     let (parapet, features) = if roof.kind == "flat" {
@@ -1284,7 +1413,10 @@ pub(super) fn massing(m: &Input) -> Value {
                         (sn, ev, Roof { rise, ..roof })
                     } else { (sn, eave_v, roof) };
                     let trim = if roof.kind == "flat" && parapet > 0.0 && flavor(m.culture) == "meso" && sn >= 1 { "red" } else { "" };
-                    vols.push(Vol {
+                    let base = metric_scale * body * ruled_base;
+                    // The plain kind may have changed (a narrow body under a shed, a concave part left flat).
+                    let form_roof = if roof.kind == plain(sk) { sk } else { roof.kind };
+                    let vol = Vol {
                         parapet,
                         features,
                         overhang,
@@ -1292,14 +1424,29 @@ pub(super) fn massing(m: &Input) -> Value {
                         form: exterior,
                         stilts,
                         body,
-                        eave: eave_v,
+                        eave: base + eave_v,
                         n: sn,
                         cover,
                         wall,
                         tone: (lot_tone + rng.range(-0.08, 0.08)).clamp(0.0, 1.0),
                         ring: sr,
                         roof,
-                    });
+                        base,
+                        stack: rule.is_some_and(|r| r.base == super::forms::roles::Base::Stack),
+                        axis: su,
+                        high,
+                        form_roof,
+                        pitch: vp,
+                        eaves: rule.and_then(|r| r.overhang),
+                        pans: None,
+                        gables: vec![],
+                        minor: rule.is_some_and(|r| r.minor),
+                        openings: rule.and_then(|r| r.openings.as_deref()).unwrap_or(""),
+                    };
+                    match rule.and_then(|r| r.tiers.as_ref()) {
+                        Some(t) => vols.extend(tiered(vol, t, &mut drng)),
+                        None => vols.push(vol),
+                    }
                 }
             }
             if i == main && let Some(l) = look && !vols.is_empty() {
@@ -1310,25 +1457,242 @@ pub(super) fn massing(m: &Input) -> Value {
                     vols[0].features.push(f);
                 }
             }
-            // Entry-level fields repeat the tallest volume.
-            let top = vols
-                .iter()
-                .enumerate()
-                .max_by(|a, b| (a.1.eave + a.1.roof.rise).total_cmp(&(b.1.eave + b.1.roof.rise)))
-                .map_or(0, |(k, _)| k);
-            let t = &vols[top];
-            json!({"floors":vols.iter().map(|v| v.n).max().unwrap_or(n),"eave_m":round2(t.eave),"rise_m":round2(t.roof.rise),
-                "roof":t.roof.kind,"ridges":t.roof.ridges,"cover":t.cover,"wall":t.wall,"tone":round2(lot_tone),
-                "volumes":vols.iter().enumerate().map(|(j, v)| {
-                    let mut out = v.json();
-                    let open = facade_openness(m.culture, v.wall);
-                    if open < 1.0 { out["openness"] = json!(open); }
-                    if v.form == "tree" { out["tree_seed"] = json!(format!("{}:tree:{}:{}", m.seed, i, j)); }
-                    out
-                }).collect::<Vec<_>>()})
+            Piece::Vols(vols, n)
         })
         .collect();
-    Value::Array(out)
+    // Chimneys and dormers of a complex home, on its main body.
+    let details = (m.complex && home)
+        .then(|| match pieces.get(main) {
+            Some(Piece::Vols(vols, _)) => vols.first().filter(|v| v.composes()).map(|v| home_details(v, kit, m.seed, metric_scale * body, &to_street)),
+            _ => None,
+        })
+        .flatten();
+    if let (Some(extra), Some(Piece::Vols(vols, _))) = (details, pieces.get_mut(main)) {
+        vols.extend(extra);
+    }
+    // A stacked volume stands on the highest volume of another piece under its centre.
+    let tops: Vec<(Vec<Point>, f64, usize)> = pieces
+        .iter()
+        .enumerate()
+        .flat_map(|(i, p)| match p {
+            Piece::Raw(v) => vec![(m.parts[i].0.outer.clone(), v["eave_m"].as_f64().unwrap_or(0.0), i)],
+            Piece::Vols(vols, _) => vols.iter().filter(|v| !v.stack).map(|v| (v.ring.clone(), v.eave, i)).collect(),
+        })
+        .collect();
+    for (i, p) in pieces.iter_mut().enumerate() {
+        if let Piece::Vols(vols, _) = p {
+            for v in vols.iter_mut().filter(|v| v.stack) {
+                let c = ring_centroid(&v.ring);
+                v.lift(tops.iter().filter(|t| t.2 != i && within(&t.0, c)).map(|t| t.1).fold(0.0, f64::max));
+            }
+        }
+    }
+    // Composed roofs: homes in complex mode, every other building always.
+    if m.complex || !home {
+        let all: Vec<&Vol> = pieces.iter().flat_map(|p| match p { Piece::Vols(v, _) => v.iter().collect::<Vec<_>>(), Piece::Raw(_) => vec![] }).collect();
+        if all.iter().any(|v| v.composes()) {
+            // Eaves pass the walls where the building stands free: a rural home, any singular building.
+            let rural = matches!(m.zone, "village" | "hamlet" | "rural");
+            let over = metric_scale * if !home { 0.25 } else if rural { kit.overhang } else { 0.0 };
+            let masses: Vec<super::forms::roof::Mass> = all
+                .iter()
+                .map(|v| super::forms::roof::Mass {
+                    ring: &v.ring,
+                    kind: if v.composes() { v.form_roof } else if v.roof.kind == "flat" { "flat" } else { "curved" },
+                    axis: v.axis,
+                    eave: v.eave,
+                    rise: v.roof.rise,
+                    overhang: if !v.composes() { 0.0 } else if v.minor { 0.08 } else { v.eaves.map_or(over, |e| e * metric_scale) },
+                    high: v.high,
+                })
+                .collect();
+            let mut roofs = super::forms::roof::compose(&masses).into_iter();
+            drop(masses);
+            drop(all);
+            for p in pieces.iter_mut() {
+                if let Piece::Vols(vols, _) = p {
+                    for v in vols.iter_mut() {
+                        if let Some(Some(r)) = roofs.next() {
+                            v.eave = r.eave;
+                            v.roof.rise = r.rise;
+                            v.pans = Some(r.pans);
+                            v.gables = r.gables;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Value::Array(
+        pieces
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let (vols, n) = match p {
+                    Piece::Raw(v) => return v,
+                    Piece::Vols(vols, n) => (vols, n),
+                };
+                // Entry-level fields repeat the tallest volume (a chimney is not one).
+                let top = vols
+                    .iter()
+                    .enumerate()
+                    .filter(|v| !v.1.minor)
+                    .max_by(|a, b| (a.1.eave + a.1.roof.rise).total_cmp(&(b.1.eave + b.1.roof.rise)))
+                    .map_or(0, |(k, _)| k);
+                let t = &vols[top];
+                json!({"floors":vols.iter().map(|v| v.n).max().unwrap_or(n),"eave_m":round2(t.eave),"rise_m":round2(t.roof.rise),
+                    "roof":t.roof.kind,"ridges":t.roof.ridges,"cover":t.cover,"wall":t.wall,"tone":round2(lot_tone),
+                    "volumes":vols.iter().enumerate().map(|(j, v)| {
+                        let mut out = v.json();
+                        let open = facade_openness(m.culture, v.wall);
+                        if open < 1.0 { out["openness"] = json!(open); }
+                        if v.form == "tree" { out["tree_seed"] = json!(format!("{}:tree:{}:{}", m.seed, i, j)); }
+                        out
+                    }).collect::<Vec<_>>()})
+            })
+            .collect(),
+    )
+}
+
+/// One preview piece on its way to the display contract: an entry already
+/// written (stepped terrace, ruin, court ring) or the volumes to finish.
+enum Piece {
+    Raw(Value),
+    Vols(Vec<Vol>, u32),
+}
+
+/// Whether `p` lies inside ring `r` (even-odd).
+fn within(r: &[Point], p: Point) -> bool {
+    let mut inside = false;
+    for i in 0..r.len() {
+        let (a, b) = (r[i], r[(i + 1) % r.len()]);
+        if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (b.x - a.x) * (p.y - a.y) / (b.y - a.y) {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// A mass raised in receding tiers (`MassRule::tiers`): each tier stands on the
+/// one below, its ring scaled about the centre; a skirt roof joins two tiers
+/// (pagoda eaves); the last tier takes the mass's roof.
+fn tiered(v: Vol, t: &'static super::forms::roles::Tiers, rng: &mut Rng) -> Vec<Vol> {
+    let count = rng.int(t.count[0].max(1), t.count[1].max(t.count[0]).max(1)) as usize;
+    let total = v.eave - v.base;
+    if count <= 1 || total < 1.0 || v.ring.len() < 3 {
+        return vec![v];
+    }
+    let c = ring_centroid(&v.ring);
+    let first = if t.first > 0.0 { t.first.clamp(0.1, 0.9) } else { 1.0 / count as f64 };
+    let rest = (1.0 - first) / (count - 1) as f64;
+    let inset = t.inset.clamp(0.0, 0.6);
+    let scaled = |k: f64| -> Vec<Point> { v.ring.iter().map(|p| Point { x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k }).collect() };
+    let top_kind: &'static str = t.top.as_deref().unwrap_or(v.form_roof);
+    let floors = (v.n / count as u32).max(1);
+    let mut out = Vec::with_capacity(count);
+    let (mut z, mut k) = (v.base, 1.0);
+    for tier in 0..count {
+        let h = total * if tier == 0 { first } else { rest };
+        let ring = scaled(k);
+        let last = tier + 1 == count;
+        let (roof, form_roof, pans) = if last {
+            let plain = super::forms::roof::plain(top_kind);
+            let r = roof_of(&ring, plain, v.pitch, v.axis, v.high);
+            let form = if r.kind == plain { top_kind } else { r.kind };
+            (r, form, None)
+        } else if let Some(s) = t.skirt.filter(|s| s.rise > 0.0) {
+            let next = scaled(k * (1.0 - inset));
+            let pans = super::forms::roof::skirt(&ring, &next, z + h - 0.35 * s.rise, z + h + 0.65 * s.rise, s.overhang);
+            (Roof { kind: "hip", rise: 0.65 * s.rise, ridges: vec![] }, "hip", Some(pans))
+        } else {
+            (Roof { kind: "flat", rise: 0.0, ridges: vec![] }, "flat", None)
+        };
+        out.push(Vol {
+            ring,
+            n: floors,
+            eave: z + h,
+            roof,
+            cover: v.cover,
+            wall: v.wall,
+            tone: v.tone,
+            parapet: if last { v.parapet } else { 0.0 },
+            features: vec![],
+            overhang: 0.0,
+            trim: v.trim,
+            form: v.form,
+            stilts: 0.0,
+            body: v.body,
+            base: z,
+            stack: v.stack,
+            axis: v.axis,
+            high: v.high,
+            form_roof,
+            pitch: v.pitch,
+            eaves: v.eaves,
+            pans,
+            gables: vec![],
+            minor: v.minor,
+            openings: v.openings,
+        });
+        z += h;
+        k *= 1.0 - inset;
+    }
+    out
+}
+
+/// Chimney stacks and dormers of a complex home's main body `v` (`sc`: metres
+/// to plan units): small volumes standing on its roof, drawn among the kit's
+/// chances. Stacks stand on the ridge near an end; dormers on the slope that
+/// faces the street.
+fn home_details(v: &Vol, kit: &'static super::forms::kit::HouseKit, seed: &str, sc: f64, to_street: &dyn Fn(Point) -> Option<Point>) -> Vec<Vol> {
+    let mut out = vec![];
+    let f = frame_along(&v.ring, v.axis);
+    if f.half_l < 1e-6 || f.half_w < 1e-6 {
+        return out;
+    }
+    let nrm = perp(f.u);
+    let at = |s: f64, t: f64| Point { x: f.c.x + f.u.x * s + nrm.x * t, y: f.c.y + f.u.y * s + nrm.y * t };
+    let mass = super::forms::roof::Mass { ring: &v.ring, kind: v.form_roof, axis: v.axis, eave: v.eave, rise: v.roof.rise, overhang: 0.0, high: v.high };
+    let small = |ring: Vec<Point>, base: f64, eave: f64, roof: Roof, form_roof: &'static str, axis: Point, cover: &'static str, wall: &'static str| Vol {
+        ring, n: 1, eave, roof, cover, wall, tone: v.tone, parapet: 0.0, features: vec![], overhang: 0.0, trim: "", form: "", stilts: 0.0, body: v.body,
+        base, stack: false, axis, high: nrm, form_roof, pitch: 40.0, eaves: None, pans: None, gables: vec![], minor: true, openings: "none",
+    };
+    let mut r = Rng::new(seed).fork("home-details");
+    if r.chance(kit.chimney) && f.half_l > 2.0 * sc {
+        let stack: &'static str = kit.stack.as_str();
+        let count = 1 + usize::from(f.half_l > 6.0 * sc && r.chance(0.35));
+        let first = if r.chance(0.5) { 1.0 } else { -1.0 };
+        for k in 0..count {
+            let side = if k == 0 { first } else { -first };
+            let p = at(side * (f.half_l - r.range(0.9, 1.6) * sc), r.range(-0.25, 0.25) * f.half_w);
+            let Some(z) = super::forms::roof::height_at(&mass, p) else { continue };
+            let h = r.range(0.3, 0.42) * sc;
+            let (du, dn) = (Point { x: f.u.x * h, y: f.u.y * h }, Point { x: nrm.x * h, y: nrm.y * h });
+            let ring = vec![
+                Point { x: p.x - du.x - dn.x, y: p.y - du.y - dn.y },
+                Point { x: p.x + du.x - dn.x, y: p.y + du.y - dn.y },
+                Point { x: p.x + du.x + dn.x, y: p.y + du.y + dn.y },
+                Point { x: p.x - du.x + dn.x, y: p.y - du.y + dn.y },
+            ];
+            let top = v.eave + v.roof.rise + r.range(0.5, 1.0) * sc;
+            out.push(small(ring, (z - 0.3 * sc).max(0.0), top, Roof { kind: "flat", rise: 0.0, ridges: vec![] }, "flat", f.u, stack, stack));
+        }
+    }
+    let sloped = matches!(v.form_roof, "gable" | "halfhip" | "gablet" | "gambrel" | "mansard" | "hip");
+    if sloped && r.chance(kit.dormer) && f.half_w >= 2.6 * sc && f.half_l >= 2.4 * sc && v.roof.rise >= 1.8 * sc {
+        let street = to_street(f.c).map_or(1.0, |d| if d.x * nrm.x + d.y * nrm.y >= 0.0 { 1.0 } else { -1.0 });
+        let count = ((2.0 * f.half_l / (3.4 * sc)).floor() as usize).clamp(1, 3);
+        let wd = 1.3 * sc;
+        let (front, depth) = (0.3 * f.half_w, (0.55 * f.half_w).min(2.6 * sc));
+        let (ta, tb) = (street * (f.half_w - front), street * (f.half_w - front - depth));
+        for k in 0..count {
+            let s = 0.7 * ((k as f64 + 0.5) / count as f64 * 2.0 - 1.0) * f.half_l;
+            let Some(z) = super::forms::roof::height_at(&mass, at(s, ta)) else { continue };
+            let ring = vec![at(s - wd * 0.5, ta), at(s + wd * 0.5, ta), at(s + wd * 0.5, tb), at(s - wd * 0.5, tb)];
+            out.push(small(ring, z, z + 0.95 * sc, Roof { kind: "gable", rise: 0.45 * wd, ridges: vec![] }, "gable", nrm, v.cover, v.wall));
+        }
+    }
+    out
 }
 
 /// Activity look (activities.json `looks`) a specialised service lot's bodies take.
@@ -1386,6 +1750,7 @@ fn activity_details(v: &Vol, l: LotLook, has_wheel: bool, fronts: &[[Point; 2]],
     let part = |ring: Vec<Point>, eave: f64, wall: &'static str| Vol {
         ring, n: 1, eave, roof: Roof { kind: "flat", rise: 0.0, ridges: vec![] }, cover: v.cover, wall, tone: v.tone,
         parapet: 0.0, features: vec![], overhang: 0.0, trim: "", form: "", stilts: v.stilts, body: 0.0,
+        base: 0.0, stack: false, axis: f.u, high: n, form_roof: "flat", pitch: 0.0, eaves: None, pans: None, gables: vec![], minor: false, openings: "",
     };
     let mut out = vec![];
     if l.chimney {
@@ -1436,7 +1801,29 @@ mod tests {
     }
     fn input<'a>(parts: &'a [(Shape, &'static str)], arch: &'a Value, fronts: &'a [[Point; 2]], seed: &'a str) -> Input<'a> {
         Input { parts, arch, culture: "european-organic", zone: "core", role: "dwelling.row", function: "domestic",
-            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed, low_rural: true, distance: 0.0, archetype: "" }
+            landmark: false, wealth: 0.5, pressure: 0.8, small_home: false, population: 0, fronts, seed, low_rural: true, distance: 0.0, archetype: "", complex: false }
+    }
+
+    /// A complex home: the wing takes its rule, the roofs are composed (the
+    /// wing's pans run into the body) and every volume carries explicit pans.
+    /// The same parts in simple mode keep the plain contract.
+    #[test]
+    fn a_complex_home_composes_its_roofs_and_a_simple_one_keeps_the_plain_contract() {
+        let parts = [(rect(0.0, 0.0, 12.0, 6.0), "building"), (rect(1.0, 6.0, 5.5, 12.0), "wing")];
+        let arch = json!({"typology":"stone-house","roof":"gable","storeys":[2,2],"material":"stone"});
+        let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: 12.0, y: 0.0 }]];
+        let simple = massing(&Input { zone: "village", ..input(&parts, &arch, &fronts, "home") });
+        let volumes = |m: &Value| -> Vec<Value> { m.as_array().unwrap().iter().flat_map(|p| p["volumes"].as_array().cloned().unwrap_or_default()).collect() };
+        assert!(volumes(&simple).iter().all(|v| v.get("pans").is_none() && v.get("base_m").is_none()));
+        let complex = massing(&Input { zone: "village", complex: true, ..input(&parts, &arch, &fronts, "home") });
+        let vols = volumes(&complex);
+        let pitched: Vec<&Value> = vols.iter().filter(|v| v["roof"] != "flat").collect();
+        assert!(pitched.len() >= 2 && pitched.iter().all(|v| v["pans"].as_array().is_some_and(|p| !p.is_empty())), "{complex}");
+        // The wing's roof reaches inside the body (y < 6): a valley, not a gable wall on the body's eave.
+        let wing = complex[1]["volumes"][0]["pans"].as_array().unwrap();
+        assert!(wing.iter().any(|pan| pan.as_array().unwrap().chunks(3).any(|p| p[1].as_f64().unwrap() < 5.5)), "{wing:?}");
+        // Deterministic.
+        assert_eq!(complex, massing(&Input { zone: "village", complex: true, ..input(&parts, &arch, &fronts, "home") }));
     }
 
     #[test]

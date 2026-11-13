@@ -44,7 +44,7 @@ describe('V2 retained-map render controls', () => {
     expect(settings.appearance?.city?.layers).toEqual({ fronts: true });
     writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
     expect(renderControlValues(settings).city?.painted).toBe(true);
-    expect(settings.appearance?.composition?.effects.lighting.strength).toBe(1);
+    expect(settings.appearance?.composition?.effects.lighting.strength).toBe(2.2);
     expect(settings.appearance?.city?.layers?.fronts).toBe(true);
   });
   it('has intentional English and French copy for every field and choice', () => {

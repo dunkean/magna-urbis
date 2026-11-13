@@ -35,6 +35,9 @@ const labels: Record<string, Words> = {
   smallPlaceCapacity:['À tester · Tolérance de capacité des petits lieux','Testing · Small-place capacity tolerance','测试 · 小聚落容量容差','En prueba · Tolerancia de capacidad de lugares pequeños','Em teste · Tolerância de capacidade de lugares pequenos'],
   countrysideEnclosures:['Clôtures à la campagne','Countryside enclosures','乡村围栏','Cercados en el campo','Cercas no campo'],
   outbuildings:['Dépendances des maisons','House outbuildings','房屋附属建筑','Dependencias de las casas','Dependências das casas'],
+  houseComplexity:['Plans des maisons','House plans','住宅平面','Plantas de las casas','Plantas das casas'],
+  singularDensity:['Bâtiments singuliers','Singular buildings','特殊建筑','Edificios singulares','Edifícios singulares'],
+  backBuildings:['Bâtiments de fond de parcelle','Back buildings of town lots','城镇地块的后部建筑','Edificios traseros de las parcelas','Edifícios de fundo dos lotes'],
   parallelMerge:['Fusion des rues parallèles','Parallel street merge','合并平行街道','Fusión de calles paralelas','Fusão de ruas paralelas'],
   tissue:['Maillage des rues','Street network','街道网络','Red de calles','Rede de ruas'],
   accessMode:['Accessibilité des îlots','Block accessibility','街区通达性','Accesibilidad de las manzanas','Acessibilidade das quadras'],
@@ -89,6 +92,7 @@ const options: Record<string, Record<string, Words>> = {
   axisAlignment:{regional:['Routes régionales principales','Main regional roads','主要区域道路','Rutas regionales principales','Estradas regionais principais'],culture:['Orientation culturelle','Cultural orientation','文化方向','Orientación cultural','Orientação cultural']},
   placement:{center:['Plan culturel adapté au terrain','Cultural plan adapted to terrain','适应地形的文化规划','Plan cultural adaptado al terreno','Plano cultural adaptado ao terreno'],rectangle:['Rectangle','Rectangle','矩形','Rectángulo','Retângulo'],skew:['Oblique','Oblique','倾斜','Oblicuo','Oblíquo'],notched:['Avec encoche','Notched','带缺口','Con muesca','Com entalhe']},
   budget:{population:['Population / densité brute','Population / gross density','人口 / 毛密度','Población / densidad bruta','População / densidade bruta'],radius:['Rayon artistique','Artistic radius','艺术半径','Radio artístico','Raio artístico']},
+  houseComplexity:{simple:['Simples','Simple','简单','Simples','Simples'],complex:['Complexes','Complex','复杂','Complejas','Complexas']},
 };
 const stageTitles: Record<string, Words> = {
   urbanQuarterStage:['3 · Plan urbain ','3 · Urban plan ','3 · 城市规划 ','3 · Plan urbano ','3 · Plano urbano '],

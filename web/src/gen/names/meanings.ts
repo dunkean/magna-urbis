@@ -60,9 +60,11 @@ const roleRows: Record<string, string[]> = {
   monastery: ['Monastery','Monastère','修道院','دير','Monasterio','Mosteiro','修道院','Монастырь'],
   shrine: ['Shrine','Sanctuaire','聖所','مزار','Santuario','Santuário','圣所','Святилище'],
   tower: ['Tower','Tour','塔','برج','Torre','Torre','塔','Башня'],
+  cavern: ['Cavern','Caverne','洞窟','كهف','Caverna','Caverna','洞穴','Пещера'],
 };
 export function roleNoun(role: string): string {
   if(/^water\.(major|river|stream|brook)$/.test(role))return role.slice(6);
+  if (role === 'terrain.cavern') return 'cavern';
   if (/kasbah/.test(role)) return 'kasbah';
   if (/palace|kancha/.test(role)) return 'palace';
   if (/keep/.test(role)) return 'keep';

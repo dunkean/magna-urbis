@@ -81,12 +81,17 @@ fn budget(cls: &str) -> (u32, u32, usize, usize) {
     }
 }
 
-/// Relative demand of a template among those one anchor admits (a watch post or a
-/// hunting lodge is rarer than a mill on the same knoll or wood).
+/// Relative demand of a template among those one anchor admits (a watch post, a
+/// hunting lodge or a monument is rarer than a mill on the same knoll or wood).
 fn demand(template: &str) -> f64 {
     match template {
-        "hill_watch" => 0.3,
-        "hunting_post" | "shipyard" => 0.5,
+        "hill_watch" | "coast_beacon" => 0.3,
+        "signal_station" => 0.2,
+        "hunting_post" | "shipyard" | "tithe_grange" | "glassworks" | "hammer_forge" | "kiln_croft" => 0.5,
+        "paper_mill_site" | "upland_fulling" | "tide_mill_site" => 0.4,
+        // Countryside monuments: on the heights, the pastures, the springs and in the woods.
+        "ancient_stones" | "barrow_field" | "summit_cairn_site" | "pilgrim_chapel_site" | "sacred_grove_site" => 0.3,
+        "hermit_retreat" | "holy_spring" | "lone_tomb" => 0.2,
         _ => 1.0,
     }
 }
@@ -363,5 +368,6 @@ pub(crate) fn yard(id: &str, culture: &str, names: &[&str], centre: Point, angle
         let massing = act::building_massing(b, culture, &ring, &format!("{id}/{k}"));
         buildings.push(ActivityBuilding { archetype: b.to_string(), look, ring, massing });
     }
-    buildings
+    // A singular building of the yard (chapel, temple, inn…) takes its town form.
+    act::formed(id, culture, buildings, angle, f, ok)
 }

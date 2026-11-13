@@ -2,7 +2,7 @@ import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { ForestCorridor } from '../render/forestRoom';
 import type { LandUseLayer } from '../gen/types';
 import { forestOccupation, unpackOccupationShapes, withOccupationShapes } from './forestOccupation';
-import { landDetail } from './landDetail';
+import { landDetail, type LandCultures } from './landDetail';
 import { unpackOccupationLanduse, type PackedOccupationLanduse } from './occupationLanduse';
 
 /** Owned by the persistent worker. Main-thread revisions address these immutable inputs/planes. */
@@ -27,8 +27,8 @@ export class OccupationPreparation {
     // Keep the source plane for the merge; transfer a reply copy, never detach retained caches.
     return result && { ...result, rgba: result.rgba.slice() };
   }
-  detail(landuseRevision: number) {
-    const result = landDetail(this.input(landuseRevision).landuse);
+  detail(landuseRevision: number, cultures?: LandCultures) {
+    const result = landDetail(this.input(landuseRevision).landuse, cultures);
     return result && { ...result, rgba: result.rgba.slice() };
   }
   merge(shapes: Float64Array, source?: ForestOccupation, retained?: { landuseRevision: number; revision: number }): ForestOccupation {

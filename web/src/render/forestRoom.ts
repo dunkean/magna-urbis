@@ -1,7 +1,10 @@
 /**
  * Room the forest leaves for circulation, water and settlements; one rule for every style.
  *
- * - Road: tree centres stay out of a corridor of half width `width / 2 + ROAD_MARGIN`.
+ * - Main road (at least CLEARING_ROAD_WIDTH wide): tree centres stay out of a corridor of half width
+ *   `width / 2 + ROAD_MARGIN`, a clearing through the forest.
+ * - Smaller road, lane or track: a covered way. No tree is rooted on the way itself, the stands run up to it and the
+ *   crowns of both sides close over it: it shows in the gaps of the canopy, never as a cleared line.
  * - River: the same with `RIVER_MARGIN`; the bank keeps its trees, which may hang over the water.
  * - A per-tree offset of up to ±EDGE_JITTER moves each centre limit, so crowns overhang the corridor
  *   edge unevenly: the road or river disappears a little under some crowns, never under a closed canopy.
@@ -13,7 +16,12 @@ import type { Polygon, Polyline, Vec2, World, LandUseLayer } from '../gen/types'
 const ROAD_WIDTH: Record<string, number> = { major: 8, minor: 3.6, track: 3 };
 export const ROAD_MARGIN = 2.5, RIVER_MARGIN = 1.5, EDGE_JITTER = 1.5, FARM_MARGIN = 5;
 
-export interface ForestCorridor { path: Polyline; half: number | number[] }
+export interface ForestCorridor { path: Polyline; half: number | number[]; /** A way under the canopy: no rooted tree on it, no clearing beside it. */ covered?: boolean }
+/** Roads at least this wide (m) open a corridor in the forest; narrower ways run under the canopy. */
+export const CLEARING_ROAD_WIDTH = 6;
+/** Room a road of this width takes in the forest. */
+export const roadCorridor = (path: Polyline, width: number): ForestCorridor =>
+  width >= CLEARING_ROAD_WIDTH ? { path, half: width / 2 + ROAD_MARGIN } : { path, half: Math.max(1, width / 2), covered: true };
 
 /** Clear yard (m, beyond the walls) kept free of rooted crowns around the buildings of an isolated activity site (chapel,
  * quarry, mill, fishing hut): their crowns still overhang it from the edge, so the site reads as a clearing, not as a
@@ -40,7 +48,7 @@ export function forestCorridors(world: Pick<World, 'roads' | 'terrain'> & Partia
   for (const road of world.roads ?? []) if (road.path.length > 1) {
     // The drawn width (render/scene.ts) where the network carries none.
     const width = road.width > 0 ? road.width : ROAD_WIDTH[road.kind] ?? 3;
-    out.push({ path: road.path, half: width / 2 + ROAD_MARGIN });
+    out.push(roadCorridor(road.path, width));
   }
   if (rivers) for (const river of world.terrain?.rivers ?? []) if (river.path.length > 1)
     out.push({ path: river.path, half: river.path.map((_, i) => (river.width[i] ?? river.width[river.width.length - 1] ?? 0) / 2 + RIVER_MARGIN) });

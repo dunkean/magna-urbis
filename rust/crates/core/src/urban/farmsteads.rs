@@ -52,6 +52,49 @@ pub(super) fn house_size(culture: &str, seed: &str) -> (f64, f64) {
     (rng.range(v(0, 8.0), v(1, 13.0)), rng.range(v(2, 6.0), v(3, 9.0)))
 }
 
+/// Plot of a lone farm (front along its road, depth; metres), from the farm type the
+/// seed draws for its culture. The land holds the type's house, its core buildings, a
+/// drawn number of ancillary ones and its yard, at the share of built ground its
+/// layout keeps; the layout gives the proportion: a linear farm or a longhouse is
+/// long and shallow, a closed court and a round compound are square, a scattered
+/// farm is loose and wide. Same seed, same plot; two seeds of one culture differ.
+pub(super) fn plot(culture: &str, seed: &str) -> (f64, f64) {
+    let d = data();
+    let ty = &d["types"][farm_type(culture, seed)];
+    let mut rng = Rng::new(seed).fork("farm-plot");
+    let scale = super::culture::house_parameters(culture).0;
+    let foot = |l: &str| { let b = &d["buildings"][l]; let ((w0, w1), (d0, d1)) = (pair(&b["width"]), pair(&b["depth"])); (0.5 * (w0 + w1), 0.5 * (d0 + d1)) };
+    let area = |list: &[&'static str]| list.iter().map(|l| { let (w, dp) = foot(*l); w * dp }).sum::<f64>();
+    let names = |key: &str| -> Vec<&'static str> { ty[key].as_array().map_or(vec![], |a| a.iter().filter_map(Value::as_str).filter(|l| is_outbuilding(l)).collect()) };
+    let (core, pool) = (names("core"), names("ancillary"));
+    let h = |k: usize, v: f64| ty["houseSize"][k].as_f64().unwrap_or(v);
+    let (lo, hi) = pair(&ty["outbuildings"]);
+    let count = rng.range(lo, hi.max(lo)).max(core.len() as f64);
+    let extra = if pool.is_empty() { 0.0 } else { area(&pool) / pool.len() as f64 };
+    let built = 0.25 * (h(0, 8.0) + h(1, 13.0)) * (h(2, 6.0) + h(3, 9.0)) + area(&core) + (count - core.len() as f64) * extra;
+    let (y0, y1) = pair(&ty["yard"]);
+    let yard = rng.range(y0, y1.max(y0));
+    let layout = ty["layout"].as_str().unwrap_or("scattered");
+    // Share of the plot under roofs, and front : depth, by layout.
+    let (cover, shape) = match layout {
+        "closed" => (0.2, rng.range(0.92, 1.1)),
+        "u" => (0.17, rng.range(0.85, 1.2)),
+        "l" => (0.15, rng.range(0.8, 1.3)),
+        "linear" => (0.15, rng.range(1.7, 2.5)),
+        "terraced" => (0.18, rng.range(1.25, 1.7)),
+        "round" => (0.13, rng.range(0.94, 1.08)),
+        _ => (0.1, rng.range(1.15, 1.65)),
+    };
+    // A larger people's plot grows with its bodies' side, not their area.
+    let land = ((built / cover + (yard + 6.0).powi(2)) * rng.range(0.85, 1.2)).clamp(1000.0, 3200.0) * scale;
+    // Room for the largest house of the type, its yard and (off a linear farm, whose
+    // buildings stand in line with the house) the deepest outbuilding behind it.
+    let behind = if layout == "linear" { 0.0 } else { core.iter().chain(&pool).map(|l| foot(*l).1).fold(0.0_f64, f64::max) };
+    let front = (land * shape).sqrt().max((1.15 * h(1, 13.0) + 8.0) * scale);
+    let depth = (land / shape).sqrt().max((1.15 * h(3, 9.0) + yard + behind + 6.0) * scale);
+    (front.max(22.0), depth.max(24.0))
+}
+
 /// Display of an outbuilding (massing.rs): eave (m, before the body scale),
 /// roof kind, cover/wall overrides and stilts.
 pub(super) struct Look { pub eave: f64, pub roof: &'static str, pub cover: Option<&'static str>, pub wall: Option<&'static str>, pub stilts: f64 }
@@ -151,34 +194,64 @@ pub(super) fn rural(zone: &str, role: &str, landmark: bool, camp: bool, area: f6
     Some(role.starts_with("dwelling.farm") || matches!(zone, "hamlet" | "rural") || area >= 900.0)
 }
 
-/// Adds the farmstead's outbuildings to the lot's pieces (the house is the
-/// largest piece; a farm role's stock barn is replaced by its type's buildings).
-/// Returns the cluster for the yard builder: type, layout, enclosure kind, yard hint.
+/// Index of the farmhouse body among the lot's pieces: the `building` its other home
+/// parts (wings, porches, outshots…) stand against, else the first `building` (the
+/// occupation lays the house before its stock barn), else the largest home part,
+/// else the largest piece.
+fn house_body(parts: &[(Shape, &'static str)], hulls: &[Vec<Point>]) -> Option<usize> {
+    let home = |l: &str| super::forms::plan::is_house_part(l);
+    let annexes = |i: usize| (0..parts.len()).filter(|&j| j != i && home(parts[j].1) && parts[j].1 != "building" && !apart(&hulls[i], &hulls[j], 0.3)).count();
+    let largest = |keep: &dyn Fn(usize) -> bool| (0..parts.len()).filter(|&i| keep(i)).max_by(|&a, &b| g::area(&parts[a].0).total_cmp(&g::area(&parts[b].0)));
+    (0..parts.len()).filter(|&i| parts[i].1 == "building")
+        // The most annexes, then the first laid.
+        .max_by_key(|&i| (annexes(i), std::cmp::Reverse(i)))
+        .or_else(|| largest(&|i: usize| home(parts[i].1)))
+        .or_else(|| largest(&|_: usize| true))
+}
+
 static NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// CPU time spent placing farmsteads since the start (URBAN_PROFILE).
 static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(super) fn cpu_ms() -> (f64, u64) { (NANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6, CALLS.load(std::sync::atomic::Ordering::Relaxed)) }
 
-pub(super) fn build(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, farm: bool, replace: bool, wealth: f64, seed: &str) -> Option<Value> {
+/// Adds the farmstead's outbuildings to the lot's pieces. The house is the
+/// occupation's home: its body (`house_body`) and every home part standing against
+/// it; with `replace` (a farm role) every other piece, the occupation's stock barn
+/// first, gives way to the type's buildings. `ancillary` false lays only the
+/// type's core buildings (nothing on a smallholding, which has none).
+/// Returns the cluster for the yard builder: type, layout, enclosure kind, yard hint.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn build(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, farm: bool, replace: bool, wealth: f64, seed: &str, ancillary: bool) -> Option<Value> {
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
-    let out = place(parts, lot, culture, farm, replace, wealth, seed);
+    let out = place(parts, lot, culture, farm, replace, wealth, seed, ancillary);
     #[cfg(not(target_arch = "wasm32"))]
     NANOS.fetch_add(tick.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
     #[cfg(not(target_arch = "wasm32"))]
     CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     out
 }
-fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, farm: bool, replace: bool, wealth: f64, seed: &str) -> Option<Value> {
-    let main = (0..parts.len()).max_by(|&a, &b| g::area(&parts[a].0).total_cmp(&g::area(&parts[b].0)))?;
-    if replace && parts.len() > 1 { let keep = parts.swap_remove(main); parts.clear(); parts.push(keep); }
+#[allow(clippy::too_many_arguments)]
+fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, farm: bool, replace: bool, wealth: f64, seed: &str, ancillary: bool) -> Option<Value> {
+    if !farm && !ancillary { return None; }
+    // The home: the body and the pieces standing against it (its wings, porches,
+    // outshots, a second body range). A farm role keeps only those.
+    let all: Vec<Vec<Point>> = parts.iter().map(|(s, _)| hull(&s.outer)).collect();
+    let body = house_body(parts, &all)?;
+    let home: Vec<bool> = (0..parts.len()).map(|i| i == body || super::forms::plan::is_house_part(parts[i].1) && !apart(&all[body], &all[i], 0.3)).collect();
+    let mut mi = body;
+    if replace && parts.len() > 1 {
+        mi = home[..body].iter().filter(|&&h| h).count();
+        let mut keep = home.iter();
+        parts.retain(|_| *keep.next().unwrap_or(&false));
+    }
+    let home: Vec<bool> = if replace { vec![true; parts.len()] } else { home };
     let d = data();
     let kind = farm_type(culture, seed);
     let ty = &d["types"][kind];
     let layout = ty["layout"].as_str().unwrap_or("scattered");
     let mut rng = Rng::new(seed).fork("farmstead");
-    // House frame: u along its longest hull edge, v towards the lot's interior.
-    let mi = (0..parts.len()).max_by(|&a, &b| g::area(&parts[a].0).total_cmp(&g::area(&parts[b].0)))?;
+    // House frame: u along the body's longest hull edge, v towards the lot's interior.
     let house = hull(&parts[mi].0.outer);
     if house.len() < 3 { return None; }
     let k = (0..house.len()).max_by(|&i, &j| {
@@ -193,8 +266,14 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let mut v = Point { x: -u.y, y: u.x };
     if (lc.x - hc.x) * v.x + (lc.y - hc.y) * v.y < 0.0 { v = Point { x: -v.x, y: -v.y }; }
     let mut f = Frame { c: hc, u, v };
+    // Half extents in the frame: of the body (a, b), of the whole home (ha, hb).
     let (mut a, mut b) = (0.0f64, 0.0f64);
     for &h in &house { let (s, t) = f.local(h); a = a.max(s.abs()); b = b.max(t.abs()); }
+    let mut hulls: Vec<Vec<Point>> = parts.iter().map(|(s, _)| hull(&s.outer)).collect();
+    let (mut ha, mut hb) = (a, b);
+    for (i, h) in hulls.iter().enumerate() {
+        if home[i] { for &p in h { let (s, t) = f.local(p); ha = ha.max(s.abs()); hb = hb.max(t.abs()); } }
+    }
     let side = if rng.chance(0.5) { 1.0 } else { -1.0 };
     f.u = Point { x: u.x * side, y: u.y * side };
     // Programme: the type's core buildings, then draws from its pool.
@@ -204,9 +283,11 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let mut list: Vec<&'static str> = vec![];
     if farm {
         list = names("core");
-        let n = (rng.int(lo as u32, hi.max(lo) as u32) as usize + usize::from(wealth > 0.7)).saturating_sub(usize::from(wealth < 0.3)).max(list.len());
-        let pool = names("ancillary");
-        while list.len() < n && !pool.is_empty() { list.push(pool[rng.int(0, pool.len() as u32 - 1) as usize]); }
+        if ancillary {
+            let n = (rng.int(lo as u32, hi.max(lo) as u32) as usize + usize::from(wealth > 0.7)).saturating_sub(usize::from(wealth < 0.3)).max(list.len());
+            let pool = names("ancillary");
+            while list.len() < n && !pool.is_empty() { list.push(pool[rng.int(0, pool.len() as u32 - 1) as usize]); }
+        }
     } else {
         let (s0, s1) = pair(&d["smallholding"]);
         let pool: Vec<_> = names("ancillary").into_iter().chain(names("core")).filter(small).collect();
@@ -222,7 +303,7 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let (ls, lt) = f.local(lc);
     let room = ls.hypot(lt);
     let (ds, dt) = if room > 1.0 { (ls / room, lt.max(-0.3 * room) / room) } else { (0.0, 1.0) };
-    let reach = a * ds.abs() + b * dt.abs() + 0.5 * yard + 1.0;
+    let reach = ha * ds.abs() + hb * dt.abs() + 0.5 * yard + 1.0;
     let (ys, yt) = (ds * reach, dt * reach);
     // Candidate spots: a grid over the lot (about 16 × 16), in the house frame.
     let (mut s0, mut s1, mut t0, mut t1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
@@ -231,8 +312,6 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let mut grid = vec![];
     let mut s = s0 + step / 2.0;
     while s < s1 { let mut t = t0 + step / 2.0; while t < t1 { if g::contains(lot, f.at(s, t)) { grid.push((s, t)); } t += step; } s += step; }
-    let mut hulls: Vec<Vec<Point>> = parts.iter().map(|(s, _)| hull(&s.outer)).collect();
-    let main_hull = mi;
     let (mut slot, mut placed) = (0usize, vec![]);
     for label in list {
         let bd = &d["buildings"][label];
@@ -243,13 +322,17 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
         // A round compound's small bodies (granaries, huts) are round too.
         let round = bd["round"].as_bool() == Some(true) || layout == "round" && !big;
         // Spots, best first: a linear farm's byre or barn under the house's
-        // ridge line, a terraced one against its sides; then the yard's rim
-        // (closed, U, L, round: tight; scattered and small bodies: loose),
-        // long sides facing the yard, never in front of the house.
+        // ridge line (at either gable end of the body, the free one when a home
+        // part holds the other), a terraced one against its sides; then the
+        // yard's rim (closed, U, L, round: tight; scattered and small bodies:
+        // loose), long sides facing the yard, never in front of the house.
         let mut spots: Vec<(f64, f64, f64, f64, bool)> = vec![]; // score, s, t, angle, attached
         let sg = if slot % 2 == 0 { 1.0 } else { -1.0 };
         match layout {
-            "linear" if big && slot < 2 => spots.push((-1.0, sg * (a + w / 2.0), b - dp.min(2.0 * b) / 2.0, 0.0, true)),
+            "linear" if big && slot < 2 => {
+                spots.push((-1.0, sg * (a + w / 2.0), b - dp.min(2.0 * b) / 2.0, 0.0, true));
+                spots.push((-0.9, -sg * (a + w / 2.0), b - dp.min(2.0 * b) / 2.0, 0.0, true));
+            }
             "terraced" if slot < 4 => {
                 spots.push((-1.0, sg * (a + w / 2.0), b - dp / 2.0 + 1.5 * (slot / 2) as f64, 0.0, true));
                 spots.push((-0.5, sg * rng.range(0.0, (a - w / 2.0).max(0.0)), b + dp / 2.0, 0.0, true));
@@ -275,7 +358,8 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
             for k in [1.0, 0.8, 0.65] {
                 let ring = f.body(s, t, ang, w * k, dp * k, round);
                 if !within(lot, &ring) { continue; }
-                if !hulls.iter().enumerate().all(|(i, h)| apart(h, &ring, if attached && i == main_hull { -0.02 } else { 1.2 })) { continue; }
+                // Clear of every body; an attached one may touch the home, never enter it.
+                if !hulls.iter().enumerate().all(|(i, h)| apart(h, &ring, if attached && home.get(i) == Some(&true) { -0.02 } else { 1.2 })) { continue; }
                 hulls.push(ring.clone());
                 parts.push((Shape { outer: g::normalized(Shape { outer: ring, holes: vec![] }).outer, holes: vec![] }, label));
                 placed.push(label);
@@ -314,7 +398,7 @@ mod tests {
             for k in 0..4 {
                 let mut parts = vec![(house(15.0, 2.0, 11.0, 7.0), "building")];
                 let seed = format!("{c}/{k}");
-                let v = build(&mut parts, &lot, c, true, true, 0.5, &seed).unwrap();
+                let v = build(&mut parts, &lot, c, true, true, 0.5, &seed, true).unwrap();
                 total += parts.len() - 1;
                 for (i, (s, _)) in parts.iter().enumerate() {
                     for p in &s.outer { assert!(g::contains(&lot, *p), "{c}: outside"); }
@@ -334,7 +418,45 @@ mod tests {
         assert_eq!(rural("middle", "dwelling.house", false, false, 400.0, 10_000), None);
         assert_eq!(rural("village", "dwelling.tenement", false, false, 900.0, 0), None);
         let mut parts = vec![(house(8.0, 1.0, 8.0, 6.0), "building")];
-        build(&mut parts, &rect(24.0, 30.0), "european-organic", false, false, 0.5, "cottage").unwrap();
+        build(&mut parts, &rect(24.0, 30.0), "european-organic", false, false, 0.5, "cottage", true).unwrap();
         assert!(parts.len() >= 2 && parts[1..].iter().all(|(s, _)| g::area(s) <= 25.0 * 1.2), "{:?}", parts.iter().map(|p| p.1).collect::<Vec<_>>());
+    }
+
+    /// The farmhouse keeps its body and the parts standing against it; the occupation's
+    /// larger stock barn gives way to the type's buildings, laid clear of the whole home.
+    /// Without the ancillary draw only the type's core buildings stand.
+    #[test]
+    fn the_farmhouse_keeps_its_parts_and_core_buildings_stand_alone() {
+        let lot = rect(50.0, 60.0);
+        for k in 0..6 {
+            let seed = format!("home/{k}");
+            let mut parts = vec![
+                (house(15.0, 2.0, 11.0, 7.0), "building"),
+                (house(26.0, 2.0, 5.0, 12.0), "wing"),
+                (house(18.0, 9.0, 3.0, 2.0), "porch"),
+                (house(12.0, 30.0, 16.0, 9.0), "building"),
+            ];
+            build(&mut parts, &lot, "european-organic", true, true, 0.5, &seed, false).unwrap();
+            assert_eq!(parts[..3].iter().map(|p| p.1).collect::<Vec<_>>(), ["building", "wing", "porch"]);
+            assert!((g::area(&parts[0].0) - 77.0).abs() < 1e-6, "the body is the house, not the barn");
+            let core: Vec<&str> = data()["types"][farm_type("european-organic", &seed)]["core"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+            assert!(parts[3..].iter().all(|p| core.contains(&p.1)) && parts.len() - 3 <= core.len(), "{:?}", parts.iter().map(|p| p.1).collect::<Vec<_>>());
+            for (i, (s, _)) in parts.iter().enumerate().skip(3) {
+                for (t, _) in &parts[..i] { assert!(g::intersection(s, t).iter().map(g::area).sum::<f64>() < 0.1, "overlap"); }
+            }
+        }
+    }
+
+    /// A lone farm's plot follows its culture's farm type and its seed.
+    #[test]
+    fn farm_plots_follow_the_culture_and_the_seed() {
+        let plots = |c: &str| (0..8).map(|k| plot(c, &format!("{c}/{k}"))).collect::<Vec<_>>();
+        // A longhouse farm is long and shallow, a compound about square.
+        assert!(plots("native-iroquoian").iter().all(|&(w, d)| w > 1.4 * d));
+        assert!(plots("kraal").iter().all(|&(w, d)| (w / d - 1.0).abs() < 0.35));
+        let european = plots("european-organic");
+        assert!(european.iter().all(|&(w, d)| (22.0..=80.0).contains(&w) && (24.0..=80.0).contains(&d)));
+        let (lo, hi) = european.iter().map(|&(w, d)| w * d).fold((f64::MAX, 0.0_f64), |m, a| (m.0.min(a), m.1.max(a)));
+        assert!(hi > 1.3 * lo, "plots of one culture too alike: {lo:.0}..{hi:.0}");
     }
 }

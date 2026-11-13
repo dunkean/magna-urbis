@@ -13,20 +13,28 @@ function visit(n: number, u: number, v: number, brush: PaintBrush, paint: (i: nu
     }
   }
 }
-export function paintHeight(values: Float32Array, original: Float32Array, n: number, u: number, v: number, brush: PaintBrush, tool: HeightBrush): void {
+/** Fixed fine-scale residual: level/smooth work on the broad shape while retaining its noise. */
+export function terrainPaintDetail(values: Float32Array, n: number): Float32Array {
+  const radius=Math.max(1,Math.round(n/128)),horizontal=new Float32Array(values.length),low=new Float32Array(values.length),detail=new Float32Array(values.length);
+  for(let y=0;y<n;y++){let sum=0;for(let x=-radius;x<=radius;x++)sum+=values[y*n+clamp(x,0,n-1)];for(let x=0;x<n;x++){horizontal[y*n+x]=sum/(radius*2+1);sum+=values[y*n+clamp(x+radius+1,0,n-1)]-values[y*n+clamp(x-radius,0,n-1)];}}
+  for(let x=0;x<n;x++){let sum=0;for(let y=-radius;y<=radius;y++)sum+=horizontal[clamp(y,0,n-1)*n+x];for(let y=0;y<n;y++){low[y*n+x]=sum/(radius*2+1);sum+=horizontal[clamp(y+radius+1,0,n-1)*n+x]-horizontal[clamp(y-radius,0,n-1)*n+x];}}
+  for(let i=0;i<detail.length;i++)detail[i]=values[i]-low[i];return detail;
+}
+export function paintHeight(values: Float32Array, original: Float32Array, n: number, u: number, v: number, brush: PaintBrush, tool: HeightBrush, detail?: Float32Array): void {
   // Smoothing reads a frozen local neighbourhood, so traversal order cannot bias the slope.
   const x0 = Math.max(0, Math.floor((u - brush.radius) * n) - 1), y0 = Math.max(0, Math.floor((v - brush.radius) * n) - 1);
   const x1 = Math.min(n - 1, Math.ceil((u + brush.radius) * n) + 1), y1 = Math.min(n - 1, Math.ceil((v + brush.radius) * n) + 1);
   const width = Math.max(0, x1 - x0 + 1), snapshot = tool === 'smooth' ? new Float32Array(width * Math.max(0, y1 - y0 + 1)) : undefined;
-  if (snapshot) for (let y = y0; y <= y1; y++) snapshot.set(values.subarray(y * n + x0, y * n + x1 + 1), (y - y0) * width);
+  if (snapshot) for (let y = y0; y <= y1; y++) for(let x=x0;x<=x1;x++) snapshot[(y-y0)*width+x-x0]=values[y*n+x]-(detail?.[y*n+x]??0);
   visit(n, u, v, brush, (i, x, y, alpha) => {
     let next = values[i];
     if (tool === 'raise' || tool === 'lower') next += (tool === 'raise' ? 1 : -1) * brush.strength * alpha;
     else {
-      let target = tool === 'restore' ? original[i] : brush.target;
+      let target = tool === 'restore' ? original[i] : brush.target+(detail?.[i]??0);
       if (snapshot) {
         target = 0;
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) target += snapshot[(clamp(y + dy, y0, y1) - y0) * width + clamp(x + dx, x0, x1) - x0] / 9;
+        target+=detail?.[i]??0;
       }
       next += (target - next) * alpha * (tool === 'smooth' ? .5 : 1);
     }

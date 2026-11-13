@@ -111,7 +111,10 @@ export function rustSettlementRaster(world: World): SettlementRaster {
     && cached.coastline === terrain.coastline && cached.islands === terrain.islands && cached.lakes === terrain.lakes
     && cached.rivers.length === terrain.rivers.length && cached.rivers.every((river, i) => river.path === terrain.rivers[i].path && river.width === terrain.rivers[i].width && river.id === terrain.rivers[i].id)) return cached.raster;
   const planning = n !== grid.w ? settlementRaster(native!, n) : undefined;
-  const height = planning?.height ?? grid.data, waterMask = planning?.water ?? terrain.water;
+  // Projection marks cave rock as class 4, which Rust rejects: send it as class 2 at ground level and keep the rock mask JS-side.
+  const projectedRock = !planning && terrain.water.includes(4);
+  const rock = planning?.rock ?? (projectedRock ? Uint8Array.from(terrain.water, v => v === 4 ? 1 : 0) : undefined);
+  const height = planning?.height ?? grid.data, waterMask = planning?.water ?? (projectedRock ? Uint8Array.from(terrain.water, v => v === 4 ? 2 : v) : terrain.water);
   const waterLevel = planning?.waterLevel ?? new Float32Array(n * n), riverWidth = planning?.riverWidth ?? new Float32Array(n * n), riverIds = planning?.riverIds ?? new Int32Array(n * n).fill(-1);
   if (!planning) for (let i = 0; i < waterLevel.length; i++) if (terrain.water[i]) waterLevel[i] = terrain.water[i] === 1 ? terrain.seaLevel : Math.max(grid.data[i], terrain.filled[i]);
   if (!planning) for (const [index, river] of terrain.rivers.entries()) for (let j = 1; j < river.path.length; j++) {
@@ -130,6 +133,7 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   // lakes/rivers remain separate water constraints instead of a second expensive polygon boolean.
   const land = seaWater.length ? differenceS(square, seaWater) : [{ outer: square, holes: [] }];
   const raster: SettlementRaster = { width: world.mapSize, n, height, water: waterMask, waterLevel, riverWidth, riverIds,
+    ...(rock ? { rock } : {}),
     ...(physical ? { physical } : {}),
     geometry: { land: land.flatMap(p => [p.outer, ...p.holes]), water: water.map(p => [p.outer, ...p.holes]), springs: springPoints(native?.water, native?.hydrology) } };
   physicalRasters.set(grid, { width: world.mapSize, cell, height: grid.data, physical: physical?.height, physicalFloor: physical?.floor, physicalInterpolation: physical?.interpolation, water: terrain.water, filled: terrain.filled, seaLevel: terrain.seaLevel, coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,

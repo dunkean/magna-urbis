@@ -244,8 +244,8 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     }
   }
 
-  // ---- hills (local maxima of the height field)
-  {
+  // ---- hills (local maxima of the height field); the underdark has rock masses, not summits
+  if (world.options.biome !== 'underdark') {
     const hg = t.height;
     const R = Math.max(2, Math.round(160 / hg.cell));
     const picks: { p: Vec2; h: number }[] = [];
@@ -270,6 +270,34 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     const chosen: typeof picks = [];
     for (const c of picks) { if (chosen.every((o) => dist(o.p, c.p) > Math.max(hg.cell*R,S*.025))) chosen.push(c); }
     chosen.forEach((c) => add({ kind: 'hill', text: proper('hill', 'hill:' + pointKey(c.p)), parts: feature('hill', 'hill:' + pointKey(c.p)), rank: 4, anchor: c.p }));
+  }
+
+  // ---- underdark caverns: the widest chambers (local maxima of the distance to the rock) take a cavern name
+  if (world.options.biome === 'underdark')
+  if (world.options.biome === 'underdark' && t.caverns?.mask?.length === t.height.w * t.height.h) {
+    const { w, h, cell } = t.height, rock = t.caverns.mask, far = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) far[i] = rock[i] ? 0 : 1e9;
+    const pass = (i: number, j: number, d: number) => { if (far[j] + d < far[i]) far[i] = far[j] + d; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (x) pass(i, i - 1, 1); if (y) { pass(i, i - w, 1); if (x) pass(i, i - w - 1, 1.414); if (x + 1 < w) pass(i, i - w + 1, 1.414); } }
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) { const i = y * w + x; if (x + 1 < w) pass(i, i + 1, 1); if (y + 1 < h) { pass(i, i + w, 1); if (x + 1 < w) pass(i, i + w + 1, 1.414); if (x) pass(i, i + w - 1, 1.414); } }
+    const clearance = Math.max(40, cell * 2.5), R = Math.max(2, Math.round(clearance / cell)), reserve = world.site?.reserveRadius ?? 300;
+    const picks: { p: Vec2; c: number }[] = [];
+    for (let y = R; y < h - R; y += 2) for (let x = R; x < w - R; x += 2) {
+      const c = far[y * w + x]; if (c * cell < clearance || t.water[y * w + x] === 2) continue;
+      let top = true;
+      for (let dy = -R; dy <= R && top; dy += Math.max(1, R >> 1)) for (let dx = -R; dx <= R; dx += Math.max(1, R >> 1)) if (far[(y + dy) * w + x + dx] > c) { top = false; break; }
+      const p = { x: (x + .5) * cell, y: (y + .5) * cell };
+      if (top && dist(p, center) > reserve * 1.3) picks.push({ p, c });
+    }
+    picks.sort((a, b) => b.c - a.c);
+    const chosen: typeof picks = [];
+    for (const c of picks) if (chosen.length < 7 && chosen.every(o => dist(o.p, c.p) > S * .13)) chosen.push(c);
+    for (const c of chosen) {
+      const key = 'cavern:' + pointKey(c.p), parts = { ...feature('hill', key), role: 'terrain.cavern' };
+      parts.cultural = presentName({ ...parts, opaque: false }, { mode: 'localized', language: 'en' });
+      // Wide chambers rank first in the text layer's selection (importance, then extent).
+      add({ kind: 'hill', text: parts.cultural, parts, rank: 3, anchor: c.p, detail: .2, span: c.c * cell * 2 });
+    }
   }
 
   // ---- water bodies, forests

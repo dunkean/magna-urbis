@@ -14,11 +14,11 @@ export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composit
   waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
 
 export function cityGroundSettings(r: ResolvedAppearance, ground: City3dGround,
-  source: Pick<Terrain3dGroundSettings, 'climate' | 'climateZone' | 'sourceCell'> & { seed: string; relief: string }): Terrain3dGroundSettings | undefined {
+  source: Pick<Terrain3dGroundSettings, 'climate' | 'climateZone' | 'sourceCell' | 'underdark' | 'townGlow' | 'farmBeds'> & { seed: string; relief: string }): Terrain3dGroundSettings | undefined {
   if (ground === 'map' || !r.ground.layers.relief || !r.ground.layers.hypsometry) return;
   const style = terrainStyle(ground === 'render' ? 'render3d' : ground, r.palette.colors);
   const relief = source.relief === 'flat' || source.relief === 'hills' || source.relief === 'valley' ? source.relief : 'mountains';
-  return { seed: seedHash(source.seed), climate: source.climate, climateZone: source.climateZone, sourceCell: source.sourceCell,
+  return { seed: seedHash(source.seed), climate: source.climate, climateZone: source.climateZone, sourceCell: source.sourceCell, ...(source.underdark ? { underdark: true, ...(source.townGlow ? { townGlow: source.townGlow } : {}), ...(source.farmBeds ? { farmBeds: source.farmBeds } : {}) } : {}),
     lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, paperMap: !!style.traits.paperMap,
     v2Season: r.ground.season, v2Calendar: r.ground.calendar, ...cityGroundLook(r),
     displacement: r.city.refinement !== 'source', forestBrushes: style.traits.forestBrushes,

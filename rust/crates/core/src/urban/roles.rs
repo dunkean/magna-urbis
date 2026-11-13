@@ -32,6 +32,10 @@ pub struct ServiceEntry {
     /// Entry dropped above this population (0 = no ceiling): hamlet outbuildings.
     #[serde(default)]
     pub max_pop: f64,
+    /// Culture that builds this entry when it is not the place's own (the
+    /// `monuments` facet of the style sheet); never read from the catalogue.
+    #[serde(default, skip)]
+    pub culture: String,
 }
 /// Settlement condition (`thriving`, `declining`, `abandoned`, `ruined`).
 #[derive(Clone, Debug, Deserialize)]
@@ -113,31 +117,47 @@ pub fn isolated(role: &str) -> Option<&'static IsolatedRule> {
 pub fn is_isolated(role: &str) -> bool {
     isolated(role).is_some()
 }
+/// Per-role lookups over the whole catalogue, built once: the houses function
+/// of the first entry naming a role (families, culture services, rural,
+/// harbour, then isolated rules) and the roles some family or culture entry
+/// marks as a landmark.
+struct RoleIndex {
+    function: std::collections::HashMap<&'static str, &'static str>,
+    landmark: std::collections::HashSet<&'static str>,
+}
+fn role_index() -> &'static RoleIndex {
+    static INDEX: OnceLock<RoleIndex> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let cat = catalogue();
+        let mut function = std::collections::HashMap::new();
+        let mut landmark = std::collections::HashSet::new();
+        for e in cat.families.values().flatten().chain(cat.culture_services.values().flatten()) {
+            if e.landmark {
+                landmark.insert(e.role.as_str());
+            }
+        }
+        for e in cat
+            .families
+            .values()
+            .flatten()
+            .chain(cat.culture_services.values().flatten())
+            .chain(&cat.rural)
+            .chain(&cat.harbour)
+        {
+            function.entry(e.role.as_str()).or_insert(e.function.as_str());
+        }
+        for i in cat.isolated.values() {
+            function.entry(i.role.as_str()).or_insert(i.function.as_str());
+        }
+        RoleIndex { function, landmark }
+    })
+}
 /// Houses function of a catalogue role (any family), for user overrides.
 pub fn role_function(role: &str) -> Option<&'static str> {
-    let cat = catalogue();
-    cat.families
-        .values()
-        .flatten()
-        .chain(cat.culture_services.values().flatten())
-        .chain(&cat.rural)
-        .chain(&cat.harbour)
-        .find(|e| e.role == role)
-        .map(|e| e.function.as_str())
-        .or_else(|| {
-            cat.isolated
-                .values()
-                .find(|i| i.role == role)
-                .map(|i| i.function.as_str())
-        })
+    role_index().function.get(role).copied()
 }
 pub fn is_landmark(role: &str) -> bool {
-    let cat = catalogue();
-    cat.families
-        .values()
-        .flatten()
-        .chain(cat.culture_services.values().flatten())
-        .any(|e| e.role == role && e.landmark)
+    role_index().landmark.contains(role)
 }
 /// Longest known dotted (or `craft:`) prefix of `id` in `table`, family table first.
 fn lookup(
@@ -206,26 +226,66 @@ pub fn reserves_block(e: &ServiceEntry) -> bool {
 pub fn services(culture: &str, population: u32) -> Vec<ServiceNeed> {
     services_with_functions(culture, population, super::programme::ProgrammeFunctions::default())
 }
+/// Services at the catalogue's default singular density (1).
+pub fn services_with_functions(culture: &str, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
+    services_scaled(culture, population, functions, 1.0)
+}
+/// Count scale of one entry under the singular density (`LayoutConfig::
+/// singular_density`, 0..3). Open land (markets, commons) and the nucleus
+/// landmark keep the catalogue's count. At 0 the other entries survive only
+/// when the town's explicit functions raise them (`required`), at their
+/// catalogue count.
+fn density_scale(e: &ServiceEntry, density: f64, nucleus: bool, required: bool) -> Option<f64> {
+    if nucleus || matches!(e.function.as_str(), "market" | "common") {
+        return Some(1.0);
+    }
+    let k = if density.is_finite() { density.clamp(0.0, 3.0) } else { 1.0 };
+    if k > 0.0 {
+        Some(k)
+    } else if required {
+        Some(1.0)
+    } else {
+        None
+    }
+}
 /// Combinable effects are applied once per catalogue entry. Shared count
 /// effects use their maximum; no Cartesian duplicate service demands.
-pub fn services_with_functions(culture: &str, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
+/// A culture's own entries (`cultureServices`) replace the family entry of
+/// the same role. `density` divides `per` and the population thresholds (by
+/// its square root) and multiplies `max`; singular entries (per = 0) stay one.
+pub fn services_scaled(
+    culture: &str,
+    population: u32,
+    functions: super::programme::ProgrammeFunctions,
+    density: f64,
+) -> Vec<ServiceNeed> {
+    use std::borrow::Cow;
     let pop = f64::from(population);
     let cat = catalogue();
-    let mut entries = cat
+    let mut entries: Vec<Cow<'static, ServiceEntry>> = cat
         .families
         .get(family(culture))
-        .cloned()
-        .unwrap_or_default();
-    entries.extend(cat.rural.iter().cloned());
-    entries.extend(cat.culture_services.get(culture).into_iter().flatten().cloned());
+        .into_iter()
+        .flatten()
+        .chain(&cat.rural)
+        .map(Cow::Borrowed)
+        .collect();
+    for e in cat.culture_services.get(culture).into_iter().flatten() {
+        match entries.iter_mut().find(|x| x.role == e.role) {
+            Some(x) => *x = Cow::Borrowed(e),
+            None => entries.push(Cow::Borrowed(e)),
+        }
+    }
     entries.retain(|e| e.max_pop <= 0.0 || pop <= e.max_pop);
     let nucleus = &super::catalogue()["cultures"][culture]["nucleus"];
-    if let Some(role) = nucleus["kind"].as_str().and_then(|k| cat.nucleus.get(k)) {
+    let nucleus_role = nucleus["kind"].as_str().and_then(|k| cat.nucleus.get(k));
+    if let Some(role) = nucleus_role {
         let area = nucleus["area"]
             .as_array()
             .and_then(|a| Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?]))
             .filter(|a| a[1] > 0.0);
         if let Some(e) = entries.iter_mut().find(|e| &e.role == role) {
+            let e = e.to_mut();
             e.landmark = true;
             e.site = "nucleus".into();
             e.min_pop = e.min_pop.min(200.0);
@@ -241,7 +301,7 @@ pub fn services_with_functions(culture: &str, population: u32, functions: super:
             );
             entries.insert(
                 0,
-                ServiceEntry {
+                Cow::Owned(ServiceEntry {
                     role: role.clone(),
                     function: if open { "market" } else { "collective" }.into(),
                     per: 0.0,
@@ -254,31 +314,38 @@ pub fn services_with_functions(culture: &str, population: u32, functions: super:
                     district: if open { "market" } else { "religious" }.into(),
                     requires: String::new(),
                     max_pop: 0.0,
-                },
+                    culture: String::new(),
+                }),
             );
         }
     }
     entries
         .into_iter()
-        .filter_map(|mut e| {
+        .filter_map(|e| {
             let mut mult: f64 = 1.0;
+            let mut min_pop = e.min_pop;
             if e.role.starts_with("commerce.") && e.function == "collective" { mult = 1.0 + functions.commerce; }
-            if e.function == "market" { e.per_capita *= 1.0 + 2.0 * functions.commerce; }
-            if ["elite.", "civic.", "defence."].iter().any(|p| e.role.starts_with(p)) { e.min_pop *= 1.0 - 0.75 * functions.capital; }
+            if ["elite.", "civic.", "defence."].iter().any(|p| e.role.starts_with(p)) { min_pop *= 1.0 - 0.75 * functions.capital; }
             if e.role == "craft.mill" { mult = mult.max(1.0 + functions.riverine); }
             if e.role.starts_with("craft.") { mult = mult.max(1.0 + functions.artisan); }
             if e.role.starts_with("storage.") { mult = mult.max(1.0 + functions.agricultural); }
-            if pop < e.min_pop {
+            let k = density_scale(&e, density, nucleus_role == Some(&e.role), mult > 1.0)?;
+            min_pop /= k.sqrt();
+            if pop < min_pop {
                 return None;
             }
+            let mut e = e.into_owned();
+            e.min_pop = min_pop;
+            if e.function == "market" { e.per_capita *= 1.0 + 2.0 * functions.commerce; }
             let base = if e.per > 0.0 {
-                (pop / e.per).floor().max(1.0)
+                (pop * k / e.per).floor().max(1.0)
             } else {
                 1.0
             };
+            let cap = (e.max.max(1) as f64 * k).round().max(1.0);
             // Buildings are indivisible: floor after applying intensity to
             // both count and cap. A tiny positive weight never doubles a site.
-            let sites = ((base * mult).floor() as usize).clamp(1, (e.max.max(1) as f64 * mult).floor() as usize);
+            let sites = ((base * mult).floor() as usize).clamp(1, (cap * mult).floor() as usize);
             let area = if e.per_capita > 0.0 {
                 (pop * e.per_capita / sites as f64).clamp(e.area[0], e.area[1])
             } else {
@@ -295,8 +362,27 @@ pub fn services_with_functions(culture: &str, population: u32, functions: super:
 }
 
 /// Quay services exist in every culture, but only a built port requests them.
+/// The layout's singular density scales the family and harbour counts.
 pub fn services_for_layout(layout: &Layout, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
-    let mut needs = services_with_functions(&layout.culture, population, functions);
+    let density = layout.config.as_ref().map_or(1.0, |c| c.singular_density);
+    let mut needs = match super::forms::sheet::monuments(layout) {
+        // A hybrid place (`monuments` facet): each community brings the singular
+        // and utility buildings a place of its size and culture has.
+        Some(shares) => shares
+            .into_iter()
+            .flat_map(|(culture, share)| {
+                let foreign = culture != layout.culture;
+                let mut needs = services_scaled(culture, (population as f64 * share).round() as u32, functions, density);
+                if foreign {
+                    for need in &mut needs {
+                        need.entry.culture = culture.to_owned();
+                    }
+                }
+                needs
+            })
+            .collect(),
+        None => services_scaled(&layout.culture, population, functions, density),
+    };
     if layout.config.as_ref().is_some_and(|c| c.power_high_ground) {
         high_ground_services(&mut needs);
     }
@@ -307,13 +393,17 @@ pub fn services_for_layout(layout: &Layout, population: u32, functions: super::p
         entries.push(e.clone());
     }
     for e in entries.into_iter().skip(needs.len()) {
-        if population < e.min_pop as u32 { continue; }
-        let sites = if e.per > 0.0 { (population as f64 / e.per).floor().max(1.0) as usize } else { 1 };
+        let Some(k) = density_scale(&e, density, false, functions.port > 0.0) else { continue };
+        if population < (e.min_pop / k.sqrt()) as u32 { continue; }
+        let sites = if e.per > 0.0 { (population as f64 * k / e.per).floor().max(1.0) as usize } else { 1 };
+        let cap = ((e.max as f64 * k).round() as usize).max(1);
         let area = e.area[0] + (e.area[1] - e.area[0]) * ((population as f64 / e.min_pop).log10() / 2.0).clamp(0.0, 1.0);
-        needs.push(ServiceNeed { sites: sites.min(e.max), area, entry: e });
+        needs.push(ServiceNeed { sites: sites.min(cap), area, entry: e });
     }
     for need in &mut needs {
         if need.entry.role == "craft.boatshed" { need.entry.site = "quay".into(); need.entry.district = "port".into(); need.entry.landmark = population >= 3000; }
+        // A port's customs house and ropewalk stand on its quays, not at a land gate.
+        if matches!(need.entry.role.as_str(), "civic.customs" | "craft.ropewalk") { need.entry.site = "quay".into(); need.entry.district = "port".into(); }
     }
     needs
 }
@@ -395,6 +485,9 @@ pub fn site_cost(site: &str, f: &SiteFacts) -> f64 {
         "quay" if f.shore => f.core * 0.6,
         "quay" if f.river => 0.8 + f.core * 0.6,
         "quay" => 5.0 + f.core,
+        // A lighthouse marks the sea or lake shore, the farther from the core the better.
+        "shore" if f.shore => (1.0 - f.core.min(1.0)) * 0.6,
+        "shore" => QUAY_MISS + f.core,
         "downstream" if f.river => f.downstream * 2.5 + (1.0 - f.core.min(1.0)) * 0.8,
         "downstream" if f.water => 1.5 + (1.0 - f.core.min(1.0)) * 0.8,
         "downstream" => 3.0 + f.high * 2.0 + (1.0 - f.core) * 1.5,
@@ -429,6 +522,10 @@ pub struct Frame {
 }
 impl Frame {
     pub fn new(layout: &Layout, env: &[BlockEnvironment]) -> Self {
+        Self::with_quay(layout, env, quay_contacts(layout))
+    }
+    /// Frame over already measured quay contacts (`quay_contacts(layout)`).
+    fn with_quay(layout: &Layout, env: &[BlockEnvironment], quay: Vec<f64>) -> Self {
         let center = layout.center;
         let radius = layout
             .blocks
@@ -448,7 +545,6 @@ impl Frame {
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), e| {
                 (lo.min(e.water_height), hi.max(e.water_height))
             });
-        let quay = quay_contacts(layout);
         let harbour = quay
             .iter()
             .enumerate()
@@ -635,9 +731,14 @@ pub(super) fn quay_water_fronts(layout: &Layout, surface: super::Surface<'_>) ->
 }
 
 /// A `quay` service in a town with quays may only stand on a block that a
-/// quay serves; elsewhere (no quay planned) it keeps the natural shore.
+/// quay serves; elsewhere (no quay planned) it keeps the natural shore. A
+/// `shore` service (lighthouse) needs a sea or lake front, never a river.
 pub fn site_admissible(site: &str, f: &SiteFacts) -> bool {
-    site != "quay" || f.quay
+    match site {
+        "quay" => f.quay,
+        "shore" => f.shore,
+        _ => true,
+    }
 }
 /// Enclosure gates; an open town uses the points where its regional roads leave
 /// the built area (vertex of each regional road closest to 0.9 R).
@@ -685,8 +786,11 @@ pub fn assign(
     env: &[BlockEnvironment],
 ) -> Vec<Option<usize>> {
     let sheltered = layout.config.as_ref().is_some_and(super::macroplan::harbour::parameterized);
-    if population >= 800 && navigable { port_quarters(layout, env); }
-    let frame = Frame::new(layout, env);
+    // Port refinement moves blocks between quarters but never reshapes a
+    // block or a street, so one measure of the quay contacts serves it all.
+    let contact = quay_contacts(layout);
+    if population >= 800 && navigable { port_quarters(layout, env, &contact); }
+    let frame = Frame::with_quay(layout, env, contact);
     let Some(structure) = layout.structure.as_ref() else {
         return vec![None; layout.blocks.len()];
     };
@@ -1039,9 +1143,8 @@ fn served_quay_frontage(layout: &Layout, frame: &Frame, env: &[BlockEnvironment]
 /// Refine an atomic waterfront quarter by whole served blocks. Keep its old
 /// index on the connected central remainder; appended children inherit its
 /// phase/tissue. Block IDs, footprints, streets and programme stay untouched.
-fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment]) {
+fn port_quarters(layout: &mut Layout, env: &[BlockEnvironment], contact: &[f64]) {
     if layout.structure.is_none() { return; }
-    let contact = quay_contacts(layout);
     let original = layout.quarters.len();
     let protected: std::collections::BTreeSet<usize> = layout.programme.iter().flat_map(|pr| {
         pr.reservations.iter().filter(|r| pr.demands.iter().any(|d| d.id == r.demand_id && d.site != "quay"))
@@ -1209,7 +1312,7 @@ fn carve_port<'a>(
             .is_none_or(|gi| fixed[gi].is_some())
     };
     let local = layout.config.as_ref().is_some_and(super::macroplan::harbour::parameterized);
-    let contact = if local { quay_contacts(layout) } else { vec![] };
+    let contact = &frame.quay;
     let quay_quarters: Vec<usize> = (0..front.len())
         .filter(|&q| front[q] >= QUAY_FRONT && Some(q) != nucleus && !pinned(q))
         // Refinement leaves inland blocks and protected institutions in the
@@ -1550,6 +1653,24 @@ mod tests {
         assert!(friday.area >= 3200.0, "nucleus area from catalogue.json");
         assert!(district_target(100_000) >= 10 && district_target(100_000) <= 30);
         assert_eq!(district_target(150), 1);
+    }
+
+    #[test]
+    fn singular_density_scales_services_and_cultures_own_their_buildings() {
+        let f = super::super::programme::ProgrammeFunctions::default();
+        let count = |s: &[ServiceNeed], r: &str| s.iter().filter(|n| n.entry.role == r).map(|n| n.sites).sum::<usize>();
+        let base = services_scaled("european-organic", 5000, f, 1.0);
+        let rich = services_scaled("european-organic", 5000, f, 3.0);
+        let bare = services_scaled("european-organic", 5000, f, 0.0);
+        assert!(count(&base, "commerce.tavern") >= 5 && count(&base, "commerce.inn") >= 4);
+        assert!(count(&rich, "commerce.tavern") > count(&base, "commerce.tavern"));
+        assert!(bare.iter().all(|n| matches!(n.entry.function.as_str(), "market" | "common")), "density 0 keeps the nucleus and open land");
+        let dwarven = services("dwarven", 2000);
+        assert!(dwarven.iter().any(|n| n.entry.role == "civic.great-forge" && n.entry.landmark));
+        assert_eq!(dwarven.iter().filter(|n| n.entry.role == "craft.smithy").count(), 1, "the culture entry replaces the family one");
+        assert_eq!(count(&dwarven, "craft.smithy"), 5);
+        assert_eq!(role_function("civic.great-forge"), Some("workshop"));
+        assert!(is_landmark("civic.moot-tree") && !is_landmark("commerce.tavern"));
     }
 
     /// A river town: mills or tanneries on the river bank (tanneries on the

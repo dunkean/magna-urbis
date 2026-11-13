@@ -32,7 +32,7 @@ import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMas
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { UrbanLanduseScene } from './urbanLanduseData';
 import { forestOccupation } from './forestOccupation';
-import { withLandDetail } from './landDetail';
+import { withLandDetail, type LandCultures } from './landDetail';
 import urbanCatalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 
 const ns = 'http://www.w3.org/2000/svg';
@@ -190,7 +190,7 @@ export function createTerrainSettlements(options: {
     const width = options.getTerrain()?.width;
     // Landuse, retained decor and terrain share the frame rebased by cropTerrain: [0, width]².
     if (options.useForestMaterial?.() && landuseScene?.landuse && width && Math.abs(landuseScene.mapSize - width) <= width * 1e-6) {
-      if (occupationScene !== landuseScene) { occupationScene = landuseScene; occupation = withLandDetail(forestOccupation(landuseScene.landuse), landuseScene.landuse); }
+      if (occupationScene !== landuseScene) { occupationScene = landuseScene; occupation = withLandDetail(forestOccupation(landuseScene.landuse), landuseScene.landuse, { culture: landuseScene.options.culture, biome: landuseScene.options.biome }); }
       next = occupation;
     }
     if (always || next !== published) { published = next; options.onForestOccupation?.(next); }
@@ -726,6 +726,8 @@ export function createTerrainSettlements(options: {
       return paintingContext;
     },
     get landuse() { return landuse?.landuse; },
+    /** Culture that chooses the crops of the applied land use (landDetail). */
+    get landCultures(): LandCultures | undefined { return landuseScene && { culture: landuseScene.options.culture, biome: landuseScene.options.biome }; },
     get ruralGroundRevision() { return landuse?.groundRevision ?? 0; },
     drawRuralGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void { landuse?.drawGround(ctx, region, size); },
     applyUrbanChanges: urban.applyPending,

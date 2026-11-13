@@ -96,6 +96,13 @@ export function presetComposition(id: PresetId): CompositionRecipe {
     effects: { ambience: 'day', season: .5, relief: id !== 'topographic', lighting: { ...DEFAULT_TERRAIN_LIGHTING } } };
 }
 
+/** Underdark worlds are lit by their towns: material grounds (satellite looks) take the night ambience, so the
+ * shared night machinery lights the settlements (city lamps, night streets) over the dark cave floor. Map grounds
+ * keep their underdark palette (render/biomes.ts) instead of the night one. */
+export function underdarkComposition(c: CompositionRecipe, biome: string | undefined): CompositionRecipe {
+  if (biome !== 'underdark' || c.effects.ambience === 'night' || styleTraits(c.ground.variant).family === 'map') return c;
+  return { ...c, effects: { ...c.effects, ambience: 'night' } };
+}
 /** Change only the display tier, preserving every pass and any advanced customization. */
 export function withCompositionQuality(c: CompositionRecipe, quality: ResolvedDisplayQuality): CompositionRecipe {
   const base = c.preset === 'satellite-light' ? 'satellite' : c.preset === 'parchment-light' ? 'parchment' : c.preset;

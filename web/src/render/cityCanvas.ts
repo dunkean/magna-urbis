@@ -10,15 +10,16 @@ import type { Layout, Parcel, Partition, Point, Quay, Shape, Street } from '../.
 import type { Surface } from '../../../rust/bridge/housesContract';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { buildingColors, urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
-import { mapGroundSnow } from './seasonPalette';
-import { roofSnowPatches } from './roofSnow';
-import { funeraryLandFill, roleLabel } from './cityRoles';
-import { MATERIALS, coverLayer, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
+import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
+import { buildingHeat, buildingSnowDepth, roofSnowPatches, roofSnowRidgeMelt, roofSnowShare } from './roofSnow';
+import { funeraryLandFill, roleLabel, uiRoleLocale, type RoleLocale } from './cityRoles';
+import { COVER_GRAINS, MATERIALS, coverGrainFrame, coverGrainPattern, coverLayer, roofGrain as roofGrainFamily, roofPatternLevel, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
-import { streetToneAt, washAt } from './groundTone';
-import { STREET_MIN_PX, emphasisAlpha, naturalMarks, quayFill, roadGrain, roadPaint, streetRank, type RoadStyle } from './roadStyle';
+import { streetToneAt, toneStamp, washAt } from './groundTone';
+import { STREET_MIN_PX, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, roadGrain, roadPaint, sidewalkTone, streetRank, type RoadStyle } from './roadStyle';
+import { layoutStreetPavements } from './roadPavement';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
 import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3 } from './cityMassing';
@@ -54,12 +55,12 @@ export function selectCityLod(mpp: number, previous?: CityLod, hysteresis = 0.15
 const atLeast = (lod: CityLod, level: CityLod): boolean => LOD_ORDER.indexOf(lod) <= LOD_ORDER.indexOf(level);
 
 // ---------------------------------------------------------------- roles
-export const DISTRICT_ROLES: Record<string, { label: string; color: string }> = {
-  shanty: { label: 'Habitat informel', color: '#b69274' },
-  civic: { label: 'Civique', color: '#d9a55b' }, market: { label: 'Marché', color: '#e8c35f' }, religious: { label: 'Religieux', color: '#b79bd1' },
-  craft: { label: 'Artisanat', color: '#cf9270' }, port: { label: 'Port', color: '#7eb2cc' }, elite: { label: 'Notables', color: '#d98c8c' },
-  commoner: { label: 'Commun', color: '#dccaa2' }, poor: { label: 'Pauvre', color: '#b9ae98' }, garrison: { label: 'Garnison', color: '#919c89' },
-  gardens: { label: 'Jardins', color: '#a6c28a' }, foreign: { label: 'Étrangers', color: '#9cc6b6' },
+export const DISTRICT_ROLES: Record<string, { label: string; labelEn: string; color: string }> = {
+  shanty: { label: 'Habitat informel', labelEn: 'Informal housing', color: '#b69274' },
+  civic: { label: 'Civique', labelEn: 'Civic', color: '#d9a55b' }, market: { label: 'Marché', labelEn: 'Market', color: '#e8c35f' }, religious: { label: 'Religieux', labelEn: 'Religious', color: '#b79bd1' },
+  craft: { label: 'Artisanat', labelEn: 'Crafts', color: '#cf9270' }, port: { label: 'Port', labelEn: 'Port', color: '#7eb2cc' }, elite: { label: 'Notables', labelEn: 'Notables', color: '#d98c8c' },
+  commoner: { label: 'Commun', labelEn: 'Commoners', color: '#dccaa2' }, poor: { label: 'Pauvre', labelEn: 'Poor', color: '#b9ae98' }, garrison: { label: 'Garnison', labelEn: 'Garrison', color: '#919c89' },
+  gardens: { label: 'Jardins', labelEn: 'Gardens', color: '#a6c28a' }, foreign: { label: 'Étrangers', labelEn: 'Foreigners', color: '#9cc6b6' },
 };
 export const BUILDING_FAMILIES: Record<string, { label: string; color: string }> = {
   worship: { label: 'Culte', color: '#7a54a8' }, commerce: { label: 'Commerce', color: '#c8862a' }, craft: { label: 'Artisanat', color: '#a2513a' },
@@ -67,12 +68,15 @@ export const BUILDING_FAMILIES: Record<string, { label: string; color: string }>
   garden: { label: 'Jardin', color: '#5c9a4b' },
 };
 const SPECIALITIES: Record<string, string> = { tanners: 'tanneurs', dyers: 'teinturiers', smiths: 'forgerons', potters: 'potiers', weavers: 'tisserands', butchers: 'bouchers', masons: 'maçons', millers: 'meuniers', fishers: 'pêcheurs', boatmen: 'bateliers', merchants: 'marchands', clergy: 'clergé' };
-/** District role id (`craft:tanners` → craft) and its French label with speciality. */
+/** District role id (`craft:tanners` → craft). */
 export const districtRoleKey = (role?: string): string | undefined => role?.split(/[.:/]/)[0]?.toLowerCase() || undefined;
-export function districtRoleLabel(role: string, label?: string): string {
-  if (label) return label;
-  const [head, tail] = role.split(/[.:/]/), base = DISTRICT_ROLES[head?.toLowerCase()]?.label ?? head;
-  return tail ? `${base} · ${SPECIALITIES[tail] ?? tail.replace(/[-_]/g, ' ')}` : base;
+/** District role label with its speciality in `locale`; the engine's French `label` is used in French only. */
+export function districtRoleLabel(role: string, label?: string, locale: RoleLocale = uiRoleLocale()): string {
+  if (label && locale === 'fr') return label;
+  const [head, tail] = role.split(/[.:/]/), entry = DISTRICT_ROLES[head?.toLowerCase()];
+  const base = (locale === 'fr' ? entry?.label : entry?.labelEn) ?? head;
+  const speciality = tail && (locale === 'fr' ? SPECIALITIES[tail] : undefined) || tail?.replace(/[-_]/g, ' ');
+  return speciality ? `${base} · ${speciality}` : base;
 }
 const FAMILY_ALIASES: Record<string, string> = { religious: 'worship', religion: 'worship', temple: 'worship', market: 'commerce', trade: 'commerce', shop: 'commerce', inn: 'commerce',
   military: 'defence', defense: 'defence', garrison: 'defence', fort: 'defence', housing: 'dwelling', domestic: 'dwelling', residential: 'dwelling', house: 'dwelling',
@@ -85,8 +89,8 @@ export function roleFamily(role?: string | null, fn?: string): string {
   if (head && FAMILY_ALIASES[head]) return FAMILY_ALIASES[head];
   return FUNCTION_FAMILY[fn ?? ''] ?? 'dwelling';
 }
-/** French name of a landmark role (`label` from Rust wins); never a raw id tail such as « friday ». */
-export const landmarkName = (role?: string, fallback = 'Monument', label?: string): string => label || (role ? roleLabel(role) : fallback);
+/** Name of a landmark role in the UI language (the engine's `label` only without a role); never a raw id tail such as « friday ». */
+export const landmarkName = (role?: string, fallback = 'Monument', label?: string): string => role ? roleLabel(role) : label || fallback;
 
 // ---------------------------------------------------------------- geometry
 const EMPTY: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -166,11 +170,11 @@ export interface CityScene {
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };
   parcelById: Map<string, number>;
 }
-export interface CityBuilding { ruins?: Surface; stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; snowAltitude?: number; id: string; surface: Surface; footprint?: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
+export interface CityBuilding { ruins?: Surface; stilts?: boolean; /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean; snowAltitude?: number; /** Depth of the snow mantle the building kept: 1, or less for a thin even dusting (roofSnow.ts). */ snowDepth?: number; /** Weathering of the roof, 0 (new cover) to 1 (old, mossy), stable per building. */ age?: number; id: string; surface: Surface; footprint?: Surface; fn: string; family: string; role?: string; landmark: boolean; parcel?: number; building: PlacedBuilding; material?: { culture: string; wall: string; cover: string; tone: number }; path?: Path2D; footprintPath?: Path2D }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
-export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; snow?: Float32Array; shadows: Shape[][] }
+export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; wall?: string[]; tone: Float32Array; dir: Float32Array; /** 0 = pitched, 1 = single flat slab, 2 = terrace. */ flat?: Uint8Array; /** Share of a full snow mantle the pan keeps (0: never snowed). */ snow?: Float32Array; /** Snow patch laid over the pan before it (drawn only with snow on the ground): 1 the wide thin one, 2 the full core (natural grounds only). */ patch?: Uint8Array; /** Grain family of the pan: 1 + its index in COVER_GRAINS (buildingMaterials.ts), 0 for none. */ grain?: Uint8Array; shadows: Shape[][] }
 export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number>; roofs?: CityRoofs }
 
 /** Optional contract fields read defensively: older plans render without them. */
@@ -284,18 +288,23 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       streets: new SpatialBins(streets.map(s => grow({ ...EMPTY }, s.street.path, s.width)), 128), landmarks: new SpatialBins(landmarks.map(l => l.box), 128) } };
 }
 
+/** Stable 0..1 value of a building id (one independent stream per salt). */
+function idUnit(id: string, salt: number): number {
+  let h = 2166136261 ^ salt; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return ((h >>> 8) & 0xffff) / 0xffff;
+}
 /** Buildings of a scene, linked to their parcel allocation for roles. */
 export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
   const items: CityBuilding[] = [], byId = new Map<string, number>();
-  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], shadows: Shape[][] = [];
+  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], roofPatch: number[] = [], roofGrainOf: number[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
     let surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
     const programme = (building as PlacedBuilding & { programme?: AllocationContract }).programme;
     const parcel = plan?.parcelById.get(building.parcel_id), allocation = parcel === undefined ? undefined : plan!.parcels[parcel].allocation;
-    const massing = readMassing(programme, building.footprint, building.id), first = massing?.[0] && pieceVolumes(building.footprint[0], massing[0])[0];
-    if (massing) {
-      const volumes = building.footprint.flatMap((shape, i) => pieceVolumes(shape, massing[i]));
+    const massing = readMassing(programme, building.footprint, building.id);
+    const byPiece = massing && building.footprint.map((shape, i) => pieceVolumes(shape, massing[i])), volumes = byPiece?.flat(), first = volumes?.[0];
+    if (volumes) {
       if (volumes.some(v => v.detail?.stilts_m || ['tree', 'mushroom', 'yurt', 'tower'].includes(v.detail?.form ?? ''))) surface = volumes.flatMap(v => v.detail?.stilts_m
         ? [{ ...v.shape, outer: stiltDeck(v.shape.outer) }, ...stiltSupports(v.shape.outer).map(p => ({ outer: [{ x: p.x - 0.16, y: p.y - 0.16 }, { x: p.x + 0.16, y: p.y - 0.16 }, { x: p.x + 0.16, y: p.y + 0.16 }, { x: p.x - 0.16, y: p.y + 0.16 }], holes: [] }))]
         : [v.shape]);
@@ -304,16 +313,37 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     byId.set(building.id, items.length);
     items.push({ id: building.id, surface, footprint: massingFootprint(building.footprint, massing), fn: building.function, role: programme?.role ?? allocation?.role, family: roleFamily(programme?.role ?? allocation?.role, building.function),
       landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building, ruins: ruinFootprint(building.footprint, programme, massing),
-      stilts: massing?.some((m, i) => pieceVolumes(building.footprint[i], m).some(v => (v.detail?.stilts_m ?? 0) > 0)),
+      stilts: volumes?.some(v => (v.detail?.stilts_m ?? 0) > 0), age: idUnit(building.id, 0x51ed), snowDepth: buildingSnowDepth(building.id),
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5 } });
     if (!massing) { shadows.push([]); continue; }
-    const owner = items.length - 1;
+    const owner = items.length - 1, heat = buildingHeat(building.id, building.function);
     let terraced = false;
-    for (const face of planRoof(building.footprint, massing).flatMap(face => [{ ...face, snow: 0 }, ...(face.snow === 0 ? [] : roofSnowPatches(face.points, face.normal).map(p => ({ ...face, points: p.points, snow: p.weight })))])) {
+    // Explicit pans come out of `planRoof` unchanged (no polygon boolean). A face of a small decorative volume is one
+    // polygon carrying its own snow share (no inset snow patch, no ink edge): a third of the draws of a full face.
+    // Every face keeps its own share of the mantle (pitch, exposure, the building's heat), and the patch of a heated
+    // roof leaves a bare strip below the ridge. Only the faces that reach the top of their volume open there: the
+    // lower courses of a dome, a cone or a tent keep an even patch (no bare rings), the crown opens like a smoke hole.
+    // The snow of a face is two patches with corners moved by the building's own hash: a wide thin one, and a smaller
+    // full one over it, so the mantle thins toward eaves, ridge and corners along an outline no two roofs share.
+    const planned = planRoof(building.footprint, massing), tops = new Map<number, number>();
+    for (const face of planned) { const key = face.piece * 4096 + face.vol; let top = tops.get(key) ?? -Infinity; for (const p of face.points) if (p.z > top) top = p.z; tops.set(key, top); }
+    const snowSeed = Math.round(idUnit(building.id, 0x2b7) * 0xffff), core = .16 + .2 * idUnit(building.id, 0x9d1);
+    for (const face of planned.flatMap((face, fi) => {
+      const light = face.light ?? roofLight3(face.normal), share = roofSnowShare(face.normal, light, heat, face.cover);
+      const top = tops.get(face.piece * 4096 + face.vol)!, ridge = face.points.some(p => p.z > top - .05) ? roofSnowRidgeMelt(heat, light) : .055;
+      return face.minor && share ? [{ ...face, snow: share }]
+        : [{ ...face, snow: 0 }, ...(face.snow === 0 ? [] : [
+          ...roofSnowPatches(face.points, face.normal, .05, ridge, snowSeed + fi * 131, .07).map(p => ({ ...face, points: p.points, snow: share, patch: 1 })),
+          ...roofSnowPatches(face.points, face.normal, core, Math.max(core, ridge + .1), snowSeed + fi * 131 + 77, .2).map(p => ({ ...face, points: p.points, snow: share, patch: 2 }))])];
+    })) {
       if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
       if (face.flat) items[owner].flat = true;
       terraced ||= !!face.terrace;
-      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0); roofSnow.push(face.snow ?? 0);
+      // Grain family of the pan: by cover, flatness and culture; none on living crowns (tree dwellings) and on small
+      // decorative volumes (chimneys, dormers: a few pixels).
+      const grain = face.minor || byPiece![face.piece]?.[face.vol]?.tree ? undefined : roofGrainFamily(face.cover, !!face.flat || face.normal[2] > .995, culture);
+      roofGrainOf.push(grain ? COVER_GRAINS.indexOf(grain) + 1 : 0);
+      roofFlat.push(face.terrace ? 2 : face.flat ? 1 : 0); roofSnow.push(face.snow ?? 0); roofPatch.push('patch' in face ? face.patch : 0);
       roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [] }); roofOwner.push(owner); roofLight.push(face.light ?? roofLight3(face.normal)); roofCover.push(face.cover); roofWall.push(face.wall); roofTone.push(face.tone); roofDir.push(Math.hypot(face.normal[0], face.normal[1]) > 1e-3 ? Math.atan2(face.normal[1], face.normal[0]) : 0);
     }
     const casts = building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []);
@@ -331,7 +361,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1, a = altitudes.get(town)!;
     b.snowAltitude = a.sum / a.count;
   }
-  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), shadows } : undefined;
+  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), patch: Uint8Array.from(roofPatch), grain: Uint8Array.from(roofGrainOf), shadows } : undefined;
   return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox([...b.surface, ...b.footprint ?? []])), 64), ...(roofs ? { roofs } : {}) };
 }
 
@@ -459,8 +489,10 @@ class Batches {
   }
 }
 const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
+/** Trodden snow mixed with earth: busy streets and squares in winter. */
+const SLUSH = 'rgb(124,117,106)';
 /** Street surface rings per scene, by streets, widths and edges drawn (a few camera steps). */
-const SURFACE_CACHE = new WeakMap<object, Map<string, { casing: { street: number; path: Path2D }[]; fill: { street: number; path: Path2D }[] }>>();
+const SURFACE_CACHE = new WeakMap<object, Map<string, { casing: { street: number; path: Path2D }[]; fill: { street: number; path: Path2D }[]; inner: { street: number; path: Path2D }[] }>>();
 /** Stroked even near and close: square-ended structures and stepped ways. */
 const SURFACE_SKIP = new Set(['quay', 'mole', 'stairs', 'port-stairs', 'landing']);
 function streetPaint(role: string, rank: number, palette: CityPalette): { fill: string; casing: string; dash?: boolean } {
@@ -503,20 +535,77 @@ function roofGrainPattern(ctx: CanvasRenderingContext2D, images: MaterialImages,
   const s = layerExtent(layer) / MATERIALS.tile;
   pattern.setTransform(new DOMMatrix().rotate(angle * 180 / Math.PI).scale(s, s)); return pattern;
 }
-/** Same massing faces and shared tint as the GPU path, with optional material grain. */
+/** Final colour of every roof pan, kept until the ground tones, the palette, the season or the custom ink change:
+ * a frame only reads them. */
+const roofPaint = new WeakMap<CityRoofs, { key: string; colors: (string | undefined)[]; gains: number[] }>();
+/** Covers that gather moss and soot on their shaded pans (not metal, hides or earthen terraces). */
+const MOSSY = /^(tile|slate|stone|thatch|reed|palm|shingle|bark|turf)$/;
+/** Age is a tone of the whole roof (a new cover a touch lighter, an old one darker), and the shaded pans of an old
+ * roof are a little greener than its sunny ones. */
+function weatheredRoof(color: string, light: number, age: number, cover: string): string {
+  const shade = Math.max(0, Math.min(1, -light * 2.4)), toned = planShade(color, (.5 - age) * .07);
+  return shade > 0 && MOSSY.test(cover) ? mix(toned, '#4b4f38', shade * (.04 + .1 * age)) : toned;
+}
+/** Share of the grain a roof colour takes: on a very light cover (lime, snow-white plaster) only the dark marks
+ * show, on a very dark one (old slate, tarred bark) only the light ones, so both ends take less. */
+function grainGain(color: string): number {
+  const v = parseInt(color.slice(1), 16), l = (((v >> 16) & 255) * .3 + ((v >> 8) & 255) * .59 + (v & 255) * .11) / 255;
+  return 1 - .5 * Math.max(0, Math.min(1, (l - .68) / .2)) - .45 * Math.max(0, Math.min(1, (.3 - l) / .15));
+}
+/** Same massing faces and shared tint as the GPU path. On natural grounds (terrain palette, by day) every cover also
+ * takes its procedural grain along the slope and its weathering; `images` (textured materials) replaces that grain. */
 function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): void {
   const roofs = b.roofs!;
   let index = roofIndex.get(roofs);
   if (!index) { const byOwner: number[][] = b.items.map(() => []); roofs.owner.forEach((ow, k) => byOwner[ow]?.push(k)); roofIndex.set(roofs, index = { byOwner, paths: [] }); }
-  for (const i of b.bins.query(o.viewport)) for (const k of index.byOwner[i] ?? []) {
-    const path = index.paths[k] ??= shapePath(roofs.shapes[k]);
-    const custom = o.appearance.diagnostic === 'none' && o.colors?.building;
-    const color = planRoofColor(b.items[i], roofs, k, o.palette, custom || undefined);
-    // Grade after snow/material colour: a custom night ink must not leave daylight snow above it.
-    ctx.fillStyle = o.night ? nightRoof(color, o.palette === 'parchment') : color; ctx.fill(path);
-    const layer = coverLayer(roofs.cover[k]), snow = roofs.snow?.[k] && mapGroundSnow(b.items[i].snowAltitude ?? b.items[i].building.ground_z_m), grain = images && !snow && layer >= 0 ? roofGrainPattern(ctx, images, layer, (roofs.dir[k] ?? 0) - Math.PI / 2) : undefined;
-    if (grain) { ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = grain; ctx.fill(path); ctx.restore(); }
-    if (!roofs.snow?.[k]) { ctx.strokeStyle = o.palette === 'parchment' ? 'rgba(44,33,23,0.65)' : 'rgba(31,24,17,0.65)'; ctx.lineWidth = (o.palette === 'parchment' ? 0.3 : 0.5) * o.mpp; ctx.stroke(path); }
+  const custom = (o.appearance.diagnostic === 'none' && o.colors?.building) || undefined, parchment = o.palette === 'parchment';
+  const key = `${toneStamp()}|${o.palette}|${roofSeasonKey()}|${custom ?? ''}|${o.night ? 1 : 0}`;
+  let paint = roofPaint.get(roofs);
+  if (!paint || paint.key !== key) roofPaint.set(roofs, paint = { key, colors: [], gains: [] });
+  const natural = o.palette === 'terrain' && !o.night && !custom && o.appearance.diagnostic === 'none';
+  const frame = natural && !images ? coverGrainFrame(o.mpp / (o.dpr || 1)) : undefined, snowLevel = roofPatternLevel(o.mpp / (o.dpr || 1));
+  // Pan edges (eaves, ridges, hips): ink on the drawn plans, a soft joint on a natural ground.
+  ctx.strokeStyle = parchment ? 'rgba(44,33,23,0.65)' : natural ? 'rgba(31,24,17,0.45)' : 'rgba(31,24,17,0.65)'; ctx.lineWidth = (parchment ? 0.3 : 0.5) * o.mpp;
+  for (const i of b.bins.query(o.viewport)) {
+    const pans = index.byOwner[i]; if (!pans?.length) continue;
+    const item = b.items[i], age = item.age ?? .5, ground = mapGroundSnow(item.snowAltitude ?? item.building.ground_z_m), depth = item.snowDepth ?? 1;
+    for (const k of pans) {
+      // Without snow on the ground a snow patch repeats the pan under it.
+      const patch = roofs.patch?.[k] ?? 0;
+      if (patch && !ground) continue;
+      const path = index.paths[k] ??= shapePath(roofs.shapes[k]);
+      if (patch && natural) {
+        // Snow as its own uneven cover over the roof: a whole mantle with thin places where the face keeps most of
+        // its share, broken patches showing the cover where it lost more; the building's depth thins it evenly.
+        const amount = Math.min(1, roofs.snow![k] * ground), t = amount * amount * (3 - 2 * amount), patchy = amount < .7, shade = roofs.light[k] < -.08;
+        const snow = coverGrainPattern(ctx, patchy ? shade ? 'snowPatchyShade' : 'snowPatchy' : shade ? 'snowShade' : 'snow', snowLevel, roofs.dir[k] ?? 0, age * 53.1, age * 71.9);
+        if (snow) { ctx.globalAlpha = Math.min(1, (patchy ? 1.6 * t : t) * depth * (patch === 1 ? .9 : 1)); ctx.fillStyle = snow; ctx.fill(path); ctx.globalAlpha = 1; continue; }
+      }
+      if (patch === 2) continue;
+      let color = paint.colors[k];
+      if (color === undefined) {
+        const base = planRoofColor(item, roofs, k, o.palette, custom);
+        const aged = natural && !roofs.snow?.[k] ? weatheredRoof(base, roofs.light[k], age, roofs.cover[k]) : base;
+        // Grade after snow/material colour: a custom night ink must not leave daylight snow above it.
+        color = paint.colors[k] = o.night ? nightRoof(aged, parchment) : aged;
+        paint.gains[k] = natural ? grainGain(aged) : 0;
+      }
+      ctx.fillStyle = color; ctx.fill(path);
+      if (!(roofs.snow?.[k] && ground)) {
+        const layer = images ? coverLayer(roofs.cover[k]) : -1, family = frame && ground < .6 ? roofs.grain?.[k] ?? 0 : 0;
+        if (images && layer >= 0) {
+          const grain = roofGrainPattern(ctx, images, layer, (roofs.dir[k] ?? 0) - Math.PI / 2);
+          if (grain) { ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = grain; ctx.fill(path); ctx.restore(); }
+        } else if (family) {
+          // Only while the family's own units are resolved; the shift gives every building its own piece of the tile.
+          const strength = frame!.alpha[family - 1] * paint.gains[k];
+          const grain = strength > .03 ? coverGrainPattern(ctx, COVER_GRAINS[family - 1], frame!.level, roofs.dir[k] ?? 0, age * 37.7, age * 91.3) : undefined;
+          if (grain) { ctx.globalAlpha = strength; ctx.fillStyle = grain; ctx.fill(path); ctx.globalAlpha = 1; }
+        }
+      }
+      // A pan under a good share of snow keeps no ink edge: ridges and hips are not outlined on a white roof.
+      if (!roofs.snow?.[k] && !(ground && roofs.patch?.[k + 1] && roofs.snow![k + 1] * ground * depth > .45)) ctx.stroke(path);
+    }
   }
 }
 
@@ -547,6 +636,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     const raw=washAt(kind,tone,shape), w=naturalGround?naturalGroundWash(raw,kind):raw;
     return night ? { ...w, color: nightRoof(w.color, parchment) } : w;
   };
+  // Squares and markets of a snowed town are trodden like its main streets (natural grounds only).
+  const slush = naturalGround && !night ? mapGroundSnow() : 0;
   if (lod === 'far') {
     if (blend && layers.blocks) { for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) { const w = wash('footprint', shape),path=shapePath(shape); batch.add({ stroke:w.color,width:px(2.2),alpha:w.alpha*.35 },path);batch.add({ fill: w.color, alpha: w.alpha }, path); } }
     else if (layers.blocks) for (const shape of scene.footprint) if (overlaps(shapeBox(shape), viewport)) batch.add({ fill: palette === 'terrain' ? undefined : pl ? C.footprint : '#cfb589', stroke: pl ? C.ink : '#7b6446', width: px(1), alpha: 0.9 }, shapePath(shape));
@@ -575,6 +666,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         const w = wash(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', b.shape), a = w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1);
         if (!tex || !(b.kind === 'place' || b.kind === 'market')) batch.add({ stroke: w.color, width: px(2.2), alpha: a * 0.4, cap: 'round' }, pathOf(b));
         batch.add({ fill: plaza(b.kind, w.color), alpha: a }, pathOf(b));
+        if (slush && b.kind === 'place') batch.add({ fill: SLUSH, alpha: .3 * slush }, pathOf(b));
         if (lod === 'close'&&!material) batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha }, pathOf(b));
         continue;
       }
@@ -598,6 +690,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         const w = wash(kind, p.shape), a = w.alpha * (p.peripheral ? 0.7 : 1), ground = kind === 'parcel' || kind === 'reserve';
         // Plain lots add no wash over the block's (the buildings stand on it); gardens, commons and squares stack theirs.
         if (!(view === 'buildings' && ground)) batch.add({ fill: burialFill ?? plaza(use, w.color), alpha: burialFill ? 0.85 : a }, pathOf(p));
+        if (slush && (use === 'place' || use === 'market')) batch.add({ fill: SLUSH, alpha: .3 * slush }, pathOf(p));
         if (lod === 'close'&&!material) batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
       } else if (view === 'parcels') {
         const fill = palette === 'terrain' ? undefined : night ? openFill ?? C.lot : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
@@ -655,11 +748,13 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     // Near and close: streets are their ground surface (roadSurface.ts) — square ends at
     // junctions, curb returns, tapers — filled once per style, so nothing shows twice.
     // Decks, quays, fords, dashed tracks and stairs keep their stroked art.
-    const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style }[] = [];
+    // `inset` and `inner`: the carriageway of a paved street, inside its sidewalks.
+    const surfaced: { s: CityStreet; w: number; edge: number; casing?: Style; fill: Style; inset?: number; inner?: Style }[] = [];
     const surfaceOk = (s: CityStreet, dash?: boolean): boolean => layers.roadSurface !== false && atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
     const emphasis = o.roadEmphasis ?? 1, inkEmphasis = emphasisAlpha(emphasis);
     // The user's own colours; the night defaults of `colors` belong to the ink look.
     const roadStyle: RoadStyle = { look: 'natural', emphasis, night: o.appearance.ambience === 'night', colors: o.appearance.colors }, natural = o.roadLook === 'natural';
+    const pavedStyle: RoadStyle = { ...roadStyle, pavement: 'asphalt' }, carriageways = new Batches();
     for (const s of visible) {
       stats.streets++;
       // Stroked ways under the surfaced streets, crossings over them.
@@ -668,15 +763,45 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       if (night) { paint.fill = parchment ? '#647b95' : '#242e3b'; paint.casing = '#172538'; }
       paint.fill = (s.role === 'track' ? o.colors?.track : o.colors?.road) ?? paint.fill; paint.casing = o.colors?.roadEdge ?? paint.casing;
       const path = s.path ??= linePath(s.street.path);
-      const w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
+      let w = Math.max(s.width, px(isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, s.rank))])), w2 = Math.round(w * 4) / 4;
       if (natural && !STRUCTURE_ROLES.has(s.role)) {
+        // Natural grounds: a street narrower than the pixel is not inflated to a plan stroke. It thins to about one
+        // pixel and fades with its true share of that pixel, so a town seen from afar is its ground and its roofs,
+        // not a street diagram laid over the land.
+        const floor = px(1.1), thin = Math.max(.35, Math.min(1, s.width / floor));
+        if (s.width < w) { w = Math.max(s.width, floor); w2 = Math.round(w * 4) / 4; }
+        const rank = streetRank(s.role, s.rank);
+        if (pavedRank(rank, layoutStreetPavements(scene.layouts[s.layout])?.[s.index])) {
+          // Paved town street (roadPavement.ts): an asphalt carriageway, pale kerb and sidewalk strips inside the street
+          // space of the wider streets, a centre line on the main ones; lanes and alleys are plain. Squares keep their paving.
+          const paintRoad = roadPaint(ctx, rank, pavedStyle), snow = pavedStyle.night ? 0 : mapGroundSnow();
+          const walk = s.rank <= 2 && w >= 9 ? Math.min(3, Math.max(1.4, w * .16)) : 0, road = Math.round((w - 2 * walk) * 4) / 4;
+          const paved = pavedMarks(rank, road, 1 / mpp, pavedStyle, s.rank <= 1 && road >= 7, false); paved.bed *= thin;
+          const bedStyle: Style = { fill: paintRoad, alpha: paved.bed };
+          if (snow && road / mpp >= 4) {
+            // Same winter as the earth streets: slush over a busy carriageway, a beaten line on a quiet one.
+            const busy = s.rank <= 1 ? 1 : s.rank === 2 ? .62 : .24;
+            marks2.add({ stroke: busy > .5 ? SLUSH : 'rgb(130,151,170)', width: road * (.5 + .32 * busy), alpha: (.2 + .32 * busy) * snow, cap: 'round' }, path);
+            marks2.add({ stroke: paintRoad, width: road * (.16 + .18 * busy), alpha: paved.bed * (.55 + .45 * busy), cap: 'round' }, path);
+          }
+          for (const k of paved.strokes) marks2.add({ stroke: k.paint ?? paintRoad, width: k.width, alpha: k.alpha, dash: k.dash as number[] | undefined, cap: k.cap }, path);
+          const grain = paved.grain ? roadGrain(ctx) : undefined; if (grain) marks2.add({ stroke: grain, width: road, alpha: paved.grain, cap: 'round' }, path);
+          const sidewalk = walk ? sidewalkTone(pavedStyle) : undefined;
+          if (surfaceOk(s)) { surfaced.push({ s, w, edge: 0, fill: sidewalk ? { fill: sidewalk, alpha: paved.bed } : bedStyle, inset: walk, inner: sidewalk ? bedStyle : undefined }); continue; }
+          if (sidewalk) casing.add({ stroke: sidewalk, width: w2, alpha: paved.bed, cap: 'round' }, path);
+          fill.add({ stroke: paintRoad, width: sidewalk ? road : w2, alpha: paved.bed, cap: 'round' }, path);
+          continue;
+        }
         // Same paint as the regional roads: a tone of the local ground, a soft shoulder instead of a casing, wear up close.
-        const rank = streetRank(s.role, s.rank), marks = naturalMarks(rank, w, 1 / mpp, roadStyle), bed = { alpha: marks.bed.alpha }, edge = Math.max(px(lod === 'mid' ? 0.9 : 1.4), w * .09), shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * .8 };
+        const marks = naturalMarks(rank, w, 1 / mpp, roadStyle), bed = { alpha: marks.bed.alpha * thin }, edge = Math.max(px(lod === 'mid' ? 0.9 : 1.4), w * .09), shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * .8 };
         const paintRoad = roadPaint(ctx, rank, roadStyle);
         const snow = !roadStyle.night && mapGroundSnow();
         if (snow && rank !== 'path' && w2 / mpp >= 4) {
-          marks2.add({ stroke: 'rgb(130,151,170)', width: w2 * .66, alpha: .38 * Number(snow), cap: 'round' }, path);
-          marks2.add({ stroke: paintRoad, width: w2 * .3, alpha: bed.alpha, cap: 'round' }, path);
+          // Main streets are trodden to a grey-brown slush over most of their width; back lanes and tracks keep
+          // their snow, with a cool shade and one narrow beaten line.
+          const busy = s.role === 'track' ? .3 : s.rank <= 1 ? 1 : s.rank === 2 ? .62 : .24;
+          marks2.add({ stroke: busy > .5 ? SLUSH : 'rgb(130,151,170)', width: w2 * (.5 + .32 * busy), alpha: (.2 + .32 * busy) * Number(snow), cap: 'round' }, path);
+          marks2.add({ stroke: paintRoad, width: w2 * (.16 + .18 * busy), alpha: bed.alpha * (.55 + .45 * busy), cap: 'round' }, path);
         }
         if (marks.wear) marks2.add({ stroke: marks.wear.color, width: w2 * marks.wear.share, alpha: marks.wear.alpha, dash: marks.wear.dash as number[], cap: 'round' }, path);
         const grain = marks.grain ? roadGrain(ctx) : undefined; if (grain) marks2.add({ stroke: grain, width: w2, alpha: marks.grain, cap: 'round' }, path);
@@ -720,19 +845,21 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       const streets = surfaced.map(x => x.s.street), ring = (r: readonly Point[]): Path2D => { const p = new Path2D(); p.moveTo(r[0].x, r[0].y); for (let i = 1; i < r.length; i++) p.lineTo(r[i].x, r[i].y); p.closePath(); return p; };
       const tolerance = Math.max(0.05, 0.35 * px(1)), minWidth = (i: number): number => surfaced[i].w;
       // Same streets, widths and edges (a camera move within one zoom step): same rings.
-      const key = `${tolerance.toFixed(3)}|${surfaced.map(x => `${x.s.layout}.${x.s.index}:${x.w.toFixed(2)}:${x.casing ? x.edge.toFixed(2) : '-'}`).join(',')}`;
+      const key = `${tolerance.toFixed(3)}|${surfaced.map(x => `${x.s.layout}.${x.s.index}:${x.w.toFixed(2)}:${x.casing ? x.edge.toFixed(2) : '-'}${x.inset ? `:${x.inset.toFixed(2)}` : ''}`).join(',')}`;
       let rings = SURFACE_CACHE.get(scene)?.get(key);
       if (!rings) {
         const cas = surfaced.some(x => x.casing) ? roadSurface(streets, { extra: i => surfaced[i].casing ? surfaced[i].edge : 0, minWidth, tolerance }) : [];
-        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: roadSurface(streets, { minWidth, tolerance }).map(p => ({ street: p.street, path: ring(p.ring) })) };
+        const inner = surfaced.some(x => x.inset) ? roadSurface(streets, { extra: i => -(surfaced[i].inset ?? 0), minWidth, tolerance }).filter(p => surfaced[p.street].inset) : [];
+        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: roadSurface(streets, { minWidth, tolerance }).map(p => ({ street: p.street, path: ring(p.ring) })), inner: inner.map(p => ({ street: p.street, path: ring(p.ring) })) };
         let memo = SURFACE_CACHE.get(scene); if (!memo) SURFACE_CACHE.set(scene, memo = new Map());
         if (memo.size >= 8) memo.delete(memo.keys().next().value!);
         memo.set(key, rings);
       }
       for (const p of rings.casing) { const st = surfaced[p.street].casing; if (st) casing.add(st, p.path); }
       for (const p of rings.fill) surface.add(surfaced[p.street].fill, p.path);
+      for (const p of rings.inner) { const st = surfaced[p.street].inner; if (st) carriageways.add(st, p.path); }
     }
-    casing.flush(ctx); under.flush(ctx); surface.flush(ctx); marks2.flush(ctx); over.flush(ctx); marks.flush(ctx);
+    casing.flush(ctx); under.flush(ctx); surface.flush(ctx); carriageways.flush(ctx); marks2.flush(ctx); over.flush(ctx); marks.flush(ctx);
   }
 
   if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
@@ -771,8 +898,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       if (!footprint && roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') {
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, paths = []);
-        // Neutral attenuation cannot brighten any channel of the receiving ground.
-        ctx.fillStyle = parchment ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.3)';
+        // Neutral attenuation cannot brighten any channel of the receiving ground. On a natural ground the cast is a
+        // near-black cool shade, and on snow the blue of skylit shade (snow is lighter than that tint in every channel).
+        const shadeSnow = palette === 'terrain' && !night ? mapGroundSnow(o.buildings.items[0]?.snowAltitude) : -1;
+        ctx.fillStyle = parchment ? 'rgba(0,0,0,0.2)' : shadeSnow < 0 ? 'rgba(0,0,0,0.3)' : shadeSnow > .3 ? 'rgba(22,38,70,0.3)' : 'rgba(10,14,24,0.34)';
         for (const i of o.buildings.bins.query(viewport)) {
           let path = paths[i];
           if (!path) { path = paths[i] = new Path2D(); for (const s of roofs.shadows[i] ?? []) path.addPath(shapePath(s)); }

@@ -207,6 +207,9 @@ fn recognised_token(kind: &str, token: &str) -> bool {
         .get(token)
         .is_some()
 }
+/// Provenance tag of a demand another culture builds (the `monuments` facet
+/// of the style sheet), followed by that culture's id.
+const STYLE: &str = "style:";
 fn demand(key: &str, function: &str, amount: f64, domestic: bool, why: String) -> Demand {
     Demand {
         id: format!("{key}/demand/{function}"),
@@ -320,6 +323,12 @@ fn prepare_inner(
         if !phase.culture.is_empty() && !ids.contains(&phase.culture) {
             mapping(&phase.culture).ok_or("Unknown phase cultural mapping")?;
             ids.push(phase.culture.clone());
+        }
+    }
+    // Cultures the style sheet brings for the singular and utility buildings.
+    for (culture, _) in super::forms::sheet::monuments(layout).unwrap_or_default() {
+        if !ids.iter().any(|id| id == culture) {
+            ids.push(culture.to_owned());
         }
     }
     let mut warnings = vec![];
@@ -450,8 +459,12 @@ fn prepare_inner(
             let main_market = e.function == "market" && e.per == 0.0;
             d.id = if main_market && !demands.iter().any(|x| x.id.ends_with("/demand/market")) {
                 format!("{}/demand/market", layout.key)
-            } else {
+            } else if e.culture.is_empty() {
                 format!("{}/demand/{}", layout.key, e.role)
+            } else {
+                // Another culture's building (style sheet): its own demand, built in that culture.
+                d.provenance.push(format!("{STYLE}{}", e.culture));
+                format!("{}/demand/{}@{}", layout.key, e.role, e.culture)
             };
             if demands.iter().any(|x| x.id == d.id) {
                 continue;
@@ -1603,6 +1616,17 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         pr.cultures = super::culture::mapping_for(&cfg.culture, &pr.context.period)
             .into_iter()
             .collect();
+        // The cultures the style sheet brings stay applied: their singular
+        // buildings are allocated in their own culture.
+        for (culture, _) in super::forms::sheet::monuments(layout).unwrap_or_default() {
+            if !pr.cultures.iter().any(|c| c.culture == culture) {
+                pr.cultures.extend(super::culture::isolated_mapping(
+                    culture,
+                    &pr.context.period,
+                    &pr.context.intent,
+                ));
+            }
+        }
     }
     pr.allocations.clear();
     pr.reconciliation_passes = 0;
@@ -1880,7 +1904,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     }
     // Band 2: sited trades and small institutions, distinct and spread plots.
     // A block demand whose reservation failed falls back to the same rule.
-    // Trades never take more than a fifth of the plots fit for housing.
+    // Trades take at most a share of the plots fit for housing that follows
+    // the singular density: 24 % at the default, 4 % at 0, 45 % at most.
     let housing_plots = (0..parcels.len())
         .filter(|&pi| {
             assignments[pi].is_none()
@@ -1891,7 +1916,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     .any(|(di, d)| d.unit == "domesticUnits" && admission[di][pi])
         })
         .count();
-    let mut trade_budget = (housing_plots / 5).max(1);
+    let density = layout
+        .config
+        .as_ref()
+        .map_or(1.0, |c| c.singular_density)
+        .clamp(0.0, 3.0);
+    let trade_share = if density.is_finite() { (0.04 + 0.2 * density).min(0.45) } else { 0.24 };
+    let mut trade_budget = ((housing_plots as f64 * trade_share).floor() as usize).max(1);
     for &di in &order {
         let d = &pr.demands[di];
         if d.sites == 0 || d.unit == "domesticUnits" {
@@ -2371,9 +2402,11 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             None if dwelling => households[pi].max(1.0),
             None => 0.0,
         };
+        // An isolated establishment keeps the role of its intent (a lone farm
+        // is a farm whatever its lot's draw).
         let role = if let Some((r, _)) = user {
             r.clone()
-        } else if dwelling && d.function == "domestic" {
+        } else if dwelling && d.function == "domestic" && !roles::is_isolated(&pr.context.intent) {
             dwelling_role(
                 &c,
                 held,
@@ -2393,12 +2426,22 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         if user.is_some() {
             reasons.insert(0, "Surcharge utilisateur".into());
         }
+        // A demand of another culture (style sheet) is built in that culture,
+        // when the programme applies it (invariant: an allocation's culture
+        // is one of the programme's); else in the lot's own.
+        let style = d
+            .provenance
+            .iter()
+            .find_map(|p| p.strip_prefix(STYLE))
+            .filter(|s| pr.cultures.iter().any(|c| c.culture == *s));
         pr.allocations.push(Allocation {
             parcel_id: p.id.clone(),
             demand_id: d.id.clone(),
             function: d.function.clone(),
-            culture: c.culture.clone(),
-            architecture_pack: c.architecture_pack.clone(),
+            culture: style.map_or_else(|| c.culture.clone(), str::to_owned),
+            architecture_pack: style
+                .and_then(super::culture::architecture_pack)
+                .map_or_else(|| c.architecture_pack.clone(), str::to_owned),
             capacity: if dwelling {
                 held
             } else {

@@ -68,6 +68,8 @@ function typed(defaults: Record<string, unknown>, key: string, raw: string): unk
   if (typeof base === 'number' || base === null && raw.trim() !== '' && Number.isFinite(Number(raw))) {
     const value = Number(raw); if (!Number.isFinite(value)) throw new Error(`PARAMS ${key}: number expected, got ${raw}`); return value;
   }
+  // Structured settings (the hybrid style sheet) come as JSON.
+  if (base !== null && typeof base === 'object') return JSON.parse(raw);
   return raw;
 }
 

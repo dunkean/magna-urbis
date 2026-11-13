@@ -19,6 +19,18 @@ export type MassingRoof = 'gable' | 'hip' | 'shed' | 'pyramid' | 'cone' | 'dome'
 export interface MassingVolume extends VolumeDetail {
   ring: [number, number][]; floors?: number; eave_m: number; rise_m: number; roof: MassingRoof;
   ridges: [number, number, number, number][]; cover?: string; wall?: string; tone?: number;
+  /** Bottom of the walls above the building ground (default 0). `eave_m` stays a height above the ground. */
+  base_m?: number;
+  /** Explicit roof faces, each `[x0,y0,z0, x1,y1,z1, ...]` (plan metres, z above the building ground): convex, already clipped
+   * against the other volumes of the lot. When present (even empty: a hidden roof) they are the whole roof; `roof`, `ridges`
+   * and `rise_m` derive none. With pans, `eave_m` is the lowest roof height along the walls and `rise_m` the highest pan point above it. */
+  pans?: number[][];
+  /** Vertical wall faces above the wall top (gable ends, the high wall under a shed roof), encoded like `pans`. */
+  gables?: number[][];
+  /** Small decorative volume (chimney, dormer, porch): no openings, no ground shadow, dropped by the 3D overview. */
+  minor?: boolean;
+  /** True roof kind (halfhip, gablet, gambrel, mansard, saltbox...), informative: `roof` stays a kind the renderers know. */
+  roof_form?: string;
 }
 export interface MassingPiece {
   openings?: 'none' | 'door';
@@ -32,9 +44,25 @@ export interface MassingPiece {
 export interface RoofFace { points: Vertex3[]; holes?: Point[][]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number }
 
 /** A piece resolved to the volumes to draw (the piece itself when it has no `volumes`). */
-export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail; tree?: TreeDwelling }
+export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail; tree?: TreeDwelling
+  /** Wall bottom above the building ground, when the volume stands on another one (0 < base_m < eave_m). */ base_m?: number;
+  /** Explicit roof faces (see `MassingVolume.pans`): the whole roof of the volume. */ pans?: Vertex3[][];
+  /** Vertical wall faces above the wall top, drawn in the wall material; nothing in plan. */ gables?: Vertex3[][];
+  minor?: boolean; roof_form?: string }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp01 = (v: unknown, d = 0.5): number => finite(v) ? Math.max(0, Math.min(1, v)) : d;
+/** Faces sent as flat `[x, y, z, ...]` arrays; undefined when the list or any face of it is malformed. */
+function readFaces(value: unknown): Vertex3[][] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: Vertex3[][] = [];
+  for (const face of value) {
+    if (!Array.isArray(face) || face.length < 9 || face.length % 3 !== 0 || !face.every(finite)) return undefined;
+    const points: Vertex3[] = [];
+    for (let i = 0; i < face.length; i += 3) points.push({ x: face[i], y: face[i + 1], z: face[i + 2] });
+    out.push(points);
+  }
+  return out;
+}
 export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
   const out: ResolvedVolume[] = [];
   if (Array.isArray(m.volumes)) for (const v of m.volumes) {
@@ -45,6 +73,12 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
       detail: { openings: v.openings, tree_seed: typeof v.tree_seed === 'string' ? v.tree_seed : undefined, parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
         form: v.form && ['yurt', 'tipi', 'tree', 'mushroom', 'longhouse', 'tower', 'battered'].includes(v.form) ? v.form : undefined, stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined, body_scale: finite(v.body_scale) && v.body_scale > 0 ? v.body_scale : undefined, openness: finite(v.openness) && v.openness > 0 && v.openness < 1 ? v.openness : undefined,
         features: Array.isArray(v.features) ? v.features.filter(f => f && ['x', 'y', 'w', 'd', 'h', 'angle'].every(k => finite((f as unknown as Record<string, unknown>)[k]))) : undefined } });
+    const resolved = out[out.length - 1], pans = readFaces(v.pans), gables = readFaces(v.gables);
+    if (finite(v.base_m) && v.base_m > 0) resolved.base_m = Math.min(v.base_m, v.eave_m);
+    if (pans) resolved.pans = pans;
+    if (gables?.length) resolved.gables = gables;
+    if (v.minor === true) resolved.minor = true;
+    if (typeof v.roof_form === 'string') resolved.roof_form = v.roof_form;
   }
   if (out.length) return out.map(v => {
     if (v.detail?.form !== 'tree') return v;
@@ -66,7 +100,12 @@ export function readMassing(programme: unknown, footprint: Surface, buildingId?:
 /** Flat map outline follows the occupied massing, never its enclosing preview lot. */
 export function massingFootprint(footprint: Surface, massing?: readonly MassingPiece[]): Surface {
   if (!massing) return footprint;
-  const shapes = footprint.flatMap((shape, i) => massing[i] ? pieceVolumes(shape, massing[i]).map(v => v.shape) : [shape]);
+  // Volumes standing on another one and small decorative ones leave the ground outline (and its union) to the others.
+  const shapes = footprint.flatMap((shape, i) => {
+    if (!massing[i]) return [shape];
+    const volumes = pieceVolumes(shape, massing[i]), grounded = volumes.filter(v => !v.minor && !v.base_m);
+    return (grounded.length ? grounded : volumes).map(v => v.shape);
+  });
   return shapes.length > 1 ? unionS(shapes[0], ...shapes.slice(1)) : shapes;
 }
 
@@ -308,6 +347,8 @@ function flat(f: Faces, ring: readonly Point[], z: number): void { f.add(ring.ma
 export function volumeRoof(v: ResolvedVolume, piece: number, vol: number): RoofFace[] {
   const f = new Faces(piece, vol, v.cover, v.wall, v.tone), eave = v.eave_m, rise = Math.max(0, v.rise_m), shape = v.shape, outer = v.detail?.form === 'battered' ? scaledRing(shape.outer, 0.92) : shape.outer;
   if (v.tree) { for (const points of treeCrownFaces(v.tree)) f.add(points); return f.list; }
+  // Explicit pans are the whole roof: nothing is derived from the roof kind, the ridges or the rise.
+  if (v.pans) { for (const points of v.pans) f.add(points); return f.list; }
   const ridges = v.ridges.map(([x0, y0, x1, y1]) => [{ x: x0, y: y0 }, { x: x1, y: y1 }] as [Point, Point]);
   if (outer.length < 3) return [];
   if (v.roof === 'ring') ring(f, shape, eave, rise);
@@ -334,21 +375,24 @@ export function buildingRoof(footprint: Surface, massing: readonly MassingPiece[
 }
 /** Plan-view roof face (2D maps): `light` overrides the shading of the normal, `holes` cut courts out of the face,
  * `flat` marks the faces of a flat roof (rim, field, roof-top features). */
-export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean; terrace?: boolean; snow?: number }
+export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean; terrace?: boolean; snow?: number; /** Face of a small decorative volume: one plain polygon. */ minor?: boolean }
 /** Plan geometry is built once with the scene, shared by every 2D palette and backend.
  * Roof sets with entirely horizontal pans are slabs (including subdivided slabs); pitched roofs
  * and their horizontal caps keep their original faces. Terraces are painted low to high,
- * with upper slabs casting onto each receiver by their actual height difference. */
+ * with upper slabs casting onto each receiver by their actual height difference.
+ * Volumes with explicit pans and small decorative volumes keep their faces as they are (never a
+ * slab: no rim, no clipping), and a volume standing on another one is painted after it. */
 export function planRoof(footprint: Surface, massing: readonly MassingPiece[]): PlanRoofFace[] {
   const sets = footprint.flatMap((shape, i) => massing[i] ? pieceVolumes(shape, massing[i]).flatMap((v, j) => {
-    const faces = volumeRoof(v, i, j);
+    const roof = volumeRoof(v, i, j), faces: PlanRoofFace[] = v.minor ? roof.map(face => ({ ...face, minor: true })) : roof;
     const pans = faces.filter(f => f.normal[2] >= 0.08);
-    const horizontal = !v.tree && pans.length > 0 && pans.every(f => f.normal[2] > 0.999 && f.points.every(p => Math.abs(p.z - f.points[0].z) < 0.01));
+    const horizontal = !v.tree && !v.pans && !v.minor && pans.length > 0 && pans.every(f => f.normal[2] > 0.999 && f.points.every(p => Math.abs(p.z - f.points[0].z) < 0.01));
     // Keep each slab separate so height ordering also works within a single volume.
     return horizontal ? faces.map(face => ({ v, faces: [face], horizontal: face.normal[2] > 0.999,
       holes: pans.length === 1 ? v.shape.holes : [], z: face.points[0].z }))
-      : [{ v, faces, horizontal: false, holes: [], z: Math.min(...faces.flatMap(f => f.points.map(p => p.z))) }];
+      : faces.length ? [{ v, faces, horizontal: false, holes: [], z: Math.min(...faces.flatMap(f => f.points.map(p => p.z))) }] : [];
   }) : []);
+  if (sets.some(s => s.v.base_m)) sets.sort((a, b) => (a.v.base_m ?? 0) - (b.v.base_m ?? 0));
   const slabs = sets.flatMap(s => s.horizontal ? s.faces.map(face => ({ face,
     shape: { outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: s.holes }, z: face.points[0].z })) : []);
   const bottom = Math.min(...slabs.map(s => s.z)), top = Math.max(...slabs.map(s => s.z));
@@ -452,7 +496,25 @@ export function pieceShadow(shape: Shape, height: number, k = 0.55): Shape | und
   return unionS(shape, { outer: shape.outer.map(shift), holes: shape.holes.map(h => h.map(shift)) }, ...sweeps)[0];
 }
 
-/** Ground shadows of a piece, one per volume (each swept by its own height). */
+/** `pieceShadow` of a convex ring without a polygon boolean: the hull of the ring and its shifted copy. */
+function convexShadow(ring: readonly Point[], height: number, k = 0.55): Shape | undefined {
+  if (height <= 0.05 || ring.length < 3) return undefined;
+  const dx = height * k, dy = height * k * 0.8, r = signedArea(ring) < 0 ? [...ring].reverse() : ring, n = r.length, outer: Point[] = [];
+  // Counter-clockwise ring: an edge leads when the shift leaves the ring through it; the hull follows the shifted leading edges.
+  const leads = r.map((a, i) => { const b = r[(i + 1) % n]; return (b.y - a.y) * dx - (b.x - a.x) * dy > 1e-9; });
+  for (let i = 0; i < n; i++) {
+    const before = leads[(i + n - 1) % n], after = leads[i], p = r[i], q = { x: p.x + dx, y: p.y + dy };
+    if (before && after) outer.push(q); else if (!before && !after) outer.push(p); else if (after) outer.push(p, q); else outer.push(q, p);
+  }
+  return { outer, holes: [] };
+}
+/** Ground shadows of a piece, one per volume (each swept by its own height). Small decorative
+ * volumes cast none; a convex volume with explicit pans is swept directly. */
 export function pieceShadows(shape: Shape, m: MassingPiece): Shape[] {
-  return pieceVolumes(shape, m).flatMap(v => { const s = pieceShadow(v.shape, v.eave_m + Math.max(0, v.rise_m) + (v.detail?.stilts_m ?? 0)); return s ? [s] : []; });
+  return pieceVolumes(shape, m).flatMap(v => {
+    if (v.minor) return [];
+    const height = v.eave_m + Math.max(0, v.rise_m) + (v.detail?.stilts_m ?? 0);
+    const s = v.pans && !v.shape.holes.length && isConvex(v.shape.outer) ? convexShadow(v.shape.outer, height) : pieceShadow(v.shape, height);
+    return s ? [s] : [];
+  });
 }

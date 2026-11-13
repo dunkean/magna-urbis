@@ -28,7 +28,7 @@ export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partiti
     const anchor = Math.abs(area) > 1e-8 ? { x: x / (3 * area), y: y / (3 * area) }
       : { x: points.reduce((n, p) => n + p.x, 0) / points.length, y: points.reduce((n, p) => n + p.y, 0) / points.length };
     const kind = role?.startsWith('defence.') || role?.startsWith('elite.') ? 'castle' : role?.startsWith('worship.') ? 'church' : 'square';
-    out.push({ id, kind, text: label || (role ? roleLabel(role) : market ? 'Marché' : 'Monument'), ...anchor });
+    out.push({ id, kind, text: role ? roleLabel(role) : label || (market ? roleLabel('commerce.market') : 'Monument'), ...anchor });
   };
   const major = (role?: string): boolean => !!role && /^(defence\.(keep|castle|kasbah|fort|fortress)|elite\.palace|worship\.(cathedral|temple\.major)|commerce\.market)(\.|$)/.test(role);
   for (const l of layouts) {
@@ -74,6 +74,8 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
     if (!st) continue;
     if(e.kind==='church'&&(e.parts?.role||e.parts?.generic)&&!/^church$|^cathedral$/.test(e.parts?.generic??'')&&!/church|cathedral|parish|minster/.test(e.parts?.role??''))st={...st,symbol:'ring'};
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
+    // Underdark caverns reuse the hill entry but have no summit: no triangle.
+    if (e.parts?.role === 'terrain.cavern') st = { ...st, symbol: undefined };
     if (e.manual) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
     out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail });
   }

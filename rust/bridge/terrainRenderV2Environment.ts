@@ -138,11 +138,9 @@ export const RENDER_V2_ENVIRONMENT_GLSL = `
         g=mix(g,vec3(.62,.86,.96),clamp(max(e.glacier,.5*e.ice),0.,1.));return mix(g,vec3(.90,.96,1.),e.snow);}
       return mix(v2Open(e),v2Canopy(e),e.woody*e.leaf);
     }
-    // Fresh water (lakes, rivers) freezes only where the land around it, at the same altitude, is frozen: its own cold
-    // is capped by the land's snow cover, so an iced river never runs through bare summer land and a river does not
-    // flicker along its length (the cap is a smooth function of the land's snow, not of the river's own sample).
-    float v2LandFrozen(V2Env e){return sstep(.15,.6,max(e.snow,e.glacier));}
-    float v2Freeze(float kind,V2Env e){return kind<1.5?sstep(-2.,-9.,e.temperature):min(kind>2.5?sstep(-5.,-13.,e.temperature):e.ice,v2LandFrozen(e));}
+    // Sea freeze from the air temperature. Fresh water (lakes, rivers) has no pack here: Magna Urbis freezes it as
+    // one sheet along its outline, from the land's snow at the water's altitude (terrainRenderV2Winter v2FreshIce).
+    float v2Freeze(float kind,V2Env e){return kind<1.5?sstep(-2.,-9.,e.temperature):0.;}
     // Area integration of the resolved two-scale pack, rather than a uniform
     // opacity on every plate. Dense refrozen pack has very little open water.
     float v2PackMean(float concentration){

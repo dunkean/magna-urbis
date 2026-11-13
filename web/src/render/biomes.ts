@@ -32,7 +32,7 @@ function climatePalette(style: MapStyle | Palette, value?: string): Palette {
   if (cached) return cached;
   if (isUnderdarkBiome(biome)) {
     const mono = ['engraving', 'blueprint'].includes(base.name), night = base.name === 'night';
-    const stone = night ? '#353344' : '#aaa3b1', damp = night ? '#425259' : '#8dabae';
+    const stone = night ? '#353344' : '#aaa3b1', damp = night ? '#3f4c4a' : '#909f99'; // damp: moss and fungal beds, not open water
     const fungal = night ? '#9f93b6' : '#b4a4c9', ink = night ? '#d1c8df' : '#514763';
     const pal: Palette = {
       ...base, hedgeOn: false,

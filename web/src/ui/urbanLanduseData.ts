@@ -88,8 +88,8 @@ function ruralBase(r: SettlementRaster): RuralBase {
   const wide = new Uint8Array(count);
   let seaCount = 0, waterCount = 0;
   for (let i = 0; i < count; i++) {
-    // Native value 4 is cavern rock, not a water source for irrigation.
-    if (r.water[i] > 0 && r.water[i] < 4) { wet[i] = 1; waterCount++; }
+    // Cave rock is encoded as water class 2 for Rust; it is not a water source for irrigation.
+    if (r.water[i] > 0 && r.water[i] < 4 && !r.rock?.[i]) { wet[i] = 1; waterCount++; }
     if (r.water[i] === 1) { sea[i] = 1; seaCount++; }
     if (r.water[i] === 3) { riverMask[i] = r.riverWidth[i] >= 4.5 ? 1 : 2; wide[i] = r.riverWidth[i] > 3.7 ? 1 : 0; }
   }
@@ -139,7 +139,7 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
   const fields: SiteFields = { dWater: waterDistance.dist, dSea, dMain, hab, slopeS, riverMask, bridgeZone, wide };
   // Passability classes; the engine runs the travel-cost search from the town centre (site::travel_cost).
   const pass = new Uint8Array(count);
-  for (let i = 0; i < count; i++) pass[i] = r.water[i] === 0 ? 1 : r.water[i] === 4 ? 0
+  for (let i = 0; i < count; i++) pass[i] = r.water[i] === 0 ? 1 : r.rock?.[i] || r.water[i] === 4 ? 0
     : bridgeZone[i] ? 3 : r.water[i] === 3 && !wide[i] ? 2 : 0;
   const index = Math.max(0, Math.min(n - 1, Math.floor(city.center.y / cell))) * n
     + Math.max(0, Math.min(n - 1, Math.floor(city.center.x / cell)));
@@ -233,7 +233,7 @@ function ruralResolution(input: UrbanLanduseInput): UrbanLanduseInput {
 }
 function upsampledRaster(r: SettlementRaster, n: number): SettlementRaster {
   const height = new Float32Array(n * n), water = new Uint8Array(n * n), waterLevel = new Float32Array(n * n);
-  const riverWidth = new Float32Array(n * n), riverIds = new Int32Array(n * n);
+  const riverWidth = new Float32Array(n * n), riverIds = new Int32Array(n * n), rock = r.rock ? new Uint8Array(n * n) : undefined;
   // Agricultural geometry always uses the retained placement raster. Reusing a
   // previously displayed forest field must not change the height source.
   const source = { n: r.n, width: r.width, data: r.height };
@@ -246,8 +246,9 @@ function upsampledRaster(r: SettlementRaster, n: number): SettlementRaster {
       + (source.data[y1 * source.n + x0] * (1 - tx) + source.data[y1 * source.n + x1] * tx) * ty;
     const j = Math.min(r.n - 1, Math.floor((y + .5) / n * r.n)) * r.n + Math.min(r.n - 1, Math.floor((x + .5) / n * r.n));
     water[i] = r.water[j]; waterLevel[i] = r.waterLevel[j]; riverWidth[i] = r.riverWidth[j]; riverIds[i] = r.riverIds[j];
+    if (rock) rock[i] = r.rock![j];
   }
-  return { ...r, n, height, water, waterLevel, riverWidth, riverIds };
+  return { ...r, n, height, water, waterLevel, riverWidth, riverIds, ...(rock ? { rock } : {}) };
 }
 
 /** Programme and enclosure choices feeding the countryside on both pages. */

@@ -46,7 +46,7 @@ export function applyRuntimePath(settings: V2Settings, path: string, value: unkn
   if (path === 'runtime.backend' && value === 'typescript') { runtime.source = 'procedural'; runtime.compute = 'cpu'; settings.generation = 'procedural'; }
   if (path === 'terrain.procedural.preset' && value === 'compact') {
     if (settings.terrain) { delete settings.terrain.generationCompute; delete settings.terrain.compute; }
-    if (['plateau', 'volcano', 'caldera', 'cavern'].includes(String(settings.terrain?.relief ?? settings.options.relief))) { settings.terrain ??= {}; settings.terrain.relief = 'mixed'; }
+    if (['plateau', 'volcano', 'caldera'].includes(String(settings.terrain?.relief ?? settings.options.relief))) { settings.terrain ??= {}; settings.terrain.relief = 'mixed'; }
   }
 }
 

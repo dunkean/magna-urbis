@@ -24,6 +24,7 @@ import { resolveAppearance, type AppearanceInput } from '../../src/render/appear
 import type { V2Settings } from '../../src/v2/contracts';
 import type { Options } from '../../src/gen/types';
 import { city3dScene } from '../../src/render/city3dMeshes';
+import { pieceShadow, pieceShadows, pieceVolumes, planRoof, volumeRoof, type MassingPiece } from '../../src/render/cityMassing';
 import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from '../../src/render/urbanBuildingGeometry';
 import { PRESET_IDS, isHiddenPreset, presetComposition, validateComposition, withCompositionQuality } from '../../src/render/composition';
 import { PRESET_OPTIONS, compositionMessages } from '../../src/ui/compositionControls';
@@ -465,6 +466,80 @@ describe('V2 and City Bench stay in sync', () => {
         expect(hits[0]).toBeCloseTo(100 - height, 8);
       }
     }
+  });
+
+  it('draws explicit roof pans exactly as sent, in plan and in 3D, on both pages', () => {
+    const outer = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }], shape = { outer, holes: [] }, ring = outer.map(p => [p.x, p.y]);
+    // Gambrel: four pans whose eaves run 0.4 m outside the walls, one gable end on each short wall.
+    const pans = [[-.4, -.4, 3.8, 10.4, -.4, 3.8, 10.4, 1.5, 5.5, -.4, 1.5, 5.5], [-.4, 1.5, 5.5, 10.4, 1.5, 5.5, 10.4, 3, 6.2, -.4, 3, 6.2],
+      [-.4, 3, 6.2, 10.4, 3, 6.2, 10.4, 4.5, 5.5, -.4, 4.5, 5.5], [-.4, 4.5, 5.5, 10.4, 4.5, 5.5, 10.4, 6.4, 3.8, -.4, 6.4, 3.8]];
+    const gables = [[0, 0, 4, 0, 6, 4, 0, 3, 6.2], [10, 0, 4, 10, 6, 4, 10, 3, 6.2]];
+    const piece = (volume: Record<string, unknown>): MassingPiece => ({ floors: 2, eave_m: 4, rise_m: 2.2, roof: 'gable', ridges: [[0, 3, 10, 3]], cover: 'tile', wall: 'brick',
+      volumes: [{ ring, floors: 2, eave_m: 4, rise_m: 2.2, roof: 'gable', roof_form: 'gambrel', ridges: [[0, 3, 10, 3]], ...volume }] }) as unknown as MassingPiece;
+    const flat = (faces: { points: { x: number; y: number; z: number }[] }[]): number[][] => faces.map(f => f.points.flatMap(p => [p.x, p.y, p.z]));
+    const massing = piece({ pans, gables }), [volume] = pieceVolumes(shape, massing);
+    expect(volume.roof_form).toBe('gambrel');
+    expect(flat(volumeRoof(volume, 0, 0))).toEqual(pans);
+    expect(flat(planRoof([shape], [massing]))).toEqual(pans);
+    // Horizontal pans stay plain faces (no slab rim, no clipping); an empty list is a hidden roof; malformed pans are ignored.
+    const slab = [[0, 0, 4, 10, 0, 4, 10, 6, 4, 0, 6, 4]], level = planRoof([shape], [piece({ roof: 'flat', rise_m: 0, parapet_m: .9, pans: slab })]);
+    expect(flat(level)).toEqual(slab); expect(level.some(f => f.flat)).toBe(false);
+    expect(planRoof([shape], [piece({ pans: [] })])).toEqual([]);
+    expect(planRoof([shape], [piece({ pans: [[0, 0, 4, 10, 0]] })])).toEqual(planRoof([shape], [piece({})]));
+    // The ground shadow of a convex volume with pans is the plain sweep of its ring.
+    const area = (s: { outer: { x: number; y: number }[] }): number => Math.abs(s.outer.reduce((a, p, i) => { const n = s.outer[(i + 1) % s.outer.length]; return a + p.x * n.y - n.x * p.y; }, 0)) / 2;
+    const [shadow] = pieceShadows(shape, massing);
+    expect(area(shadow)).toBeCloseTo(area(pieceShadow(shape, 6.2)!), 8);
+    const request = { id: 'gambrel', parcel_id: 'lot', function: 'domestic', culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
+      terrain: { ground_z_m: 0 }, accesses: [], preview: [shape], buildable: [shape], programme: { households: 2, massing: [massing] } } as unknown as CityPlacementRequest;
+    const v2 = city3dScene(silhouetteScene([request])), bench = city3dScene(siteVisualScene([projectUrbanSite(request, 0)]));
+    expect(v2).toEqual(bench);
+    const mesh = v2.buildings[0].volumes[0].roof_mesh, points = (f: { vertices: number[] }): number[] => f.vertices.flatMap(i => [mesh.vertices[i].x, mesh.vertices[i].y, mesh.vertices[i].z]);
+    expect(mesh.faces.filter(f => f.material.includes('cover:')).map(points)).toEqual(pans);
+    const ends = mesh.faces.filter(f => f.kind === 'gable' && f.material.includes('wall:brick'));
+    expect(ends.map(points)).toEqual(gables);
+    expect(ends.map(f => Math.round(f.normal[0]))).toEqual([-1, 1]);
+    expect(mesh.faces.filter(f => f.material.includes('wall:opening')).length).toBeGreaterThan(1);
+  });
+
+  it('starts raised walls at their base, paints them above their support and keeps small volumes plain', () => {
+    const rect = (x0: number, y0: number, x1: number, y1: number): number[][] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    const outer = rect(0, 0, 12, 8).map(([x, y]) => ({ x, y })), shape = { outer, holes: [] };
+    // A lantern standing on the flat main roof (listed first), the main body, and a porch.
+    const piece = (minor: boolean): MassingPiece => ({ floors: 2, eave_m: 6, rise_m: 0, roof: 'flat', ridges: [], cover: 'tile', wall: 'brick', volumes: [
+      { ring: rect(3, 2, 9, 6), floors: 1, base_m: 6, eave_m: 9, rise_m: 1.5, roof: 'pyramid', ridges: [] },
+      { ring: rect(0, 0, 12, 8), floors: 2, eave_m: 6, rise_m: 0, roof: 'flat', ridges: [] },
+      { ring: rect(12, 2, 16, 6), floors: 1, eave_m: 2.5, rise_m: .5, roof: 'shed', ridges: [], ...(minor ? { minor: true } : {}), pans: [[12, 2, 3, 16, 2, 2.5, 16, 6, 2.5, 12, 6, 3]] },
+    ] }) as unknown as MassingPiece;
+    const scene = (minor: boolean) => {
+      const request = { id: 'lantern', parcel_id: 'lot', function: 'domestic', culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
+        terrain: { ground_z_m: 0 }, accesses: [], preview: [shape], buildable: [shape], programme: { households: 2, massing: [piece(minor)] } } as unknown as CityPlacementRequest;
+      const v2 = city3dScene(silhouetteScene([request]));
+      expect(v2).toEqual(city3dScene(siteVisualScene([projectUrbanSite(request, 0)])));
+      return v2.buildings[0];
+    };
+    const b = scene(true), [lantern, , porch] = b.volumes;
+    const openings = (v: typeof lantern) => v.roof_mesh.faces.filter(f => f.material.includes('wall:opening'));
+    expect([lantern.z_m, lantern.wall_height_m, lantern.levels[0].z_m, lantern.levels[0].height_m]).toEqual([6, 3, 6, 3]);
+    expect(lantern.foundation?.footprint).toEqual([]);
+    expect(openings(lantern).length).toBeGreaterThan(0);
+    expect(Math.min(...openings(lantern).flatMap(f => f.vertices.map(i => lantern.roof_mesh.vertices[i].z)))).toBeCloseTo(7, 8);
+    expect(openings(porch)).toHaveLength(0);
+    expect(openings(scene(false).volumes[2]).length).toBeGreaterThan(0);
+    // The overview drops the porch; the detailed mesh (and picking, which shares it) keeps it.
+    for (const overview of [false, true]) {
+      const walls: BuildingTriangle[] = [], beside: BuildingTriangle[] = [];
+      eachBuildingTriangle(b, t => {
+        if (t.points.every(p => p[0] > 12.01)) beside.push(t);
+        if (t.surface === 'wall' && t.points.every(p => p[0] >= 3 && p[0] <= 9 && p[1] >= 2 && p[1] <= 6)) walls.push(t);
+      }, overview);
+      expect(beside.length > 0).toBe(!overview);
+      expect(Math.min(...walls.flatMap(t => t.points.map(p => p[2])))).toBe(6);
+    }
+    const faces = planRoof([shape], [piece(true)]);
+    expect(Math.max(...faces.map((f, i) => f.vol === 1 ? i : -1))).toBeLessThan(faces.findIndex(f => f.vol === 0));
+    expect(faces.filter(f => f.minor).map(f => f.vol)).toEqual([2]);
+    expect(pieceShadows(shape, piece(true))).toHaveLength(2);
   });
 
   it('invalidates forest occupation with the city once, without a second city-pass upload', () => {

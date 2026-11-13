@@ -12,15 +12,21 @@ mod contacts;
 mod courts;
 mod families;
 mod landmark;
+mod monuments;
 mod occupation;
 mod organic;
 mod pressure;
+pub(super) mod standalone;
 mod tidy;
 pub(super) mod ruins;
 pub(super) use admission::{compact_fallback, witnessed_by};
+/// Monument family of an architecture pack (`landmark::family`).
+pub(super) fn monument_family(pack: &str) -> &'static str {
+    landmark::family(pack)
+}
 pub(super) use occupation::{
-    Kind as OccupationKind, Occupancy, kind as occupation_kind, preview_parts as occupation_preview,
-    preview_parts_resolved as occupation_preview_resolved,
+    Kind as OccupationKind, Occupancy, empty_reason as occupation_empty_reason, kind as occupation_kind,
+    preview_parts as occupation_preview, preview_parts_resolved as occupation_preview_resolved,
 };
 
 #[derive(Clone, Copy)]
@@ -3983,15 +3989,15 @@ pub(super) fn generate(
     let phase_morphs = layout
         .phases
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(index, p)| {
             let (preset, selected) = super::composition::globals(chosen(p), &cfg.preset, &cfg.recipe);
+            // The style sheet's `plots` facet cuts this phase the way another culture cuts its lots.
+            let sheet = super::forms::sheet::plots(layout, index);
+            let own = if (cfg.culture == "site" || chosen(p)) && !p.culture.is_empty() { &p.culture } else { culture };
             super::composition::phase_morph(
-                if (cfg.culture == "site" || chosen(p)) && !p.culture.is_empty() {
-                    &p.culture
-                } else {
-                    culture
-                },
-                &p.recipe,
+                sheet.as_ref().map_or(own.as_str(), |s| s.0.as_str()),
+                sheet.as_ref().map_or(p.recipe.as_str(), |s| s.1.as_str()),
                 &zone_of(p),
                 preset,
                 selected,

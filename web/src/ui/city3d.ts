@@ -9,6 +9,7 @@ import { RenderReadiness } from '../render/renderReadiness';
 import { drawTileRoads, tileRoadVisible, cityTileHasInk } from '../render/tileNetworks';
 import { outsideUrbanStreets } from '../../../rust/bridge/urbanNetwork';
 import type { RoadInk } from '../render/roadStyle';
+import { layoutPavementSites } from '../render/roadPavement';
 import { mountTextOverlay3d } from './textOverlay3d';
 import { mountLegendOverlay3d } from './legendOverlay3d';
 import { buildMapLabels, type MapLabelWorld, type MapLabel } from '../render/mapLabels';
@@ -44,7 +45,7 @@ import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type CityD
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { forestOccupation } from './forestOccupation';
-import { withLandDetail } from './landDetail';
+import { withLandDetail, type LandCultures } from './landDetail';
 import type { SemanticDepth, SemanticLook } from '../render/composition';
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
@@ -137,7 +138,7 @@ export interface City3dRetainedWater {
   /** Seasonal regime of these banks (retainedWaterRegime.ts) and the style of its ink symbols. */
   regime?: RetainedRegime; style?: TerrainStyle;
 }
-export interface City3dSemantic { landuse: LandUseLayer | undefined; rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; depth: SemanticDepth }
+export interface City3dSemantic { landuse: LandUseLayer | undefined; /** Cultures that choose the crops of the holdings (landDetail). */ cultures?: LandCultures; rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; depth: SemanticDepth }
 /** `key` moves when the painting changes. `paint` fills the transparent `target`, which covers `box`; false when the tile holds nothing. */
 export interface City3dPhysicalGround {
   key: string;
@@ -290,8 +291,8 @@ export function mountCity3d(options: City3dOptions): City3d {
   function groundForest(): ReturnType<NonNullable<City3dOptions['getForest']>> {
     const forest=options.getForest?.();
     if(forest?.occupation||options.getGroundSettings?.(ground)?.renderV2!==1)return forest;
-    const landuse=options.getSemantic?.()?.landuse;
-    if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&withLandDetail(forestOccupation(landuse),landuse);}
+    const semantic=options.getSemantic?.(),landuse=semantic?.landuse;
+    if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&withLandDetail(forestOccupation(landuse),landuse,semantic?.cultures);}
     return {...forest,occupation:occupationGround};
   }
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = '';
@@ -645,7 +646,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (roads?.length) {
       const roadLook=planOptions?.roadLook??(planOptions?.groundBlend?'natural':'ink');
       const target = roadLook==='natural'?groundContext():inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
-      drawTileRoads(target, roads, box, mpp, { look: roadLook, emphasis: planOptions?.roadEmphasis ?? 1, night: !satellite&&planOptions?.appearance?.ambience === 'night', colors: planOptions?.appearance?.colors }, planOptions?.roadInk); target.restore();
+      drawTileRoads(target, roads, box, mpp, { look: roadLook, emphasis: planOptions?.roadEmphasis ?? 1, night: !satellite&&planOptions?.appearance?.ambience === 'night', colors: planOptions?.appearance?.colors }, planOptions?.roadInk, layoutPavementSites(options.getLayouts?.())); target.restore();
     }
     const footprintScene = planOptions?.buildingsVisible ? options.getScene() : undefined;
     let footprints = footprintScene && footprintPlans.get(footprintScene);

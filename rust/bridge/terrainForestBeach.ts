@@ -196,14 +196,207 @@ function toHalf(v: number): number {
   return e >= 31 ? s | 0x7bff : s | (e << 10) | (m >> 13);
 }
 
-/** RG16F linear clamp texture of a ShoreRingGrid. */
-export function shoreRingTexture(gl: WebGL2RenderingContext, grid: ShoreRingGrid): WebGLTexture {
-  const half = new Uint16Array(grid.data.length);
-  for (let i = 0; i < half.length; i++) half[i] = toHalf(grid.data[i]);
+// ---- Relief light: the ring texture's B and A channels -------------------------------------------------------
+// B is the sky occlusion of the terrain (0 under an open sky, 1 enclosed): direction-free, baked once per height
+// layer. A is the horizon tangent toward the primary light: the shader compares it with the sun's own tangent, so
+// only a change of light azimuth needs a new bake, never a change of elevation. Both are zero on flat ground and
+// in a ring that was never baked, which the shader reads as "no occlusion, no shadow".
+
+/** Land heights of a layer on a coarse grid (mean pyramid, level 0 first) and their sky occlusion code (0..255),
+ * on a grid of n/2: occlusion is a broad field, and half the resolution is a quarter of the bake. */
+export interface ReliefField { x: number; y: number; width: number; n: number; levels: Float32Array[]; sky: Uint8Array }
+/** What a horizon bake reads: the pyramid alone travels to the worker. */
+export type ReliefHeights = Pick<ReliefField, 'width' | 'n' | 'levels'>;
+
+/** Relief grid: about 32 m texels on a regional map, never finer than the ring it is resampled into. */
+export const reliefResolution = (layer: ForestBeachLayer): number =>
+  Math.min(1024, shoreRingResolution(layer.width), 2 ** Math.floor(Math.log2(Math.max(16, layer.n))));
+/** Horizon tangents are stored as tangent * HORIZON_CODE in 8 bits (up to 2.55, a 68.6 degree horizon). */
+const HORIZON_CODE = 100;
+/** The cast shadow is re-baked when the light azimuth leaves a bucket of this many degrees. */
+const AZIMUTH_BUCKET = 4;
+const lightBucket = (azimuth: number): number => { const b = Math.round(azimuth / AZIMUTH_BUCKET) % (360 / AZIMUTH_BUCKET); return b < 0 ? b + 360 / AZIMUTH_BUCKET : b; };
+
+/** Box means of the land surface (the sea is flat at 0) at the relief resolution, then a 2x2 mean pyramid. */
+function reliefLevels(layer: ForestBeachLayer, n: number): Float32Array[] {
+  const src = layer.data, sn = layer.n, ratio = sn / n, base = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    const y0 = Math.min(sn - 1, Math.floor(j * ratio)), y1 = Math.min(sn, Math.max(y0 + 1, Math.floor((j + 1) * ratio)));
+    for (let i = 0; i < n; i++) {
+      const x0 = Math.min(sn - 1, Math.floor(i * ratio)), x1 = Math.min(sn, Math.max(x0 + 1, Math.floor((i + 1) * ratio)));
+      let sum = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const h = src[y * sn + x]; if (h > 0) sum += h; }
+      base[j * n + i] = sum / ((y1 - y0) * (x1 - x0));
+    }
+  }
+  const levels = [base];
+  for (let m = n >> 1; m >= 4; m >>= 1) {
+    const from = levels[levels.length - 1], w = m * 2, to = new Float32Array(m * m);
+    for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) { const o = 2 * j * w + 2 * i; to[j * m + i] = .25 * (from[o] + from[o + 1] + from[o + w] + from[o + w + 1]); }
+    levels.push(to);
+  }
+  return levels;
+}
+
+/** Bilinear height of pyramid level `shift` (m x m texels) at level-0 texel coordinates (texel i is centred on i). */
+function reliefAt(level: Float32Array, m: number, shift: number, px: number, py: number): number {
+  const scale = 1 / (1 << shift), last = m - 1;
+  let gx = (px + .5) * scale - .5, gy = (py + .5) * scale - .5;
+  gx = gx < 0 ? 0 : gx > last ? last : gx; gy = gy < 0 ? 0 : gy > last ? last : gy;
+  const x0 = gx | 0, y0 = gy | 0, x1 = x0 < last ? x0 + 1 : last, y1 = y0 < last ? y0 + 1 : last, fx = gx - x0, fy = gy - y0;
+  const a = level[y0 * m + x0], b = level[y0 * m + x1], c = level[y1 * m + x0], d = level[y1 * m + x1];
+  return a + (b - a) * fx + (c - a + (a - b - c + d) * fx) * fy;
+}
+
+/** Samples of one horizon ray as (dx, dy in level-0 texels, pyramid level, 1 / distance in metres). Distances grow
+ * geometrically from `first` texels up to `reach` metres; each one reads the pyramid level `drop` below the one
+ * whose texels match its distance, chosen with `growth` so that a texel is about the gap to the next sample: a
+ * ridge between two samples still weighs in a box mean. */
+function reliefRay(field: ReliefHeights, dirX: number, dirY: number, reach: number, first: number, growth: number, drop: number): Float64Array {
+  const cell = field.width / field.n, top = field.levels.length - 1, out: number[] = [];
+  for (let d = first; d * cell <= reach && d < field.n; d *= growth) out.push(dirX * d, dirY * d, Math.min(top, Math.max(0, Math.floor(Math.log2(d)) - drop)), 1 / (d * cell));
+  return Float64Array.from(out);
+}
+
+/** Share of a uniform sky dome hidden by the relief around each texel, as a code 0 (open) .. 255: 16 azimuths, one
+ * sample per octave of distance up to 1.5 km (alternate azimuths interleave their distances). A horizon at elevation e leaves
+ * cos^2(e) of that azimuth's irradiance on level ground. Valleys, gorges and cliff feet come out high, ridges,
+ * plateaus and plains at 0. */
+function reliefSky(field: ReliefHeights): Uint8Array {
+  const n = field.n, levels = field.levels, base = levels[0], sky = new Uint8Array(n * n), rays: Float64Array[] = [];
+  for (let a = 0; a < 16; a++) rays.push(reliefRay(field, Math.cos(a * Math.PI / 8), Math.sin(a * Math.PI / 8), 1500, a & 1 ? Math.SQRT2 : 1, 2, 0));
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const h = base[j * n + i];
+    if (h <= 0) continue;   // open water
+    let open = 0;
+    for (let a = 0; a < 16; a++) {
+      const ray = rays[a]; let t = 0;
+      for (let k = 0; k < ray.length; k += 4) {
+        const shift = ray[k + 2], v = (reliefAt(levels[shift], n >> shift, shift, i + ray[k], j + ray[k + 1]) - h) * ray[k + 3];
+        if (v > t) t = v;
+      }
+      open += 1 / (1 + t * t);
+    }
+    sky[j * n + i] = Math.round(255 * (1 - open / 16));
+  }
+  return sky;
+}
+
+/** Horizon tangent of each texel toward a light at `azimuth` (degrees clockwise from north, world y pointing south),
+ * as tangent * HORIZON_CODE: the highest (height difference / distance) along the ray, three samples per octave
+ * up to 4 km. A slope facing
+ * away from the light carries its own gradient, so attached and cast shadows are one continuous field. */
+export function reliefHorizon(field: ReliefHeights, azimuth: number): Uint8Array {
+  const n = field.n, levels = field.levels, base = levels[0], out = new Uint8Array(n * n), a = azimuth * Math.PI / 180;
+  const ray = reliefRay(field, Math.sin(a), -Math.cos(a), 4000, 1, 2 ** (1 / 3), 2);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const h = base[j * n + i]; let t = 0;
+    for (let k = 0; k < ray.length; k += 4) {
+      const shift = ray[k + 2], v = (reliefAt(levels[shift], n >> shift, shift, i + ray[k], j + ray[k + 1]) - h) * ray[k + 3];
+      if (v > t) t = v;
+    }
+    out[j * n + i] = Math.min(255, Math.round(t * HORIZON_CODE));
+  }
+  return out;
+}
+
+/** A relief code grid resampled (bilinear) onto the ring's texels, as the half floats of code * scale. */
+function reliefChannel(codes: Uint8Array, n: number, resolution: number, scale: number): Uint16Array {
+  const lut = new Uint16Array(255 * 16 + 1);
+  for (let i = 0; i < lut.length; i++) lut[i] = toHalf(i / 16 * scale);
+  const out = new Uint16Array(resolution * resolution), ratio = n / resolution, last = n - 1;
+  for (let j = 0; j < resolution; j++) {
+    let gy = (j + .5) * ratio - .5; gy = gy < 0 ? 0 : gy > last ? last : gy;
+    const y0 = gy | 0, y1 = y0 < last ? y0 + 1 : last, fy = gy - y0;
+    for (let i = 0; i < resolution; i++) {
+      let gx = (i + .5) * ratio - .5; gx = gx < 0 ? 0 : gx > last ? last : gx;
+      const x0 = gx | 0, x1 = x0 < last ? x0 + 1 : last, fx = gx - x0;
+      const a = codes[y0 * n + x0], b = codes[y0 * n + x1], c = codes[y1 * n + x0], d = codes[y1 * n + x1];
+      out[j * resolution + i] = lut[Math.round((a + (b - a) * fx + (c - a + (a - b - c + d) * fx) * fy) * 16)];
+    }
+  }
+  return out;
+}
+/** The ring's A channel (half floats, `resolution` squared) for a light azimuth: the whole direction-dependent bake. */
+export function reliefHorizonChannel(field: ReliefHeights, azimuth: number, resolution: number): Uint16Array {
+  return reliefChannel(reliefHorizon(field, azimuth), field.n, resolution, 1 / HORIZON_CODE);
+}
+
+/** Direction-free relief products of a height layer. */
+export function reliefField(layer: ForestBeachLayer): ReliefField {
+  const n = reliefResolution(layer), heights = { width: layer.width, n, levels: reliefLevels(layer, n) };
+  return { x: layer.x, y: layer.y, ...heights, sky: reliefSky({ width: layer.width, n: n >> 1, levels: heights.levels.slice(1) }) };
+}
+const reliefCache = new WeakMap<Float32Array, Map<string, ReliefField>>();
+/** Publish an off-thread relief field only against the exact samples/frame that produced it. */
+export function retainReliefField(layer: ForestBeachLayer, field: ReliefField): void {
+  if (field.x !== layer.x || field.y !== layer.y || field.width !== layer.width || field.n !== reliefResolution(layer)
+    || field.sky.length !== (field.n >> 1) * (field.n >> 1) || field.levels[0]?.length !== field.n * field.n) return;
+  let entries = reliefCache.get(layer.data);
+  if (!entries) { entries = new Map(); reliefCache.set(layer.data, entries); }
+  if (!entries.has(shoreKey(layer))) entries.set(shoreKey(layer), field);
+}
+/** One relief field per immutable height-array/frame revision, shared by 2D and 3D. */
+export function reliefFieldFor(layer: ForestBeachLayer): ReliefField {
+  let field = reliefCache.get(layer.data)?.get(shoreKey(layer));
+  if (!field) {
+    const start = performance.now();
+    field = reliefField(layer);
+    performance.measure('displayprep:relief:build', { start });
+    retainReliefField(layer, field);
+  }
+  return field;
+}
+
+/** Bakes the A channel off the frame path. The display preparation worker replaces this main-thread task. */
+export type ReliefHorizonBaker = (field: ReliefHeights, azimuth: number, resolution: number) => Promise<Uint16Array>;
+let horizonBaker: ReliefHorizonBaker = (field, azimuth, resolution) =>
+  new Promise(resolve => { setTimeout(() => resolve(reliefHorizonChannel(field, azimuth, resolution)), 0); });
+export function setReliefHorizonBaker(baker: ReliefHorizonBaker): void { horizonBaker = baker; }
+
+/** Texels of the ring texture (RGBA half floats: shore distance, openness, sky occlusion, horizon tangent toward
+ * the light). `revision` changes when a new horizon has been written: the renderers upload again then. */
+export interface ShoreRingPixels { grid: ShoreRingGrid; half: Uint16Array; revision: number }
+interface RingLight extends ShoreRingPixels { relief: ReliefField; bucket: number; wanted: number; baking: boolean; listeners: Set<() => void> }
+const ringLights = new WeakMap<ShoreRingGrid, RingLight>();
+
+function bakeHorizon(ring: RingLight): void {
+  const target = ring.wanted; ring.baking = true;
+  horizonBaker({ width: ring.relief.width, n: ring.relief.n, levels: ring.relief.levels }, target * AZIMUTH_BUCKET, ring.grid.n).then(channel => {
+    const half = ring.half;
+    if (channel.length * 4 === half.length) { for (let i = 0, o = 3; i < channel.length; i++, o += 4) half[o] = channel[i]; ring.bucket = target; ring.revision++; }
+    ring.baking = false;
+    if (ring.wanted !== target) bakeHorizon(ring);   // the light moved on during the bake
+    const listeners = [...ring.listeners]; ring.listeners.clear();
+    for (const listener of listeners) listener();
+  }, error => { ring.baking = false; ring.wanted = ring.bucket; console.warn('Relief horizon bake failed:', error); });
+}
+
+/** Ring texels for a height layer under a light at `azimuth` (degrees clockwise from north). The first call bakes
+ * the horizon of that light at once (view preparation); a later change of azimuth bucket keeps the current texels,
+ * bakes the new horizon off the frame path and calls `changed` (once) when a new revision is ready to upload. */
+export function shoreRingPixels(layer: ForestBeachLayer, azimuth: number, changed?: () => void): ShoreRingPixels {
+  const grid = shoreRingFor(layer), bucket = lightBucket(azimuth);
+  let ring = ringLights.get(grid);
+  if (!ring) {
+    const relief = reliefFieldFor(layer), start = performance.now(), n = grid.n, half = new Uint16Array(n * n * 4);
+    const sky = reliefChannel(relief.sky, relief.n >> 1, n, 1 / 255), horizon = reliefHorizonChannel(relief, bucket * AZIMUTH_BUCKET, n);
+    for (let i = 0, o = 0; i < n * n; i++, o += 4) { half[o] = toHalf(grid.data[2 * i]); half[o + 1] = toHalf(grid.data[2 * i + 1]); half[o + 2] = sky[i]; half[o + 3] = horizon[i]; }
+    performance.measure('displayprep:relief:pixels', { start });
+    ring = { grid, half, revision: 1, relief, bucket, wanted: bucket, baking: false, listeners: new Set() };
+    ringLights.set(grid, ring);
+  } else if (bucket !== ring.wanted) { ring.wanted = bucket; if (!ring.baking) bakeHorizon(ring); }
+  if (changed && ring.baking) ring.listeners.add(changed);
+  return ring;
+}
+
+/** RGBA16F linear clamp texture of the ring texels. */
+export function shoreRingTexture(gl: WebGL2RenderingContext, pixels: ShoreRingPixels): WebGLTexture {
+  const grid = pixels.grid;
   const texture = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, grid.n, grid.n, 0, gl.RG, gl.HALF_FLOAT, half);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, grid.n, grid.n, 0, gl.RGBA, gl.HALF_FLOAT, pixels.half);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return texture;

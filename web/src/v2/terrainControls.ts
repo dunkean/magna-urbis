@@ -13,7 +13,8 @@ import {
 } from './terrainControlSchema';
 import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
-import { mountTerrainSketchControls, type TerrainSketchContext } from './terrainSketchControls';
+import { mountTerrainSketchControls, type TerrainSketchContext, type ReliefEditorKind } from './terrainSketchControls';
+import { UNDERDARK_CULTURES } from './underdarkCultures';
 import { loadTerrainControlDefaults } from './terrainControlDefaults';
 import { physicalPlan, physicalPlanSummary, sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
 import { isTerrainExpertControl } from './terrainControlAccess';
@@ -25,7 +26,7 @@ export interface TerrainControlBindings {
   disabled?: () => boolean;
   context?: TerrainSketchContext;
 }
-export interface TerrainControls { sync(): void; dispose(): void; openEditor(): void; sketchHost: HTMLElement;
+export interface TerrainControls { sync(): void; dispose(): void; openEditor(kind?: ReliefEditorKind): void; sketchHost: HTMLElement;
   /** The same value model as the mounted forms (defaults, climate and preset side effects), for staged forms. */
   access: { get(path: string): unknown; set(path: string, value: unknown): void } }
 
@@ -86,6 +87,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (path==='terrain.procedural.coastAfter')return settings.terrain?.procedural?.coastAfter??'initialize';
     if (path==='terrain.phasor.quality')return settings.terrain?.phasor?.quality??'balanced';
     if (path==='terrain.phasor.intensity')return settings.terrain?.phasor?.intensity??1;
+    if (path === 'options.layer') return settings.options.biome === 'underdark' ? 'underdark' : 'surface';
     if (path.startsWith('terrain.')) {
       if (path === 'terrain.climate' && settings.terrain?.climateValues) return 'custom';
       const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
@@ -101,6 +103,15 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const settings = bindings.getSettings();
     if (path === 'terrain.coastMask' && Number(value) !== 0 && settings.terrain?.procedural?.enabled?.coasts === false) settings.terrain.procedural.enabled.coasts = true;
     if (path.startsWith('runtime.') && !settings.runtime) settings.runtime = { backend: 'rust', compute: 'auto', source: 'procedural' };
+    if (path === 'options.layer') {
+      if (value === 'underdark') settings.options.biome = 'underdark';
+      else if (settings.options.biome === 'underdark') settings.options.biome = (climateZoneBiome[effectiveTerrainSettings(settings, adaptedExtent(settings)).climateZone ?? 'temperate'] ?? 'temperate') as typeof settings.options.biome;
+      // The main culture follows the layer unless the user already chose one that fits it (explicit choices win).
+      const culture = String(settings.options.culture), fits = UNDERDARK_CULTURES.includes(culture);
+      if (value === 'underdark' && !fits) settings.options.culture = UNDERDARK_CULTURES[0];
+      else if (value !== 'underdark' && fits) settings.options.culture = 'european-organic';
+      change(); return;
+    }
     if (path === 'terrain.climate') {
       if (value === 'custom') {
         settings.terrain ??= {};
@@ -108,7 +119,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       } else {
         writeSettingPath(settings, path, value); delete settings.terrain!.climateValues;
         const biome = climateZoneBiome[String(value)];
-        if (biome && settings.options.biome !== 'underdark' && settings.options.biome !== 'underdark-caverns') settings.options.biome = biome as typeof settings.options.biome;
+        if (biome && settings.options.biome !== 'underdark') settings.options.biome = biome as typeof settings.options.biome;
       }
     } else {
       if (path.startsWith('terrain.climateValues.') && !settings.terrain?.climateValues) {
@@ -178,7 +189,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   for (const metres of [2400, 10000, 40000, 100000, 200000]) { const preset = button(presetRow, formatDistance(metres,getDistanceUnit()), () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
   extent.append(presetRow); quick.append(extent);
   const quickFields = document.createElement('div'); quickFields.className = 'terrain-quick-fields'; quick.append(quickFields);
-  form(quickFields, [sourceField, terrainBasicFields.find(field => field.path === 'options.biome')!, terrainBasicFields.find(field => field.path === 'terrain.relief')!, terrainClassicFields.find(field => field.path === 'options.relief')!, terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!].map(field => ({ ...field, help: undefined })));
+  form(quickFields, [sourceField, terrainBasicFields.find(field => field.path === 'options.biome')!, terrainBasicFields.find(field => field.path === 'options.layer')!, terrainBasicFields.find(field => field.path === 'terrain.relief')!, terrainClassicFields.find(field => field.path === 'options.relief')!, terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!].map(field => ({ ...field, help: undefined })));
   const scale = quickFields.querySelector<HTMLInputElement>('#terrain-scale')!;
   scale.setAttribute('title', terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!.help!);
   const onWidth = () => {
@@ -241,7 +252,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const rustWater = group(ui.rustWater, terrainRustHydrologyFields, true, waterPanel);
   const vectorWater = group(ui.vectorWater, terrainVectorHydrologyFields, true, waterPanel);
   group(ui.compute, terrainSourceFields.filter(field => field.path !== 'runtime.source'));
-  const basics = group(ui.basics, terrainBasicFields.filter(field => !['options.biome', 'terrain.relief'].includes(field.path)));
+  const basics = group(ui.basics, terrainBasicFields.filter(field => !['options.biome', 'options.layer', 'terrain.relief'].includes(field.path)));
   const classic = group(ui.classic, terrainClassicFields.filter(field => field.path !== 'options.relief'));
   classic.querySelector('.terrain-group-body')!.prepend(classicNote);
   const inputGroup = group(ui.sourceHelp, []); inputGroup.querySelector('.terrain-group-body')!.append(source);
@@ -347,7 +358,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     scale.closest<HTMLElement>('[data-field-path]')!.hidden = isNeural || importedSurface || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.climate"]')!.hidden = isClassic;
-    root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic && settings.options.biome !== 'underdark' && settings.options.biome !== 'underdark-caverns';
+    root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic;
+    root.querySelector<HTMLElement>('[data-field-path="options.layer"]')!.hidden = isClassic;
     for (const option of Array.from(reliefSelect.options)) option.disabled = isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
   }
   void loadTerrainControlDefaults().then(reader => { if (disposed) return; defaultValues = reader; sync(); root.dispatchEvent(new Event('terrain-defaults-ready')); }).catch(error => { console.error('Terrain control defaults unavailable', error); });
@@ -358,5 +370,5 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     sync();
   }));
   sync();
-  return { sync, openEditor: () => sketchControls?.open(), sketchHost, access: { get, set }, dispose: () => { disposed = true; cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
+  return { sync, openEditor: kind => sketchControls?.open(kind), sketchHost, access: { get, set }, dispose: () => { disposed = true; cleanup.forEach(fn => fn()); forms.forEach(form => form.dispose()); sketchControls?.dispose(); root.replaceChildren(); } };
 }

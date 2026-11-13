@@ -9,10 +9,11 @@ import { farmClearings, type ForestCorridor } from '../render/forestRoom';
 import { measureDisplayProduct, productRevision } from '../render/displayProduct';
 
 /** Shared classes: 7 built reserve, 8 construction, 9 agricultural lane clearance, 11 forest clearing
- * (road corridor or farmstead ground, see render/forestRoom.ts): grass ground where no crown is rooted,
- * though crowns rooted outside may overhang it. */
+ * (main road corridor or farmstead ground, see render/forestRoom.ts): grass ground where no crown is rooted,
+ * though crowns rooted outside may overhang it; 12 covered way (small road or track): no crown is rooted on it, the
+ * stands on both sides are untouched and their crowns close over it. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6, marsh: 10 };
-const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, RANGE = 8, MIN_HALF = .6;
+const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, COVERED_WAY = 12, RANGE = 8, MIN_HALF = .6;
 
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
@@ -167,8 +168,12 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   // Corridors are distance fields, not rasterized ribbons: a road a few texels wide filled cell by cell left a
   // staircase edge in the ground and the crowns. Each texel keeps its exact signed distance (texels, positive
   // inside) to the nearest corridor capsule; it is merged into the open/forest fields below.
-  const corridor = corridorDistance([...corridors, ...landuse.forestCorridors ?? []], x, y, cell, n);
+  const ways = [...corridors, ...landuse.forestCorridors ?? []];
+  const corridor = corridorDistance(ways.filter(way => !way.covered), x, y, cell, n);
   if (corridor) for (let i = 0; i < n * n; i++) if (corridor[i] > 0 && (!cls[i] || forest[i])) cls[i] = CLEARING;
+  // Covered ways only mark their own strip: the open and forest fields keep the stands whole on both sides.
+  const covered = corridorDistance(ways.filter(way => way.covered), x, y, cell, n);
+  if (covered) for (let i = 0; i < n * n; i++) if (covered[i] > 0 && (!cls[i] || forest[i]) && cls[i] !== CLEARING) cls[i] = COVERED_WAY;
   // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
   // cell open, as for thin building walls, rather than dropping the whole lane.
   for (const path of landuse.ways ?? []) for (let i = 1; i < path.length; i++) {

@@ -81,6 +81,8 @@ function yardRibbon(line: YardLine, lod: number, materials: MaterialSlots, emit:
     quad(a, b, [b[0], b[1], p.g + line.height], [a[0], a[1], p.g + line.height], p.g, p.g, [sign * p.my, -sign * p.mx, 0], line.side);
   }
 }
+/** `role` of a small decorative display volume (city3dMeshes.ts): drawn in the detailed mesh, left out of the overview. */
+export const MINOR_VOLUME_ROLE = 'minor';
 const PROXY_MATERIALS: MaterialSlots = { frame: '', infill: '', coating: '', cladding: '', base: '', roof_frame: '' };
 
 /** Exact even-odd horizontal trapezoids, split only at boundary vertices. This
@@ -150,6 +152,8 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     return;
   }
   for (const volume of building.volumes) {
+    // Chimneys, dormers and porches are far below a pixel where the overview is shown.
+    if (overview && volume.role === MINOR_VOLUME_ROLE) continue;
     const foundation = volume.foundation;
     if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, true);
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);

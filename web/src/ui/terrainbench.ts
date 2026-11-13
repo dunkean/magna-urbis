@@ -5,6 +5,7 @@ import { mountTextOverlay3d } from './textOverlay3d';
 import { buildMapLabels, type MapLabel, type MapLabelWorld } from '../render/mapLabels';
 import { cityTextLabels } from '../render/textLayer';
 import { drawTileRoads, tileRoadVisible, cityTileHasInk } from '../render/tileNetworks';
+import { layoutPavementSites } from '../render/roadPavement';
 import { benchOverlayChange, benchMaterialNightChange, benchTextLayer, benchSettlementTextWorld } from './benchComposition';
 import { mountProceduralInspector, type ProceduralInspector } from './proceduralInspector';
 import { TerrainPipelineSession, pipelinePreview } from './terrainPipelineSession';
@@ -1345,7 +1346,7 @@ function benchSemanticTile(region: { x: number; y: number; width: number }, size
     const full = document.createElement('canvas'); full.width = full.height = size; const target = full.getContext('2d')!;
     if (overlay) target.drawImage(overlay, 0, 0, size, size);
     const scale = size / region.width; target.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
-    if (roads.length) drawTileRoads(target, roads, viewport, 1 / scale, { look: r.composition.networks.roads.look, emphasis: r.composition.networks.roads.emphasis, night: r.composition.ambience === 'night', colors: r.palette.colors });
+    if (roads.length) drawTileRoads(target, roads, viewport, 1 / scale, { look: r.composition.networks.roads.look, emphasis: r.composition.networks.roads.emphasis, night: r.composition.ambience === 'night', colors: r.palette.colors }, undefined, layoutPavementSites(settlements.urban.layouts));
     settlements.urban.drawGround(target, region, size, schedule3dTexture, false); overlay = full;
   }
   const urban = document.createElement('canvas'); urban.width = urban.height = pixels; const urbanCtx = urban.getContext('2d')!;

@@ -88,13 +88,13 @@ fn overlaps(a: &Shape, b: &Shape) -> bool {
 /// are cheap; a full route is not, and an unreachable source (steep bank, across a river) would
 /// otherwise route every offset x angle x street x archetype, minutes per town.
 const ROUTE_BUDGET: usize = 16;
-fn find(layout: &Layout, source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig, budget: &mut usize) -> Option<SpringSite> {
+/// `roads`: the ribbons of the layout's streets, in street order (`reserve` keeps them).
+fn find(layout: &Layout, roads: &[Shape], source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig, budget: &mut usize) -> Option<SpringSite> {
     let a=act::archetype(archetype)?;
     let look=act::data().looks.get(a.look.as_deref()?)?;
     let (w,d)=(look.footprint.w[0],look.footprint.d[0]);
-    let roads=layout.streets.iter().flat_map(|s|g::ribbon(&s.path,&s.widths)).collect::<Vec<_>>();
-    let forbidden=layout.enclosures.iter().flat_map(|e|e.reserve.clone()).chain(roads)
-        .chain(sites(layout).iter().map(|s|s.shape.clone())).collect::<Vec<_>>();
+    let forbidden=layout.enclosures.iter().flat_map(|e|&e.reserve).chain(roads)
+        .chain(sites(layout).iter().map(|s|&s.shape)).collect::<Vec<_>>();
     for step in 0..=(rules().max_offset_m/4.).floor() as usize {
         let count=if step==0 {1} else {16};
         for i in 0..count {
@@ -148,9 +148,15 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
             && (act::family_of(&layout.culture).is_none() || act::allowed(&layout.culture,id)))
         .cloned().collect::<Vec<_>>();
     let mut masks=vec![];
+    // Street ribbons, built at the first attempt and extended with each path added below: the
+    // list every source and archetype reads, instead of one rebuild per attempt.
+    let mut roads:Option<Vec<Shape>>=None;
     for (i,source) in unique.into_iter().take(r.max_sites).enumerate() {
         let mut budget=ROUTE_BUDGET;
-        let found=preferences.iter().find_map(|id|find(layout,source,id,surface,cfg,&mut budget));
+        let found=if preferences.is_empty() {None} else {
+            let roads:&[Shape]=roads.get_or_insert_with(||layout.streets.iter().flat_map(|s|g::ribbon(&s.path,&s.widths)).collect());
+            preferences.iter().find_map(|id|find(layout,roads,source,id,surface,cfg,&mut budget))
+        };
         let Some(mut water)=found else {
             layout.warnings.push(format!("Spring at {:.1},{:.1}: no dry accessible water-building site within {} m",source.x,source.y,r.max_offset_m));
             continue;
@@ -161,10 +167,13 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
         let u=Point{x:water.shape.outer[1].x-water.shape.outer[0].x,y:water.shape.outer[1].y-water.shape.outer[0].y};
         let w=u.x.hypot(u.y); let u=Point{x:u.x/w,y:u.y/w};
         masks.push(rectangle(c,u,w+2.,distance(water.shape.outer[1],water.shape.outer[2])+2.));
-        masks.extend(g::ribbon(&water.path,&[r.path_width_m]));
+        let ribbon=g::ribbon(&water.path,&[r.path_width_m]);
+        masks.extend(ribbon.iter().cloned());
+        if let Some(roads)=roads.as_mut() {roads.extend(ribbon);}
         layout.streets.push(Street{path:water.path.clone(),widths:vec![r.path_width_m],rank:3,role:"path".into()});
         layout.structure.get_or_insert_with(UrbanStructure::default).spring_sites.push(water);
     }
+    routing::tally("springs");
     if masks.is_empty() {return false;}
     // Re-indexing is intentional; programme::prepare follows this operation.
     layout.blocks=layout.blocks.iter().flat_map(|block| {

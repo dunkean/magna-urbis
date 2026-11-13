@@ -11,6 +11,7 @@ import type { FractalDetail } from '../../../rust/bridge/terrainAdjust';
 import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
 import { parseTerrainSketch } from '../../../rust/bridge/terrainSketch';
 import { parseTerrainZones } from '../../../rust/bridge/terrainZones';
+import { validateTerrainModification } from '../../../rust/bridge/terrainModification';
 import type { V2Settings } from './contracts';
 import { defaultSourceSpacing } from '../../../rust/bridge/terrainDefinition';
 
@@ -27,7 +28,7 @@ export type V2TerrainSettings = Partial<Omit<TerrainSettings,
   climateValues?: Partial<ClimateValues>;
   detailNoise?: Partial<FractalDetail>;
 };
-export const TERRAIN_RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'plateau', 'high-mountains', 'volcano', 'caldera', 'cavern'] as const;
+export const TERRAIN_RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'plateau', 'high-mountains', 'volcano', 'caldera'] as const;
 export const TERRAIN_ENVIRONMENTS = ['flat', 'hills', 'mixed', 'mountains', 'high-mountains'] as const;
 export const TERRAIN_COAST_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 export const TERRAIN_CLIMATES = CLIMATE_ZONES;
@@ -71,10 +72,11 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
   const zone: ClimateZone = climateZoneOf(t.climate) ?? BIOME_CLIMATE_ZONE[String(settings.options.biome)] ?? 'temperate';
   const masks = { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 };
   return { ...defaultTerrainSettings(), ...t,
+    ...(t.drawing ? { sketch: { ...t.drawing, processing: undefined } } : {}),
     // Climate-driven landform shaping is on unless the recipe turns it off.
     procedural: { biome: true, ...t.procedural },
     ...(runtime?.source === 'procedural-phasor' || t.procedural?.preset==='compact' || t.procedural?.enabled?.phasor ? { phasor: { quality: 'balanced' as const, intensity: 1, ...t.phasor } } : {}),
-    ...(!['procedural','procedural-phasor'].includes(runtime?.source??'procedural') || ['plateau','volcano','caldera','cavern'].includes(t.relief??settings.options.relief) ? {procedural:undefined} : {}),
+    ...(!['procedural','procedural-phasor'].includes(runtime?.source??'procedural') || ['plateau','volcano','caldera'].includes(t.relief??settings.options.relief) ? {procedural:undefined} : {}),
     seed: stepSeed(settings.options.seed, 'relief-noise'),
     ...(seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) !== seedRoot(settings.options.seed)
       ? { generalSeed: seedSubset(settings.options.seed, key => /^(relief-|water-)/.test(key)) } : {}),
@@ -85,14 +87,17 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
     climateZone: zone, climate: CLIMATE_ZONE_BASE[zone], climateValues: { ...CLIMATE_ZONE_VALUES[zone], ...t.climateValues },
     detailNoise: { ...DEFAULT_FRACTAL_DETAIL, ...t.detailNoise },
     neuralTuning: { ...DEFAULT_NEURAL_TUNING, ...t.neuralTuning, histogram: [...(t.neuralTuning?.histogram ?? DEFAULT_NEURAL_TUNING.histogram)] },
-    hydrology: { ...DEFAULT_HYDROLOGY, main: settings.options.river, lakes: (settings.options as typeof settings.options & { lakes?: HydrologySettings['lakes'] }).lakes ?? 'auto', ...t.hydrology },
+    // Underdark: closed caverns keep their water as lakes (no breaching of the cave basins); explicit settings win.
+    hydrology: { ...DEFAULT_HYDROLOGY, ...(settings.options.biome === 'underdark' ? UNDERDARK_HYDROLOGY : {}), main: settings.options.river, lakes: (settings.options as typeof settings.options & { lakes?: HydrologySettings['lakes'] }).lakes ?? 'auto', ...t.hydrology },
     forest: { ...DEFAULT_FOREST_SETTINGS, ...t.forest },
     // Browser and Rust neural servers load one pinned profile; only Python honours checkpoint IDs.
+    underdark: settings.options.biome === 'underdark' ? true : undefined,
     coarseModel: runtime?.source === 'neural-python' ? t.coarseModel : undefined,
     baseModel: runtime?.source === 'neural-python' ? t.baseModel : undefined,
     decoderModel: runtime?.source === 'neural-python' ? t.decoderModel : undefined,
   } as EffectiveTerrainSettings;
 }
+const UNDERDARK_HYDROLOGY: Partial<HydrologySettings> = { condMode: 'none' };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 function numeric(value: unknown, name: string, min: number, max: number, integer = false): void {
   if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || integer && !Number.isInteger(value)))
@@ -104,7 +109,9 @@ function enumeration(value: unknown, values: readonly unknown[], name: string): 
 /** Reject typos and out-of-range recipes instead of silently dropping customisation. */
 export function validateTerrainSettings(value: unknown): asserts value is V2TerrainSettings {
   if (!record(value)) throw new Error('Invalid terrain settings.');
-  const allowed = ['zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'sampleSpacing', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'reliefClimate', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural'];
+  const allowed = ['drawing','modification','zones', 'motifSize', 'relief', 'environment', 'coastMask', 'islandMode', 'erosion', 'mountainMix', 'resolution', 'sampleSpacing', 'compute', 'generationCompute', 'hydrology', 'climate', 'climateZone', 'reliefClimate', 'fidelity', 'sketch', 'climateValues', 'neuralTuning', 'coarseModel', 'baseModel', 'decoderModel', 'neuralFit', 'neuralSlopes', 'refine', 'detailNoise', 'erosionTuning', 'forest', 'phasor', 'procedural', 'underdark'];
+  if(value.drawing!==undefined){parseTerrainSketch(value.drawing,false);if((value.drawing as {processing?:unknown}).processing!==undefined)throw Error('A relief drawing must be a procedural base.');}
+  if(value.modification!==undefined)validateTerrainModification(value.modification);
   if(value.procedural!==undefined)validateProceduralRecipe(value.procedural as import('../../../rust/bridge/terrainGenerationRecipe').ProceduralRecipe);
   if (value.phasor !== undefined) {
     if (!record(value.phasor) || Object.keys(value.phasor).some(key => !['quality', 'intensity'].includes(key))) throw new Error('Invalid compact Phasor settings.');

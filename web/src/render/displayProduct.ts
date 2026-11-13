@@ -1,5 +1,5 @@
 /** Immutable array identity is the revision; wrappers and display preferences are not. */
-export const DISPLAY_PRODUCT_VERSION = 2;
+export const DISPLAY_PRODUCT_VERSION = 3;
 const revisions = new WeakMap<object, number>();
 let nextRevision = 0;
 export function productRevision(value: object | undefined | null): number {

@@ -9,7 +9,8 @@ import { lakeSample } from './lakeGeometry';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
-import { plumeRgb, regimeRgb, riverState, riverSymbol, waterClimate, waterRegimeActive, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
+import { FALL_CLASS, plumeRgb, regimeRgb, riverState, riverSymbol, waterClimate, waterRegimeActive, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
+import { styleTraits } from '../render/terrainStyle';
 
 export { VECTOR_OVERLAYS, VECTOR_LEGENDS } from '../render/displayDiagnostics';
 import type { VectorOverlay } from '../render/displayDiagnostics';
@@ -91,16 +92,18 @@ export interface WaterDisplay {
   material?: boolean;
 }
 
-/** Climate of the display when it changes anything; undefined keeps every course perennial and open. */
-function displayClimate(display: Pick<WaterDisplay, 'season' | 'overlay'>): WaterClimate | undefined {
+/** Climate of the display when it changes anything; undefined keeps every course perennial and open.
+ * The painted water of a satellite ground carries no ice: its shader freezes the water from the land's snow. */
+function displayClimate(display: Pick<WaterDisplay, 'season' | 'overlay' | 'material' | 'style'>): WaterClimate | undefined {
   if (!display.season?.zone || display.overlay === 'v-styles') return;
-  const c = waterClimate(display.season);
+  const landIce = display.season.landIce ?? (!!display.material && styleTraits(display.style).satelliteVariant > 0);
+  const c = waterClimate({ ...display.season, landIce });
   return waterRegimeActive(c) ? c : undefined;
 }
 const sizeMemo = new WeakMap<VectorWater, number>();
 /** Seasonal state per drawn vertex. Size from the drawn width (the headwater taper reads as a small stream);
  * slope from the water surface over about 150 m upstream. */
-function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterClimate, threshold: number): RiverState[] {
+function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterClimate, threshold: number, line?: RiverLine): RiverState[] {
   const scale = water.widthScale ?? water.rivers?.widthScale ?? 1;
   let top = sizeMemo.get(water);
   if (top === undefined) {
@@ -111,12 +114,18 @@ function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterC
   const w0 = channelWidth(threshold, scale), w1 = Math.max(w0 * 1.5, channelWidth(top, scale)), span = Math.log(w1 / w0);
   const p = geo.points, n = geo.widths.length, arc = new Float64Array(n);
   for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
-  const out: RiverState[] = [];
+  const out: RiverState[] = [], ground = courseGround(water, p, n);
   for (let i = 0, j = 0; i < n; i++) {
     while (j < i && arc[i] - arc[j + 1] >= 150) j++;
-    const run = arc[i] - arc[j], slope = run > 20 ? Math.abs(geo.level[j] - geo.level[i]) / run : 0;
+    // The slope class needs two witnesses: the descent of the course's own level and the descent of the drainage
+    // surface under it, both downstream over the same 150 m. The lower one counts: a noisy level series or a step
+    // of the level alone gives no white water. Toward its end a course has no class at all: there its level is
+    // brought down to the sea, to a lake or to the river it joins.
+    const run = arc[i] - arc[j], end = Math.max(0, Math.min(1, (arc[n - 1] - arc[i] - 60) / 140));
+    const slope = run > 20 ? Math.max(0, Math.min(geo.level[j] - geo.level[i], ground[j] - ground[i])) / run * end * end * (3 - 2 * end) : 0;
     const q = Math.max(0, Math.min(1, Math.log(Math.max(geo.widths[i], w0 * .3) / w0) / span));
-    out.push(riverState(climate, q, slope));
+    // The mean slope stays below the waterfall class: a fall is a knickpoint of the course (riverFalls).
+    out.push(riverState(climate, q, Math.min(slope, .5)));
   }
   // A course dries over a distance, not at a vertex: dryness is averaged over about 500 m of channel.
   if (climate.aridity > 0 && n > 2) {
@@ -127,7 +136,65 @@ function riverStates(water: VectorWater, geo: HeadwaterGeometry, climate: WaterC
       out[i].dry = sum / (b - a);
     }
   }
+  // Through a confluence the water is one: over its last 400 m a tributary takes the dryness of the course it
+  // joins, so a silt bed never switches to running water at the junction.
+  const joined = line && climate.aridity > 0 && n > 1 ? receiverDry(water, line, climate, w0, span, scale) : undefined;
+  if (joined !== undefined) for (let i = n - 1; i >= 0 && arc[n - 1] - arc[i] < 400; i--) {
+    const t = 1 - (arc[n - 1] - arc[i]) / 400;
+    out[i].dry += (joined - out[i].dry) * t * t * (3 - 2 * t);
+  }
   return out;
+}
+/** Drainage surface under each vertex of a course: the filled terrain of the hydrology, bilinear, never below the sea
+ * (a sea cell holds the sea bed). The terrain's own witness of the slope along a reach. */
+function courseGround(water: VectorWater, p: readonly number[], n: number): Float64Array {
+  const h = water.hydro, cell = h.width / h.n, top = Math.max(0, h.n - 2), out = new Float64Array(n);
+  const at = (x: number, y: number): number => Math.max(0, h.filled[Math.min(h.n - 1, y) * h.n + Math.min(h.n - 1, x)] || 0);
+  for (let i = 0; i < n; i++) {
+    const gx = Math.max(0, Math.min(h.n - 1, p[2 * i] / cell - .5)), gy = Math.max(0, Math.min(h.n - 1, p[2 * i + 1] / cell - .5));
+    const x = Math.min(top, Math.floor(gx)), y = Math.min(top, Math.floor(gy)), fx = gx - x, fy = gy - y;
+    out[i] = (at(x, y) * (1 - fx) + at(x + 1, y) * fx) * (1 - fy) + (at(x, y + 1) * (1 - fx) + at(x + 1, y + 1) * fx) * fy;
+  }
+  return out;
+}
+/** White water of sloping reaches on a material ground (streaks, waterfall bars): 0 = off. Rejected on the satellite
+ * view (2026-11-13: it read as snow or blocks in the channel); a river is calm water whatever its slope. */
+const WHITE_WATER: number = 0;
+/** Vertices of a course at a waterfall, and the arc length (m) of every vertex. A fall is a knickpoint: at least 8 m of
+ * the drainage surface lost within about 60 m of channel, more than half of the descent of the 600 m around it,
+ * confirmed by 4 m of the course's own level, and away from both ends of the course. At most one per 250 m, the
+ * highest first. Anything less sure stays a rapid or a cascade of the mean slope. */
+function riverFalls(water: VectorWater, geo: HeadwaterGeometry): { falls: number[]; arc: Float64Array } {
+  const p = geo.points, n = geo.widths.length, arc = new Float64Array(n);
+  for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
+  const ground = courseGround(water, p, n), found: [number, number][] = [];
+  for (let i = 1, a = 0, b = 0, c = 0, d = 0; i < n - 1; i++) {
+    while (arc[i] - arc[a + 1] >= 30) a++;
+    while (b < n - 1 && arc[b] - arc[i] < 30) b++;
+    while (arc[i] - arc[c + 1] >= 300) c++;
+    while (d < n - 1 && arc[d] - arc[i] < 300) d++;
+    if (arc[i] < 100 || arc[n - 1] - arc[i] < 250 || arc[b] - arc[a] > 90) continue;
+    const near = ground[a] - ground[b];
+    if (near >= 8 && geo.level[a] - geo.level[b] >= 4 && near >= .5 * (ground[c] - ground[d])) found.push([i, near]);
+  }
+  const falls: number[] = [];
+  for (const [i] of found.sort((u, v) => v[1] - u[1])) if (falls.every(k => Math.abs(arc[k] - arc[i]) >= 250)) falls.push(i);
+  return { falls, arc };
+}
+const receivers = new WeakMap<VectorWater, Map<number, RiverLine>>();
+/** Dryness of the course a line joins, from the size of the receiving channel at the junction; undefined where the
+ * line ends in the sea, a lake or at the map edge. */
+function receiverDry(water: VectorWater, line: RiverLine, climate: WaterClimate, w0: number, span: number, scale: number): number | undefined {
+  if (line.joins === undefined || line.joins < 0) return;
+  let byId = receivers.get(water);
+  if (!byId) { byId = new Map(); for (const l of water.rivers?.rivers ?? []) if (l.id !== undefined) byId.set(l.id, l); receivers.set(water, byId); }
+  const to = byId.get(line.joins), m = line.area.length - 1;
+  if (!to || m < 0) return;
+  const x = line.points[2 * m], y = line.points[2 * m + 1];
+  let best = Infinity, at = 0;
+  for (let k = 0; k < to.area.length; k++) { const d = (to.points[2 * k] - x) ** 2 + (to.points[2 * k + 1] - y) ** 2; if (d < best) { best = d; at = k; } }
+  const width = channelWidth(to.area[at] / (to.threads?.[at] ?? 1), scale);
+  return riverState(climate, Math.max(0, Math.min(1, Math.log(Math.max(width, w0 * .3) / w0) / span)), 0).dry;
 }
 const mean = (a: RiverState, b: RiverState): RiverState => ({ dry: (a.dry + b.dry) / 2, ice: (a.ice + b.ice) / 2, foam: (a.foam + b.foam) / 2 });
 
@@ -167,7 +234,7 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
   for (const [line, thinner] of lines) {
     const geo = riverGeometry(water, line, thinner, display.riverArea), widths = geo.widths, packed = new Float32Array(widths.length * 4);
     for (let k = 0; k < widths.length; k++) packed.set([geo.points[2 * k], geo.points[2 * k + 1], widths[k], geo.level[k]], k * 4);
-    const states = climate ? riverStates(water, geo, climate, threshold) : undefined;
+    const states = climate ? riverStates(water, geo, climate, threshold, line) : undefined;
     const symbolAt = (k: number): RiverSymbol => states ? riverSymbol(mean(states[k], states[k + 1])) : 'water';
     let inset: Float32Array | undefined;
     let start = 0;
@@ -230,7 +297,9 @@ function plumeSteps(mouth: { x: number; y: number; dx: number; dy: number; w: nu
   let hash = Math.imul(Math.round(mouth.x) ^ Math.imul(Math.round(mouth.y), 668265263), 374761393); hash = (hash ^ (hash >>> 13)) >>> 0;
   const bend = ((hash & 255) / 255 - .5) * .7;
   for (let i = 0; i <= steps; i++) {
-    const t = i / steps, along = length * t, side = bend * along * t;
+    // The fan starts one and a half channel widths offshore: its first capsule must not lie over the end of
+    // the river, where its silt code would replace the river's own water.
+    const t = i / steps, along = 1.5 * mouth.w + length * t, side = bend * length * t * t;
     out.push({ x: mouth.x + mouth.dx * along - mouth.dy * side, y: mouth.y + mouth.dy * along + mouth.dx * side, w: mouth.w * (1.2 + 3.5 * t) + along * .35, t });
   }
   return out;
@@ -271,18 +340,24 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
   const climate = displayClimate(display), ink = climate && !display.material ? regimeInk(display.style, edge) : undefined;
   const line = (l: RiverLine, thinner: number): void => {
     const geo = riverGeometry(water, l, thinner, display.riverArea), { points, widths, kind } = geo;
-    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold) : undefined;
+    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
+    // A negative width marks a material course for the capsule shader (RIVER_VS): its colour is then r running
+    // water, g the arc length of the course at the start of the piece in metres (-1 on a frozen course), b the
+    // slope class / 2. The arc length gives the shader one flow frame along the whole course, so the white water
+    // continues through the joints of the segments. Ink colours keep positive widths.
+    const coded = (w: number): number => -Math.max(w, 1e-3);
+    const course = states && display.material ? riverFalls(water, geo) : undefined;
     for (let i = 1; i < widths.length; i++) {
       const x0 = points[2 * i - 2], y0 = points[2 * i - 1], x1 = points[2 * i], y1 = points[2 * i + 1];
       if (!states) { push(x0, y0, x1, y1, widths[i - 1], widths[i], colourOf(kind[i - 1])); continue; }
       if (display.material) {
         // The regime is per vertex: a long segment is cut into pieces of interpolated colour, so a course dries or
         // freezes gradually along its channel instead of switching state at each vertex.
-        const c0 = regimeRgb(states[i - 1]), c1 = regimeRgb(states[i]);
-        const steps = Math.max(1, Math.min(12, Math.ceil(Math.max(Math.abs(c1[0] - c0[0]), Math.abs(c1[1] - c0[1]), Math.abs(c1[2] - c0[2])) / .04)));
+        const c0 = regimeRgb(states[i - 1]), c1 = regimeRgb(states[i]), arc = course!.arc, frozen = Math.min(c0[1], c1[1]) < .5;
+        const steps = Math.max(1, Math.min(12, Math.ceil(Math.max(Math.abs(c1[0] - c0[0]), Math.abs(c1[2] - c0[2])) / .04)));
         for (let k = 0; k < steps; k++) {
           const t0 = k / steps, t1 = (k + 1) / steps, t = (t0 + t1) / 2, at = (a: number, b: number, u: number): number => a + (b - a) * u;
-          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), at(c0[0], c1[0], t), at(c0[1], c1[1], t), at(c0[2], c1[2], t));
+          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), coded(at(widths[i - 1], widths[i], t0)), coded(at(widths[i - 1], widths[i], t1)), at(c0[0], c1[0], t), frozen ? -1 : at(arc[i - 1], arc[i], t0), WHITE_WATER * at(c0[2], c1[2], t));
         }
         continue;
       }
@@ -290,6 +365,15 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
       // Ink styles: the vector layer draws intermittent and dry courses as symbols over the land.
       const symbol = riverSymbol(state);
       if (symbol === 'water' || symbol === 'ice') push(x0, y0, x1, y1, widths[i - 1], widths[i], symbol === 'ice' ? ink!.ice : colourOf(kind[i - 1]));
+    }
+    // A waterfall is its own short piece laid over the course at the knickpoint (6 m along the flow, the fall
+    // class in blue): the capsule shader draws a bright bar there with a short foam tail. Running open water only.
+    if (WHITE_WATER && states && course) for (const i of course.falls) {
+      if (states[i].dry >= .5 || states[i].ice) continue;
+      const dx = points[2 * i + 2] - points[2 * i - 2], dy = points[2 * i + 3] - points[2 * i - 1], len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      const ux = 3 * dx / len, uy = 3 * dy / len, x = points[2 * i], y = points[2 * i + 1];
+      out.push(x - ux, y - uy, x + ux, y + uy, coded(widths[i]), coded(widths[i]), 1 - states[i].dry, Math.max(0, course.arc[i] - 3), .5 * FALL_CLASS);
     }
   };
   const rivers = water.rivers;

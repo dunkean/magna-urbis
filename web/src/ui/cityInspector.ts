@@ -10,7 +10,7 @@ import { describeUrbanBuilding } from '../render/buildingInspection';
 import { programmeOutcomeRows } from '../render/programmeOutcome';
 import { retainedBodyInventoryRows } from '../render/retainedBuildingInventory';
 import { DISTRICT_ROLES, districtRoleLabel, type CityParcel, type CityPick, type CityScene } from '../render/cityCanvas';
-import { functionLabel, lotRoleChoices, roleLabel, streetLabel } from '../render/cityRoles';
+import { functionLabel, lotRoleChoices, roleLabel, streetLabel, uiRoleLocale } from '../render/cityRoles';
 import type { CityEdits, HouseEdit, LotEdit, QuarterEdit } from './cityEdits';
 import { ensureEditStyles, type Pt } from './cityShapeEditor';
 import { localizeCityInspector } from './cityInspectorLocale';
@@ -155,7 +155,7 @@ function lotSection(target: CityInspectorTarget, plan: CityScene, hooks: CityIns
   const edit = parcel.id ? hooks.edits().parcels[parcel.id] : undefined;
   const body = rows([
     ['Usage', `${USES[parcel.use] ?? parcel.use}${src.family ? ` · ${src.family}` : ''}`],
-    ['Rôle', a ? `${roleLabel(a.role, a.label)}${a.landmark ? ' · monument' : ''}` : undefined],
+    ['Rôle', a ? `${roleLabel(a.role, uiRoleLocale(), a.culture)}${a.landmark ? ' · monument' : ''}` : undefined],
     ['Fonction', a ? functionLabel(a.function) : undefined],
     ['Surface', m2(area(src.shape))],
     ['Façade × profondeur', frontage !== undefined || depth !== undefined ? `${frontage?.toFixed(1) ?? '?'} × ${depth?.toFixed(1) ?? '?'} m` : undefined],

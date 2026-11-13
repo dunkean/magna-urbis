@@ -304,7 +304,10 @@
           2.2
         ],
         "round": true
-      }
+      },
+      "pigeon-tower": {"width":[3.5,5],"depth":[3.5,5],"eave":[6,9],"roof":"dome","round":true,"cover":"earth","wall":"earth"},
+      "cook-house": {"width":[3,4.5],"depth":[2.5,3.5],"eave":[1.8,2.2]},
+      "sweat-bath": {"width":[2.5,3.5],"depth":[2.5,3.5],"eave":[1.2,1.5],"roof":"dome","round":true,"cover":"earth","wall":"earth"}
     },
     "types": {
       "vierkanthof": {
@@ -1237,7 +1240,39 @@
         "core": [
           "hut"
         ]
-      }
+      },
+      "cascina": {"arch":"cascina","roof":"gable","material":"brick","roofs":{"house":"hip"},"layout":"closed","enclosure":"wall","outbuildings":[4,6],"houseSize":[12,18,6,8],"yard":[9,14],"jitter":0.03,"cover":"tile","wall":"brick","ancillary":["stable","granary","cart-shed","bakehouse","well","dovecote","shed"],"core":["barn","byre","barn"]},
+      "villa-rustica": {"arch":"villa-rustica","roof":"tiled-hip","material":"brick","roofs":{},"layout":"closed","enclosure":"wall","outbuildings":[3,6],"houseSize":[12,20,6,9],"yard":[8,13],"jitter":0.02,"cover":"tile","wall":"plaster","ancillary":["granary","stable","cart-shed","bakehouse","well","byre","shed"],"core":["storeroom","barn"]},
+      "cortijo": {"arch":"cortijo","roof":"gable","material":"stone","roofs":{"farm-tower":"flat"},"layout":"closed","enclosure":"wall","outbuildings":[3,5],"houseSize":[10,16,5,7],"yard":[7,12],"jitter":0.03,"cover":"tile","wall":"plaster","ancillary":["granary","well","bakehouse","stable","dovecote","cart-shed"],"core":["byre","storeroom"]},
+      "bustan": {"arch":"qaleh","roof":"dome","material":"mudbrick","roofs":{"byre":"barrel","storeroom":"barrel"},"layout":"closed","enclosure":"wall","outbuildings":[2,4],"houseSize":[8,13,6,9],"yard":[8,14],"jitter":0.03,"cover":"earth","wall":"earth","ancillary":["byre","granary","well","shed","storeroom"],"core":["pigeon-tower","storeroom"]},
+      "izbah": {"arch":"izbah","roof":"flat","material":"mudbrick","roofs":{"granary":"dome"},"layout":"terraced","enclosure":"wall","outbuildings":[2,5],"houseSize":[7,12,5,8],"yard":[5,9],"jitter":0.05,"cover":"earth","wall":"earth","ancillary":["granary","byre","shed","well","bakehouse","granary"],"core":["pigeon-tower","byre"]},
+      "tower-farm": {"arch":"tower-farm","roof":"flat","material":"mudbrick","roofs":{},"layout":"l","enclosure":"wall","outbuildings":[1,3],"houseSize":[7,10,7,10],"yard":[4,7],"jitter":0.03,"cover":"earth","wall":"earth","ancillary":["byre","storeroom","well","shed"],"core":["farm-tower"]},
+      "dhani": {"arch":"dhani","roof":"conical","material":"mud","roofs":{},"layout":"round","enclosure":"hedge","outbuildings":[3,5],"houseSize":[5,8,5,8],"yard":[6,10],"jitter":0.1,"cover":"thatch","wall":"earth","ancillary":["hut","granary","byre","well","hayrick","cook-house"],"core":["hut","granary"]},
+      "thinnai": {"arch":"thinnai","roof":"tiled-hip","material":"brick","roofs":{"hayrick":"conical"},"layout":"linear","enclosure":"fence","outbuildings":[2,4],"houseSize":[10,18,5,7],"yard":[5,9],"jitter":0.035,"cover":"tile","wall":"plaster","ancillary":["granary","well","shed","hayrick","cook-house"],"core":["byre"]},
+      "newar-farm": {"arch":"newar","roof":"gable","material":"brick","roofs":{},"layout":"l","enclosure":"wall","outbuildings":[1,3],"houseSize":[6,9,5,7],"yard":[4,7],"jitter":0.035,"cover":"tile","wall":"brick","ancillary":["shed","raised-granary","well","byre","hayrick"],"core":["storeroom"]},
+      "smial-garden": {"arch":"smial","roof":"dome","material":"turf","roofs":{"shed":"shed","cart-shed":"shed"},"layout":"scattered","enclosure":"hedge","outbuildings":[2,5],"houseSize":[9,15,5,7],"yard":[5,9],"jitter":0.3,"cover":"turf","wall":"earth","ancillary":["bakehouse","shed","well","hayrick","granary","byre","storeroom"],"core":["storeroom"]},
+      "gnome-croft": {"arch":"gnome-croft","roof":"pyramidal","material":"brick","roofs":{"shed":"shed","cart-shed":"shed"},"layout":"closed","enclosure":"wall","outbuildings":[3,5],"houseSize":[5,8,5,7],"yard":[3,6],"jitter":0.02,"cover":"tile","wall":"brick","ancillary":["dovecote","well","shed","granary","bakehouse","storeroom"],"core":["smithy","storeroom"]},
+      "mage-steading": {"arch":"mage-steading","roof":"hip","material":"stone","roofs":{"farm-tower":"conical"},"layout":"l","enclosure":"wall","outbuildings":[2,4],"houseSize":[8,13,6,9],"yard":[5,9],"jitter":0.035,"cover":"tile","wall":"stone","ancillary":["dovecote","well","granary","storeroom","stable","bakehouse"],"core":["farm-tower","barn"]},
+      "elven-glade": {"arch":"elven","roof":"dome","material":"living-wood","roofs":{"raised-granary":"conical"},"layout":"scattered","enclosure":"hedge","outbuildings":[1,3],"houseSize":[7,12,6,9],"yard":[7,12],"jitter":0.5,"cover":"turf","wall":"wood","ancillary":["raised-granary","hut","well","shed"],"core":["raised-granary"]},
+      "orc-steading": {"arch":"orc","roof":"conical","material":"hide","roofs":{},"layout":"round","enclosure":"fence","outbuildings":[3,5],"houseSize":[6,10,6,10],"yard":[7,12],"jitter":0.2,"cover":"hide","wall":"hide","ancillary":["hut","smithy","byre","hut","pit-house"],"core":["hut","smithy"]},
+      "goblin-burrow": {"arch":"goblin","roof":"shed","material":"wattle","roofs":{},"layout":"scattered","enclosure":"fence","outbuildings":[3,6],"houseSize":[4,7,4,6],"yard":[3,6],"jitter":0.7,"cover":"thatch","wall":"wattle","ancillary":["shed","pit-house","hut","shed","hayrick"],"core":["pit-house"]},
+      "giant-steading": {"arch":"giant","roof":"flat","material":"stone","roofs":{},"layout":"l","enclosure":"wall","outbuildings":[2,4],"houseSize":[10,16,7,10],"yard":[6,10],"jitter":0.05,"cover":"stone","wall":"stone","ancillary":["barn","storeroom","smithy","well","storeroom"],"core":["byre"]},
+      "lizard-mound": {"arch":"lizardfolk","roof":"conical","material":"reed","roofs":{},"layout":"round","enclosure":"none","outbuildings":[2,4],"houseSize":[5,8,5,8],"yard":[5,9],"jitter":0.2,"cover":"reed","wall":"wattle","ancillary":["hut","raised-granary","hut","shed"],"core":["raised-granary"]},
+      "tipi-camp": {"arch":"tipi","roof":"conical","material":"hide","roofs":{},"layout":"round","enclosure":"none","outbuildings":[1,3],"houseSize":[5,7,5,7],"yard":[6,10],"jitter":0.15,"cover":"hide","wall":"hide","ancillary":["hut","sweat-bath","shed"],"core":["hut"]},
+      "winter-house": {"arch":"igloo","roof":"dome","material":"snow","roofs":{"raised-granary":"gable"},"layout":"scattered","enclosure":"none","outbuildings":[1,2],"houseSize":[4,7,4,7],"yard":[3,6],"jitter":0.3,"cover":"snow","wall":"snow","ancillary":["hut","raised-granary"],"core":["raised-granary"]},
+      "chum-camp": {"arch":"chum","roof":"conical","material":"hide","roofs":{"raised-granary":"gable","shed":"shed"},"layout":"scattered","enclosure":"none","outbuildings":[1,3],"houseSize":[5,7,5,7],"yard":[4,8],"jitter":0.3,"cover":"bark","wall":"hide","ancillary":["raised-granary","shed","hut"],"core":["raised-granary"]},
+      "agbo-ile": {"arch":"agbo-ile","roof":"hip","material":"mud","roofs":{"granary":"conical"},"layout":"closed","enclosure":"wall","outbuildings":[2,4],"houseSize":[9,14,5,7],"yard":[6,10],"jitter":0.04,"cover":"thatch","wall":"earth","ancillary":["granary","cook-house","shed","well","storeroom"],"core":["storeroom","cook-house"]},
+      "tukul": {"arch":"tukul","roof":"conical","material":"stone","roofs":{},"layout":"round","enclosure":"wall","outbuildings":[2,4],"houseSize":[6,9,6,9],"yard":[6,10],"jitter":0.1,"cover":"thatch","wall":"stone","ancillary":["hut","raised-granary","byre","hayrick","cook-house"],"core":["hut","byre"]},
+      "dhaka-homestead": {"arch":"dhaka","roof":"conical","material":"earth","roofs":{},"layout":"round","enclosure":"wall","outbuildings":[3,6],"houseSize":[6,9,6,9],"yard":[7,12],"jitter":0.12,"cover":"thatch","wall":"earth","ancillary":["hut","raised-granary","hut","cook-house","byre"],"core":["hut","raised-granary"]},
+      "stone-huts": {"arch":"stone-hut","roof":"dome","material":"stone","roofs":{"shed":"shed"},"layout":"scattered","enclosure":"none","outbuildings":[2,4],"houseSize":[4,6,4,6],"yard":[4,7],"jitter":0.4,"cover":"turf","wall":"stone","ancillary":["hut","hut","shed"],"core":["hut"]},
+      "shamba": {"arch":"shamba","roof":"hip","material":"coral-stone","roofs":{"house":"flat"},"layout":"scattered","enclosure":"fence","outbuildings":[2,4],"houseSize":[8,12,6,8],"yard":[5,9],"jitter":0.25,"cover":"palm","wall":"coral","ancillary":["cook-house","shed","well","raised-granary","byre"],"core":["cook-house"]},
+      "calli-court": {"arch":"calli","roof":"flat","material":"adobe","roofs":{"granary":"conical"},"layout":"u","enclosure":"wall","outbuildings":[2,4],"houseSize":[6,10,4,6],"yard":[6,10],"jitter":0.04,"cover":"earth","wall":"earth","ancillary":["granary","sweat-bath","shed","cook-house","storeroom"],"core":["granary","sweat-bath"]},
+      "wattle-homestead": {"arch":"mississippian","roof":"hip","material":"wattle","roofs":{},"layout":"scattered","enclosure":"none","outbuildings":[2,4],"houseSize":[6,9,5,7],"yard":[6,10],"jitter":0.25,"cover":"thatch","wall":"wattle","ancillary":["raised-granary","hut","shed","sweat-bath"],"core":["raised-granary"]},
+      "kainga": {"arch":"whare","roof":"gable","material":"thatch","roofs":{},"layout":"scattered","enclosure":"fence","outbuildings":[2,4],"houseSize":[7,12,4,6],"yard":[6,10],"jitter":0.2,"cover":"reed","wall":"wood","ancillary":["raised-granary","cook-house","shed","pit-house"],"core":["raised-granary","cook-house"]},
+      "maloca-clearing": {"arch":"maloca","roof":"thatch-round","material":"thatch","roofs":{},"layout":"round","enclosure":"none","outbuildings":[1,3],"houseSize":[10,18,7,10],"yard":[8,14],"jitter":0.15,"cover":"palm","wall":"wood","ancillary":["hut","shed","raised-granary"],"core":["hut"]},
+      "plank-house": {"arch":"plank-house","roof":"gable","material":"cedar-plank","roofs":{},"layout":"linear","enclosure":"none","outbuildings":[1,3],"houseSize":[12,24,8,11],"yard":[5,9],"jitter":0.04,"cover":"shingle","wall":"wood","ancillary":["shed","raised-granary","hut","shed"],"core":["shed"]},
+      "joglo": {"arch":"joglo","roof":"pyramidal","material":"timber","roofs":{"raised-granary":"gable"},"layout":"u","enclosure":"wall","outbuildings":[2,4],"houseSize":[8,12,7,10],"yard":[6,10],"jitter":0.04,"cover":"tile","wall":"wood","ancillary":["raised-granary","cook-house","well","shed","byre"],"core":["raised-granary","cook-house"]},
+      "nha-ba-gian": {"arch":"nha","roof":"tiled-hip","material":"brick","roofs":{},"layout":"u","enclosure":"hedge","outbuildings":[2,4],"houseSize":[9,14,5,7],"yard":[7,11],"jitter":0.035,"cover":"tile","wall":"brick","ancillary":["cook-house","byre","shed","well","hayrick","granary"],"core":["cook-house","byre"]}
     },
     "cultures": {
       "european-organic": {
@@ -1347,6 +1382,7 @@
       },
       "indian-temple": {
         "types": [
+          ["thinnai", 0.6],
           [
             "indian-court",
             1
@@ -1360,6 +1396,7 @@
       },
       "roman-core": {
         "types": [
+          ["villa-rustica", 3],
           [
             "masseria",
             2
@@ -1385,6 +1422,7 @@
       },
       "elven": {
         "types": [
+          ["elven-glade", 4],
           [
             "haufenhof",
             1
@@ -1418,6 +1456,7 @@
       },
       "necropolis": {
         "types": [
+          ["l-yard", 3],
           [
             "ksar",
             2
@@ -1456,6 +1495,7 @@
       },
       "aztec": {
         "types": [
+          ["calli-court", 4],
           [
             "solar",
             1
@@ -1482,6 +1522,7 @@
       },
       "byzantine-greek": {
         "types": [
+          ["tower-farm", 1],
           [
             "masseria",
             2
@@ -1507,6 +1548,7 @@
       },
       "venetian-lagoon": {
         "types": [
+          ["cascina", 2],
           [
             "masseria",
             2
@@ -1532,6 +1574,7 @@
       },
       "persian": {
         "types": [
+          ["bustan", 4],
           [
             "ksar",
             2
@@ -1549,6 +1592,7 @@
       },
       "ottoman": {
         "types": [
+          ["u-yard", 1.5],
           [
             "masseria",
             1.2
@@ -1621,6 +1665,7 @@
       },
       "wizard-city": {
         "types": [
+          ["mage-steading", 5],
           [
             "vierkanthof",
             1
@@ -1654,6 +1699,7 @@
       },
       "gnomish": {
         "types": [
+          ["gnome-croft", 6],
           [
             "vierkanthof",
             1
@@ -1815,6 +1861,7 @@
       },
       "orcish": {
         "types": [
+          ["orc-steading", 4],
           [
             "kraal",
             1
@@ -1828,6 +1875,7 @@
       },
       "halfling": {
         "types": [
+          ["smial-garden", 6],
           [
             "vierkanthof",
             1
@@ -1900,6 +1948,7 @@
       },
       "native-plains": {
         "types": [
+          ["tipi-camp", 4],
           [
             "ail",
             1
@@ -1926,6 +1975,7 @@
       },
       "swahili-stone-town": {
         "types": [
+          ["shamba", 4],
           [
             "masseria",
             2
@@ -1991,6 +2041,7 @@
       },
       "egyptian-planned": {
         "types": [
+          ["izbah", 4],
           [
             "ksar",
             2
@@ -2008,6 +2059,7 @@
       },
       "nubian-fortified": {
         "types": [
+          ["izbah", 3],
           [
             "sahel-compound",
             1
@@ -2021,6 +2073,7 @@
       },
       "mesopotamian": {
         "types": [
+          ["izbah", 3],
           [
             "ksar",
             2
@@ -2038,6 +2091,7 @@
       },
       "levantine-tell": {
         "types": [
+          ["izbah", 2],
           [
             "masseria",
             2
@@ -2063,6 +2117,7 @@
       },
       "oasis-caravan": {
         "types": [
+          ["bustan", 1.5],
           [
             "ksar",
             2
@@ -2097,6 +2152,7 @@
       },
       "yoruba": {
         "types": [
+          ["agbo-ile", 4],
           [
             "sahel-compound",
             1
@@ -2110,6 +2166,7 @@
       },
       "himalayan-terraces": {
         "types": [
+          ["tower-farm", 0.6],
           [
             "kancha",
             1
@@ -2123,6 +2180,7 @@
       },
       "newar": {
         "types": [
+          ["newar-farm", 4],
           [
             "indian-court",
             1
@@ -2136,6 +2194,7 @@
       },
       "indus-planned": {
         "types": [
+          ["izbah", 0.8],
           [
             "indian-court",
             1
@@ -2149,6 +2208,7 @@
       },
       "javanese-courts": {
         "types": [
+          ["joglo", 4],
           [
             "stilt",
             1
@@ -2162,6 +2222,7 @@
       },
       "mississippian": {
         "types": [
+          ["wattle-homestead", 4],
           [
             "solar",
             1
@@ -2175,6 +2236,7 @@
       },
       "al-andalus": {
         "types": [
+          ["cortijo", 4],
           [
             "ksar",
             2
@@ -2192,6 +2254,7 @@
       },
       "italian-comune": {
         "types": [
+          ["cascina", 3],
           [
             "masseria",
             2
@@ -2217,6 +2280,7 @@
       },
       "flemish-cloth-town": {
         "types": [
+          ["longere", 2],
           [
             "einhaus",
             2.2
@@ -2246,6 +2310,7 @@
       },
       "rynek-town": {
         "types": [
+          ["dvor", 3],
           [
             "vierkanthof",
             1
@@ -2300,6 +2365,7 @@
       },
       "caucasian-highland": {
         "types": [
+          ["tower-farm", 2],
           [
             "kancha",
             1
@@ -2313,6 +2379,7 @@
       },
       "ethiopian-highland": {
         "types": [
+          ["tukul", 4],
           [
             "sahel-compound",
             1
@@ -2326,6 +2393,7 @@
       },
       "great-zimbabwe": {
         "types": [
+          ["dhaka-homestead", 4],
           [
             "kraal",
             1
@@ -2352,6 +2420,7 @@
       },
       "hadhrami-tower": {
         "types": [
+          ["tower-farm", 5],
           [
             "ksar",
             2
@@ -2369,6 +2438,7 @@
       },
       "rajput-fort": {
         "types": [
+          ["dhani", 1.5],
           [
             "indian-court",
             1
@@ -2382,6 +2452,7 @@
       },
       "dravidian-temple": {
         "types": [
+          ["thinnai", 2.5],
           [
             "indian-court",
             1
@@ -2408,6 +2479,7 @@
       },
       "vietnamese-citadel": {
         "types": [
+          ["nha-ba-gian", 4],
           [
             "stilt",
             1
@@ -2421,6 +2493,7 @@
       },
       "tibetan-monastery": {
         "types": [
+          ["tower-farm", 1.2],
           [
             "kancha",
             1
@@ -2447,6 +2520,7 @@
       },
       "maori-pa": {
         "types": [
+          ["kainga", 4],
           [
             "solar",
             1
@@ -2460,6 +2534,7 @@
       },
       "pnw-plank-village": {
         "types": [
+          ["plank-house", 5],
           [
             "norse-longhouse",
             2.5
@@ -2477,6 +2552,7 @@
       },
       "inuit-camp": {
         "types": [
+          ["winter-house", 4],
           [
             "ail",
             1
@@ -2490,6 +2566,7 @@
       },
       "siberian-camp": {
         "types": [
+          ["chum-camp", 4],
           [
             "ail",
             1
@@ -2503,6 +2580,7 @@
       },
       "guarani-village": {
         "types": [
+          ["maloca-clearing", 4],
           [
             "solar",
             1
@@ -2516,6 +2594,7 @@
       },
       "budj-bim": {
         "types": [
+          ["stone-huts", 4],
           [
             "kraal",
             1
@@ -2529,6 +2608,7 @@
       },
       "lizardfolk-swamp": {
         "types": [
+          ["lizard-mound", 4],
           [
             "stilt",
             1
@@ -2555,6 +2635,7 @@
       },
       "giant-hold": {
         "types": [
+          ["giant-steading", 5],
           [
             "norse-longhouse",
             2.5
@@ -2572,6 +2653,7 @@
       },
       "goblin-warren": {
         "types": [
+          ["goblin-burrow", 3],
           [
             "haufenhof",
             1
@@ -2588,6 +2670,27 @@
         ],
         "jitter": 0.7,
         "material": "wood"
+      },
+      "american-grid": {
+        "types": [
+          [
+            "haufenhof",
+            1.5
+          ],
+          [
+            "l-yard",
+            1
+          ],
+          [
+            "einhaus",
+            0.5
+          ]
+        ],
+        "density": 0.8,
+        "hamlet": [
+          3,
+          8
+        ]
       }
     },
     "smallholding": [
@@ -127539,6 +127642,1426 @@
         },
         "contourBlend": 0.8
       }
+    },
+    "american-grid/core": {
+      "label": "Modern · American grid city (Chicago, Manhattan) · Cœur",
+      "params": {
+        "id": "american-grid/core",
+        "streets": [
+          "radials",
+          "grid"
+        ],
+        "streetOp": "grid",
+        "closeOp": "none",
+        "plotOp": "burgage",
+        "buildingOp": "streetFrontRow",
+        "orientation": "road",
+        "laneSpacing": [
+          0,
+          0
+        ],
+        "wardArea": 0,
+        "spineAmp": 0,
+        "kinks": 0,
+        "houseArea": {
+          "core": [
+            150,
+            450
+          ],
+          "middle": [
+            140,
+            400
+          ],
+          "edge": [
+            160,
+            500
+          ],
+          "faubourg": [
+            220,
+            700
+          ],
+          "village": [
+            500,
+            1600
+          ]
+        },
+        "roomDepth": [
+          5,
+          7
+        ],
+        "accessDepth": 30,
+        "fieldTwist": 0,
+        "extraRadials": false,
+        "ringSpacing": 0,
+        "gatePlaces": 0,
+        "crossPlaces": 0,
+        "arch": {
+          "typology": "commercial-block",
+          "roof": "gable",
+          "storeys": [
+            3,
+            6
+          ],
+          "material": "brick"
+        },
+        "growth": {
+          "road": 0.1,
+          "water": 0.1,
+          "noise": 0.08,
+          "wavelength": 500,
+          "elongation": 0,
+          "wet": 0.5,
+          "bipolar": 0
+        },
+        "curvature": 0.02,
+        "fieldNoise": 0.8,
+        "fieldWavelength": 500,
+        "gridSpacing": [
+          80,
+          200
+        ],
+        "gridSkew": 0,
+        "blockSize": {
+          "core": [
+            9000,
+            14000
+          ],
+          "middle": [
+            9000,
+            14000
+          ],
+          "edge": [
+            10000,
+            16000
+          ],
+          "faubourg": [
+            11000,
+            20000
+          ],
+          "village": [
+            9000,
+            20000
+          ]
+        },
+        "minBlock": 900,
+        "minWidth": 20,
+        "widthByRank": [
+          20,
+          18,
+          14,
+          6,
+          3
+        ],
+        "widthScale": 1,
+        "widthJitter": 0.03,
+        "placeThreshold": 900,
+        "deadEndRatio": 0,
+        "slitDepth": 0.55,
+        "frontage": {
+          "core": [
+            6,
+            9
+          ],
+          "middle": [
+            5.5,
+            7.6
+          ],
+          "edge": [
+            6,
+            9
+          ],
+          "faubourg": [
+            7.5,
+            12
+          ],
+          "village": [
+            12,
+            24
+          ]
+        },
+        "plotDepth": {
+          "core": [
+            28,
+            32
+          ],
+          "middle": [
+            28,
+            32
+          ],
+          "edge": [
+            28,
+            34
+          ],
+          "faubourg": [
+            30,
+            40
+          ],
+          "village": [
+            36,
+            60
+          ]
+        },
+        "plotTilt": 0,
+        "wideLotChance": 0.12,
+        "lotMergeChance": 0.1,
+        "buildDepth": {
+          "core": [
+            18,
+            26
+          ],
+          "middle": [
+            14,
+            20
+          ],
+          "edge": [
+            11,
+            16
+          ],
+          "faubourg": [
+            9,
+            13
+          ],
+          "village": [
+            8,
+            12
+          ]
+        },
+        "setback": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            1.5
+          ],
+          "edge": [
+            1,
+            3
+          ],
+          "faubourg": [
+            2,
+            5
+          ],
+          "village": [
+            4,
+            10
+          ]
+        },
+        "sideGap": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            0
+          ],
+          "edge": [
+            0,
+            1
+          ],
+          "faubourg": [
+            1,
+            3
+          ],
+          "village": [
+            3,
+            8
+          ]
+        },
+        "infill": {
+          "core": 0.85,
+          "middle": 0.7,
+          "edge": 0.5,
+          "faubourg": 0.3,
+          "village": 0.12
+        },
+        "coverage": {
+          "core": [
+            0.85,
+            0.95
+          ],
+          "middle": [
+            0.65,
+            0.8
+          ],
+          "edge": [
+            0.5,
+            0.65
+          ],
+          "faubourg": [
+            0.3,
+            0.45
+          ],
+          "village": [
+            0.12,
+            0.28
+          ]
+        },
+        "bigCourtChance": 0.03,
+        "footprintConformity": {
+          "core": 0.3,
+          "middle": 0.3,
+          "edge": 0.3,
+          "faubourg": 0.3,
+          "village": 0.2
+        },
+        "ringGaps": 2.2,
+        "fieldRandom": 0.15,
+        "shareJitter": 0.1,
+        "cornerFill": {
+          "core": 0.8,
+          "middle": 0.6,
+          "edge": 0.3,
+          "faubourg": 0.1,
+          "village": 0
+        },
+        "courtyardMin": 9,
+        "density": {
+          "core": 240,
+          "middle": 260,
+          "edge": 170,
+          "faubourg": 80,
+          "village": 35
+        }
+      }
+    },
+    "american-grid/ring": {
+      "label": "Modern · American grid city (Chicago, Manhattan) · Extension",
+      "params": {
+        "id": "american-grid/ring",
+        "streets": [
+          "radials",
+          "grid"
+        ],
+        "streetOp": "grid",
+        "closeOp": "none",
+        "plotOp": "burgage",
+        "buildingOp": "streetFrontRow",
+        "orientation": "road",
+        "laneSpacing": [
+          0,
+          0
+        ],
+        "wardArea": 0,
+        "spineAmp": 0,
+        "kinks": 0,
+        "houseArea": {
+          "core": [
+            150,
+            450
+          ],
+          "middle": [
+            140,
+            400
+          ],
+          "edge": [
+            160,
+            500
+          ],
+          "faubourg": [
+            220,
+            700
+          ],
+          "village": [
+            500,
+            1600
+          ]
+        },
+        "roomDepth": [
+          5,
+          7
+        ],
+        "accessDepth": 30,
+        "fieldTwist": 0,
+        "extraRadials": false,
+        "ringSpacing": 0,
+        "gatePlaces": 0,
+        "crossPlaces": 0,
+        "arch": {
+          "typology": "tenement-row",
+          "roof": "gable",
+          "storeys": [
+            3,
+            5
+          ],
+          "material": "brick"
+        },
+        "growth": {
+          "road": 0.1,
+          "water": 0.1,
+          "noise": 0.08,
+          "wavelength": 500,
+          "elongation": 0,
+          "wet": 0.5,
+          "bipolar": 0
+        },
+        "curvature": 0.02,
+        "fieldNoise": 0.8,
+        "fieldWavelength": 500,
+        "gridSpacing": [
+          80,
+          200
+        ],
+        "gridSkew": 0,
+        "blockSize": {
+          "core": [
+            9000,
+            14000
+          ],
+          "middle": [
+            9000,
+            14000
+          ],
+          "edge": [
+            10000,
+            16000
+          ],
+          "faubourg": [
+            11000,
+            20000
+          ],
+          "village": [
+            9000,
+            20000
+          ]
+        },
+        "minBlock": 900,
+        "minWidth": 20,
+        "widthByRank": [
+          20,
+          18,
+          14,
+          6,
+          3
+        ],
+        "widthScale": 1,
+        "widthJitter": 0.03,
+        "placeThreshold": 900,
+        "deadEndRatio": 0,
+        "slitDepth": 0.55,
+        "frontage": {
+          "core": [
+            6,
+            9
+          ],
+          "middle": [
+            5.5,
+            7.6
+          ],
+          "edge": [
+            6,
+            9
+          ],
+          "faubourg": [
+            7.5,
+            12
+          ],
+          "village": [
+            12,
+            24
+          ]
+        },
+        "plotDepth": {
+          "core": [
+            28,
+            32
+          ],
+          "middle": [
+            28,
+            32
+          ],
+          "edge": [
+            28,
+            34
+          ],
+          "faubourg": [
+            30,
+            40
+          ],
+          "village": [
+            36,
+            60
+          ]
+        },
+        "plotTilt": 0,
+        "wideLotChance": 0.12,
+        "lotMergeChance": 0.06,
+        "buildDepth": {
+          "core": [
+            18,
+            26
+          ],
+          "middle": [
+            14,
+            20
+          ],
+          "edge": [
+            11,
+            16
+          ],
+          "faubourg": [
+            9,
+            13
+          ],
+          "village": [
+            8,
+            12
+          ]
+        },
+        "setback": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            1.5
+          ],
+          "edge": [
+            1,
+            3
+          ],
+          "faubourg": [
+            2,
+            5
+          ],
+          "village": [
+            4,
+            10
+          ]
+        },
+        "sideGap": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            0
+          ],
+          "edge": [
+            0,
+            1
+          ],
+          "faubourg": [
+            1,
+            3
+          ],
+          "village": [
+            3,
+            8
+          ]
+        },
+        "infill": {
+          "core": 0.85,
+          "middle": 0.7,
+          "edge": 0.5,
+          "faubourg": 0.3,
+          "village": 0.12
+        },
+        "coverage": {
+          "core": [
+            0.85,
+            0.95
+          ],
+          "middle": [
+            0.65,
+            0.8
+          ],
+          "edge": [
+            0.5,
+            0.65
+          ],
+          "faubourg": [
+            0.3,
+            0.45
+          ],
+          "village": [
+            0.12,
+            0.28
+          ]
+        },
+        "bigCourtChance": 0.03,
+        "footprintConformity": {
+          "core": 0.3,
+          "middle": 0.3,
+          "edge": 0.3,
+          "faubourg": 0.3,
+          "village": 0.2
+        },
+        "ringGaps": 2.2,
+        "fieldRandom": 0.15,
+        "shareJitter": 0.1,
+        "cornerFill": {
+          "core": 0.8,
+          "middle": 0.6,
+          "edge": 0.3,
+          "faubourg": 0.1,
+          "village": 0
+        },
+        "courtyardMin": 9,
+        "density": {
+          "core": 240,
+          "middle": 260,
+          "edge": 170,
+          "faubourg": 80,
+          "village": 35
+        }
+      }
+    },
+    "american-grid/faubourg": {
+      "label": "Modern · American grid city (Chicago, Manhattan) · Faubourg",
+      "params": {
+        "id": "american-grid/faubourg",
+        "streets": [
+          "radials",
+          "grid"
+        ],
+        "streetOp": "grid",
+        "closeOp": "none",
+        "plotOp": "burgage",
+        "buildingOp": "streetFrontRow",
+        "orientation": "road",
+        "laneSpacing": [
+          0,
+          0
+        ],
+        "wardArea": 0,
+        "spineAmp": 0,
+        "kinks": 0,
+        "houseArea": {
+          "core": [
+            150,
+            450
+          ],
+          "middle": [
+            140,
+            400
+          ],
+          "edge": [
+            160,
+            500
+          ],
+          "faubourg": [
+            220,
+            700
+          ],
+          "village": [
+            500,
+            1600
+          ]
+        },
+        "roomDepth": [
+          5,
+          7
+        ],
+        "accessDepth": 30,
+        "fieldTwist": 0,
+        "extraRadials": false,
+        "ringSpacing": 0,
+        "gatePlaces": 0,
+        "crossPlaces": 0,
+        "arch": {
+          "typology": "row-house",
+          "roof": "gable",
+          "storeys": [
+            2,
+            3
+          ],
+          "material": "brick"
+        },
+        "growth": {
+          "road": 0.1,
+          "water": 0.1,
+          "noise": 0.08,
+          "wavelength": 500,
+          "elongation": 0,
+          "wet": 0.5,
+          "bipolar": 0
+        },
+        "curvature": 0.02,
+        "fieldNoise": 0.8,
+        "fieldWavelength": 500,
+        "gridSpacing": [
+          80,
+          200
+        ],
+        "gridSkew": 0,
+        "blockSize": {
+          "core": [
+            9000,
+            14000
+          ],
+          "middle": [
+            9000,
+            14000
+          ],
+          "edge": [
+            10000,
+            16000
+          ],
+          "faubourg": [
+            11000,
+            20000
+          ],
+          "village": [
+            9000,
+            20000
+          ]
+        },
+        "minBlock": 900,
+        "minWidth": 20,
+        "widthByRank": [
+          20,
+          18,
+          14,
+          6,
+          3
+        ],
+        "widthScale": 1,
+        "widthJitter": 0.03,
+        "placeThreshold": 900,
+        "deadEndRatio": 0,
+        "slitDepth": 0.55,
+        "frontage": {
+          "core": [
+            6,
+            9
+          ],
+          "middle": [
+            5.5,
+            7.6
+          ],
+          "edge": [
+            6,
+            9
+          ],
+          "faubourg": [
+            7.5,
+            12
+          ],
+          "village": [
+            12,
+            24
+          ]
+        },
+        "plotDepth": {
+          "core": [
+            28,
+            32
+          ],
+          "middle": [
+            28,
+            32
+          ],
+          "edge": [
+            28,
+            34
+          ],
+          "faubourg": [
+            30,
+            40
+          ],
+          "village": [
+            36,
+            60
+          ]
+        },
+        "plotTilt": 0,
+        "wideLotChance": 0.12,
+        "lotMergeChance": 0.04,
+        "buildDepth": {
+          "core": [
+            18,
+            26
+          ],
+          "middle": [
+            14,
+            20
+          ],
+          "edge": [
+            11,
+            16
+          ],
+          "faubourg": [
+            9,
+            13
+          ],
+          "village": [
+            8,
+            12
+          ]
+        },
+        "setback": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            1.5
+          ],
+          "edge": [
+            1,
+            3
+          ],
+          "faubourg": [
+            2,
+            5
+          ],
+          "village": [
+            4,
+            10
+          ]
+        },
+        "sideGap": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            0
+          ],
+          "edge": [
+            0,
+            1
+          ],
+          "faubourg": [
+            1,
+            3
+          ],
+          "village": [
+            3,
+            8
+          ]
+        },
+        "infill": {
+          "core": 0.85,
+          "middle": 0.7,
+          "edge": 0.5,
+          "faubourg": 0.3,
+          "village": 0.12
+        },
+        "coverage": {
+          "core": [
+            0.85,
+            0.95
+          ],
+          "middle": [
+            0.65,
+            0.8
+          ],
+          "edge": [
+            0.5,
+            0.65
+          ],
+          "faubourg": [
+            0.3,
+            0.45
+          ],
+          "village": [
+            0.12,
+            0.28
+          ]
+        },
+        "bigCourtChance": 0.03,
+        "footprintConformity": {
+          "core": 0.3,
+          "middle": 0.3,
+          "edge": 0.3,
+          "faubourg": 0.3,
+          "village": 0.2
+        },
+        "ringGaps": 2.2,
+        "fieldRandom": 0.15,
+        "shareJitter": 0.1,
+        "cornerFill": {
+          "core": 0.8,
+          "middle": 0.6,
+          "edge": 0.3,
+          "faubourg": 0.1,
+          "village": 0
+        },
+        "courtyardMin": 9,
+        "density": {
+          "core": 240,
+          "middle": 260,
+          "edge": 170,
+          "faubourg": 80,
+          "village": 35
+        }
+      }
+    },
+    "american-grid/village": {
+      "label": "Modern · American grid city (Chicago, Manhattan) · Village",
+      "params": {
+        "id": "american-grid/village",
+        "streets": [
+          "radials",
+          "grid"
+        ],
+        "streetOp": "grid",
+        "closeOp": "none",
+        "plotOp": "burgage",
+        "buildingOp": "streetFrontRow",
+        "orientation": "road",
+        "laneSpacing": [
+          0,
+          0
+        ],
+        "wardArea": 0,
+        "spineAmp": 0,
+        "kinks": 0,
+        "houseArea": {
+          "core": [
+            150,
+            450
+          ],
+          "middle": [
+            140,
+            400
+          ],
+          "edge": [
+            160,
+            500
+          ],
+          "faubourg": [
+            220,
+            700
+          ],
+          "village": [
+            500,
+            1600
+          ]
+        },
+        "roomDepth": [
+          5,
+          7
+        ],
+        "accessDepth": 30,
+        "fieldTwist": 0,
+        "extraRadials": false,
+        "ringSpacing": 0,
+        "gatePlaces": 0,
+        "crossPlaces": 0,
+        "arch": {
+          "typology": "frame-house",
+          "roof": "gable",
+          "storeys": [
+            1,
+            2
+          ],
+          "material": "wood"
+        },
+        "growth": {
+          "road": 0.1,
+          "water": 0.1,
+          "noise": 0.08,
+          "wavelength": 500,
+          "elongation": 0,
+          "wet": 0.5,
+          "bipolar": 0
+        },
+        "curvature": 0.02,
+        "fieldNoise": 0.8,
+        "fieldWavelength": 500,
+        "gridSpacing": [
+          80,
+          200
+        ],
+        "gridSkew": 0,
+        "blockSize": {
+          "core": [
+            9000,
+            14000
+          ],
+          "middle": [
+            9000,
+            14000
+          ],
+          "edge": [
+            10000,
+            16000
+          ],
+          "faubourg": [
+            11000,
+            20000
+          ],
+          "village": [
+            9000,
+            20000
+          ]
+        },
+        "minBlock": 900,
+        "minWidth": 20,
+        "widthByRank": [
+          20,
+          18,
+          14,
+          6,
+          3
+        ],
+        "widthScale": 1,
+        "widthJitter": 0.03,
+        "placeThreshold": 900,
+        "deadEndRatio": 0,
+        "slitDepth": 0.55,
+        "frontage": {
+          "core": [
+            6,
+            9
+          ],
+          "middle": [
+            5.5,
+            7.6
+          ],
+          "edge": [
+            6,
+            9
+          ],
+          "faubourg": [
+            7.5,
+            12
+          ],
+          "village": [
+            12,
+            24
+          ]
+        },
+        "plotDepth": {
+          "core": [
+            28,
+            32
+          ],
+          "middle": [
+            28,
+            32
+          ],
+          "edge": [
+            28,
+            34
+          ],
+          "faubourg": [
+            30,
+            40
+          ],
+          "village": [
+            36,
+            60
+          ]
+        },
+        "plotTilt": 0,
+        "wideLotChance": 0.12,
+        "lotMergeChance": 0.03,
+        "buildDepth": {
+          "core": [
+            18,
+            26
+          ],
+          "middle": [
+            14,
+            20
+          ],
+          "edge": [
+            11,
+            16
+          ],
+          "faubourg": [
+            9,
+            13
+          ],
+          "village": [
+            8,
+            12
+          ]
+        },
+        "setback": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            1.5
+          ],
+          "edge": [
+            1,
+            3
+          ],
+          "faubourg": [
+            2,
+            5
+          ],
+          "village": [
+            4,
+            10
+          ]
+        },
+        "sideGap": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            0
+          ],
+          "edge": [
+            0,
+            1
+          ],
+          "faubourg": [
+            1,
+            3
+          ],
+          "village": [
+            3,
+            8
+          ]
+        },
+        "infill": {
+          "core": 0.85,
+          "middle": 0.7,
+          "edge": 0.5,
+          "faubourg": 0.3,
+          "village": 0.12
+        },
+        "coverage": {
+          "core": [
+            0.85,
+            0.95
+          ],
+          "middle": [
+            0.65,
+            0.8
+          ],
+          "edge": [
+            0.5,
+            0.65
+          ],
+          "faubourg": [
+            0.3,
+            0.45
+          ],
+          "village": [
+            0.12,
+            0.28
+          ]
+        },
+        "bigCourtChance": 0.03,
+        "footprintConformity": {
+          "core": 0.3,
+          "middle": 0.3,
+          "edge": 0.3,
+          "faubourg": 0.3,
+          "village": 0.2
+        },
+        "ringGaps": 2.2,
+        "fieldRandom": 0.15,
+        "shareJitter": 0.1,
+        "cornerFill": {
+          "core": 0.8,
+          "middle": 0.6,
+          "edge": 0.3,
+          "faubourg": 0.1,
+          "village": 0
+        },
+        "courtyardMin": 9,
+        "density": {
+          "core": 240,
+          "middle": 260,
+          "edge": 170,
+          "faubourg": 80,
+          "village": 35
+        }
+      }
+    },
+    "american-grid/hamlet": {
+      "label": "Modern · American grid city (Chicago, Manhattan) · Hameau",
+      "params": {
+        "id": "american-grid/hamlet",
+        "streets": [
+          "radials",
+          "grid"
+        ],
+        "streetOp": "grid",
+        "closeOp": "none",
+        "plotOp": "burgage",
+        "buildingOp": "streetFrontRow",
+        "orientation": "road",
+        "laneSpacing": [
+          0,
+          0
+        ],
+        "wardArea": 0,
+        "spineAmp": 0,
+        "kinks": 0,
+        "houseArea": {
+          "core": [
+            150,
+            450
+          ],
+          "middle": [
+            140,
+            400
+          ],
+          "edge": [
+            160,
+            500
+          ],
+          "faubourg": [
+            220,
+            700
+          ],
+          "village": [
+            500,
+            1600
+          ]
+        },
+        "roomDepth": [
+          5,
+          7
+        ],
+        "accessDepth": 30,
+        "fieldTwist": 0,
+        "extraRadials": false,
+        "ringSpacing": 0,
+        "gatePlaces": 0,
+        "crossPlaces": 0,
+        "arch": {
+          "typology": "frame-house",
+          "roof": "gable",
+          "storeys": [
+            1,
+            2
+          ],
+          "material": "wood"
+        },
+        "growth": {
+          "road": 0.1,
+          "water": 0.1,
+          "noise": 0.08,
+          "wavelength": 500,
+          "elongation": 0,
+          "wet": 0.5,
+          "bipolar": 0
+        },
+        "curvature": 0.02,
+        "fieldNoise": 0.8,
+        "fieldWavelength": 500,
+        "gridSpacing": [
+          80,
+          200
+        ],
+        "gridSkew": 0,
+        "blockSize": {
+          "core": [
+            9000,
+            14000
+          ],
+          "middle": [
+            9000,
+            14000
+          ],
+          "edge": [
+            10000,
+            16000
+          ],
+          "faubourg": [
+            11000,
+            20000
+          ],
+          "village": [
+            9000,
+            20000
+          ]
+        },
+        "minBlock": 900,
+        "minWidth": 20,
+        "widthByRank": [
+          20,
+          18,
+          14,
+          6,
+          3
+        ],
+        "widthScale": 1,
+        "widthJitter": 0.03,
+        "placeThreshold": 900,
+        "deadEndRatio": 0,
+        "slitDepth": 0.55,
+        "frontage": {
+          "core": [
+            6,
+            9
+          ],
+          "middle": [
+            5.5,
+            7.6
+          ],
+          "edge": [
+            6,
+            9
+          ],
+          "faubourg": [
+            7.5,
+            12
+          ],
+          "village": [
+            12,
+            24
+          ]
+        },
+        "plotDepth": {
+          "core": [
+            28,
+            32
+          ],
+          "middle": [
+            28,
+            32
+          ],
+          "edge": [
+            28,
+            34
+          ],
+          "faubourg": [
+            30,
+            40
+          ],
+          "village": [
+            36,
+            60
+          ]
+        },
+        "plotTilt": 0,
+        "wideLotChance": 0.12,
+        "lotMergeChance": 0.03,
+        "buildDepth": {
+          "core": [
+            18,
+            26
+          ],
+          "middle": [
+            14,
+            20
+          ],
+          "edge": [
+            11,
+            16
+          ],
+          "faubourg": [
+            9,
+            13
+          ],
+          "village": [
+            8,
+            12
+          ]
+        },
+        "setback": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            1.5
+          ],
+          "edge": [
+            1,
+            3
+          ],
+          "faubourg": [
+            2,
+            5
+          ],
+          "village": [
+            4,
+            10
+          ]
+        },
+        "sideGap": {
+          "core": [
+            0,
+            0
+          ],
+          "middle": [
+            0,
+            0
+          ],
+          "edge": [
+            0,
+            1
+          ],
+          "faubourg": [
+            1,
+            3
+          ],
+          "village": [
+            3,
+            8
+          ]
+        },
+        "infill": {
+          "core": 0.85,
+          "middle": 0.7,
+          "edge": 0.5,
+          "faubourg": 0.3,
+          "village": 0.12
+        },
+        "coverage": {
+          "core": [
+            0.85,
+            0.95
+          ],
+          "middle": [
+            0.65,
+            0.8
+          ],
+          "edge": [
+            0.5,
+            0.65
+          ],
+          "faubourg": [
+            0.3,
+            0.45
+          ],
+          "village": [
+            0.12,
+            0.28
+          ]
+        },
+        "bigCourtChance": 0.03,
+        "footprintConformity": {
+          "core": 0.3,
+          "middle": 0.3,
+          "edge": 0.3,
+          "faubourg": 0.3,
+          "village": 0.2
+        },
+        "ringGaps": 2.2,
+        "fieldRandom": 0.15,
+        "shareJitter": 0.1,
+        "cornerFill": {
+          "core": 0.8,
+          "middle": 0.6,
+          "edge": 0.3,
+          "faubourg": 0.1,
+          "village": 0
+        },
+        "courtyardMin": 9,
+        "density": {
+          "core": 240,
+          "middle": 260,
+          "edge": 170,
+          "faubourg": 80,
+          "village": 35
+        }
+      }
     }
   },
   "districts": {
@@ -136714,6 +138237,120 @@
       },
       "growth": null,
       "scope": "Fantasy settlement built on the cited real morphologies; numerical ranges are artistic."
+    },
+    "american-grid": {
+      "label": "Modern · American grid city (Chicago, Manhattan)",
+      "recipes": [
+        {
+          "id": "core",
+          "label": "Cœur",
+          "zone": "core",
+          "preset": "american-grid/core"
+        },
+        {
+          "id": "ring",
+          "label": "Extension",
+          "zone": "middle",
+          "preset": "american-grid/ring"
+        },
+        {
+          "id": "faubourg",
+          "label": "Faubourg",
+          "zone": "faubourg",
+          "preset": "american-grid/faubourg"
+        },
+        {
+          "id": "village",
+          "label": "Village",
+          "zone": "village",
+          "preset": "american-grid/village"
+        },
+        {
+          "id": "hamlet",
+          "label": "Hameau",
+          "zone": "village",
+          "preset": "american-grid/hamlet"
+        }
+      ],
+      "plan": {
+        "pattern": "grid",
+        "enclosure": "rect",
+        "fortification": "none",
+        "gates": "roads",
+        "orientation": "road",
+        "stairs": false,
+        "waterfront": true,
+        "sources": [
+          "docs/Modern_cities_review.md"
+        ]
+      },
+      "description": "Orthogonal grid of long rectangular blocks between avenues and cross streets; brick and stone row houses and walk-up tenements on narrow deep lots; a vertical business core of commercial blocks and setback towers; station, factories, warehouses and elevators near the water. No town wall.",
+      "nucleus": {
+        "kind": "market",
+        "shape": "rect",
+        "area": [
+          6000,
+          14000
+        ],
+        "compound": false,
+        "ring": 4
+      },
+      "core": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "fossil": "street",
+          "orientation": "road",
+          "aspect": [
+            1.3,
+            1.8
+          ]
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "fossil": "street",
+          "orientation": "road"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          4000,
+          2
+        ],
+        [
+          20000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.15,
+        0.1
+      ],
+      "village": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "orientation": "road"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "orientation": "road"
+        }
+      },
+      "growth": null,
+      "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     }
   }
 }

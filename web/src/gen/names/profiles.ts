@@ -86,6 +86,7 @@ export const CULTURE_PROFILES: Readonly<Record<string, ToponymProfile>> = {
   'inuit-camp': P.inuit, 'siberian-camp': P.siberian, 'guarani-village': P.guarani,
   'budj-bim': P.australian, 'lizardfolk-swamp': P.orcish, 'merfolk-tidal': P.elven,
   'giant-hold': P.norse, 'goblin-warren': P.orcish,
+  'american-grid': P.english,
 };
 const EXPLICIT: Record<string, ToponymProfile> = Object.fromEntries(Object.values(P).map(value => [value.id, value]));
 export const TOPONYM_PROFILES: readonly ToponymProfile[] = Object.values(EXPLICIT);

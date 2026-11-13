@@ -5,10 +5,13 @@ import type { TerrainLayer, World, Polygon, River } from '../gen/types';
 import { slopeGrid } from '../gen/core/grid';
 import { forCellsNearPolyline } from '../gen/core/field';
 import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
+import { marchingSquares } from '../gen/terrain/contour';
+import { pointInRing } from '../gen/geo/poly';
 import { riverWidths } from '../ui/vectorWaterRender';
 import { channelWidth } from '../ui/riverVectors';
 
 export interface V2TerrainLayer extends TerrainLayer {
+  v2ModificationBase?: { n: number; height: Float32Array };
   v2NativeTerrain?: TerrainData;
   v2ForestField?: ForestField;
   v2NaturalForest?: Float32Array;
@@ -27,6 +30,40 @@ const at = (x: number, y: number, n: number, width: number): number => Math.max(
 function polygons(mask: Uint8Array, n: number, cell: number): { outer: Polygon; holes: Polygon[] }[] {
   if (!mask.some(Boolean)) return [];
   return vectorizeRegions(Float32Array.from(mask), n, n, cell, cell * cell * .1, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
+}
+/** Exact iso regions (value > .5) of a soft field sampled at cell centres, as outer rings with their holes.
+ * No blur: the cave walls drawn by the map overlay meet the GPU ground's cut of the same field. `pad`: the value
+ * beyond the map edge. */
+function isoRegions(field: Float32Array, n: number, cell: number, pad: number): { outer: Polygon; holes: Polygon[] }[] {
+  const m = n + 2, padded = new Float32Array(m * m).fill(pad);
+  for (let y = 0; y < n; y++) padded.set(field.subarray(y * n, y * n + n), (y + 1) * m + 1);
+  const rings = marchingSquares(padded, m, m, .5, cell, -cell / 2, -cell / 2).filter(c => c.closed && c.pts.length >= 3).map(c => {
+    let area = 0, minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    c.pts.forEach((p, i) => { const q = c.pts[(i + 1) % c.pts.length]; area += p.x * q.y - q.x * p.y; minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+    // Two Chaikin passes round the cell facets (a quarter-cell displacement at most).
+    let pts = c.pts as Polygon;
+    for (let k = 0; k < 2; k++) pts = pts.flatMap((p, i) => { const q = pts[(i + 1) % pts.length]; return [{ x: p.x * .75 + q.x * .25, y: p.y * .75 + q.y * .25 }, { x: p.x * .25 + q.x * .75, y: p.y * .25 + q.y * .75 }]; });
+    return { pts, area: Math.abs(area / 2), box: [minX, minY, maxX, maxY] };
+  }).filter(r => r.area > cell * cell * .1).sort((a, b) => b.area - a.area);
+  const placed: { ring: typeof rings[number]; depth: number; region?: { outer: Polygon; holes: Polygon[] } }[] = [], out: { outer: Polygon; holes: Polygon[] }[] = [];
+  // An inside value beyond the edge: the map border itself is the outer ring of every top-level contour.
+  if (pad > .5) {
+    const e = n * cell + cell / 2, frame: Polygon = [{ x: -cell / 2, y: -cell / 2 }, { x: e, y: -cell / 2 }, { x: e, y: e }, { x: -cell / 2, y: e }];
+    const region = { outer: frame, holes: [] as Polygon[] }; out.push(region);
+    placed.push({ ring: { pts: frame, area: e * e, box: [-Infinity, -Infinity, Infinity, Infinity] }, depth: 0, region });
+  }
+  for (const ring of rings) {
+    const p = ring.pts[0];
+    let parent: typeof placed[number] | undefined;
+    for (let i = placed.length - 1; i >= 0; i--) {
+      const b = placed[i].ring.box;
+      if (p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3] && pointInRing(placed[i].ring.pts, p)) { parent = placed[i]; break; }
+    }
+    const depth = parent ? parent.depth + 1 : 0;
+    if (depth % 2 === 0) { const region = { outer: ring.pts, holes: [] as Polygon[] }; out.push(region); placed.push({ ring, depth, region }); }
+    else { parent!.region!.holes.push(ring.pts); placed.push({ ring, depth }); }
+  }
+  return out;
 }
 function riverClass(width: number): NonNullable<River['cls']> { return width >= 60 ? 'major' : width >= 12 ? 'river' : width >= 3 ? 'stream' : 'brook'; }
 
@@ -135,8 +172,14 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
     coastline: seaRegions.map(r => r.outer), islands: seaRegions.flatMap(r => r.holes), lakes, rivers,
     downSide: side, seaSide: seaCells ? side : null, v2NativeTerrain: data };
   if (cave.length) {
-    const solid = Uint8Array.from(cave, value => value ? 1 : 0), floor = Uint8Array.from(cave, value => value ? 0 : 1);
-    terrain.caverns = { floor: polygons(floor, n, cell), solid: polygons(solid, n, cell), mask: solid,
+    const solid = Uint8Array.from(cave, value => value ? 1 : 0);
+    // Walls follow the soft physical cave field (128 on the wall) when present: interpolated contours, no grid staircase.
+    const soft = data.field?.cave && data.field.cave.length === data.field.n ** 2 ? data.field : undefined;
+    const fn = soft ? soft.n : n, fcell = width / fn;
+    const rock = soft ? Float32Array.from(soft.cave!, v => v / 255) : Float32Array.from(solid);
+    const regions = (field: Float32Array, pad: number) => !field.some(v => v > .5) ? [] : soft ? isoRegions(field, fn, fcell, pad)
+      : vectorizeRegions(field, fn, fn, fcell, fcell * fcell * .1, { x0: 0, y0: 0, x1: fn - 1, y1: fn - 1 });
+    terrain.caverns = { floor: regions(rock.map(v => 1 - v), 0), solid: regions(rock, 1), mask: solid,
       clearance: new Float32Array(length), chambers: [] };
   }
   return terrain;

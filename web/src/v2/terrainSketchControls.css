@@ -41,8 +41,9 @@ dialog.relief-paint::backdrop{background:#121710b8;backdrop-filter:blur(4px)}
 .paint-transform label,.paint-transform button,.paint-files button{margin-top:7px}.paint-files button{width:100%}
 .relief-paint-footer{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line);background:#20221c;flex-shrink:0}
 .relief-paint-footer output{flex:1;min-width:0;font-size:10px;color:var(--muted)}
-#relief-editor-open{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;max-width:118px;font-size:10px;padding:4px 9px;color:var(--gold)}
-#relief-editor-open img{width:30px;height:30px;object-fit:contain}
-.app-header #run-chain{color:var(--gold);border-color:#dcb86f55}
-@media(max-width:1000px){.app-header #run-chain span{display:none}}
+.stage-chain>.relief-modify-open{display:flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0;margin:0 14px 12px;padding:7px 12px;font-size:12px;color:var(--gold);border-color:#dcb86f55}
+.stage-chain>.relief-advanced-open{margin-bottom:0}
+.relief-modify-open img,.relief-draw-open img{width:28px;height:28px;object-fit:contain}
+.relief-sidebar-tools .relief-draw-open{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-bottom:8px;padding:8px;font-size:12px;color:var(--gold);border-color:#dcb86f55}
+.sidebar-footer #run-chain{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--gold)}
 @media(max-width:760px){dialog.relief-paint{width:98vw;max-width:98vw;height:96dvh;max-height:96dvh}.relief-paint-head{padding:11px 12px}.relief-paint-head h2{font-size:22px}.paint-modes{padding:9px 10px 0;gap:4px}.paint-modes button{flex-direction:column;font-size:10px;padding:5px}.paint-mode-description{padding:7px 12px;font-size:10px}.relief-paint-body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(290px,1fr) auto;padding:0 10px 10px;overflow:auto}.paint-workspace{min-height:320px}.paint-toolbox{overflow:visible;min-height:auto}.paint-zone-tools,.paint-height-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.paint-view-toolbar button{font-size:10px;padding:5px}.paint-view-toolbar button span{display:none}.relief-paint-footer{padding:9px 10px;flex-wrap:wrap;gap:5px}.relief-paint-footer output{flex-basis:100%}.relief-paint-footer button{flex:1;font-size:10px}.paint-readout{font-size:9px}.paint-help{margin-inline:10px;max-height:160px}}

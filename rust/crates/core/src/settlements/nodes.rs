@@ -267,7 +267,8 @@ fn build(s: &Spot, p: &Place, f: &Fields, roads: &RoadOutput) -> Option<Activity
     'tries: for dist in [22.0, 36.0, 52.0] {
         for side in [first, -first] {
             let centre = Point { x: s.at.x + normal.x * side * dist, y: s.at.y + normal.y * side * dist };
-            let b = sites::yard(&id, culture, &names, centre, angle, &mut rng, f, &ok);
+            // The yard's front faces the road on either side of it.
+            let b = sites::yard(&id, culture, &names, centre, if side < 0.0 { angle + std::f64::consts::PI } else { angle }, &mut rng, f, &ok);
             if tpl.required.iter().all(|r| b.iter().any(|x| &x.archetype == r)) {
                 placed = Some((centre, b));
                 break 'tries;

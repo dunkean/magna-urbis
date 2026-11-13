@@ -10,6 +10,7 @@ import { DEFAULT_LANDUSE_FOREST_TONE, LANDUSE_FOREST_TONES, LANDUSE_FOREST_TONE_
 import { getGroundBlend, onGroundBlend, setGroundBlend, type GroundBlend } from '../render/groundBlend';
 import { cityBuildingAppearance, cityDrawOptions, finishCityFrame } from '../render/cityDrawOptions';
 import { setupUrbanPanelLocale, urbanText } from './urbanPanelLocale';
+import { mountStyleSheetEditor, withStyleMix } from '../v2/styleMixEditor';
 import { LOCALE_KEY, savedLocale } from './shellLocale';
 import { bindControlRelevance, controlRelevanceControlsHtml } from './urbanControlRelevance';
 import { retainSelectValue } from './retainedSelectValue';
@@ -280,7 +281,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     ['roadRemnants', 'À tester · Retirer les restes de routes', 'Retire les bouts de gué qui ne traversent rien et ce qui y menait, les impasses courant dans l’emprise d’une autre rue, les doublons courts.'],
     ['roadEndJoins', 'À tester · Raccorder les bouts de rue', 'Un bout de rue dont le ruban touche une autre rue s’y raccorde, avant le découpage des îlots (pas les régionales ni les franchissements).'],
     ['smallPlaceCapacity', 'À tester · Tolérance de capacité des petits lieux', 'Un petit lieu n’est redessiné pour capacité qu’au-delà de 8 ménages manquants (au lieu de 5 %) : évite de doubler le temps de calcul.'],
-  ].map(([key, label, title]) => `<label title="${title}"><input data-config="${key}" type="checkbox">${label}</label>`).join('')}<label title="Part des tronçons parallèles (moins de 4 m de terrain entre eux) fusionnés sur la rue la plus importante ; une rue principale tierce ne bouge jamais. 0 : aucun.">Fusion des rues parallèles<input data-config="parallelMerge" type="range" min="0" max="1" step="0.05"></label><label title="Part des maisons de villages, hameaux et faubourgs qui gardent leurs dépendances (granges, appentis, étables). 0 : aucune ; 1 : toutes.">Dépendances des maisons<input data-config="outbuildings" type="range" min="0" max="1" step="0.05"></label></details>`;
+  ].map(([key, label, title]) => `<label title="${title}"><input data-config="${key}" type="checkbox">${label}</label>`).join('')}<label title="Part des tronçons parallèles (moins de 4 m de terrain entre eux) fusionnés sur la rue la plus importante ; une rue principale tierce ne bouge jamais. 0 : aucun.">Fusion des rues parallèles<input data-config="parallelMerge" type="range" min="0" max="1" step="0.05"></label><label title="Part des maisons de villages, hameaux et faubourgs qui gardent leurs dépendances (granges, appentis, étables). 0 : aucune ; 1 : toutes.">Dépendances des maisons<input data-config="outbuildings" type="range" min="0" max="1" step="0.05"></label>${select('houseComplexity', 'Plans des maisons', { simple: 'Simples', complex: 'Complexes' })}<label title="Monuments, auberges, écuries, entrepôts. 0 : seulement le monument central ; 1 : valeur par défaut ; 3 : ville riche en monuments.">Bâtiments singuliers<input data-config="singularDensity" type="range" min="0" max="3" step="0.05"></label><label title="Bâtiments à l'arrière des parcelles de ville (cœur et zone intermédiaire). 0 : la maison seule ; 0,5 : valeur par défaut ; 1 : fonds de parcelle bâtis. Seul un corps sur rue ou ruelle est une maison.">Bâtiments de fond de parcelle<input data-config="backBuildings" type="range" min="0" max="1" step="0.05"></label></details>`;
   const roadReviewControls = `<details class="advanced" data-road-review><summary>Revue v7 (02/11)</summary>${[
     ['naturalCampApproaches', 'À tester · Accès des villages à maisons longues', 'Arrête les routes traversantes aux entrées des villages à maisons longues ; les chemins du village assurent les liaisons entre les portes.'],
     ['streetFrontage', 'À tester · Construire ou simplifier les rues', 'Une rue doit donner accès à une maison : retire les impasses et boucles dont aucune porte ne donne sur elles (chemins, rues de porte compris), fusionne les rues parallèles trop proches pour bâtir entre elles, amincit le chemin de ronde ; garde les sorties du village et les liaisons nécessaires.'],
@@ -320,6 +321,14 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   lotEnclosureControls.innerHTML = `<summary>Clôtures des parcelles et des champs</summary>${enclosureNumber('plotEnclosure', 'Clôture des parcelles urbaines', '0 : parcelles ouvertes ; 1 : cours et enclos fermés sur les côtés que la culture clôt (rue, côtés, fond). Vide : valeur de la culture en ville, parcelles ouvertes au village et à la campagne.')}${enclosureNumber('fieldEnclosure', 'Clôture des champs (campagne)', '0 : champs ouverts (openfield) ; 1 : bocage de haies. Vide : champs ouverts.')}<label title="Coché : les parcelles du village, du hameau et de la campagne et les champs reprennent les clôtures de la culture. Décoché : ouverts, sauf valeur saisie ci-dessus."><input data-config="countrysideEnclosures" type="checkbox">Clôtures à la campagne</label><label title="Matériau des clôtures de parcelles. Auto : celui de la culture.">Matériau des clôtures<select data-config="enclosureMaterial"><option value="">Auto · culture</option><option value="wall">Mur</option><option value="hedge">Haie</option><option value="fence">Palissade</option></select></label><small data-enclosure-resolved></small>`;
   parcelPanel.querySelector('.stage-controls')!.append(lotEnclosureControls);
   parcelPanel.querySelector('.stage-controls')!.append(ruralReddit);
+  // Hybrid city: the shared style-sheet editor of the V2, placed after the culture influences.
+  const styleSheetEditor = mountStyleSheetEditor(quarterPanel.querySelector<HTMLElement>('.stage-controls')!, {
+    getMix: (facet, zone) => zone ? layoutConfig.styleSheet?.[facet]?.zones?.[zone] : layoutConfig.styleSheet?.[facet]?.city,
+    setMix: (facet, zone, mix) => { layoutConfig.styleSheet = withStyleMix(layoutConfig.styleSheet, facet, zone, mix) ?? {}; styleSheetEditor.sync(); changed('quarters'); },
+    defaultCulture: () => layoutConfig.culture && layoutConfig.culture !== 'site' ? layoutConfig.culture : siteCulture('quarters'),
+  });
+  styleSheetEditor.root.classList.add('advanced');
+  quarterPanel.querySelector('[data-config="mixCulture"]')?.closest('details')?.after(styleSheetEditor.root);
   const targetSelect = quarterPanel.querySelector<HTMLSelectElement>('#urbanTarget')!;
   const getConfig = (kind: Kind): LayoutConfig | ParcelConfig => kind === 'quarters' ? layoutConfig : parcelConfig;
   // The controls of one calculation may span several themed sections (City Bench).
@@ -461,6 +470,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   function populate(kind: Kind): void {
     const config = getConfig(kind);
+    if (kind === 'quarters') styleSheetEditor.sync();
     one<HTMLInputElement>(kind, '[data-enabled]').checked = kind === 'quarters' ? enabled : parcelEnabled;
     one<HTMLInputElement>(kind, '[data-seed]').value = kind === 'quarters' ? quarterSeed : parcelSeed;
     const culture = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)];

@@ -398,7 +398,8 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
                     }
                 }
             };
-            if !input.natural_forest.is_empty() {
+            // Underdark: no trees grow without light; the climate forest field does not apply.
+            if !input.natural_forest.is_empty() && !input.biome.starts_with("underdark") {
                 if k == 4 {
                     k = 8;
                 }

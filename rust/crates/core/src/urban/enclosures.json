@@ -16,7 +16,9 @@
     "camps": {"plot": 0, "field": 0.05, "material": "fence", "fenceStyle": "plank", "fieldMaterial": "fence", "front": 0, "side": 0.5, "back": 0.5,
       "cultures": ["native-pueblo", "native-plains", "nomad-camp", "mongol-ordu", "siberian-camp", "inuit-camp", "budj-bim"]},
     "waterborne": {"plot": 0, "field": 0.1, "material": "fence", "fenceStyle": "plank", "fieldMaterial": "fence", "front": 0, "side": 0, "back": 0,
-      "cultures": ["stilt-town", "lizardfolk-swamp", "merfolk-tidal", "venetian-lagoon", "pnw-plank-village"]}
+      "cultures": ["stilt-town", "lizardfolk-swamp", "merfolk-tidal", "venetian-lagoon", "pnw-plank-village"]},
+    "fencedBackyard": {"plot": 0.6, "field": 0.3, "material": "fence", "fenceStyle": "plank", "fieldMaterial": "fence", "front": 0, "side": 1, "back": 1, "yardMerge": 0.05, "wallHeight": 1.8,
+      "cultures": ["american-grid"]}
   },
   "cultures": {
     "mongol-ordu": {"plot": 0.8, "front": 1, "side": 1, "back": 1, "wallHeight": 1.6, "inset": 1.5},

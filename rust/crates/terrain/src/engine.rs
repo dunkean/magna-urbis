@@ -38,6 +38,10 @@ pub struct TerrainGenerator {
     amp: f64,
     max_height: f64,
     cave: Option<CavernShape>,
+    /// Underdark rock mask on the source grid (1 = rock), empty when the relief is not carved.
+    cave_raster: Vec<u8>,
+    /// Underdark wall distance on the source grid (cells, > 0 in rock): smooth walls when sampled.
+    cave_sdf: Vec<f32>,
     coast: crate::coast::Coast,
     coastal_surface: Surface,
     edited_surface: Surface,
@@ -386,6 +390,8 @@ impl TerrainGenerator {
                 limit
             }),
             cave,
+            cave_raster: Vec::new(),
+            cave_sdf: Vec::new(),
             coast: crate::coast::Coast::new(
                 root.fork("coast"),
                 map_width,
@@ -626,14 +632,30 @@ impl TerrainGenerator {
         });
         field
     }
+    /// Underdark: carve the current physical relief into caves and tunnels (`crate::underdark`),
+    /// then retain the carved surface and its rock mask. Coasts and erosion stay as they were.
+    pub fn carve_underdark(&mut self, seed: &str) -> Result<(), String> {
+        let field = self.physical_height_field();
+        let carved = crate::underdark::carve(seed, self.map_width, &field)?;
+        let mut next = Self::with_surface_owned(seed, self.map_width, carved.height)?;
+        next.cave_raster = carved.rock;
+        next.cave_sdf = carved.sdf;
+        *self = next;
+        Ok(())
+    }
+    pub fn is_underdark(&self) -> bool { !self.cave_raster.is_empty() }
     pub fn physical_cave_field(&self) -> Vec<u8> {
+        // Soft mask: 128 on the wall, saturated within a cell; bilinear sampling draws curved walls.
+        if !self.cave_sdf.is_empty() {
+            return self.cave_sdf.iter().map(|&d| (128.0 + d * 96.0).round().clamp(0.0, 255.0) as u8).collect();
+        }
         if self.cave.is_none() { return Vec::new(); }
         let n = self.source_n;
         let cell = self.map_width / n as f64;
         let mut field = vec![0; n * n];
         crate::terrain_par::rows(&mut field, n, |y, row| {
             for (x, value) in row.iter_mut().enumerate() {
-                *value = self.rock_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell);
+                *value = self.rock_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell) * 255;
             }
         });
         field
@@ -857,7 +879,7 @@ impl TerrainGenerator {
         }
         let count = resolution * resolution;
         let mut height = vec![0.0_f32; count];
-        let mut cave_mask = if self.cave.is_some() {
+        let mut cave_mask = if self.cave.is_some() || !self.cave_raster.is_empty() {
             vec![1; count]
         } else {
             Vec::new()
@@ -927,6 +949,19 @@ impl TerrainGenerator {
     }
 
     fn rock_at(&self, x: f64, y: f64) -> u8 {
+        if !self.cave_sdf.is_empty() {
+            // Bilinear wall distance: the rock outline is a curve at any sampling resolution.
+            let n = self.source_n;
+            let gx = (x / self.map_width * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+            let gy = (y / self.map_width * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+            let (x0, y0) = (gx.floor() as usize, gy.floor() as usize);
+            let (x1, y1) = ((x0 + 1).min(n - 1), (y0 + 1).min(n - 1));
+            let (tx, ty) = ((gx - x0 as f64) as f32, (gy - y0 as f64) as f32);
+            let at = |xx: usize, yy: usize| self.cave_sdf[yy * n + xx];
+            let top = at(x0, y0) * (1.0 - tx) + at(x1, y0) * tx;
+            let bottom = at(x0, y1) * (1.0 - tx) + at(x1, y1) * tx;
+            return u8::from(top * (1.0 - ty) + bottom * ty > 0.0);
+        }
         let Some(cave) = &self.cave else {
             return 0;
         };

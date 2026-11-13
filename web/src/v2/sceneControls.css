@@ -1,0 +1,32 @@
+/* Direct scene controls share the persisted composition with the render panel. */
+.view-strip .scene-controls{display:flex;align-items:center;gap:20px;flex:1;min-width:0}
+.scene-controls .scene-field{display:grid;gap:5px;min-width:0;flex:0 1 155px}
+.scene-controls .scene-caption{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:10px;color:var(--muted);white-space:nowrap}
+.scene-controls output{color:var(--gold);font-variant-numeric:tabular-nums;font-size:11px}
+.scene-controls .scene-season{flex:0 1 220px;gap:0}
+.scene-season .scene-caption{margin-bottom:2px}
+.scene-controls .scene-season-icons{display:grid;grid-template-columns:repeat(4,1fr);padding-inline:6px}
+.scene-controls .scene-season-icons button{display:grid;place-items:center;justify-self:center;padding:3px 6px;background:none;border:1px solid transparent;border-radius:5px}
+.scene-controls .scene-season-icons button[aria-pressed=true]{border-color:#dcb86f55;background:#dcb86f13}
+.scene-controls img{display:block;object-fit:contain;pointer-events:none}
+.scene-season-icons img{width:25px;height:25px;opacity:.65;transition:opacity .15s}
+.scene-season-icons :is([aria-pressed=true],:hover) img{opacity:1}
+.view-strip .scene-controls input[type=range]{display:block;width:100%;height:18px;min-height:18px;padding:0;margin:0;accent-color:var(--gold);cursor:pointer;background:transparent;border:0;box-shadow:none}
+.scene-controls .scene-season-ticks{display:flex;justify-content:space-between;padding-inline:7px;height:4px}
+.scene-season-ticks i{height:3px;width:1px;background:#dcb86f66}
+.scene-season-ticks i:nth-child(3n + 2){height:4px;background:var(--gold)}
+.scene-controls .scene-daynight{display:flex;gap:2px;padding:3px;background:#0002;border:1px solid var(--line);border-radius:9px;flex-shrink:0}
+.scene-controls .scene-daynight button{display:grid;place-items:center;width:40px;height:40px;padding:5px;border:1px solid transparent;background:transparent;border-radius:6px}
+.scene-daynight img{width:28px;height:28px;opacity:.55}
+.scene-controls .scene-daynight button[aria-pressed=true]{border-color:#dcb86f66;background:#dcb86f18}
+.scene-daynight :is([aria-pressed=true],:hover) img{opacity:1}
+.scene-controls .scene-direction{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.scene-controls .scene-compass{width:48px;height:48px;cursor:crosshair;touch-action:none;border-radius:50%;color:var(--gold);direction:ltr}
+.scene-compass svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.5}
+.scene-compass-ring{stroke:#dcb86f44}.scene-compass-ticks{stroke:#dcb86f88}.scene-compass-needle circle{fill:currentColor;stroke:none}
+.scene-direction-caption{display:grid;gap:4px;font-size:10px;color:var(--muted)}
+.scene-controls :is(button,input,[role=slider]):focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.scene-controls .scene-season-icons button:hover,.scene-controls .scene-daynight button:hover{background:#dcb86f18}
+@media(max-width:1200px){.view-strip .scene-controls{gap:14px}.scene-controls .scene-field{flex-basis:145px}.scene-controls .scene-season{flex-basis:200px}}
+@media(max-width:1000px){.view-strip .scene-controls{gap:12px;flex-basis:100%;border:0;padding:0}.scene-controls .scene-season{flex-basis:180px}.scene-controls .scene-caption{font-size:9px}.scene-controls output{font-size:10px}.scene-direction-caption{display:none}}
+@media(max-width:720px){.view-strip .scene-controls{display:grid;grid-template-columns:minmax(0,1fr) auto 48px;gap:10px 16px;justify-content:normal}.scene-controls .scene-season{grid-column:1}.scene-controls .scene-height{grid-column:1}.scene-controls .scene-shadows{grid-column:2/4}.scene-controls .scene-caption{font-size:10px}.scene-controls output{font-size:11px}.scene-controls .scene-direction{grid-column:3;grid-row:1}.scene-controls .scene-daynight{grid-column:2;grid-row:1}}

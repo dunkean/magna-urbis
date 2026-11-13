@@ -5,7 +5,7 @@ import { displayQualityUniform, onDisplayQualityChange } from '../render/display
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupation';
-import { shoreRingFor, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
+import { shoreRingPixels, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
@@ -27,9 +27,11 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { UNDERDARK_GLSL } from '../../../rust/bridge/terrainRenderUnderdark';
 import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
+import { biomePalette } from '../render/biomes';
 import type { RenderColors } from '../render/customColors';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
@@ -73,6 +75,12 @@ export interface TerrainLook {
   climate?: { temperature: number; precipitation: number };
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
   climateZone?: ClimateZone;
+  /** Underdark world (biome 'underdark'): the satellite looks draw a cave floor, rock masses and cave water. */
+  underdark?: boolean;
+  /** Underdark: lantern glow on the cave floor around towns, x, y, radius (m) per town, up to 16. */
+  townGlow?: Float32Array;
+  /** Underdark: fungal farm lots (underdarkFarmBeds): x, y, half-size, angle per farm, up to 32. */
+  farmBeds?: Float32Array;
   style: GlStyle; waterStyle?: TerrainStyle; mapWidth: number; lighting: TerrainLighting; layers: TerrainLayers;
   globalMin: number; globalMax: number;
   contours: boolean; contourStep: number; flatRelief: boolean;
@@ -152,6 +160,8 @@ uniform int uRefine; uniform float uSourceCell; uniform uint uSeed;
 uniform int uEnhanced3d;
 uniform int uGroundCapture;
 uniform int uNaturalWater; uniform int uNight;
+uniform vec4 uTownGlow[16]; uniform int uTownGlowCount;
+uniform int uUnderdark;   // Underdark world on the material looks (mode >= 2): cave floor, rock and water (UNDERDARK_GLSL)
 uniform int uRefinementMode;
 uniform sampler2D uRefined, uPreviousRefined;
 uniform vec4 uRefinedRect, uPreviousRefinedRect;
@@ -300,28 +310,35 @@ ${WATER_REGIME_GLSL}
 ${WATER_STYLE_GLSL}
 ${MATERIAL_WATER_GLSL}
 ${MOONLIGHT_GLSL}
+${UNDERDARK_GLSL}
 // Variant constants (terrainFragment): NATURAL compiles the material path, uRenderV2/uForest
 // become constants when off, so ANGLE/D3D11 (FXC) only compiles what the look uses.
 V2Env v2Here;
+// Mean height of the 300 m ring around the fragment (surfaceMean4: 16 to 128 texel fetches), evaluated once in
+// main and shared by the topographic position of the environment (naturalTpi) and of the material.
+float naturalMean=0.;
 float naturalTpi(vec3 s, vec2 world) {
-  float r=max(300.,uFieldCell*2.);
-  float mean=surfaceMean4(world,r);
-  return (s.x-mean)/(6.*r);
+  return (s.x-naturalMean)/(6.*max(300.,uFieldCell*2.));
 }
 uniform sampler2D uShoreRing; uniform vec3 uShoreRingRect;
 #if NATURAL
 vec3 naturalMaterial(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
-  float mean=surfaceMean4(world,r);
+  float mean=naturalMean;
   float shore=1e9, openness=0.;
+  // One fetch of the baked ring per fragment: shore distance and openness (RG, read near the sea), sky occlusion
+  // and horizon tangent toward the light (BA, the relief light of v2ShadeGround).
+  vec4 ring=textureLod(uShoreRing,(world-uShoreRingRect.xy)/uShoreRingRect.z,0.);
   if(s.x<12. && length(s.yz)<.5) {
-    vec2 ring=textureLod(uShoreRing,(world-uShoreRingRect.xy)/uShoreRingRect.z,0.).rg;
     shore=ring.x;openness=ring.y;
   }
   shore=min(shore,max(s.x,0.)/max(length(s.yz),.0001));
   if(uMode==3 || uRenderV2>0) {
     surfaceGroundReadInputs(world,uPx);
     vec3 base=level(0,world);GroundMaterial m;
+    // Landform slope of the relief light: the height layer's own cell scale when zoomed in (no refinement detail),
+    // the footprint-filtered surface once a pixel spans several cells.
+    if(uRenderV2>0)v2ReliefSet(ring.ba,mix(base.yz,s.yz,sstep(1.5,3.,uPx/uFieldCell)));
     vec3 macro=earthMaterial(base,world,max(uPx,1.),(base.x-mean)/(6.*r),shore,openness);
     if(uRenderV2>1)return v2DiagnosticEnv(v2Here,uPx);
     if(uRenderV2>0)m=v2GroundEnv(v2Here,s,world,uPx,uLight.xzy,uLight2.xzy,uRockStrength,renderGuideBaseOpen);
@@ -426,19 +443,57 @@ void main() {
     // Its explicit coverage also prevents the physical material recolouring it.
     float coverage=1.-landCover;
     vec3 landS=vec3(max(s.x,1e-3),s.yz);
-    if(uRenderV2>0)v2Here=v2Local(landS,world,naturalTpi(landS,world),uPx);
+    // Underdark: the Render v2 environment (and its material) is never evaluated.
+    bool underdark=uMode>=2 && uUnderdark==1;
+    // The 300 m mean height, once per fragment, for the looks that read it (naturalTpi, naturalMaterial).
+    // The look switches are tested alone, so a variant that never reads the mean compiles none of it.
+    if(uRenderV2>0){if(!underdark)naturalMean=surfaceMean4(world,max(300.,uFieldCell*2.));}
+    else if(uMode>=2||uForest==1){if(uGroundCapture==0&&!underdark)naturalMean=surfaceMean4(world,max(300.,uFieldCell*2.));}
+    if(uRenderV2>0)if(!underdark)v2Here=v2Local(landS,world,naturalTpi(landS,world),uPx);
 #ifdef AUX_PASS
     vec3 landColor=vec3(0.);
 #else
-    vec3 landColor=uGroundCapture==1 ? vec3(0.) : land(landS,world);
+    vec3 landColor=vec3(0.);
+    float udRock=0.,udRim=0.;
+    if(underdark && uGroundCapture==0){
+      // Rock mask (1 = rock), its occlusion on the floor from two blurred rings (1.5 and 4 source cells), the rim
+      // where floor meets wall; damp floor from the water layer around the pixel.
+      float ao=0.,wet=0.;
+      if(uHasCave==1){
+        float span=uFieldCell*float(uFieldN);vec2 uv=(world-uFieldOrigin)/span;
+        float raw=texture(uCave,uv).r,near=0.,far=0.;
+        for(int k=0;k<4;k++){
+          vec2 d=k==0?vec2(1.,0.):k==1?vec2(-1.,0.):k==2?vec2(0.,1.):vec2(0.,-1.);
+          near+=texture(uCave,uv+d*1.5*uFieldCell/span).r;far+=texture(uCave,uv+vec2(d.x-d.y,d.x+d.y)*.7071*4.*uFieldCell/span).r;
+        }
+        // Crisp wall: the soft field is 128 on the wall and ±96 per source cell, so the edge is antialiased per pixel.
+        float edge=max(.376*uPx/uFieldCell,1e-3);
+        udRock=clamp((raw-.5)/edge+.5,0.,1.);
+        ao=clamp(.75*near*.25+.35*far*.25,0.,1.)*(1.-udRock);
+        // Rim: a lit ledge on the rock side of the wall, a few metres wide once resolved.
+        float ledge=clamp(.375*6./uFieldCell,.02,.45);
+        udRim=smoothstep(.5,.5+ledge*.35,raw)*(1.-smoothstep(.5+ledge*.35,.5+ledge,raw))*clamp(uFieldCell/uPx*.25,0.,1.);
+      }
+      if(uUseWaterLayer==1){
+        float r=clamp(30./uPx,2.,24.);ivec2 here=ivec2(gl_FragCoord.xy),top=ivec2(uCanvas)-1;
+        for(int k=0;k<4;k++)wet+=texelFetch(uWaterLayer,clamp(here+ivec2((k==0?vec2(r,0.):k==1?vec2(-r,0.):k==2?vec2(0.,r):vec2(0.,-r))),ivec2(0),top),0).a;
+        wet=clamp(wet*.4,0.,1.);
+      }
+      landColor=underdarkFloor(landS,world,uPx,wet,ao);
+      // Lantern light of the towns pooling on the cave floor (warm, falling off past the built extent).
+      float glow=0.;
+      for(int k=0;k<16;k++){if(k>=uTownGlowCount)break;vec4 g=uTownGlow[k];float d=length(world-g.xy)/max(g.z,1.);glow+=exp(-d*d*.9);}
+      landColor+=vec3(.20,.12,.05)*min(glow,1.2)*(1.-.5*ao);
+    }
+    else if(uGroundCapture==0 && !underdark)landColor=land(landS,world);
 #endif
     // One sea evaluation (natural water included) for the three uses below.
     vec3 seaColor = sea(world);
     vec3 color = uGroundCapture==1 ? seaColor*coverage : mix(seaColor,landColor,landCover);
     if (uRelief == 0) color = mix(seaColor, uPaper, landCover);
-    if (uHasCave == 1 && uRelief == 1) {
+    if (uHasCave == 1 && uRelief == 1 && !underdark) {
       vec2 uv = (world - uFieldOrigin) / (uFieldCell * float(uFieldN));
-      float rock = smoothstep(0.35, 0.65, texture(uCave, uv).r);
+      float rock = clamp((texture(uCave, uv).r - .5) / max(.376 * uPx / uFieldCell, 1e-3) + .5, 0., 1.);   // the same cut as the overlay walls
       vec3 nn = normalize(vec3(-s.yz * uExaggeration * 0.5, 1.0));
       float shade = clamp(uRockStrength * (length(nn.xy) * (36.0 + 84.0 * dot(nn.xy, uLight.xy)) + (1.0 - nn.z) * 12.0), 0.0, 72.0) / 255.0;
       color = mix(color, vec3(shade), rock);
@@ -447,7 +502,7 @@ void main() {
 #ifndef AUX_PASS
     // Variant switches alone in their own test: mixed with a runtime uniform, the WebGPU path (Tint → DXC)
     // kept the dead branch and inlined its whole material, seconds of compilation for every variant.
-    if(uForest==1 && uMode!=3 && uRenderV2==0)if(uGroundCapture==0){
+    if(uForest==1 && uMode!=3 && uRenderV2==0)if(uGroundCapture==0 && !underdark){
       vec3 root=level(0,world);
       float shore=max(root.x,0.)/max(length(root.yz),.0001);
       vec3 macro=earthMaterial(root,world,max(uPx,1.),naturalTpi(root,world),shore,0.);
@@ -460,27 +515,46 @@ void main() {
 #endif
     // One V2 water evaluation per fragment (the three cases below only choose its inputs).
     bool v2w=false;vec3 wBase=color;float wCover=0.,wKind=1.,wDepth=0.;
+    // Fresh ice of the fragment (terrainRenderV2Winter v2FreshIce): x freeze of the water's altitude, y open channel
+    // of a river, z inside a lake, w lake shore; the bank line apart. One sheet evaluation below for every case.
+    vec4 wIce=vec4(0.);float wIceEdge=0.;
     // Water climate tints applied after the evaluation (waterRegime.ts): x humic tea, y glacial milk, z sea sediment plume.
     vec3 wTint=vec3(0.);
+    // White water of sloping reaches, as a cover of the fragment, laid over the finished water below.
+    float wWhite=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
       float under=uRenderV2>0?1.:1.-forestResolvedCover;
       if(uRenderV2>0){
-        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.*water.a;
-        // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds, ice and foam lie on the ground as
-        // painted (sandy, or near white); only the wet remainder takes the Render v2 water.
+        v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.;
+        // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds lie on the ground as painted
+        // (sandy); the wet remainder takes the Render v2 water, and the painted white water is laid over it. Ice is
+        // not painted for this ground: it comes from the land's snow at the water's altitude, below.
         if(s.x>=0.){
           // Bank crowns lean over the water: rooted on land (forestCrown), drawn whole above it.
           float bed=water.a*(1.-forestResolvedCover);wCover=bed;
           vec3 painted=water.rgb/max(water.a,1e-3);
-          // Sandy beds lean red; ice, its bank lines and foam are far lighter than any painted open water (luminance < .3).
-          float solid=max(smoothstep(.05,.15,painted.r-painted.b),smoothstep(.33,.42,dot(painted,vec3(.3,.45,.25))));
-          // A frozen or dry course shows through the bank crowns; whitewater stays under them, otherwise a forest
-          // stream hidden by its canopy left pale foam specks on the crowns that read as ice in summer.
-          float through=uMaterialZone>0?max(step(.5,waterFreshIce()),step(.001,V2_WATER_ARIDITY[waterZone()])):0.;
+          // Sandy beds lean red: they are ground. The compositor's damp shadow on the land beside the water (dark
+          // olive, greener than any water colour) is ground too: it darkens the bank. Read as partial water it laid a
+          // shallow, bed-coloured fringe along every course, most of what a narrow tributary showed beside its trunk.
+          float solid=smoothstep(.05,.15,painted.r-painted.b);
+          float damp=(1.-solid)*smoothstep(.005,.025,painted.g-max(painted.r,painted.b));
+          // White water: the compositor lays a pale blue-white over the river's colour at a partial cover. The cover
+          // is read back from how far the colour leaves the blue of painted water (red against blue) and laid again
+          // over the Render v2 water below, so a sloping reach keeps the river's own colour and depth under its
+          // streaks. A reach frozen across (v2WinterFresh) shows ice, not white water; only the bar of a waterfall,
+          // the one cover above 60 %, stays, as a pale ice fall.
+          float white=(1.-solid)*(1.-damp)*clamp((painted.r-.36*painted.b)/.54,0.,1.);
+          white*=1.-(underdark?0.:step(.97,v2WinterFresh))*(1.-smoothstep(.6,.72,white));
+          wWhite=bed*white;
+          // Underdark: no ice, dry beds or white foam under the vault; the whole course is cave water.
+          if(underdark)solid=0.;
+          // A dry course shows through the bank crowns; white water stays under them.
+          float through=uMaterialZone>0?step(.001,V2_WATER_ARIDITY[waterZone()]):0.;
           bed=mix(bed,water.a,solid*through);
           wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
+          wBase*=1.-.3*wCover*damp;wCover*=1.-damp;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
           // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii), and the season's
           // sediment tints it (waterRegime.ts waterClimate).
@@ -498,22 +572,39 @@ void main() {
             }
             wDepth=clamp(.07*bank*uPx,.4,6.)*water.a;wTint.z=uCityWater.y*wCover;
           }
-          // Distance inside the nearest lake, in device pixels (negative outside a lake).
+          // Distance inside the nearest lake, in device pixels (negative outside a lake: lakeShore is positive inside).
           float m=uHasLake>0?lakeShore(world,uHasLake==1):-1e3;
-          float inside=uHasLake>0?-m/max(fwidth(m),1e-4):1e3;
+          float inside=uHasLake>0?m/max(fwidth(m),1e-4):-1e3;
           // Dry season of a dry climate: the lake draws down, leaving a pale exposed shore inside its rim.
           float drop=waterLakeDrop()*80.;
           if(drop>1.&&uHasLake>0){
             float ring=step(0.,inside)*(1.-smoothstep(.85*drop,drop,inside*uPx));
             wBase=mix(wBase,waterExposedShore(world),wCover*ring);wCover*=1.-ring;
           }
-          // Lakes freeze with the zone's winter: one smooth sheet with a darker shore rim and a few cracks; while it
-          // thaws the shore opens first, a dark moat around the remaining sheet.
-          float fresh=waterFreshIce();
-          if(fresh>.001){
-            float shore=uHasLake>0?1.-smoothstep(.5,3.5*uDpr,inside):0.;
-            float sheet=fresh>=.97?1.:smoothstep(-.05,.05,fresh-.92*(1.-smoothstep(0.,24.*uDpr,inside)));
-            wBase=mix(wBase,waterIceColor(world,shore*step(.97,fresh),1.,vec2(0.)),wCover*sheet);wCover*=1.-sheet;
+          // Fresh water freezes with the snow of the land at its own altitude (v2WinterFresh, set by v2Local): a lake
+          // is one sheet whose shore opens first while it thaws; a river grows border ice from both banks and keeps
+          // an open channel until the cold is deep, so a course is frozen above the snow line and open below it.
+          float freeze=underdark?0.:v2WinterFresh;
+          if(freeze>.001&&wCover>0.){
+            float still=smoothstep(0.,2.,inside),channel=step(freeze,.5),rim=1.;
+            // Display tier 0 reads the water layer around the fragment: four taps for the bank line, and while a river
+            // is partly frozen sixteen more at the border ice's width (and half of it); all water there is open channel.
+            if(uQuality==0){
+              ivec2 here=ivec2(gl_FragCoord.xy),top=ivec2(uCanvas)-1;
+              float reach=v2WinterShelf(freeze)/uPx,inner=1.;
+              int taps=freeze<.97&&still<1.?20:4;
+              for(int k=0;k<20;k++){
+                if(k>=taps)break;
+                float turn=k<4?float(k)*1.5707963:float(k)*.7853982+(k>=12?.3926991:0.),r=k<4?1.6*uDpr:max(k<12?reach:.5*reach,1.);
+                float a=texelFetch(uWaterLayer,clamp(here+ivec2(vec2(cos(turn),sin(turn))*r),ivec2(0),top),0).a;
+                if(k<4)rim=min(rim,a);else inner=min(inner,a);
+              }
+              // Border ice narrower than a pixel covers that share of the bank pixels.
+              channel=1.-(1.-smoothstep(.35,.85,inner))*min(reach,1.);
+              rim=1.-smoothstep(.2,.9,rim);
+            } else rim=0.;
+            wIce=vec4(freeze,channel,still,1.-smoothstep(0.,24.*uDpr,inside));
+            wIceEdge=mix(rim,1.-smoothstep(.5,3.5*uDpr,inside),still);
           }
           wTint.xy=vec2(waterTea(),waterGlacial());
           // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
@@ -538,28 +629,44 @@ void main() {
         lakeColor = uNaturalWater==1?materialWater(world,position,uPx):styledWater(position);
       }
       float a=clamp(m/w+.5,0.,1.);
-      if(uRenderV2>0){v2w=true;wBase=color;wCover=a;wKind=2.;wDepth=8.*a;}else color=mix(color,lakeColor,a);
+      if(uRenderV2>0){
+        v2w=true;wBase=color;wCover=a;wKind=2.;wDepth=8.*a;
+        if(!underdark){wIce=vec4(v2WinterFresh,0.,1.,1.-smoothstep(0.,24.*uDpr,m/w));wIceEdge=1.-smoothstep(.5,3.5*uDpr,m/w);}
+      }else color=mix(color,lakeColor,a);
       coverage=a+coverage*(1.-a);
+    }
+    // The ice lies on the ground like a dry bed (the aux-texture variant only mixes wBase where water remains);
+    // only the open remainder takes the Render v2 water.
+    if(uRenderV2>0)if(wIce.x>.001){
+      vec4 sheet=v2FreshIce(world,uPx,wIce.x,wIce.y,wIce.z,wIce.w,wIceEdge);
+      // Border ice does not grow over white water: a rapid stays open until its reach is frozen across.
+      sheet.a*=1.-(1.-step(.97,wIce.x))*smoothstep(.04,.2,wWhite);
+      wBase=mix(wBase,sheet.rgb,wCover*sheet.a);wCover*=1.-sheet.a;color=wBase;
     }
     if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(-s.x,0.);}
 #ifdef AUX_PASS
-    outAux = uvec4(auxCanopy, v2w && uV2WaterVisible == 1 && wCover > 0. ? auxPack4x8(vec4(clamp(v2WaterColor(v2Here, world, uPx, wCover, wKind, wDepth), 0., 1.), 1.)) : 0u); return;
+    outAux = uvec4(auxCanopy, !underdark && v2w && uV2WaterVisible == 1 && wCover > 0. ? auxPack4x8(vec4(clamp(v2WaterColor(v2Here, world, uPx, wCover, wKind, wDepth), 0., 1.), 1.)) : 0u); return;
 #elif defined(AUX_TEXTURE)
-    if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.) color = mix(wBase, aux.rgb, wCover); }
+    if(underdark){if(v2w && uV2WaterVisible == 1 && wCover > 0.)color = mix(wBase, underdarkWater(world, uPx, wDepth, 1.-smoothstep(0., .9, wCover)*smoothstep(0.,3.,wDepth)), wCover);}
+    else if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.) color = mix(wBase, aux.rgb, wCover); }
 #else
     // v2w is only ever set under uRenderV2>0; the variant test first lets the compilers drop the whole water model.
-    if(uRenderV2>0)if(v2w)color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
+    if(uRenderV2>0)if(v2w){
+      if(underdark){if(uV2WaterVisible==1)color=mix(wBase,underdarkWater(world,uPx,wDepth,1.-smoothstep(0.,.9,wCover)*smoothstep(0.,3.,wDepth)),wCover);}
+      else color=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,wKind,wDepth);
+    }
 #endif
 #ifndef AUX_PASS
-    if(uRenderV2>0&&v2w&&uV2WaterVisible==1){
+    if(uRenderV2>0&&v2w&&uV2WaterVisible==1&&!underdark){
       // Keep gallery shade on inland water. Detached crown silhouettes on the open sea read as offshore trees.
       if(wKind>1.5)color*=1.-.4*forestResolvedShade*wCover;
       // Boreal humic water darkens to tea; alpine glacial flour turns lakes milky turquoise; silt plumes off river mouths.
       color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover);
       color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover);
       color=mix(color,vec3(.45,.38,.25),.55*wTint.z);
+      color=mix(color,vec3(.84,.90,.93),wWhite);
     }
-    if(uPaperMap==1&&v2w&&wCover>0.){
+    if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
       vec3 paper=paperWater(wKind,paperShore(world));
       // Parchment seas take the climate in muted paper tones: greener on warm coasts, clearer when arid, greyer when cold.
       if(wKind<1.5){
@@ -572,7 +679,15 @@ void main() {
     }
 #endif
 #ifndef AUX_PASS
-    if(uNight==1 && uGroundCapture==0 && (uMode>=2 || uRenderV2>0))color=moonlight(color);   // the whole satellite / paper-map ground, whatever its elevation mode
+    if(underdark && uGroundCapture==0){
+      // Rock covers everything below it, rivers and lakes in their tunnels included; the painted look turns sepia.
+      vec3 rockColor=underdarkRock(s,world,uPx,udRim);
+      // Painted look: sepia washes on the floor, the rock in a deep ink so the two never merge in the shade.
+      color=uPaperMap==1?mix(underdarkPaper(color),underdarkPaper(rockColor)*vec3(.42,.38,.36),udRock):mix(color,rockColor,udRock);
+      coverage=udRock+coverage*(1.-udRock);
+    }
+    // Underdark is already its own night: no moonlight on top of it.
+    if(uNight==1 && uGroundCapture==0 && (uMode>=2 || uRenderV2>0) && !underdark)color=moonlight(color);   // the whole satellite / paper-map ground, whatever its elevation mode
 #endif
     if (uContours == 1 && s.x > 0.0 && uMode != 1) {
       float v = raster.x / uStep;
@@ -612,16 +727,19 @@ layout(location = 0) in vec4 aSeg;
 layout(location = 1) in vec2 aWidth;
 layout(location = 2) in vec3 aColor;
 uniform vec2 uCanvas; uniform vec2 uOrigin; uniform float uPx; uniform float uDpr;uniform int uPhysicalWidth;
-out vec2 vP; flat out vec4 vSeg; flat out vec2 vHalf; flat out vec3 vColor;
+out vec2 vP; flat out vec4 vSeg; flat out vec2 vHalf; flat out vec3 vColor; flat out float vCoded;
 void main() {
+  // A negative width marks a material course: its colour is the regime code and its blue the slope class
+  // (vectorWaterRender.ts riverSegments); the fragment shader then draws the white water of that class.
+  vec2 width = abs(aWidth); vCoded = aWidth.x < 0.0 ? 1.0 : 0.0;
   vec2 a = (aSeg.xy - uOrigin) / uPx, b = (aSeg.zw - uOrigin) / uPx;
   vec2 d = b - a; float l = length(d);
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
   // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
-  vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
-  vec2 half_ = (uPhysicalWidth==1?aWidth/uPx:max(aWidth/uPx,carto))*.5;
+  vec2 carto = clamp(0.35 + 0.4 * log2(max(width, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
+  vec2 half_ = (uPhysicalWidth==1?width/uPx:max(width/uPx,carto))*.5;
   float r = max(half_.x, half_.y) + 1.0;
   vec2 corner = vec2(gl_VertexID & 1, gl_VertexID >> 1);
   vec2 p = mix(a - dir * r, b + dir * r, corner.x) + nrm * r * (corner.y * 2.0 - 1.0);
@@ -631,13 +749,37 @@ void main() {
 
 export const RIVER_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
-in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
+in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor; flat in float vCoded;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
 vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
 ${LAKE_GLSL}
+// White water of a sloping reach, in the flow frame of its course: arc is the arc length of the course at this
+// pixel (m, downstream, continuous through the joints of the segments), v the distance across the flow (m).
+// code is the slope class of the reach (waterRegime.ts slopeClass). Returns the white cover of the pixel, soft
+// and partial: thin streaks along the flow, gathered in bands across it. Ceilings: riffles 10 %, rapids 35 %,
+// cascade 60 %. Once the streaks are narrower than about two pixels the cover is its mean (three tenths of the
+// ceiling), so from far a steep reach is only a slightly paler river.
+float riverWhite(float code, float arc, float v) {
+  float ceiling = .10 * smoothstep(.03, .2, code) + .25 * smoothstep(.28, .6, code) + .25 * smoothstep(.6, .8, code);
+  float resolved = 1. - smoothstep(.55, 1.2, uPx), pattern = .3;
+  if (resolved > 0.) {
+    float streak = .5 + .5 * shoreNoise(vec2(arc / 16., v / 2.2));
+    float band = .5 + .5 * shoreNoise(vec2(arc / 5., v / 9.) + 31.7);
+    pattern = mix(.3, min(smoothstep(.42, .82, streak) * (.55 + .9 * band), 1.), resolved);
+  }
+  return ceiling * pattern;
+}
+// Waterfall, seen from above, on its own short piece laid over the course (x: metres along the flow from the
+// lip, s: position across the channel, -1 to 1): a short bright bar across the channel, 85 % white at most over
+// about three metres, and a foam tail that thins out downstream within half a channel width. Both fade toward
+// the banks and end inside the capsule, so no edge cuts them.
+float riverFall(float x, float s, float halfM, float arc, float v) {
+  float tail = .4 * step(0., x) * exp(-x / max(.35 * halfM, 3.)) * (.45 + .55 * (.5 + .5 * shoreNoise(vec2(arc / 9., v / 2.2))));
+  return max(.85 * exp(-x * x / 3.5), tail) * (1. - smoothstep(.7, 1., abs(s)));
+}
 void main() {
   vec2 a = vSeg.xy, b = vSeg.zw, pa = vP - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
@@ -650,6 +792,22 @@ void main() {
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
   vec3 color = vColor;
+  // Material course (vCoded): red is running water, green the arc length of the course at the start of this piece
+  // (-1 when frozen), blue the slope class / 2. The compositor reads red as running water, green as open water
+  // and blue as the white cover of the pixel (x .49, below the plume codes).
+  if (vCoded > .5) {
+    color.g = vColor.g < -.5 ? 0. : 1.;
+    color.b = 0.;
+    if (vColor.b > .004 && vColor.r > .5 && color.g > .5) {
+      float len = max(length(ba), 1e-6), t = dot(pa, ba) / (len * len), code = vColor.b * 2.;
+      float halfM = max(mix(vHalf.x, vHalf.y, h) * uPx, .5), v = (ba.x * pa.y - ba.y * pa.x) / len * uPx;
+      float arc = max(vColor.g, 0.) + t * len * uPx;
+      float white = 0.;
+      if (code > .84) white = riverFall((t - .5) * len * uPx, v / halfM, halfM, arc, v);
+      else white = riverWhite(code, arc, v);
+      color.b = .49 * white;
+    }
+  }
   if (uHasOverlay == 1) { vec4 overlay = texture(uOverlay, (uOrigin + vP * uPx) / uMapW); color = mix(color, overlay.rgb, overlay.a); }
   outColor = vec4(color * alpha, alpha);
 }`;
@@ -721,7 +879,9 @@ export class TerrainGl {
   private lake?: WebGLTexture; private lakeMode = 0; private lakeN = 0;
   private overlay?: WebGLTexture;
   private coastDistance?: WebGLTexture;
-  private shoreRing?: { layer: object; texture: WebGLTexture; x: number; y: number; width: number };
+  private shoreRing?: { layer: object; revision: number; texture: WebGLTexture; x: number; y: number; width: number };
+  /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
+  private readonly ringChanged = (): void => this.request();
   /** Canonical Render3D forest field and applied occupation, sampled by world coordinates. */
   private forest?: ForestTextures;
   private occupation?: { data: ForestOccupation; texture: WebGLTexture };
@@ -849,7 +1009,7 @@ export class TerrainGl {
    * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand. */
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
   }
   /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
    * (undefined if none is linked yet). Captures wait for the link. */
@@ -910,7 +1070,7 @@ export class TerrainGl {
     let cave: WebGLTexture | undefined;
     if (layer.cave?.length) {
       const mask = new Uint8Array(layer.cave.length);
-      for (let i = 0; i < mask.length; i++) if (layer.cave[i]) mask[i] = 255;
+      mask.set(layer.cave);
       cave = this.texture(layer.n, layer.n, gl.R8, gl.RED, gl.UNSIGNED_BYTE, mask, gl.LINEAR);
     }
     return { layer, levels, texture, cave, alpha: 1, fadeStart: 0 };
@@ -1159,7 +1319,8 @@ export class TerrainGl {
     gl.viewport(0, 0, width, height);
     const { view } = state, px = 1 / (view.scale * dpr);
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
-    const definition = terrainStyle(look.style, look.colors), pal = definition.palette, water = terrainStyle(look.waterLook === 'natural' ? 'render3d' : look.waterStyle ?? look.style, look.waterLook === 'natural' ? undefined : look.colors).water;
+    // Underdark map grounds take the underdark hypsometry (render/biomes.ts), as the 2D overlay does.
+    const definition = terrainStyle(look.style, look.colors), pal = look.underdark && definition.traits.family === 'map' ? biomePalette(definition.palette, 'underdark') : definition.palette, water = terrainStyle(look.waterLook === 'natural' ? 'render3d' : look.waterStyle ?? look.style, look.waterLook === 'natural' ? undefined : look.colors).water;
     const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
     let enhancedAlpha = 1;
     // Every uniform of the look; replayed on the canopy program (same names, same values).
@@ -1170,7 +1331,7 @@ export class TerrainGl {
     gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), stylePixelRatio);
     gl.uniform2fv(u('uWaterSeason'), waterSeasonUniforms(look.v2Season, look.climateZone, look.v2Calendar));
     gl.uniform1i(u('uGroundCapture'),look.groundCapture?1:0);
-    gl.uniform1i(u('uNaturalWater'),look.waterLook==='natural'?1:0); gl.uniform1i(u('uNight'),look.ambience==='night'?1:0);
+    gl.uniform1i(u('uNaturalWater'),look.waterLook==='natural'?1:0); gl.uniform1i(u('uNight'),look.ambience==='night'?1:0); gl.uniform1i(u('uUnderdark'),look.underdark?1:0);{const g=look.townGlow??new Float32Array(0),a=new Float32Array(64);for(let k=0;k<Math.min(16,g.length/3|0);k++)a.set(g.subarray(k*3,k*3+3),k*4);gl.uniform4fv(u('uTownGlow[0]'),a);gl.uniform1i(u('uTownGlowCount'),Math.min(16,g.length/3|0));}{const f=look.farmBeds??new Float32Array(128);gl.uniform4fv(u('uFarmBeds[0]'),f);let n=0;for(let k=0;k<32;k++)if(f[k*4+2]>0)n=k+1;gl.uniform1i(u('uFarmBedCount'),n);}
     gl.uniform1f(u('uMapW'), look.mapWidth);
     gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0); gl.uniform1i(u('uWaterVisible'), look.layers.water !== false ? 1 : 0);
     gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
@@ -1180,11 +1341,16 @@ export class TerrainGl {
     // Textures 7 forest field, 8 occupation, 12 banks; 10/11 belong to water.
     bindForest(gl, u, this.forest, this.occupation, this.empty, this.lookVariant(look).forest, 7, 8, 12, 13);
     bindLandDetail(gl, u, this.landDetail, this.empty);
-    // Texture 14: baked shore ring (CPU, shared with the 3D view), only for the natural looks.
-    if (mode >= 2 && this.base && this.shoreRing?.layer !== this.base.layer) {
-      if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
-      const grid = shoreRingFor(this.base.layer);
-      this.shoreRing = { layer: this.base.layer, texture: shoreRingTexture(gl, grid), x: grid.x, y: grid.y, width: grid.width };
+    // Texture 14: baked shore ring and relief light (CPU, shared with the 3D view), only for the natural looks.
+    // RGBA16F: shore distance, openness, sky occlusion, horizon tangent toward the light (re-baked off the frame
+    // path when the light azimuth changes; the previous texture stays until the new texels are ready).
+    if (mode >= 2 && this.base) {
+      const pixels = shoreRingPixels(this.base.layer, look.lighting.azimuth, this.ringChanged);
+      if (this.shoreRing?.layer !== this.base.layer || this.shoreRing.revision !== pixels.revision) {
+        if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
+        const grid = pixels.grid;
+        this.shoreRing = { layer: this.base.layer, revision: pixels.revision, texture: shoreRingTexture(gl, pixels), x: grid.x, y: grid.y, width: grid.width };
+      }
     }
     gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
     gl.uniform1i(u('uShoreRing'), 14); gl.uniform3f(u('uShoreRingRect'), this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);

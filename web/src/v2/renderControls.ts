@@ -68,6 +68,11 @@ function writeComposition(settings: V2Settings, key: string, value: unknown): vo
   const appearance = settings.appearance!;
   const previous = appearance.composition;
   appearance.composition = writeCompositionField(appearance.composition ?? currentComposition(settings), key, value);
+  // Scene controls describe the environment independently of the chosen map style.
+  if (key === 'preset' && value !== 'custom' && previous) {
+    const { season, ambience, lighting, calendar } = previous.effects;
+    Object.assign(appearance.composition.effects, { season, ambience, lighting: { ...lighting }, ...(calendar ? { calendar: { ...calendar } } : {}) });
+  }
   // Choosing the full entry again overrides an automatic fallback and remembers that explicit choice.
   if (key === 'preset' && value !== 'custom' && previous?.quality === 'light' && appearance.composition.quality === 'full') setDisplayQualityPreference('full');
   if (key === 'preset' && value !== 'custom' || key === 'ground.look' || key === 'ground.variant') resetCityGround(settings);

@@ -95,6 +95,7 @@
 
     "russian-kremlin": {"heightsCastle": 1.0, "material": "timber-earth"},
     "maori-pa": {"material": "timber-earth"},
-    "mississippian": {"material": "timber-earth"}
+    "mississippian": {"material": "timber-earth"},
+    "american-grid": {"heightsCastle": 0.0, "styles": [{"style": "curtain", "weight": 1, "maxPop": 4999}, {"style": "bastioned", "weight": 1, "minPop": 5000}], "ditch": "none"}
   }
 }

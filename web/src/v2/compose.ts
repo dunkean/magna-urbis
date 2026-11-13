@@ -85,7 +85,7 @@ async function terrainOnly(
   const terrain = structuredClone(retained.terrain);
   // This display layer depends on the old towns. It is rebuilt after those towns are removed;
   // no height, water, flow, receiver, coast, river or lake geometry is recomputed.
-  delete terrain.caverns;
+  if (settings.options.biome !== 'underdark') delete terrain.caverns;
   const key = terrainCacheKey({ ...settings, extent: retained.mapSize });
   const persisted = await cache.put(key, terrain);
   const provenance: Record<string, string | number> = {};
@@ -100,7 +100,7 @@ async function terrainOnly(
     mapSize: retained.mapSize,
     options,
     terrain,
-    landuse: await generateNaturalCoverNative(terrain, options.biome === 'underdark-caverns' ? 'underdark' : options.biome, new Rng('magna-urbis:' + retained.seed),(terrain as V2TerrainLayer).v2NaturalForest,
+    landuse: await generateNaturalCoverNative(terrain, options.biome, new Rng('magna-urbis:' + retained.seed),(terrain as V2TerrainLayer).v2NaturalForest,
       settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined),
     stats: {
       ...provenance,

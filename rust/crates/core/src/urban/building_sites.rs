@@ -125,6 +125,24 @@ fn shared_boundaries(a: &super::Shape, b: &super::Shape) -> Vec<[Point; 2]> {
     }
     out
 }
+/// The culture whose building stands on a lot when it is not the lot's own:
+/// the request's explicit house mix first (`house_mix`), else the place's
+/// style sheet for a home (`houses` facet, `rural` for a farm). The flag
+/// tells a style-sheet draw: the lot then builds in that culture's whole
+/// tissue (plan, storeys, roofs, materials).
+fn drawn_culture(architecture_culture: Option<&str>, seed: &str, layout: &Layout, parcel: &super::Parcel, role: &str, function: &str) -> Option<(String, bool)> {
+    let explicit = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
+        let block = layout.blocks.get(parcel.block)?;
+        h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone).map(str::to_owned)
+    });
+    if let Some(culture) = explicit {
+        return Some((culture, false));
+    }
+    if !matches!(function, "domestic" | "mixed") {
+        return None;
+    }
+    super::forms::sheet::houses(layout, seed, &parcel.id, parcel.block, role.starts_with("dwelling.farm")).map(|c| (c.to_owned(), true))
+}
 /// Discrete native levels from the applied cultural/function profile. The actual
 /// recipe range remains authoritative; no height truncation occurs after placement.
 fn typical_floors(
@@ -772,21 +790,11 @@ impl BuildingSiteIndex {
         }
         // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
         // own; a pack that refuses the lot falls back to it, never a refusal.
-        let drawn = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
-            let block = layout.blocks.get(parcel.block)?;
-            let drawn = h.pick(
-                seed,
-                &layout.key,
-                &parcel.id,
-                parcel.block,
-                block.quarter,
-                &block.zone,
-            )?;
-            (drawn != allocation.culture).then(|| {
-                super::culture::parcel_mapping(layout, parcel, drawn, &allocation.function)
-                    .map(|m| (drawn.to_owned(), m))
-            })?
-        });
+        let picked = drawn_culture(architecture_culture, seed, layout, parcel, &allocation.role, &allocation.function)
+            .filter(|p| p.0 != allocation.culture);
+        let from_sheet = picked.as_ref().is_some_and(|p| p.1);
+        let drawn = picked.and_then(|(d, _)| super::culture::parcel_mapping(layout, parcel, &d, &allocation.function).map(|m| (d, m)));
+        let from_sheet = from_sheet && drawn.is_some();
         let (building_culture, mut culture) = match drawn {
             Some(d) => d,
             None => (
@@ -894,10 +902,18 @@ impl BuildingSiteIndex {
             pr.population,
             parcel.pressure,
         );
-        let tissue = partition_index.tissues[site.tissue].get_or_init(|| {
-            super::culture::parcel_morph(layout, partition, &allocation.culture, parcel.block)
-                .map(|(zone, morph)| (zone.to_owned(), morph))
-        });
+        let sheet_tissue;
+        let tissue = if from_sheet {
+            // A culture drawn in the style sheet builds in its own tissue.
+            sheet_tissue = super::culture::parcel_morph(layout, partition, building_culture, parcel.block)
+                .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)));
+            &sheet_tissue
+        } else {
+            partition_index.tissues[site.tissue].get_or_init(|| {
+                super::culture::parcel_morph(layout, partition, &allocation.culture, parcel.block)
+                    .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)))
+            })
+        };
         let floors = tissue.as_ref().map_or(floors, |(zone, morph)| {
             if zone == "village"
                 || culture.functional_profile == "communal"
@@ -1062,7 +1078,7 @@ impl BuildingSiteIndex {
         let arch = tissue.as_ref().map_or(&Value::Null, |(_, morph)| &morph.value["arch"]);
         let home_area = if domestic && !parts.is_empty() && tissue.as_ref().is_some_and(|(zone,_)| zone != "core")
             && !programme["landmark"].as_bool().unwrap_or(false)
-            && !role.contains("tower") && parts.iter().all(|(_,l)| matches!(*l, "building" | "barn" | "byre"))
+            && !role.contains("tower") && parts.iter().all(|(_,l)| matches!(*l, "barn" | "byre" | "annex") || super::forms::plan::is_house_part(l))
             && super::house_mix::ordinary_home(building_culture, arch, &site_seed) {
             let radius = super::shanty::formal_radius(layout);
             let outside = !layout.enclosures.is_empty() && !layout.enclosures.iter().any(|e|
@@ -1120,6 +1136,13 @@ impl BuildingSiteIndex {
         );
         let mut programme = programme;
         programme["party_walls"] = json!(culture.admissibility.party_walls);
+        // A lot its form could not build says why (too small, no rectangle, court only…).
+        if parts.is_empty()
+            && let Some(o) = &occupancy
+            && let Some(reason) = super::parcels::occupation_empty_reason(parcel, o)
+        {
+            programme["empty_reason"] = json!(reason);
+        }
         if let Some(range) = floors_range {
             programme["floors"] = json!(range);
         }
@@ -1160,12 +1183,18 @@ impl BuildingSiteIndex {
         }
         // Every rural dwelling is a farmstead: its culture's outbuildings around a yard (farmsteads.rs);
         // a ruin keeps only its broken walls.
+        // `outbuildings` (0..1): share of rural dwellings (farms included) that keep
+        // their outbuildings. A lone farm always keeps the core buildings of its
+        // culture's farm type (barn, byre…) in that type's layout: the share then
+        // only decides its ancillary ones.
+        let ancillary = crate::rng::Rng::new(&site_seed).fork("outbuildings").chance(layout.config.as_ref().map_or(0.5, |c| c.outbuildings));
+        let farmhouse = role.starts_with("dwelling.farm");
+        let lone = farmhouse && super::roles::is_isolated(&pr.context.intent);
         if !parts.is_empty() && !role.ends_with(".ruin") && !super::massing::pile_house(building_culture, arch)
             && let Some(farm) = super::farmsteads::rural(tissue.as_ref().map_or("", |(zone, _)| zone.as_str()), &role,
                 programme["landmark"].as_bool().unwrap_or(false), tissue.as_ref().is_some_and(|(_, m)| !m.text("campLayout").is_empty()), ring_area(&lot.outer), pr.population)
-            // `outbuildings` (0..1): share of rural dwellings (farms included) that keep their outbuildings.
-            && crate::rng::Rng::new(&site_seed).fork("outbuildings").chance(layout.config.as_ref().map_or(0.5, |c| c.outbuildings))
-            && let Some(cluster) = super::farmsteads::build(&mut parts, &lot, building_culture, farm, role.starts_with("dwelling.farm"), wealth, &site_seed) {
+            && (ancillary || lone)
+            && let Some(cluster) = super::farmsteads::build(&mut parts, &lot, building_culture, farm, farmhouse, wealth, &site_seed, ancillary) {
             programme["farmstead"] = cluster;
         }
         // City Bench `activity` intent: the template's yard (laid again from the centre and
@@ -1429,6 +1458,7 @@ impl BuildingSiteIndex {
                 let radius = super::shanty::formal_radius(layout);
                 (center.x - layout.center.x).hypot(center.y - layout.center.y) / radius
             },
+            complex: super::forms::complex_houses(layout),
         });
         if let Some(m) = activity_massing {
             programme["massing"] = Value::Array(m);
@@ -2565,14 +2595,11 @@ fn preview_site(
         if super::springs::site(layout, &parcel.id).is_some() {
             return Ok((!check_only).then(|| parcel.id.clone()));
         }
-        let drawn = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
-            let block = layout.blocks.get(parcel.block)?;
-            let drawn = h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone)?;
-            (drawn != allocation.culture).then(|| {
-                super::culture::parcel_mapping(layout, parcel, drawn, &allocation.function)
-                    .map(|m| (drawn.to_owned(), m))
-            })?
-        });
+        let picked = drawn_culture(architecture_culture, seed, layout, parcel, &allocation.role, &allocation.function)
+            .filter(|p| p.0 != allocation.culture);
+        let from_sheet = picked.as_ref().is_some_and(|p| p.1);
+        let drawn = picked.and_then(|(d, _)| super::culture::parcel_mapping(layout, parcel, &d, &allocation.function).map(|m| (d, m)));
+        let from_sheet = from_sheet && drawn.is_some();
         let (building_culture, mut culture) = match drawn {
             Some(d) => d,
             None => (
@@ -2607,10 +2634,18 @@ fn preview_site(
             }
         }
         // Without a tissue there is no occupancy, hence no preview.
-        let tissue = partition_index.tissues[site.tissue].get_or_init(|| {
-            super::culture::parcel_morph(layout, partition, &allocation.culture, parcel.block)
-                .map(|(zone, morph)| (zone.to_owned(), morph))
-        });
+        let sheet_tissue;
+        let tissue = if from_sheet {
+            // A culture drawn in the style sheet builds in its own tissue.
+            sheet_tissue = super::culture::parcel_morph(layout, partition, building_culture, parcel.block)
+                .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)));
+            &sheet_tissue
+        } else {
+            partition_index.tissues[site.tissue].get_or_init(|| {
+                super::culture::parcel_morph(layout, partition, &allocation.culture, parcel.block)
+                    .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)))
+            })
+        };
         let Some((zone, morph)) = tissue.as_ref() else { return Ok(None) };
         let mode = super::culture::houses_mode(&pr.context.mode);
         let floors = typical_floors(&culture, &allocation.function, pr.population, parcel.pressure);

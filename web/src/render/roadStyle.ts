@@ -11,6 +11,7 @@ import type { RenderColors } from './customColors';
 import type { Palette } from './styles';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { RecordingContext } from './gpu/recorder';
+import type { RoadPavement } from './roadPavement';
 
 export type RoadRank = 'major' | 'minor' | 'street' | 'lane' | 'track' | 'path';
 export type Rgb = readonly [number, number, number];
@@ -48,7 +49,7 @@ export function roadWidth(rank: RoadRank, metres: number, scale: number): number
   return Math.max(s.floor / scale, scale < .3 ? Math.min(metres, s.ceil / scale) : metres);
 }
 
-export interface RoadStyle { look: import('./composition').RoadLook; /** 0.5–1.5, contrast against the ground. */ emphasis: number; night: boolean; colors?: RenderColors }
+export interface RoadStyle { look: import('./composition').RoadLook; /** 0.5–1.5, contrast against the ground. */ emphasis: number; night: boolean; colors?: RenderColors; /** Surface of the place (roadPavement.ts); absent = earth and gravel. */ pavement?: RoadPavement }
 /** Ink strokes of the current palette, so every backend draws the same map. */
 export interface RoadInk { fill: string; edge: string; track: string; trackAlpha: number }
 export const roadInkOf = (pal: Pick<Palette, 'roadFill' | 'roadEdge' | 'rural' | 'trackFill'>, colors?: RenderColors): RoadInk =>
@@ -90,6 +91,24 @@ export function roadTone(ground: Rgb, rank: RoadRank, emphasis: number, night: b
   // Trodden snow is cooler and darker than the untouched mantle, even on a path.
   const compact = (rank === 'path' || rank === 'track' ? 7 : 0) - 12 * (clamp(emphasis, .5, 1.5) - 1);
   return over([180 + compact, 192 + compact, 202 + compact], dry, snow);
+}
+
+/** Asphalt from above: a dark, slightly warm grey, never black. Trunk roads and streets are rolled asphalt, minor roads a
+ * paler chip seal, lanes and alleys worn asphalt. Tracks and paths are never paved. */
+const ASPHALT: Rgb = [96, 93, 88], CHIP_SEAL: Rgb = [126, 120, 109], WORN_ASPHALT: Rgb = [112, 108, 101], NIGHT_ASPHALT: Rgb = [22, 25, 33];
+const PAVED_SURFACE: Partial<Record<RoadRank, Rgb>> = { major: ASPHALT, street: ASPHALT, minor: CHIP_SEAL, lane: WORN_ASPHALT };
+/** Whether a rank of a place with this surface is drawn as a paved road. */
+export const pavedRank = (rank: RoadRank, pavement: RoadPavement | undefined): boolean => pavement === 'asphalt' && rank in PAVED_SURFACE;
+/** Colour of a paved road: its own material, with a little of the local ground (dust, verge light) so that it sits in
+ * the scene. In snow a busy road is ploughed down to dark wet asphalt; quieter ones keep more packed snow. */
+export function pavedTone(ground: Rgb, rank: RoadRank, emphasis: number, night: boolean, snow = mapGroundSnow()): Rgb {
+  const e = clamp(emphasis, .5, 1.5);
+  if (night) return over(NIGHT_ASPHALT, ground, .78 + .08 * e);
+  const dry = over(PAVED_SURFACE[rank] ?? ASPHALT, ground, .9), k = 1 - .14 * (e - 1);
+  const base: Rgb = [dry[0] * k, dry[1] * k, dry[2] * k];
+  if (!(snow > 0)) return base;
+  const kept = rank === 'major' ? .12 : rank === 'street' ? .3 : rank === 'minor' ? .55 : .85;
+  return over([196, 206, 214], [base[0] * .74, base[1] * .76, base[2] * .8], snow * kept);
 }
 
 const GRID = 256;
@@ -140,9 +159,9 @@ const stain = (i: number, j: number): number => { let h = Math.imul(i, 374761393
 type Surface = OffscreenCanvas | HTMLCanvasElement;
 const texturesOf = new Map<string, Surface>();
 /** One rank's texture (`bare`: the ground itself, for the grass between wheel ruts). */
-function texture(rank: RoadRank | 'bare', emphasis: number): Surface | undefined {
+function texture(rank: RoadRank | 'bare', emphasis: number, paved = false): Surface | undefined {
   if (!ground?.data.length) return undefined;
-  const key = `${ground.key}|${rank}|${emphasis}|${roofSeasonKey()}`; let out = texturesOf.get(key);
+  const key = `${ground.key}|${rank}${paved ? '|paved' : ''}|${emphasis}|${roofSeasonKey()}`; let out = texturesOf.get(key);
   if (out) return out;
   const surface = makeSurface(GRID, GRID), ctx = surface?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
   if (!surface || !ctx) return undefined;
@@ -151,12 +170,13 @@ function texture(rank: RoadRank | 'bare', emphasis: number): Surface | undefined
   for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
     const k = (j * GRID + i) * 4;
     let c: Rgb = [d[k], d[k + 1], d[k + 2]];
-    if (rank !== 'bare') { const id = d[k] << 16 | d[k + 1] << 8 | d[k + 2]; let t = lut.get(id); if (!t) lut.set(id, t = roadTone(c, rank, emphasis, night)); c = t; }
-    const m = 1 + .05 * stain(i >> 1, j >> 1) + .03 * stain(i, j);
+    if (rank !== 'bare') { const id = d[k] << 16 | d[k + 1] << 8 | d[k + 2]; let t = lut.get(id); if (!t) lut.set(id, t = paved ? pavedTone(c, rank, emphasis, night) : roadTone(c, rank, emphasis, night)); c = t; }
+    // A rolled surface is more even than trodden earth: resurfaced lengths, under half the mottling.
+    const m = paved ? 1 + .03 * stain(i >> 1, j >> 1) + .012 * stain(i, j) : 1 + .05 * stain(i >> 1, j >> 1) + .03 * stain(i, j);
     o[k] = c[0] * m; o[k + 1] = c[1] * m; o[k + 2] = c[2] * m; o[k + 3] = 255;
   }
   ctx.putImageData(image, 0, 0);
-  if (texturesOf.size >= 24) texturesOf.delete(texturesOf.keys().next().value!);
+  if (texturesOf.size >= 32) texturesOf.delete(texturesOf.keys().next().value!);
   texturesOf.set(key, surface);
   return surface;
 }
@@ -210,8 +230,8 @@ export function roadGrain(ctx: CanvasRenderingContext2D): CanvasPattern | undefi
 export function roadPaint(ctx: CanvasRenderingContext2D, rank: RoadRank, style: RoadStyle): string | CanvasPattern {
   const custom = rank === 'track' || rank === 'path' ? style.colors?.track : style.colors?.road;
   if (custom) return custom;
-  const surface = texture(rank, style.emphasis), made = surface && pattern(ctx, surface);
-  return made ?? rgbCss(roadTone(ground?.base ?? MATERIAL_TONES.base, rank, style.emphasis, style.night));
+  const paved = pavedRank(rank, style.pavement), surface = texture(rank, style.emphasis, paved), made = surface && pattern(ctx, surface);
+  return made ?? rgbCss((paved ? pavedTone : roadTone)(ground?.base ?? MATERIAL_TONES.base, rank, style.emphasis, style.night));
 }
 /** Road colour at one point, for backends without patterns (SVG). */
 export const roadToneAt = (x: number, y: number, rank: RoadRank, style: RoadStyle): string => style.colors?.[rank === 'track' || rank === 'path' ? 'track' : 'road'] ?? rgbCss(roadTone(groundAt(x, y) ?? ground?.base ?? MATERIAL_TONES.base, rank, style.emphasis, style.night));
@@ -231,8 +251,67 @@ export function naturalMarks(rank: RoadRank, width: number, scale: number, style
     // pixel speckle (a grainy, "pixelated" street at town zoom). It fades in between 1 and 2 px per texel.
     grain: px >= 7 ? (style.night ? .3 : .5) * Math.min(1, e) * (1 - Number(snow)) * grainVisibility(scale) : 0 };
 }
+// ---------------------------------------------------------------- paved roads
+const MARKING = 'rgb(232,228,212)', VERGE = 'rgb(168,158,136)', SNOW_BANK = 'rgb(238,242,246)', REPAIR = 'rgb(54,52,50)', TYRE = 'rgb(198,192,180)';
+/** Metres. Centre line: 3 m dashes every 12 m. Repairs and cracks: long irregular runs, nothing repeats along a sight line. */
+const CENTRE_DASH = [3, 9], REPAIR_DASH = [7, 61, 12, 143, 5, 89, 9, 211], CRACK_DASH = [11, 5, 23, 31, 7, 3, 37, 53];
+const fadeIn = (v: number, from: number, to: number): number => { const t = clamp((v - from) / (to - from), 0, 1); return t * t * (3 - 2 * t); };
+/** One stroke over the bed of a paved road; `paint` undefined restores the bed itself. */
+export interface PavedStroke { paint?: string; width: number; alpha: number; dash?: readonly number[]; cap: CanvasLineCap }
+export interface PavedMarks {
+  /** Bed opacity. */
+  bed: number;
+  /** Gravel verge beside a country road, the ploughed bank in snow. */
+  verge: { color: string; alpha: number; extra: number } | undefined;
+  /** Bottom to top: edge lines, wheel paths, repairs, cracks, centre line. Each fades in once it resolves on screen. */
+  strokes: PavedStroke[];
+  /** Opacity of the aggregate grain. */
+  grain: number;
+}
+/** The marks of a paved carriageway of `width` world units at `scale` px per unit. `lines`: painted lane markings
+ * (trunk roads and main streets only); `edges`: thin edge lines too (open roads, not kerbed streets). Nothing here
+ * depends on the view position, so a retained list stays valid. */
+export function pavedMarks(rank: RoadRank, width: number, scale: number, style: RoadStyle, lines = rank === 'major', edges = rank === 'major'): PavedMarks {
+  const e = Math.min(1, emphasisAlpha(style.emphasis)), px = width * scale, snow = style.night ? 0 : mapGroundSnow(), dry = 1 - snow, dim = style.night ? .45 : 1;
+  const narrow = rank === 'minor' || rank === 'lane', line = Math.max(.2, 1 / scale), strokes: PavedStroke[] = [];
+  const edge = lines && edges ? fadeIn(px, 14, 22) * .6 * dry * dim : 0, wear = fadeIn(px, 7, 12) * .1 * dry * dim, detail = fadeIn(px, 16, 28) * dry * dim;
+  const bed = clamp(.96 * emphasisAlpha(style.emphasis), .5, 1);
+  // A pale band with its middle restored leaves two thin edge lines; the same trick leaves two lighter wheel paths.
+  if (edge > .01) strokes.push({ paint: MARKING, width: width - .5, alpha: edge, cap: 'round' }, { width: width - .5 - 2 * line, alpha: bed, cap: 'round' });
+  if (wear > .004) strokes.push({ paint: TYRE, width: width * (narrow ? .6 : .7), alpha: wear, cap: 'round' }, { width: width * (narrow ? .26 : .4), alpha: bed * .7, cap: 'round' });
+  if (detail > .01) strokes.push({ paint: REPAIR, width: width * .3, alpha: .2 * detail, dash: REPAIR_DASH, cap: 'butt' },
+    { paint: REPAIR, width: Math.max(.12, .8 / scale), alpha: .42 * detail, dash: CRACK_DASH, cap: 'butt' });
+  // The centre line shows from about 9 px of carriageway: its 12 m period is then well above the pixel.
+  const centre = lines ? fadeIn(px, 9, 15) * .82 * (1 - .8 * snow) * (style.night ? .5 : 1) : 0;
+  if (centre > .01) strokes.push({ paint: MARKING, width: line, alpha: centre, dash: CENTRE_DASH, cap: 'butt' });
+  return { bed, strokes,
+    verge: px >= 3 ? { color: snow ? SNOW_BANK : VERGE, alpha: (snow ? .75 * snow : style.night ? .1 : .3) * e, extra: Math.max(1.2 / scale, width * (snow ? .3 : .22)) } : undefined,
+    grain: px >= 7 ? .2 * e * dry * dim * grainVisibility(scale) : 0 };
+}
+/** Kerb and sidewalk strip of a paved street: pale concrete, snowed over in winter. */
+export function sidewalkTone(style: RoadStyle): string {
+  const snow = style.night ? 0 : mapGroundSnow();
+  return rgbCss(over([232, 236, 240], style.night ? [50, 55, 66] : [174, 170, 160], .85 * snow));
+}
+/** One paved regional road class: verge, clean-edged bed, then markings and wear once they resolve. */
+function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle): void {
+  const paint = roadPaint(ctx, rank, style), marks = pavedMarks(rank, width, scale, style), snow = !style.night && mapGroundSnow();
+  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'round'): void => {
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);
+  };
+  ctx.lineJoin = 'round';
+  if (marks.verge) stroke(marks.verge.color, width + marks.verge.extra, marks.verge.alpha);
+  stroke(paint, width, marks.bed);
+  // A quiet road under snow: two wheel ruts down to the surface.
+  if (snow && rank !== 'major' && width * scale >= 4) { stroke('rgb(130,151,170)', width * .66, .34 * Number(snow)); stroke(paint, width * .3, marks.bed); }
+  for (const s of marks.strokes) stroke(s.paint ?? paint, s.width, s.alpha, s.dash, s.cap);
+  if (marks.grain) { const grain = roadGrain(ctx); if (grain) stroke(grain, width, marks.grain); }
+  ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineCap = 'round';
+}
+
 /** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. */
 export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle): void {
+  if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style); return; }
   const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path', snow = !style.night && mapGroundSnow();
   const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'round'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);

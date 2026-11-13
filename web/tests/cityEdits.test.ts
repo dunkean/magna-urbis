@@ -29,9 +29,10 @@ describe('city edits', () => {
     expect(JSON.stringify(originals)).toBe(before);
     // Reset removes the item.
     expect(editCount(setEdit(edits, 'quarters', '3', undefined))).toBe(2);
-    // French labels: never a raw id tail.
-    expect(roleLabel('worship.mosque.friday')).toBe('Mosquée du vendredi');
-    expect(roleLabel('craft.smithy', 'Forge du roi')).toBe('Forge du roi');
-    expect(lotRoleChoices('medina').some(c => c.role === 'worship.mosque.friday' && c.label === 'Mosquée du vendredi')).toBe(true);
+    // Role labels: never a raw id tail; English by default, French as translation.
+    expect(roleLabel('worship.mosque.friday', 'fr')).toBe('Mosquée du vendredi');
+    expect(roleLabel('worship.mosque.friday', 'en')).toBe('Friday mosque');
+    expect(roleLabel('commerce.tavern', 'en', 'medina')).toBe('Coffee house (qahwa)');
+    expect(lotRoleChoices('medina', 'fr').some(c => c.role === 'worship.mosque.friday' && c.label === 'Mosquée du vendredi')).toBe(true);
   });
 });

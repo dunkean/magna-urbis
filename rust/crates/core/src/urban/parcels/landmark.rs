@@ -11,33 +11,38 @@
 use super::occupation::{Frame, Occupancy, Plane, circle, clip, clip_parts, ring_area};
 use super::*;
 
-type Part = (Vec<Point>, Option<Vec<Point>>, &'static str);
+pub(super) type Part = (Vec<Point>, Option<Vec<Point>>, &'static str);
 
-struct Site<'a> {
-    b: &'a [Point],
-    f: Frame,
-    s0: f64,
-    s1: f64,
-    ta: f64,
-    t1: f64,
-    out: Vec<Part>,
+/// The building site of a monument or a utility building, in the frame of its
+/// main frontage: `s` along the street from `s0` to `s1`, `t` into the lot
+/// from the street line `ta` to the back `t1`. Every part is the lot clipped
+/// by a convex window, so it always lies inside the parcel. Parts must not
+/// overlap one another (they may touch): lay them side by side.
+pub(super) struct Site<'a> {
+    pub(super) b: &'a [Point],
+    pub(super) f: Frame,
+    pub(super) s0: f64,
+    pub(super) s1: f64,
+    pub(super) ta: f64,
+    pub(super) t1: f64,
+    pub(super) out: Vec<Part>,
 }
 impl Site<'_> {
-    fn at(&self, s: f64, t: f64) -> Point {
+    pub(super) fn at(&self, s: f64, t: f64) -> Point {
         add(scale(self.f.u, s), scale(self.f.n, t))
     }
-    fn mid(&self) -> f64 {
+    pub(super) fn mid(&self) -> f64 {
         (self.s0 + self.s1) * 0.5
     }
-    fn width(&self) -> f64 {
+    pub(super) fn width(&self) -> f64 {
         self.s1 - self.s0
     }
-    fn depth(&self) -> f64 {
+    pub(super) fn depth(&self) -> f64 {
         self.t1 - self.ta
     }
     /// Every valid component of the lot inside the window (a concave lot may
     /// leave several), never one ring bridged by zero-width edges.
-    fn clip(&mut self, planes: &[Plane], label: &'static str) -> bool {
+    pub(super) fn clip(&mut self, planes: &[Plane], label: &'static str) -> bool {
         let mut ok = false;
         for r in clip_parts(self.b, planes) {
             if r.len() >= 3 && ring_area(&r).abs() >= 4.0 {
@@ -47,24 +52,75 @@ impl Site<'_> {
         }
         ok
     }
-    fn rect(&mut self, s0: f64, s1: f64, t0: f64, t1: f64, label: &'static str) -> bool {
+    pub(super) fn rect(&mut self, s0: f64, s1: f64, t0: f64, t1: f64, label: &'static str) -> bool {
         s1 - s0 > 1.0 && t1 - t0 > 1.0 && self.clip(&self.f.rect(s0, s1, t0, t1), label)
     }
     /// Rectangle centred on `s`.
-    fn bar(&mut self, s: f64, w: f64, t0: f64, t1: f64, label: &'static str) -> bool {
+    pub(super) fn bar(&mut self, s: f64, w: f64, t0: f64, t1: f64, label: &'static str) -> bool {
         self.rect(s - w * 0.5, s + w * 0.5, t0, t1, label)
     }
-    fn disk(&mut self, s: f64, t: f64, r: f64, label: &'static str) -> bool {
+    pub(super) fn disk(&mut self, s: f64, t: f64, r: f64, label: &'static str) -> bool {
         r > 1.0 && self.clip(&circle(self.at(s, t), r), label)
     }
     /// Half disk beyond `t` (an apse), centred on `s`.
-    fn apse(&mut self, s: f64, t: f64, r: f64, label: &'static str) -> bool {
+    pub(super) fn apse(&mut self, s: f64, t: f64, r: f64, label: &'static str) -> bool {
         let mut planes = circle(self.at(s, t), r);
         planes.push(self.f.above(t));
         r > 1.0 && self.clip(&planes, label)
     }
+    /// A small part (porch, chimney base, obelisk, statue plinth): like `rect`
+    /// but kept from 1 m² (the other windows drop anything under 4 m²).
+    pub(super) fn small(&mut self, s0: f64, s1: f64, t0: f64, t1: f64, label: &'static str) -> bool {
+        let r = clip(self.b, &self.f.rect(s0, s1, t0, t1));
+        let ok = r.len() >= 3 && ring_area(&r).abs() >= 1.0;
+        if ok {
+            self.out.push((r, None, label));
+        }
+        ok
+    }
+    /// A convex polygon given by its frame points `(s, t)` in order (either winding).
+    pub(super) fn poly(&mut self, points: &[(f64, f64)], label: &'static str) -> bool {
+        if points.len() < 3 {
+            return false;
+        }
+        let ring: Vec<Point> = points.iter().map(|&(s, t)| self.at(s, t)).collect();
+        let sign = if ring_area(&ring) >= 0.0 { 1.0 } else { -1.0 };
+        let planes: Vec<Plane> = (0..ring.len())
+            .filter_map(|i| {
+                let (p, q) = (ring[i], ring[(i + 1) % ring.len()]);
+                let e = sub(q, p);
+                let l = length(e);
+                // Outward normal of the edge: the window keeps dot(n, x) <= dot(n, p).
+                (l > 1e-6).then(|| { let n = Point { x: sign * e.y / l, y: -sign * e.x / l }; (n, dot(n, p)) })
+            })
+            .collect();
+        planes.len() >= 3 && self.clip(&planes, label)
+    }
+    /// An ellipse (semi-axes `rs` along the street, `rt` into the lot) as a 16-gon.
+    pub(super) fn ellipse(&mut self, s: f64, t: f64, rs: f64, rt: f64, label: &'static str) -> bool {
+        let pts: Vec<(f64, f64)> = (0..16).map(|k| { let a = k as f64 * std::f64::consts::TAU / 16.0; (s + rs * a.cos(), t + rt * a.sin()) }).collect();
+        rs > 1.0 && rt > 1.0 && self.poly(&pts, label)
+    }
+    /// A ring of `n` convex wedges between the ellipses of semi-axes
+    /// (`rs`, `rt`) and (`rs - thick`, `rt - thick`), from angle `a0` to `a1`
+    /// (radians, 0 along the street, π/2 into the lot): an arena's seating
+    /// (0..2π), a theatre's half ring (0..π opens to the street). Each wedge is
+    /// one part, so the ring keeps its open middle.
+    pub(super) fn wedges(&mut self, (s, t): (f64, f64), (rs, rt): (f64, f64), thick: f64, (a0, a1): (f64, f64), n: usize, label: &'static str) -> bool {
+        if n == 0 || thick <= 0.5 || rs - thick < 0.5 || rt - thick < 0.5 {
+            return false;
+        }
+        let mut ok = false;
+        for k in 0..n {
+            let (b0, b1) = (a0 + (a1 - a0) * k as f64 / n as f64, a0 + (a1 - a0) * (k + 1) as f64 / n as f64);
+            let p = |r: (f64, f64), a: f64| (s + r.0 * a.cos(), t + r.1 * a.sin());
+            let inner = (rs - thick, rt - thick);
+            ok |= self.poly(&[p((rs, rt), b0), p((rs, rt), b1), p(inner, b1), p(inner, b0)], label);
+        }
+        ok
+    }
     /// A rectangle with a rectangular hole (a terrace around its hall).
-    fn ring(&mut self, outer: [f64; 4], inner: [f64; 4], label: &'static str) -> bool {
+    pub(super) fn ring(&mut self, outer: [f64; 4], inner: [f64; 4], label: &'static str) -> bool {
         let [a, b, c, d] = outer;
         let [e, g, h, k] = inner;
         let r = clip(self.b, &self.f.rect(a, b, c, d));
@@ -91,7 +147,7 @@ impl Site<'_> {
     }
     /// Ranges around an open court (cloister, caravanserai, madrasa), with a
     /// gate gap in the front range; the court itself stays unbuilt.
-    fn court(&mut self, [a, b, c, d]: [f64; 4], range: f64, gate: f64, label: &'static str) {
+    pub(super) fn court(&mut self, [a, b, c, d]: [f64; 4], range: f64, gate: f64, label: &'static str) {
         let r = range.min((b - a) * 0.3).min((d - c) * 0.3);
         let m = (a + b) * 0.5;
         if gate > 0.0 {
@@ -106,7 +162,9 @@ impl Site<'_> {
     }
 }
 
-fn family(pack: &str) -> &'static str {
+/// Monument family of an architecture pack: `orthodox`, `maghreb`, `persian`,
+/// `chinese`, `japanese`, `indic`, `antique`, `american`, `african`, `western`.
+pub(super) fn family(pack: &str) -> &'static str {
     match pack.split('-').next().unwrap_or("") {
         _ if pack.starts_with("EUR-EAST") => "orthodox",
         _ if pack.starts_with("AF-MAG") || pack.starts_with("AF-NILE") => "maghreb",
@@ -153,6 +211,11 @@ pub(super) fn massing(
         if role == "worship.cathedral" && w.min(d) >= 28.0 {
             x.s0+=4.0;x.s1-=4.0;x.ta+=5.0;x.t1-=4.0;
         }
+    }
+    // The forms of `monuments` come first: a role one of its families builds
+    // never reaches the older forms below.
+    if super::monuments::build(&mut x, o, style, rng) {
+        return (!x.out.is_empty()).then_some(x.out);
     }
     let short = w.min(d);
     let is = |p: &str| role == p || role.starts_with(&format!("{p}."));

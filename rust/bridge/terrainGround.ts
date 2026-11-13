@@ -148,6 +148,8 @@ const glslArray = (key: keyof typeof bands[number]): string => bands.map(b => gl
 
 /** Shared with surfaceMicro; emitted after the material noise helpers. */
 export const GROUND_COVER_GLSL = `
+// Share of loose wind-blown sand of this fragment (the sand sea of the zone), set by v2ZoneEnv before the material.
+float surfaceGroundSand=0.;
 uint groundHash(ivec3 cell,uint seed){
   uvec3 p=uvec3(cell);uint h=(p.x*0x9e3779b9u)^(p.y*0x85ebca6bu)^(p.z*0xc2b2ae35u)^seed;
   h=(h^(h>>16u))*0x7feb352du;h=(h^(h>>15u))*0x846ca68bu;return h^(h>>16u);
@@ -214,17 +216,23 @@ vec3 surfaceGroundCover(vec2 world,float slope,float fp,float rock,float grass,u
     float grain=.6*swardKeep*s1.x+.4*fineKeep*s2.x;
     tone+=.07*amount*grain*mix(vec3(.85,.70,.32),vec3(.55,.85,.38),green);
   }
-  // Dunes need loose sand: a gravel plain stays flat.
-  float sand=sstep(.3,.7,surfaceGroundEnv.z)*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));
-  if(sand>.01){
+  // Wind forms need loose sand: a gravel plain stays flat. The satellite look takes its sand from the sand sea
+  // of the zone (surfaceGroundSand), whose dunes are landforms drawn at every zoom by v2GroundDunes; only the
+  // ripples are left to this close-range pass. The other looks keep a 90 m wave on arid sand.
+  float sand=(uRenderV2==1?surfaceGroundSand:sstep(.3,.7,surfaceGroundEnv.z))*(1.-rock)*(1.-grass)*exposed*(1.-sstep(.35,.7,slope));
+  float reach=.32;
+  if(uRenderV2==0)reach=10.;
+  if(sand>.01&&fp<reach){
     float angle=float(salt&1023u)*.006135923;vec2 wind=vec2(cos(angle),sin(angle));
     vec3 flow=surfaceBand(world,1600.,salt+821u);
-    // Long crests across the wind: a strong warp would break them into dimples.
-    float phase=dot(world,wind)*.0698+2.5*flow.x+.07*surfaceGroundHeight;
-    vec2 rate=wind*.0698+2.5*flow.yz+.07*surfaceGroundGradient;
-    float keep=(1.-sstep(5.,10.,fp))*(1.-sstep(.125,.25,fp*length(rate)/6.283185307));
-    surfaceGroundSlope+=sand*keep*.9*cos(phase)*rate;
-    tone+=vec3(sand*keep*.05*sin(phase));
+    if(uRenderV2==0){
+      // Long crests across the wind: a strong warp would break them into dimples.
+      float phase=dot(world,wind)*.0698+2.5*flow.x+.07*surfaceGroundHeight;
+      vec2 rate=wind*.0698+2.5*flow.yz+.07*surfaceGroundGradient;
+      float keep=(1.-sstep(5.,10.,fp))*(1.-sstep(.125,.25,fp*length(rate)/6.283185307));
+      surfaceGroundSlope+=sand*keep*.9*cos(phase)*rate;
+      tone+=vec3(sand*keep*.05*sin(phase));
+    }
     // Warped scalar phase gives a continuous wind field and its true gradient;
     // the terrain height bends the phase uphill without view-dependent noise.
     if(fp<.32){
@@ -339,12 +347,17 @@ vec4 groundFieldWithClasts(vec3 point,uint seed,float footprint,out float clasts
     vec3 q=vec3(dot(r,vec3(.36,-.8,.48)),dot(r,vec3(.48,.6,.64))/aspect,dot(r,vec3(-.8,0.,.6)))/wavelength;
     q+=vec3(17.137,3.731,-11.517)+float(k)*vec3(9.173,-5.731,7.337);
     vec4 n=groundNoise(q,seed+uint(k+1)*0x6c8e9cf5u);
-    float inverse=inversesqrt(1.+n.x*n.x),v=.72*n.x*inverse,value=v,derivative=1.;
+    // The crease of the 8 m band and the groove of the 2.2 m band lie on the zero set of a smooth noise. At
+    // battlemap range (surfaceFineGrain is zero and surfaceFineBreak one at every wider zoom) the fine grain of
+    // surfaceMicro shifts that zero set, so the line zigzags at 30 and 9 cm, and a groove stays open along
+    // part of its length only: a broken joint in the light, not the isoline of a noise.
+    float fray=k==0?.1:k==1?.08:0.,raw=n.x+fray*surfaceFineGrain.x;
+    float inverse=inversesqrt(1.+raw*raw),v=.72*raw*inverse,value=v,derivative=1.;
     if(k==0){float rounded=sqrt(v*v+.02);value=.3-rounded;derivative=-v/rounded;}
     else if(k==1){float groove=exp2(-32.*v*v);value=.4-groove;derivative=44.36141956*v*groove;}
-    float a=groundAmplitude[k]*keep,d=a*derivative*.72*inverse*inverse*inverse/wavelength;
+    float a=groundAmplitude[k]*keep*(k==1?surfaceFineBreak:1.),d=a*derivative*.72*inverse*inverse*inverse;
     vec3 g=vec3(.36*n.y+.48*n.z/aspect-.8*n.w,-.8*n.y+.6*n.z/aspect,.48*n.y+.64*n.z/aspect+.6*n.w);
-    sum+=vec4(value*a,vec3(c*g.x-s*g.z,g.y,s*g.x+c*g.z)*d);
+    sum+=vec4(value*a,(vec3(c*g.x-s*g.z,g.y,s*g.x+c*g.z)/wavelength+fray*vec3(surfaceFineGrain.y,0.,surfaceFineGrain.z))*d);
   }return sum;
 }
 // surfaceMicroSlope is the relief of the colour bands of this fragment, so a
@@ -409,14 +422,21 @@ vec3 groundBrdf(GroundMaterial m,vec3 view,vec3 light){
   float fresnel=.04+.96*pow(1.-vh,5.);
   return ((1.-fresnel)*m.albedo/3.14159265+vec3(distribution*visibility*fresnel))*nl;
 }
+// Relief light of the fragment, written around its shading by v2ShadeGround (terrainRenderV2Relief): x is the
+// share of the sky the terrain leaves open (scales the ambient term), y the share of the primary light that no
+// cast shadow cuts, z the slope light of the landform (a gain on the whole lit response). Neutral at 1.
+vec3 groundReliefLight=vec3(1.);
 vec3 shadeTerrainGround(GroundMaterial m,vec3 view,vec3 light,vec3 light2,float strength){
+  float sky=groundReliefLight.x,sun=groundReliefLight.y,form=groundReliefLight.z;
   if(uQuality>0){
     // One diffuse light over the retained material and macro normal.
-    float diffuse=max(dot(m.normal,normalize(light)),0.);
-    return groundToDisplay(m.albedo*mix(1.,.5*m.occlusion+.75*diffuse,clamp(strength,0.,1.)));
+    float diffuse=max(dot(m.normal,normalize(light)),0.)*sun;
+    return groundToDisplay(m.albedo*mix(1.,(.5*m.occlusion*sky+.75*diffuse)*form,clamp(strength,0.,1.)));
   }
-  float amount=clamp(strength,0.,1.);vec3 ambient=m.albedo*(.34+.16*clamp(m.normal.y,0.,1.))*m.occlusion;
-  vec3 direct=groundBrdf(m,view,light)*2.2+groundBrdf(m,view,light2)*.58;
-  return groundToDisplay(mix(m.albedo,ambient,amount)+direct*max(strength,0.));
+  // In a cast shadow only the sky lights the ground: the ambient term turns blue and the slope stays readable.
+  float amount=clamp(strength,0.,1.);vec3 ambient=m.albedo*(.34+.16*clamp(m.normal.y,0.,1.))*m.occlusion*sky*mix(vec3(.90,.98,1.14),vec3(1.),sun);
+  // The second light stands for the sky opposite the sun: enclosed ground loses half of it.
+  vec3 direct=groundBrdf(m,view,light)*(2.2*sun)+groundBrdf(m,view,light2)*(.58*(.5+.5*sky));
+  return groundToDisplay(mix(m.albedo,ambient*form,amount)+direct*(form*max(strength,0.)));
 }
 `;

@@ -56,17 +56,21 @@ export function terrainStageValidityKeys(settings: V2Settings): Map<string, stri
   keys.set('relief-climate', stableKey([terrain.climate, terrain.climateZone, terrain.climateValues]));
   keys.set('relief-refine', `${backend}|${signatures.get('sampling')}`);
   keys.set('cover-climate', stableKey([backend, signatures.get('hydrology'), terrain.forest, stepSeed(settings.options.seed, 'cover-climate')]));
-  if (!terrain.procedural || settings.options.importedHeight || terrain.sketch || terrain.zones) {
-    const { forest, hydrology, sketch, zones, ...relief } = terrain;
+  if (!terrain.procedural || settings.options.importedHeight || terrain.sketch || terrain.zones || terrain.modification) {
+    const { forest, hydrology, sketch, zones, drawing, modification, ...relief } = terrain;
     const image=settings.options.importedHeight;
     const root = stableKey([backend, relief,
       sketch && [sketch.resolution,sketch.processing,fingerprintNumbers(sketch.heights)],
+      drawing && [drawing.resolution,fingerprintNumbers(drawing.heights)],
+      modification && [modification.resolution,modification.width,fingerprintNumbers(modification.delta)],
       zones && [zones.resolution,fingerprintNumbers(zones.weights)],
       image && [image.w,image.h,image.elevations?fingerprintBytes(new Uint8Array(image.elevations.buffer,image.elevations.byteOffset,image.elevations.byteLength)):fingerprintBytes(image.rgba),settings.options.heightScale,settings.options.importSea]]);
     for (const id of keys.keys()) if (id.startsWith('relief-')) keys.set(id, root);
     keys.set('water-hydrology', stableKey([root, hydrology]));
     keys.set('cover-climate', stableKey([root, hydrology, forest, stepSeed(settings.options.seed, 'cover-climate')]));
   }
+  // The Underdark carve rewrites the relief, so toggling it invalidates every relief, water and cover stage.
+  if (terrain.underdark) for (const [id, key] of keys) if (/^(relief|water|cover)-/.test(id)) keys.set(id, `${key}|underdark`);
   return keys;
 }
 

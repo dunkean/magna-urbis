@@ -19,6 +19,7 @@ pub mod programme;
 pub use culture::{CultureMapping, UrbanAdmissibility};
 pub use programme::{ProgrammeContext, UrbanProgramme};
 mod footprint;
+mod forms;
 mod fortification;
 mod fringe;
 mod geography;
@@ -136,6 +137,15 @@ pub struct Enclosure {
 }
 fn is_ring_growth(v: &str) -> bool {
     v == "ring"
+}
+fn is_simple_houses(v: &str) -> bool {
+    v.is_empty() || v == "simple"
+}
+fn is_one(v: &f64) -> bool {
+    *v == 1.0
+}
+fn is_half(v: &f64) -> bool {
+    *v == 0.5
 }
 fn is_zero(v: &f64) -> bool {
     *v == 0.0
@@ -664,6 +674,27 @@ pub struct LayoutConfig {
     /// Share (0..1) of rural homes, farms included, that keep their outbuildings
     /// (0 none, 1 all); isolated farms included.
     pub outbuildings: f64,
+    /// House plans: `simple` (one body per home, each convex part under its own
+    /// roof) or `complex` (the `forms` grammar: wings, cross-wings, outshots,
+    /// porches, turrets, composite roofs with valleys, chimneys and dormers).
+    #[serde(skip_serializing_if = "is_simple_houses")]
+    pub house_complexity: String,
+    /// Density of singular and utility buildings (monuments, inns, taverns,
+    /// stables, warehouses…): 1 the catalogue's counts, 0 only the nucleus
+    /// landmark, up to 3.
+    #[serde(skip_serializing_if = "is_one")]
+    pub singular_density: f64,
+    /// Back buildings of town lots (core and middle zones): the share of the
+    /// lots built under half of their tissue's coverage that build the ground
+    /// behind their house (0 none, 1 all, up to two thirds of that coverage);
+    /// the others keep their court or garden. Only a body on a street or a
+    /// lane is a house; the others are low dependencies.
+    #[serde(skip_serializing_if = "is_half")]
+    pub back_buildings: f64,
+    /// Style sheet of a hybrid place: per facet, the cultures it draws from.
+    /// An empty facet follows the place's own culture.
+    #[serde(skip_serializing_if = "StyleSheet::is_empty")]
+    pub style_sheet: StyleSheet,
     /// Access ways (closes, derbs) start on their street's axis and nubs go (off: 2 m past it, as drawn).
     pub road_mouths: bool,
     /// Remnants of moved crossings, spurs inside another street's ribbon and short doubled links go.
@@ -732,6 +763,38 @@ pub struct LayoutConfig {
     #[serde(skip)]
     pub capacity_floor: f64,
 }
+/// Style sheet of a place: which cultures each facet of its fabric draws
+/// from. A facet is a mix for the whole place, a growth zone (`core`,
+/// `middle`, `edge`, `faubourg`, `village`) or a quarter; each lot, block or
+/// quarter draws one culture of its mix (`spread`), from the seed alone.
+/// - `streets`: the street pattern and block sizes of a zone (the mix's
+///   heaviest culture: a street network has one grammar per zone);
+/// - `plots`: the cadastral cut (plot operator, frontage, depth, coverage);
+/// - `houses`: the homes (plan vocabulary, roofs, materials, storeys);
+/// - `monuments`: the singular and utility buildings (which ones, and their forms);
+/// - `rural`: the farm types of rural lots.
+/// An old core of one culture inside extensions of another, or the homes of
+/// one people on the plots of another, are style sheets.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct StyleSheet {
+    #[serde(skip_serializing_if = "house_mix::HouseSettings::is_empty")]
+    pub streets: house_mix::HouseSettings,
+    #[serde(skip_serializing_if = "house_mix::HouseSettings::is_empty")]
+    pub plots: house_mix::HouseSettings,
+    #[serde(skip_serializing_if = "house_mix::HouseSettings::is_empty")]
+    pub houses: house_mix::HouseSettings,
+    #[serde(skip_serializing_if = "house_mix::HouseSettings::is_empty")]
+    pub monuments: house_mix::HouseSettings,
+    #[serde(skip_serializing_if = "house_mix::HouseSettings::is_empty")]
+    pub rural: house_mix::HouseSettings,
+}
+impl StyleSheet {
+    pub fn is_empty(&self) -> bool {
+        [&self.streets, &self.plots, &self.houses, &self.monuments, &self.rural].iter().all(|f| f.is_empty())
+    }
+}
+
 /// User overrides keyed by the quarter's index in `layout.quarters`.
 ///
 /// Stability rule: the composition quarters (the first ones in `layout.quarters`)
@@ -848,6 +911,10 @@ impl Default for LayoutConfig {
             isolated_access: true,
             low_rural_houses: true,
             outbuildings: 0.5,
+            house_complexity: "simple".into(),
+            singular_density: 1.0,
+            back_buildings: 0.5,
+            style_sheet: StyleSheet::default(),
             road_mouths: false,
             road_remnants: false,
             road_end_joins: false,
@@ -983,8 +1050,23 @@ pub struct Surface<'a> {
     pub interpolation: HeightInterpolation,
 }
 impl Surface<'_> {
+    /// Side of the height grid: the integer square root of its length. Read on
+    /// every height sample, so it goes through the hardware square root (exact
+    /// for these sizes) and is then corrected to the integer root.
+    #[inline]
     pub fn height_resolution(&self) -> usize {
-        if self.height.len() == self.n * self.n { self.n } else { self.height.len().isqrt() }
+        let len = self.height.len();
+        if len == self.n * self.n {
+            return self.n;
+        }
+        let mut side = (len as f64).sqrt() as usize;
+        while side * side > len {
+            side -= 1;
+        }
+        while (side + 1) * (side + 1) <= len {
+            side += 1;
+        }
+        side
     }
     pub fn height_at(&self, p: Point) -> f64 {
         let height = self.raw_height_at(p);

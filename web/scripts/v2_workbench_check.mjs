@@ -1,4 +1,4 @@
-/** Real workshop controls: calendar persistence, editing exclusivity, engine evidence and responsive chrome. */
+/** Real workshop controls: direct scene persistence, editing exclusivity, engine evidence and responsive chrome. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -15,7 +15,13 @@ try {
   await page.addInitScript(() => sessionStorage.setItem('magna-browser-advice-closed', '1'));
   await page.goto(`${base}/v2.html?empty&test=1&lang=fr`);
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
-  const input = async (selector, value) => { await page.locator(selector).fill(value); await page.locator(selector).dispatchEvent('change'); };
+  const input = async (selector, value) => {
+    const control = page.locator(selector);
+    if (await control.getAttribute('type') === 'range') {
+      await control.evaluate((element, next) => { element.value = next; element.dispatchEvent(new Event('input', { bubbles: true })); }, value);
+    } else await control.fill(value);
+    await control.dispatchEvent('change');
+  };
   const exported = async (format = 'recipe') => {
     await page.locator('#export-open').click(); await page.locator('#export-format').selectOption(format);
     const pending = page.waitForEvent('download'); await page.locator('#export-go').click();
@@ -27,19 +33,41 @@ try {
     await page.locator('#import-dialog').waitFor({ state: 'hidden' });
     await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   };
-  await input('#scene-date', '2026-12-21'); await input('#scene-time', '00:00');
-  assert.match(await page.locator('#scene-state').innerText(), /Nuit.*Hiver/);
+  assert.equal(await page.locator('#scene-season').getAttribute('max'), '11');
+  await page.locator('#scene-season').focus(); await page.keyboard.press('Home');
+  for (let step = 0; step < 12; step++) {
+    assert.equal(await page.locator('#scene-season').inputValue(), String(step));
+    assert.match(await page.locator('#scene-season-value').innerText(), [ /Hiver/, /Printemps/, /Été/, /Automne/ ][Math.floor(step / 3)]);
+    if (step < 11) await page.keyboard.press('ArrowRight');
+  }
+  await page.locator('[data-season="1"]').click();
+  await page.locator('#scene-night').click();
+  await input('#scene-elevation', '30'); await input('#scene-strength', '1.5');
+  const compass = page.locator('.scene-compass');
+  const compassBox = await compass.boundingBox();
+  await page.mouse.click(compassBox.x + compassBox.width - 4, compassBox.y + compassBox.height / 2);
+  assert.equal(await compass.getAttribute('aria-valuenow'), '90');
+  await compass.focus(); await page.keyboard.press('End'); await page.keyboard.press('ArrowRight');
+  assert.equal(await compass.getAttribute('aria-valuenow'), '0');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await compass.getAttribute('aria-valuenow'), '359');
+  await page.keyboard.press('Home'); await page.keyboard.press('PageUp');
+  assert.equal(await compass.getAttribute('aria-valuenow'), '15');
+  assert.equal(await page.locator('#scene-night').getAttribute('aria-pressed'), 'true');
   await page.locator('#map-style').selectOption('atlas');
   const recipe = await exported();
-  assert.deepEqual(recipe.settings.scene, { date: '2026-12-21', time: '00:00', latitude: 45 });
+  assert.equal(recipe.settings.scene, undefined);
+  assert.equal(recipe.settings.appearance.composition.effects.season, 0);
   assert.equal(recipe.settings.appearance.composition.effects.ambience, 'night');
-  assert.equal(recipe.settings.appearance.composition.effects.lighting.enabled, false);
+  assert.deepEqual(recipe.settings.appearance.composition.effects.lighting, { enabled: true, azimuth: 15, elevation: 30, strength: 1.5, exaggeration: 2 });
   recipe.settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
   recipe.settings.extent = 2400; recipe.settings.settlementCount = 2; recipe.settings.options.population = 200;
   recipe.settings.options.seed = 'workbench-ui-review'; recipe.settings.options.relief = 'flat';
   await imported(recipe);
-  assert.equal(await page.locator('#scene-date').inputValue(), '2026-12-21');
-  await input('#scene-time', '12:00');
+  assert.equal(await page.locator('#scene-season').inputValue(), '1');
+  assert.equal(await page.locator('#scene-elevation').inputValue(), '30');
+  assert.equal(await page.locator('#scene-strength').inputValue(), '1.5');
+  await page.locator('#scene-day').click();
   await page.locator('#run-chain').click();
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false', null, { timeout: 180000 });
   assert(!/Échec/.test(await page.locator('#job-log').innerText()), await page.locator('#job-log').innerText());
@@ -77,7 +105,7 @@ try {
   for (const width of [1024, 768, 390]) {
     await page.setViewportSize({ width, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Page overflows at ${width}px`);
-    for (const selector of ['#scene-date', '#scene-time', '#scene-latitude', '#import-open', '#export-open', '#hardware-open']) {
+    for (const selector of ['#scene-season', '.scene-compass', '#scene-elevation', '#scene-strength', '#scene-day', '#scene-night', '#import-open', '#export-open', '#hardware-open']) {
       const box = await page.locator(selector).boundingBox();
       assert(box && box.x >= 0 && box.x + box.width <= width + 1, `${selector} clipped at ${width}px`);
     }
@@ -92,10 +120,12 @@ try {
   await chooseWorkshopPreference(page, 'units', 'ft');
   assert.equal(await page.locator('#units-select').inputValue(), 'ft');
   await chooseWorkshopPreference(page, 'units', 'm');
-  assert.equal(await page.locator('#scene-controls label').first().innerText(), 'Scene date');
+  assert.equal(await page.locator('#scene-controls label').first().innerText(), 'Season');
   const saved = await exported('project');
-  delete saved.settings.scene; await imported(saved);
-  assert.equal(await page.locator('#scene-apply').isVisible(), true);
+  delete saved.settings.scene; delete saved.settings.appearance.composition; await imported(saved);
+  assert.equal(await page.locator('#scene-season').inputValue(), '7');
+  assert.equal(await page.locator('#scene-elevation').inputValue(), '45');
+  assert.equal(await page.locator('#scene-strength').inputValue(), '1');
   assert.deepEqual(errors, []);
-  console.log('Workbench verified: calendar, project round trip, generation, exclusive tools, engine evidence, illustration theme, French/English, 1440/1024/768/390px.');
+  console.log('Workbench verified: 12 seasonal steps, generated icons, day/night, light direction with pointer and keyboard, height, shading, presets, project round trip, generation, exclusive tools, engine evidence, illustration theme, French/English, 1440/1024/768/390px.');
 } finally { await browser.close(); }

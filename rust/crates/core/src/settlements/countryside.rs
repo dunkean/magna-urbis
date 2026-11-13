@@ -13,7 +13,7 @@ use super::{Point, Settlement, extent_radius};
 use crate::resources::ResourceFields;
 use crate::rng::Rng;
 use crate::urban::activities as act;
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::TAU;
 
 fn hash01(key: &str) -> f64 {
     Rng::new(key).float()
@@ -45,6 +45,30 @@ fn template(id: &str) -> Option<&'static act::Site> {
 /// culture's temple (mosque, shrine, gompa, hof…) elsewhere.
 fn worship_template(culture: &str) -> Option<&'static str> {
     ["country_chapel", "country_temple"].into_iter().find(|t| template(t).is_some_and(|s| sites::culture_ok(&s.only, culture)))
+}
+
+/// Wayside templates of a road junction and their share: a shrine, the culture's
+/// own marker (cross, torii, ovoo, totem pole…), a calvary, a memorial, a holy well.
+const WAYSIDE: [(&str, f64); 5] = [("roadside_shrine", 0.35), ("wayside_marker_site", 0.35), ("wayside_calvary", 0.1), ("wayside_memorial", 0.1), ("wayside_well", 0.1)];
+
+fn is_wayside(template: &str) -> bool {
+    WAYSIDE.iter().any(|w| w.0 == template)
+}
+
+/// The wayside monument of a junction, drawn by `h` (0..1) among those the culture builds.
+fn wayside_template(culture: &str, h: f64) -> Option<&'static str> {
+    let builds = |id: &str| {
+        template(id).is_some_and(|t| sites::culture_ok(&t.only, culture) && t.required.iter().all(|r| sites::resolve(r, culture).is_some_and(|a| act::allowed(culture, a))))
+    };
+    let pool: Vec<(&'static str, f64)> = WAYSIDE.iter().copied().filter(|w| builds(w.0)).collect();
+    let mut x = h * pool.iter().map(|w| w.1).sum::<f64>();
+    for (id, share) in &pool {
+        if x < *share {
+            return Some(*id);
+        }
+        x -= share;
+    }
+    pool.last().map(|w| w.0)
 }
 
 /// Every required entry of a template stands in the yard.
@@ -287,9 +311,15 @@ pub(super) fn junctions(seed: &str, f: &Fields, road_sites: &[RoadSite], roads: 
         let place = places[pi];
         let h = hash01(&format!("junction:{seed}:{:.0}:{:.0}", at.x, at.y));
         let chapel = edge >= 1500.0 && h < 0.2;
-        let name = if chapel { worship_template(&place.culture) } else if edge < 5000.0 && h < 0.5 { Some("roadside_shrine") } else { None };
+        let name = if chapel {
+            worship_template(&place.culture)
+        } else if edge < 5000.0 && h < 0.5 {
+            wayside_template(&place.culture, hash01(&format!("junction-kind:{seed}:{:.0}:{:.0}", at.x, at.y)))
+        } else {
+            None
+        };
         let Some(t) = name.and_then(template) else { continue };
-        let count = out.iter().filter(|o| (o.template == "roadside_shrine") != chapel).count();
+        let count = out.iter().filter(|o| is_wayside(&o.template) != chapel).count();
         if count >= if chapel { 5 } else { 16 } || out.iter().chain(nodes).any(|o| o.access.distance(at) < 1200.0) {
             continue;
         }
@@ -325,7 +355,7 @@ pub(super) fn junctions(seed: &str, f: &Fields, road_sites: &[RoadSite], roads: 
         for dist in if chapel { [26.0, 38.0, 52.0] } else { [9.0, 14.0, 20.0] } {
             let centre = Point { x: at.x + dir.x * dist, y: at.y + dir.y * dist };
             // The portal faces the junction.
-            let b = sites::yard(&id, culture, &names, centre, frame_angle(dir) + PI, &mut rng, f, &ok);
+            let b = sites::yard(&id, culture, &names, centre, frame_angle(dir), &mut rng, f, &ok);
             if complete(t, culture, &b) {
                 placed = Some((centre, b));
                 break;

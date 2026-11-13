@@ -3,7 +3,7 @@
 //! the houses engine has final geometric and period admission.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,17 +45,7 @@ pub(super) fn architecture_pack(culture:&str) -> Option<&'static str> {
 
 /// Metric house scale and exterior form, independent of the borrowed recipe.
 pub(super) fn house_parameters(culture: &str) -> (f64, &'static str) {
-    match culture {
-        "giant-hold" => (2.5, ""),
-        "elven" => (1.0, "tree"),
-        "myconid-colony" => (1.0, "mushroom"),
-        "native-iroquoian" => (1.0, "longhouse"),
-        "mongol-ordu" => (1.0, "yurt"),
-        "tibetan-monastery" => (1.0, "battered"),
-        "wizard-city" => (1.0, "mage"),
-        "merfolk-tidal" => (1.0, "stilt"),
-        _ => (1.0, ""),
-    }
+    super::forms::kit::house_parameters(culture)
 }
 // Every UI culture has a deliberate entry. Fantasy borrowing is a declaration,
 // The final column declares architectural layout independently of land family.
@@ -572,6 +562,16 @@ const MAPPINGS: &[(&str, &str, &str, bool, &str, &str)] = &[
         true,
         "town",
         "compound",
+    ),
+    // Modern styles borrow a pack for the lot envelopes only (the narrow
+    // party-wall row house); their buildings are raised by `massing.rs`.
+    (
+        "american-grid",
+        "frontage",
+        "EUR-MED",
+        true,
+        "town",
+        "frontage",
     ),
 ];
 /// Culture → native recipe to use as the default route when the land-family
