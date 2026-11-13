@@ -107,7 +107,8 @@ describe('farmsteads on a 10 km map', () => {
     const n = (s: string) => fs.filter((f) => f.size === s).length;
     expect(fs.length).toBeGreaterThanOrEqual(15);
     expect(n('cottage') + n('family')).toBeGreaterThanOrEqual(0.55 * fs.length);
-    expect(n('family')).toBeGreaterThanOrEqual(0.25 * fs.length);
+    // Farm types are drawn by weight among the culture's types since 2026-11-13 (not the single heaviest one): about a fifth are family farms.
+    expect(n('family')).toBeGreaterThanOrEqual(0.2 * fs.length);
     expect(n('manor')).toBeLessThanOrEqual(0.15 * fs.length);
     expect(new Set(fs.map((f) => f.size)).size).toBeGreaterThanOrEqual(3);
     // footprints of the rectangular buildings (house 8–14 × 6–9, barn 15–30 × 8–12, sheds smaller)
