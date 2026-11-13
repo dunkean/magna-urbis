@@ -2,6 +2,7 @@ import type { Polygon } from '../gen/core/geom';
 import type { LandArea, LandUseLayer, World } from '../gen/types';
 import type { ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { fillRings } from './forestOccupation';
+import { cultureEra } from '../gen/options';
 const details = new WeakMap<LandUseLayer, Map<string, LandDetail | undefined>>();
 
 /**
@@ -22,7 +23,7 @@ const SHARES: Record<string, readonly number[]> = {
   //            turned plough fallow stubble wheat barley rape   sun    rye    oats  clover beans
   european:      [0,    .10,   0,    .10,   .28,  .19,   .03,   0,     0,    .19,   .03,  .08],
   northern:      [.02,  .08,   .03,  .08,   .16,  .20,   .04,   0,     .08,  .20,   .04,  .07],
-  mediterranean: [.03,  .09,   .04,  .14,   .34,  .18,   0,     .04,   0,    .08,   .02,  .04],
+  mediterranean: [.03,  .09,   .04,  .14,   .35,  .18,   0,     .03,   0,    .08,   .02,  .04],
   levant:        [.04,  .10,   .05,  .18,   .28,  .20,   0,     .02,   0,    .07,   .02,  .04],
   monsoon:       [.02,  .06,   .04,  .08,   .14,  .14,   .04,   0,     0,    .24,   .04,  .20],
   southAsia:     [.03,  .08,   .04,  .12,   .20,  .14,   .04,   .02,   0,    .17,   .04,  .12],
@@ -33,7 +34,7 @@ const SHARES: Record<string, readonly number[]> = {
   savanna:       [.06,  .12,   .08,  .22,   .16,  .18,   0,     .02,   0,    .10,   0,    .06],
   ethiopian:     [.04,  .10,   .04,  .13,   .25,  .26,   0,     0,     0,    .10,   .02,  .06],
   nile:          [.03,  .09,   .03,  .12,   .32,  .20,   0,     0,     0,    .09,   .06,  .06],
-  steppe:        [.04,  .10,   .06,  .18,   .20,  .22,   0,     .06,   .02,  .10,   0,    .02],
+  steppe:        [.04,  .10,   .06,  .18,   .20,  .25,   0,     .03,   .02,  .10,   0,    .02],
   wetland:       [.02,  .06,   .04,  .08,   .14,  .14,   .02,   0,     0,    .26,   .04,  .20],
   pacific:       [.03,  .10,   .04,  .10,   .14,  .14,   0,     0,     0,    .24,   .02,  .19],
   american:      [0,    .10,   .02,  .10,   .28,  .16,   .02,   .04,   0,    .18,   .03,  .07],
@@ -67,7 +68,8 @@ type Crops = readonly (readonly [tone: number, share: number, spread: number])[]
 const cropTables = new Map<string, Crops>();
 /** Crop table of a culture and biome; temperate tables are used as written, others renormalised. */
 function cropsOf(culture: string | undefined, biome: string | undefined): Crops {
-  const tradition = TRADITION[culture ?? ''] ?? 'european', shift = BIOME_SHIFT[biome ?? ''], key = `${tradition}:${shift ? biome : ''}`;
+  // A culture of a modern era farms like the listed modern one, whatever its id (gen/options cultureEra).
+  const tradition = TRADITION[culture ?? ''] ?? (cultureEra(culture) === 'modern' ? 'american' : 'european'), shift = BIOME_SHIFT[biome ?? ''], key = `${tradition}:${shift ? biome : ''}`;
   let crops = cropTables.get(key);
   if (!crops) {
     const shares = SHARES[tradition].map((share, i) => share * (shift?.[i] ?? 1)), total = shift ? shares.reduce((a, b) => a + b, 0) : 1;
@@ -151,7 +153,8 @@ function longestEdge(ring: Polygon): number {
  * Rasterises the holdings of the rural land use for the satellite ground: the shader draws crops, furrows and
  * balks from it, so fields keep their real strips and directions without any vector overlay.
  * RGBA8, filterable: R crop position (the crops of the culture of the nearest place), G and B cos 2a and sin 2a of the
- * row direction, A exact distance to the nearest strip edge over LAND_EDGE_RANGE metres, 0 outside. A garden's R is a
+ * row direction, A exact signed distance to the nearest strip edge (.5 + d / 2 LAND_EDGE_RANGE: above .5 inside a holding,
+ * below outside, 0 beyond the range); unowned texels along a holding carry its R, G and B. A garden's R is a
  * plain crop position too, jittered like a strip: the shader hashes R, G and B into the plot's identity.
  * Deterministic: same layer and cultures, same bytes.
  */
@@ -217,18 +220,37 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
       paint([strip], stray ? pickCrop(crops, unit(salt + 1))[0] : Math.min(1, Math.max(0, base + (unit(salt + 1) * 2 - 1) * spread)), direction);
     });
   });
-  const rgba = new Uint8Array(n * n * 4), scale = 255 / LAND_EDGE_RANGE;
+  const rgba = new Uint8Array(n * n * 4), scale = 127.5 / LAND_EDGE_RANGE;
   const cos2 = angle.map(a => Math.round((Math.cos(2 * a) * .5 + .5) * 255)), sin2 = angle.map(a => Math.round((Math.sin(2 * a) * .5 + .5) * 255)), tone = crop.map(c => Math.round(c * 255));
   // Crops meet at the true edge: a texel across from another strip takes its share, so filtering draws a straight line.
   const across = (i: number, id: number): number => {
     for (const step of [1, -1, n, -n, n + 1, n - 1, 1 - n, -1 - n]) { const other = owner[i + step]; if (other && other !== id) return other; }
     return 0;
   };
+  // Unowned texels next to a holding take its crop and direction (two rings): filtering at the outer limit of the
+  // fields then mixes crops, never a crop with the zero byte, which drew a dark rim around every field.
+  let grown = owner;
+  for (let pass = 0; pass < 2; pass++) {
+    const step = grown.slice();
+    for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) {
+      const at = j * n + i; if (grown[at] || edge[at] >= 2 * cell) continue;
+      for (const k of [1, -1, n, -n]) { const id = grown[at + k]; if (id) { step[at] = id; break; } }
+    }
+    grown = step;
+  }
   let hash = 0x811c9dc5;
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
-    const id = owner[i]; if (!id) continue;
+    const id = owner[i];
+    // Alpha: signed distance to the nearest strip edge over ±LAND_EDGE_RANGE, positive inside a holding, negative
+    // outside, so the outer limit of the fields filters into a straight line; 0 beyond the range outside.
+    if (!id) {
+      const near = grown[i]; if (!near && edge[i] >= LAND_EDGE_RANGE) continue;
+      if (near) { rgba[o] = tone[near]; rgba[o + 1] = cos2[near]; rgba[o + 2] = sin2[near]; }
+      rgba[o + 3] = Math.max(0, Math.min(127, Math.round(127.5 - edge[i] * scale)));
+      continue;
+    }
     const other = (under.has(id) || edge[i] < cell) && i > n && i < n * n - n - 1 ? across(i, id) : 0;
-    rgba[o] = !other ? tone[id] : under.has(id) ? tone[other] : Math.round(tone[id] + (under.has(other) ? 0 : (tone[other] - tone[id]) * .5 * (1 - edge[i] / cell))); rgba[o + 1] = cos2[id]; rgba[o + 2] = sin2[id]; rgba[o + 3] = Math.max(1, Math.min(255, Math.round(edge[i] * scale)));
+    rgba[o] = !other ? tone[id] : under.has(id) ? tone[other] : Math.round(tone[id] + (under.has(other) ? 0 : (tone[other] - tone[id]) * .5 * (1 - edge[i] / cell))); rgba[o + 1] = cos2[id]; rgba[o + 2] = sin2[id]; rgba[o + 3] = Math.max(128, Math.min(255, Math.round(127.5 + edge[i] * scale)));
     hash = Math.imul(hash ^ id ^ i ^ rgba[o] << 24 ^ (rgba[o + 1] << 8) ^ (rgba[o + 2] << 16), 0x01000193);
   }
   const orchards = areas.filter(a => a.kind === 'orchard').map(a => {

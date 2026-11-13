@@ -100,6 +100,12 @@ fn form(x: &mut Site, q: &Brief, rng: &mut Rng) -> bool {
         chapel(x, q, rng)
     } else if q.is("rural.grove") {
         grove(x, q)
+    } else if q.is("rural.summit-temple") {
+        summit_temple(x, q)
+    } else if q.is("rural.cliff-monastery") {
+        cliff_monastery(x, rng)
+    } else if q.is("rural.rock-sanctuary") {
+        rock_sanctuary(x)
     } else {
         false
     }
@@ -1369,6 +1375,102 @@ fn grove(x: &mut Site, q: &Brief) -> bool {
     ok
 }
 
+/// Summit temple (a remote place, settlements/remote.rs): the sanctuary raised
+/// on its stepped platform at the back of a terrace held by low walls, the
+/// stair up to it on the axis; a chapel with its apse in the Christian West
+/// and East. A summit too small for the terrace keeps the sanctuary alone.
+fn summit_temple(x: &mut Site, q: &Brief) -> bool {
+    let (a, b, c, e) = edges(x);
+    let m = (a + b) * 0.5;
+    let short = (b - a).min(e - c);
+    if short < 9.0 {
+        return false;
+    }
+    let (ia, ib, ic, ie) = if short >= 15.0 {
+        walls(x, [a, b, c, e], 1.6, 3.2, "summit-terrace");
+        (a + 2.4, b - 2.4, c + 2.4, e - 2.4)
+    } else {
+        (a, b, c, e)
+    };
+    let depth = ie - ic;
+    if matches!(q.family, "western" | "orthodox") {
+        let nw = (0.45 * (ib - ia)).clamp(4.6, 6.0);
+        let r = 0.42 * nw;
+        let nl = (depth - 1.04 * r - 0.2).min(9.0);
+        if nl < 5.0 {
+            return false;
+        }
+        let t0 = ie - 0.2 - 1.04 * r - nl;
+        let ok = x.bar(m, nw, t0, t0 + nl, "chapel-nave");
+        x.apse(m, t0 + nl, r, "chapel-apse");
+        return ok;
+    }
+    let w = (0.55 * (ib - ia).min(depth)).clamp(5.0, 9.0);
+    let back = ie - 0.2;
+    let ok = square(x, m, back - w * 0.5, w, "summit-sanctuary");
+    if back - w - 2.6 >= ic {
+        x.bar(m, 2.4, back - w - 2.6, back - w, "summit-stair");
+    }
+    ok
+}
+
+/// Cliff monastery (a remote place): strung along its ledge and stepped down
+/// the face. The hall against the rock in the middle, a range either side of
+/// it, a lower row of cells on the brink before one range, the gate tower
+/// before the other, the steps between the two levels. The site's front is
+/// the brink, its back the rock.
+fn cliff_monastery(x: &mut Site, rng: &mut Rng) -> bool {
+    let (a, b, c, e) = edges(x);
+    let (m, span, room) = ((a + b) * 0.5, b - a, e - c);
+    if span < 16.0 || room < 8.0 {
+        return false;
+    }
+    let left = rng.chance(0.5);
+    let wc = (0.3 * span).clamp(7.0, 11.0);
+    let dh = (0.62 * room).clamp(5.0, 8.0);
+    let ok = x.bar(m, wc, e - dh, e, "cliff-hall");
+    let dr = (0.5 * room).clamp(4.0, 6.0);
+    let (w0, w1) = (m - wc * 0.5 - 0.6, m + wc * 0.5 + 0.6);
+    x.rect(a, w0, e - dr, e, "cliff-range");
+    x.rect(w1, b, e - dr, e, "cliff-range");
+    // The lower level, on the brink.
+    let low = e - dr - 1.4 - c;
+    if low >= 3.0 {
+        let (c0, c1) = if left { (a, w0) } else { (w1, b) };
+        x.rect(c0, c1, c, c + low.min(4.5), "cliff-cells");
+        if low >= 4.0 {
+            let (g0, g1) = end(a, b, 4.4, !left);
+            x.rect(g0, g1, c, c + 4.0, "cliff-gate");
+        }
+    }
+    if e - dh - c >= 2.4 {
+        x.bar(m, 2.4, c, e - dh, "cliff-steps");
+    }
+    ok
+}
+
+/// Rock-cut sanctuary (a remote place): the carved front against the rock at
+/// the back of the site, its porch on the axis and, where the front is wide,
+/// a colossus either side of the door.
+fn rock_sanctuary(x: &mut Site) -> bool {
+    let (a, b, c, e) = edges(x);
+    let (m, span, room) = ((a + b) * 0.5, b - a, e - c);
+    if span < 8.0 || room < 6.5 {
+        return false;
+    }
+    let fw = (0.75 * span).clamp(7.0, 16.0);
+    let fd = (0.3 * room).clamp(2.6, 3.6);
+    let front = e - fd;
+    let ok = x.bar(m, fw, front, e, "rock-facade");
+    x.bar(m, 3.6, front - 2.8, front, "rock-porch");
+    if fw >= 11.0 {
+        for side in [-1.0, 1.0] {
+            square(x, m + side * 3.8, front - 1.2, 2.4, "rock-colossus");
+        }
+    }
+    ok
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::super::super::{Point, Shape, geometry};
@@ -1417,7 +1519,8 @@ mod tests {
             "rural.sheepfold", "rural.icehouse", "rural.oast", "rural.tithe-barn", "rural.granary.raised", "rural.hunting-lodge", "rural.beacon",
             "rural.watchtower", "rural.signal", "rural.border-post", "rural.wayside", "rural.wayside.calvary", "rural.megalith.row", "rural.megalith.circle",
             "rural.megalith.dolmen", "rural.barrow", "rural.barrow.long", "rural.cairn", "rural.tomb", "rural.memorial", "rural.holy-well",
-            "rural.hermitage", "rural.chapel.pilgrim", "rural.chapel.cemetery", "rural.grove",
+            "rural.hermitage", "rural.chapel.pilgrim", "rural.chapel.cemetery", "rural.grove", "rural.summit-temple", "rural.cliff-monastery",
+            "rural.rock-sanctuary",
         ];
         for role in roles {
             for (family, culture) in [("western", "european-organic"), ("persian", "persian"), ("japanese", "japanese-jokamachi")] {

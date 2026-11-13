@@ -56,7 +56,7 @@ One rule per label; a label without a rule keeps the built-in raising of `massin
 | `round` | Replace the footprint by a regular polygon of that many sides |
 | `wall`, `cover`, `openings`, `minor`, `overhang`, `floors`, `composable` | Materials, blind walls or door only, small decorative mass, eaves, shown storeys, body that may break into parts |
 
-`overrides` replace a rule for one culture id or one monument family (`western`, `orthodox`, `maghreb`, `persian`, `chinese`, `japanese`, `indic`, `antique`, `american`, `african`): this is how a culture raises a shared part in its own way.
+`overrides` replace a rule for one culture id or one monument family (`western`, `orthodox`, `maghreb`, `persian`, `chinese`, `japanese`, `indic`, `antique`, `american`, `african`): this is how a culture raises a shared part in its own way. An override key may also be a **group** that several cultures share: a culture lists its groups in its `roleGroups` trait, read after its own `overrides.<culture id>` (`roles_modern.json`: `modern-flat`, `concrete-flat`, `mansard`, `green-roof`, `tin-roof`, `informal`, `suburban` for homes; `art-deco`, `highrise`, `gulf`, `soviet`, `cyberpunk`, `brutalist`, `danji`, `atompunk`, `space-colony`, `biopunk` for towers and special parts).
 
 Files: `roles_core.json` (home parts and generic parts), `roles_monuments_a.json` (classical, medieval, Islamic, civic), `roles_monuments_b.json` (utility, Asian, American, African, fantasy), `roles_rural.json` (farmsteads, countryside activity sites and monuments), `roles_modern.json` (modern styles).
 
@@ -68,7 +68,7 @@ A **kit** (`styles.json`, `kits.<id>.house`) holds the plan weights, how much ro
 
 ## Singular and utility buildings (`parcels/monuments/`)
 
-A form lays labelled parts on its site with the `Site` mini-language of `parcels/landmark.rs`: `rect`, `bar`, `disk`, `apse`, `small`, `poly`, `ellipse`, `wedges` (ring of seating), `ring`, `court`. `monuments::build` asks each family in turn: `modern` and `rural` first (they answer only their own roles), then the cultural ones (`classical`, `islamic`, `asian`, `american`, `african`, `fantasy`, `medieval`), then the shared `civic` and `utility` forms. A family that declines leaves the site and the random stream untouched, and the older forms of `landmark.rs` then apply.
+A form lays labelled parts on its site with the `Site` mini-language of `parcels/landmark.rs`: `rect`, `bar`, `disk`, `apse`, `small`, `poly`, `ellipse`, `wedges` (ring of seating), `ring`, `court`. `monuments::build` asks each family in turn: `modern`, `metropolis` and `rural` first (they answer only their own roles; `modern` and `metropolis` only for the cultures whose traits state an `era`), then the cultural ones (`classical`, `islamic`, `asian`, `american`, `african`, `fantasy`, `medieval`), then the shared `civic` and `utility` forms. A family that declines leaves the site and the random stream untouched, and the older forms of `landmark.rs` then apply.
 
 Which roles exist, for which cultures and how many is the programme's business: `services.json` (families, `cultureServices`, `harbour`, counts) and `roles.rs`. The layout option `singularDensity` scales how many a place gets.
 
@@ -77,6 +77,56 @@ Which roles exist, for which cultures and how many is the programme's business: 
 Activity sites and countryside monuments use the same forms as the towns. An archetype of `activities.json` may carry `form: {role, site, has, absorbs}`: `role` names the form to build (a `services.json` role such as `worship.parish`, or a countryside one, `rural.windmill`, `rural.barrow`), `site` the ground it needs in metres (front, depth), `has` a part label the culture's form must hold (else the building keeps its single ring), `absorbs` the archetypes of the same yard that the form already contains (a belfry, a cloister). `activities::formed` then replaces the building by the parts of that form, one building per part, on ground the site accepts; a form refused by the ground or not built by the culture leaves the yard as it was.
 
 `rural.rs` holds the `rural.*` forms: mills by type (water, tide, post, tower, smock, vertical-axis), sawmills, forges and smelters, kilns (lime, brick, glass, charcoal, tar), mine heads, quarries, salt works, fishing stations, press houses, tithe barns, granaries, dovecotes, sheepfolds, watch and beacon towers, toll houses, hermitages, wayside shrines, crosses and wells, megaliths, barrows and tombs. A sub-role fixes a variant (`rural.windmill.post`); the bare role lets the culture and the site choose. Their parts are raised by `roles_rural.json`.
+
+## Remote places (`activities.json` `remote`, `settlements/remote.rs`)
+
+Rare single places whose situation is the point: a temple on a summit, a monastery on a cliff ledge, a sanctuary cut at the foot of a rock face, a tower on a crag, a hermitage on a sea stack, a tomb in a gorge, lost ruins deep in a forest or on a marsh island. They are activity sites like the others (same templates, yards, forms and ground test), placed by the terrain instead of a resource anchor. A template of `activities.json` is a remote place when it carries `remote: {situations, access, ruined, weight}`; the `remote` block of the file holds the two vocabularies and the rarity.
+
+**Situations** are cheap tests on the planning grid: the heights round the point in eight directions on a near ring (1.5 cells, 60 m at least) and a far ring (3 cells, 180 m at least), the water mask and two resource potentials. Thresholds are data (`remote.situations.<id>`).
+
+| Situation | The point stands there when |
+|---|---|
+| `summit` | everything on both rings is lower, by `drop` metres on average on the far ring, and no water lies within it |
+| `crag` | a summit whose near ring falls at `grade` or more in `sides` directions of eight |
+| `cliff-ledge` | in one direction the ground falls at `grade` on the near ring and by `drop` metres on the far ring (a ledge or a cliff top; more dramatic with rock rising behind) |
+| `cliff-foot` | in one direction the ground rises at `grade` and by `rise` metres, while the opposite side stays under `ease` |
+| `gorge` | the ground rises by `rise` metres on two opposite sides and runs on between them (more dramatic with a river) |
+| `islet` | open water (sea or lake) lies within `reach` metres in `sides` directions of eight; `stack` metres above the water make a full sea stack |
+| `marsh-island` | level ground (`ease`) at most `above_water` metres above its water, in peat (`peat` potential) or with water in `sides` directions |
+| `deep-forest` | the `wood` potential holds here and 500 m all round, on ground under `ease`, at least `far` metres from any settlement |
+
+**Accesses** (`remote.accesses.<id>`): each template lists the kinds it may have with a weight; they are tried in a weighted random order and the first one the ground allows is kept.
+
+| Access | `line` | What it is |
+|---|---|---|
+| `none` | `none` | No path at all: `accessClass` is `none`, the site is not a road endpoint and no route is searched |
+| `track` | `path` | The ordinary trail of the site, to its door |
+| `cliff-stair` | `fall` | Steps cut straight down the fall line, up to `grade` 1.2, at most `reach` metres |
+| `rock-steps` | `fall` | The same on gentler rock (`grade` 0.7): the steps traverse where the fall line is too steep |
+| `tunnel` | `bore` | A gallery through the rock from the place to the first easy ground below |
+| `causeway` | `span` | A line across the water to the nearest other shore, within `reach` |
+| `rope-bridge` | `span` | The same over a shorter gap |
+
+A `fall` line starts at the front of the yard and takes, step by step, the steepest way down a stair may take (the fall line, else a traverse beside it), until the slope eases under `path_grade` or it meets water; it may exceed any road grade but never its own `grade`. The line is one open installation of the site (`cliff_stair`, `rock_steps`, `rock_tunnel`, `tidal_causeway`, `rope_bridge`; ground kinds `engineered_path`, `underground_work`, `crossing`), and `access` is its far end: the ordinary trail of the site is routed to that point only. The site also carries `situation` and `approach` (the access kind), and `kind: "remote"`.
+
+**What stands there** is the template's business, in the forms of the culture:
+
+| Template | Situations | Building | Accesses |
+|---|---|---|---|
+| `summit_sanctuary` | summit, crag | `rural.summit-temple`: the sanctuary on its stepped platform inside a terrace wall, the stair on the axis; a chapel with its apse in the Christian West and East | rock steps, cliff stair, none, track |
+| `cliff_monastery_site` | cliff-ledge | `rural.cliff-monastery`: hall against the rock, a range either side, a lower row of cells and the gate tower on the brink, steps between the levels | cliff stair, none, tunnel, rope bridge |
+| `rock_sanctuary` | cliff-foot, gorge | `rural.rock-sanctuary`: the carved front against the rock, its porch and two colossi | none, track, rock steps |
+| `crag_tower` | crag, summit, cliff-ledge | the watch tower (`rural.watchtower`) | cliff stair, rock steps, none |
+| `stack_hermitage` | islet, cliff-ledge, crag, marsh-island | the hermitage (`rural.hermitage`) | none, causeway, rope bridge, cliff stair |
+| `lost_ruins` | deep-forest, marsh-island, gorge, islet | the culture's rural temple or chapel, always in ruins | none, track, causeway |
+| `gorge_tomb` | gorge, cliff-foot, islet | the tomb of the culture (`rural.tomb`) | none, rock steps, track |
+| `forgotten_stones` | deep-forest, marsh-island, summit | megaliths, a cairn for the cultures without them | none, track |
+
+`ruined` is the share of a template found in ruins: `activities::ruined` turns every building into the broken walls of its own footprint (`parcels/ruins.rs`). Cultures weigh the templates through the `prefer` weight of their required building (`cultures.families` and `overrides`: cliff monasteries for the Tibetan, Himalayan, Byzantine, Ethiopian and Caucasian cultures, rock-cut sanctuaries for the ancient, Ethiopian and dwarven ones, summit temples in East Asia, India and the Americas); code never tests a culture's name.
+
+**Rarity.** A region gets `rate` × √(land / 100 km²) × frequency places (1.2 on 100 km², 4.8 on 1 600 km² at frequency 1; the fraction is drawn from the seed, `most` caps it). Candidates come from a jittered grid of at most 48 × 48 probes, each refined on the top of its rise and eight points round it, and from the shore cells of the islands read on a stride (256 × 256 tests at most, an islet being smaller than a probe cell); the score is the situation's weight times its drama. Places stand `clear` metres from every settlement, `spacing` apart and `site_gap` from the other countryside sites, so a region without dramatic ground gets none. The placement option `remotePlaces` (`settlements::Config.remote_places`; "Remote places frequency" beside the dispersed farms density in the regional controls) is the frequency: 0 gives none, 1 is the default, 10 the most.
+
+**Ground.** A yard is laid on the candidate, then on two rings of eight spots round it, with every corner dry. Each body passes `ground_fits`; a form takes its whole `site`, then a tighter one, else the single body stays. A candidate that holds no required building is dropped.
 
 ## Adding things
 
@@ -87,13 +137,38 @@ Activity sites and countryside monuments use the same forms as the towns. An arc
 | A new part of a building | A label in a form and its rule in a `roles_*.json` |
 | A monument or utility building | A form in the family file of `parcels/monuments/`, the role in `services.json` |
 | A countryside site or monument | A `rural.*` form in `parcels/monuments/rural.rs`, its part rules in `roles_rural.json`, `form: {role, site}` on the archetype in `activities.json` |
-| A modern style | A culture in `styles_modern.json` (kit, traits), its tissue in `catalogue.json`, its services family in `services.json`, its forms in `parcels/monuments/modern.rs` and their rules in `roles_modern.json` |
+| A remote place | A template in `activities.json` `sites` with `remote: {situations, access, ruined, weight}` and no `context`, its id in `ACTIVITY_TEMPLATES` of `rust/bridge/urbanConfig.ts`; a `prefer` weight on its required building for the cultures given to it |
+| A situation | Its thresholds under `remote.situations` and its predicate in `situations` of `settlements/remote.rs` |
+| An access | An entry under `remote.accesses` with one of the lines `none`, `path`, `fall`, `span`, `bore` and its installation archetype; a new line kind is a branch of `approach` in `settlements/remote.rs` |
+| A modern style | A culture in `styles_modern.json` (kit, traits with `era` and `roleGroups`), its tissue and five presets in `catalogue.json`, its row in `culture.rs` `MAPPINGS`, its services family (`cultures`) and own buildings (`cultureServices`) in `services.json`, its groups in `enclosures.json` and `activities.json`; new forms in `parcels/monuments/modern.rs` or `metropolis.rs` and their rules in `roles_modern.json`; web: its English label in `gen/options.ts`, French label in `v2/interfaceMessages.ts`, toponyms in `gen/names/profiles.ts`, `v2/cityCodeDefaults.json`, and its climate zone in the v7 sheet `run.mjs` |
 | A home plan | A branch in `plan.rs` `compose` and its weight in the kits |
 | A roof kind | Its planes in `roof.rs` |
 
 ## Culture traits
 
-What sets a culture's buildings apart and is not in its tissue lives in `cultures.<id>.traits` of `styles.json` (`styles_modern.json` for the modern styles): the roof tradition of a culture whose tissue declares no `arch` (`tradition`), Mediterranean building (`mediterranean`), the roof-top detail family of flat roofs (`flavor`), the inhabitants' size (`bodyScale`), the scale of the whole house (`metricScale`), the exterior form of homes (`form`: tree, mushroom, longhouse, yurt, battered, mage, stilt) and the share of lots that take it (`formShare`), a single massive storey (`massiveStorey`), pile houses (`piles`), facade openness (`openness`, `lightWallOpenness`). `massing.rs` reads these traits and never a culture's name.
+What sets a culture's buildings apart and is not in its tissue lives in `cultures.<id>.traits` of `styles.json` (`styles_modern.json` for the modern styles): the roof tradition of a culture whose tissue declares no `arch` (`tradition`), Mediterranean building (`mediterranean`), the roof-top detail family of flat roofs (`flavor`), the inhabitants' size (`bodyScale`), the scale of the whole house (`metricScale`), the exterior form of homes (`form`: tree, mushroom, longhouse, yurt, battered, mage, stilt) and the share of lots that take it (`formShare`), a single massive storey (`massiveStorey`), pile houses (`piles`), facade openness (`openness`, `lightWallOpenness`), the era of a modern style (`era`: `modern`, `futuristic`, `alien`; empty for the historical and fantasy cultures) and the override groups it shares (`roleGroups`). `massing.rs` reads these traits and never a culture's name. The web reads `era` through `cultureEra(culture)` of `gen/options.ts`, which imports `styles_modern.json`.
+
+## Modern, futuristic and alien styles
+
+The 36 styles of `docs/Modern_cities_review.md` are cultures of `styles_modern.json`; each has its tissue (five presets: core, ring, faubourg, village, hamlet) in `catalogue.json`. Styles of one building tradition share a kit, a services family and override groups; their differences are tissue parameters and traits.
+
+| Era | Styles |
+|---|---|
+| `modern` | `american-grid`, `industrial-victorian`, `haussmannian`, `belle-epoque`, `mediterranean-modern`, `garden-city`, `art-deco-metropolis`, `modernist-functionalist`, `soviet-socialist`, `american-suburbia`, `european-contemporary`, `global-high-rise`, `gulf-contemporary`, `informal-urban-expansion`, `eco-city`, `japanese-contemporary`, `chinese-megacity`, `korean-high-rise`, `southeast-asian-tropical`, `south-asian-metropolis`, `latin-american-grid`, `latin-american-hillside`, `north-african-contemporary`, `sub-saharan-african-metropolis`, `middle-eastern-contemporary`, `australian-suburban`, `post-socialist-european` |
+| `futuristic` | `cyberpunk`, `solarpunk`, `dieselpunk`, `dystopian-brutalism`, `atompunk-retrofuturist`, `post-apocalyptic-ruins`, `corporate-arcology`, `futuristic-space-colony` |
+| `alien` | `biopunk-organic-city` |
+
+| Kit | Homes |
+|---|---|
+| `brick-rowhouse` | Brick row houses and walk-ups (grid, Victorian, Art Deco, dieselpunk) |
+| `masonry-apartment` | Stone and plaster apartment buildings (Haussmannian, Belle Époque, Mediterranean, Latin grid, North African, Middle Eastern, post-socialist) |
+| `suburban-house` | Detached and semi-detached houses with porches (garden city, suburbia, Australian, atompunk) |
+| `concrete-slab` | Slabs and towers (modernist, Soviet, high-rise, Gulf, Chinese, Korean, cyberpunk, brutalist, arcology) |
+| `eco-block`, `compact-mixed`, `informal-block`, `pod-habitat`, `organic-pod` | Timber blocks, small mixed plots, self-built houses, habitat modules, grown pods |
+
+Services families: `industrial` (nineteenth and early twentieth century: factories, stations, department stores), `modernist` (slabs, towers, stadium, power plant, television tower, monument), `contemporary` (malls, offices, towers, stadium; worship per culture), `informal` (open markets, workshops, schools), `futuristic` (towers, malls, power plants; arcologies, megastructures, domes and vertical farms per culture), `alien` (hive, organic spires). A culture's own buildings, and the family buildings it does not have (an entry with `maxPop: 1`), are in `cultureServices`. `post-apocalyptic-ruins` is the informal family with a `ruinShare` at every size.
+
+The forms of `metropolis.rs`: `housing.slab` (slabs across a lawn), `housing.tower` (point towers, some on a podium), `commerce.mall`, `civic.stadium`, `civic.power-plant` (and `.atomic`: reactor dome), `civic.tv-tower` (broadcast tower, or airship mooring mast in the industrial family), `civic.arcology`, `civic.megastructure`, `civic.habitat-dome` (and `.ward`), `civic.vertical-farm`, `civic.monument`, `civic.hive`, `civic.organic-spire`. The skyscraper of `modern.rs` takes each tradition's crown through the groups: Art Deco spire, glass shaft, Gulf needle, Stalinist tower, atompunk dome.
 
 ## Hybrid cities: the style sheet
 
@@ -127,4 +202,4 @@ An old core of one culture inside extensions of another, the homes of one people
 
 ## Tests
 
-`cargo test -p magna-urbis-core --lib urban::forms::` (roofs, roles, kits, plans, style sheet), `urban::massing::`, `urban::parcels::`, `urban::activities::`. Web: `tests/v2/cityParity.test.ts`.
+`cargo test -p magna-urbis-core --lib urban::forms::` (roofs, roles, kits, plans, style sheet), `urban::massing::`, `urban::parcels::`, `urban::activities::`, `settlements::remote::` (remote places). Web: `tests/v2/cityParity.test.ts`.

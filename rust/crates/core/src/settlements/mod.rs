@@ -9,6 +9,7 @@ mod grid;
 pub mod installations;
 pub mod nodes;
 mod placement;
+mod remote;
 pub mod roads;
 
 use serde::{Deserialize, Serialize};
@@ -101,6 +102,9 @@ pub struct Config {
     pub site_weights: BTreeMap<String, f64>,
     /// Multiplies the dispersed farms of the countryside (1 ≈ 0.45 farms per km² of land, 0 = none).
     pub farm_density: f64,
+    /// Frequency of the remote places (summit temples, cliff monasteries, lost ruins…): multiplies
+    /// their number (1 ≈ one on 100 km² of land with dramatic ground, 0 = none).
+    pub remote_places: f64,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -135,6 +139,7 @@ impl Default for Config {
             variation_weight: 1.0,
             site_weights: BTreeMap::new(),
             farm_density: 1.0,
+            remote_places: 1.0,
         }
     }
 }
@@ -214,7 +219,8 @@ impl Output {
             radius: s.radius,
             ..Default::default()
         });
-        let sites = self.activities.iter().map(|a| roads::RoadSite {
+        // A remote place no path leads to (`none`) is not an endpoint: nothing is routed to it.
+        let sites = self.activities.iter().filter(|a| a.access_class != "none").map(|a| roads::RoadSite {
             key: a.id.clone(),
             culture: a.culture.clone(),
             center: a.access,
@@ -439,6 +445,13 @@ impl Terrain {
         // Rural places of worship, then the dispersed farms round every site already standing.
         let worship = countryside::worship(&out.settlements, &self.fields, &out.activities);
         out.activities.extend(worship);
+        // Remote places on the dramatic ground of the region, before the farms fill the rest.
+        if cfg.remote_places > 0.0 {
+            let potentials = &self.resources().potentials;
+            let potential = |id: &str, p: Point| if potentials.nx == 0 { 0.0 } else { potentials.sample(id, p.x, p.y) as f64 };
+            let remote = remote::places(seed, &out.settlements, &self.fields, &potential, &out.activities, cfg.remote_places);
+            out.activities.extend(remote);
+        }
         let farms = countryside::farms(&out.settlements, self.resources(), &self.fields, &out.activities, cfg.farm_density);
         out.activities.extend(farms);
         Ok(out)
@@ -521,6 +534,7 @@ fn validate(cfg: &Config, width: f64) -> Result<(), String> {
         cfg.defense_weight,
         cfg.variation_weight,
         cfg.farm_density,
+        cfg.remote_places,
     ];
     if weights
         .iter()
@@ -530,6 +544,7 @@ fn validate(cfg: &Config, width: f64) -> Result<(), String> {
         || cfg.small_top > 1.0
         || cfg.density > 10.0
         || cfg.farm_density > 10.0
+        || cfg.remote_places > 10.0
         || cfg.population_jitter > 1.0
         || cfg.edge_margin > 0.3
         || !cfg.elevation.is_finite()

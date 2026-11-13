@@ -11,7 +11,7 @@ declare module '*magna_urbis_wasm.js' {
     readonly breach_count: number; readonly breach_cut_volume_m3: number; readonly avoided_fill_volume_m3: number;
     readonly filled: Float32Array; readonly lake_depth: Float32Array; readonly lake_labels: Uint32Array;
     readonly drainage_height: Float32Array; readonly surface_height: Float32Array; readonly adjusted_height: Float32Array;
-    readonly river_points: Float32Array; readonly river_offsets: Uint32Array; readonly river_meta: Uint32Array;
+    readonly river_points: Float32Array; readonly river_offsets: Uint32Array; readonly river_meta: Uint32Array; readonly river_flare?: Float32Array;
     readonly node_points: Float32Array; readonly node_meta: Uint32Array;
     readonly lake_points: Float32Array; readonly lake_offsets: Uint32Array;
     readonly lake_ring_meta: Uint32Array; readonly lake_meta: Float32Array;

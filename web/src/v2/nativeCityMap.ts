@@ -225,7 +225,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       try {
         ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
         // Activity / node installations: flat ground under every building.
-        if (buildingsVisible) drawInstallations(ctx, sites, viewport, mpp);
+        if (buildingsVisible) drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
         if (!reason) {
           if (!prepareGl()) reason = gl?.unavailable !== false ? 'gl-unavailable' : 'gl-not-ready';
           else {

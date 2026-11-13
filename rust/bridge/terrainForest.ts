@@ -486,6 +486,39 @@ vec3 renderGuideColor=vec3(0.),renderGuideOpen=vec3(0.),renderGuideClosed=vec3(0
 float renderGuideShore=1e9,renderGuideOpenness=0.;
 `;
 
+/** 2D gradient noise of the forest lattices. Shared with the 3D tree crowns (terrain3dTrees.ts). */
+export const FOREST_PERLIN_GLSL = `
+// 2D gradient noise from four corner gradients: (value, d/dx, d/dy) in lattice units.
+vec3 forestPerlin(vec2 f,vec2 g00,vec2 g10,vec2 g01,vec2 g11){
+  float n00=dot(g00,f),n10=dot(g10,f-vec2(1.,0.)),n01=dot(g01,f-vec2(0.,1.)),n11=dot(g11,f-1.),k=n00-n10-n01+n11;
+  vec2 u=f*f*f*(f*(f*6.-15.)+10.),du=30.*f*f*(f*(f-2.)+1.);
+  vec2 g=g00+u.x*(g10-g00)+u.y*(g01-g00)+u.x*u.y*(g00-g10-g01+g11)+du*vec2(n10-n00+u.y*k,n01-n00+u.x*k);
+  return vec3(n00+u.x*(n10-n00)+u.y*(n01-n00)+u.x*u.y*k,g);
+}
+`;
+/** Leaf clumps of a crown, shared by the painted crowns (applyForest) and the 3D tree meshes (terrain3dTrees.ts)
+ * so a tree carries the same foliage in both views. Needs groundSmooth, forestGradient and FOREST_PERLIN_GLSL. */
+export const FOREST_CLUMP_GLSL = `
+// Leaf clumps of a resolved crown: x a zero-mean albedo offset (light clumps bounded by darker gaps), yz the slope
+// of the clump relief. Two adjacent octaves of the fixed world lattices 2^k m bracket the crown-relative scale
+// (.7 radius) and cross-fade, so the pattern never swims with the stand's radius; each fades before its cells fall
+// under about three pixels. The crown's tint offsets the lookup: neighbouring crowns never share a motif.
+vec3 forestClump(vec2 world,float radius,float fp,float tint){
+  float e=log2(.7*max(radius,.5)),e0=floor(e),w=e-e0,n=0.,norm=0.;vec2 grad=vec2(0.);
+  vec2 offset=vec2(fract(tint*5.83),fract(tint*11.37))*97.;
+  for(int i=0;i<2;i++){
+    float scale=exp2(e0+float(i)),a=(i==0?1.-w:w)*(1.-groundSmooth(scale*.16,scale*.4,fp));
+    vec2 g=world/scale+offset;ivec2 c=ivec2(floor(g));
+    vec3 o=forestPerlin(g-vec2(c),forestGradient(c),forestGradient(c+ivec2(1,0)),forestGradient(c+ivec2(0,1)),forestGradient(c+ivec2(1,1)));
+    n+=a*o.x;grad+=a*o.yz/scale;norm+=a*a;
+  }
+  norm=sqrt(norm);float amp=groundSmooth(0.,.6,norm)*groundSmooth(2.5,5.,radius/fp);
+  n/=max(norm,1e-3);grad/=max(norm,1e-3);
+  // Each sign domain of the noise is one clump, a bump of height |n| whose creases are the gaps (.48: mean of the ramp).
+  return amp*vec3(groundSmooth(0.,.26,abs(n))-.48,.7*exp2(e)*n*inversesqrt(n*n+.0009)*grad);
+}
+`;
+
 /** Needs GROUND_FIELD_GLSL (GroundMaterial, groundHash, groundSmooth), uMaterialSeed/uMaterialClimate
  * and an earthMaterial call for the same fragment before applyForest (Render guide). */
 export const FOREST_GLSL = `
@@ -524,13 +557,7 @@ float forestTau(float d){float u=clamp(d,0.,.985)*32.;int k=min(int(u),31);retur
 float forestRho(float tau){return .5+.4*max(0.,(tau-.55)/.45);}
 float forestU8(uint h,uint shift){return (float((h>>shift)&255u)+.5)/256.;}
 vec2 forestGradient(ivec2 c){uint h=groundHash(ivec3(c,991),uMaterialSeed^0x6a09e667u);return vec2(float(h&255u),float((h>>8u)&255u))*(1./128.)+(.5/128.-1.);}
-// 2D gradient noise from four corner gradients: (value, d/dx, d/dy) in lattice units.
-vec3 forestPerlin(vec2 f,vec2 g00,vec2 g10,vec2 g01,vec2 g11){
-  float n00=dot(g00,f),n10=dot(g10,f-vec2(1.,0.)),n01=dot(g01,f-vec2(0.,1.)),n11=dot(g11,f-1.),k=n00-n10-n01+n11;
-  vec2 u=f*f*f*(f*(f*6.-15.)+10.),du=30.*f*f*(f*(f-2.)+1.);
-  vec2 g=g00+u.x*(g10-g00)+u.y*(g01-g00)+u.x*u.y*(g00-g10-g01+g11)+du*vec2(n10-n00+u.y*k,n01-n00+u.x*k);
-  return vec3(n00+u.x*(n10-n00)+u.y*(n01-n00)+u.x*u.y*k,g);
-}
+${FOREST_PERLIN_GLSL}
 // Glade octave of the stand mosaic: one 56 m octave alone cuts a grid of same-size holes (a leopard coat).
 // Sheared and stretched lattice, decorrelated from the patch octave: glades of every size, elongated.
 const float FOREST_GLADE=210.;
@@ -706,15 +733,16 @@ ForestCrown orchardCrown(ivec2 cell,ForestStand st){
 // Independent harmonics keep conifer branch tips uneven, without a regular six-sided rim.
 float forestOutline(ForestCrown k,vec2 n,float aa){
   uint h=k.id*0x9e3779b9u;vec2 a=vec2(forestU8(h,0u),forestU8(h,8u))*6.2831853;float amp=k.needle?.07:.13;
-  // Crowns are round: the two-fold harmonic (ovalness) stays small, the three-fold one gives each crown its lobes.
-  const float OVAL=.35;
-  vec4 shape=vec4(OVAL*cos(a.x),OVAL*sin(a.x),.6*cos(a.y),.6*sin(a.y))*amp;
+  // Crowns are round: the two-fold harmonic (ovalness) stays small, and on a broadleaf the three-fold one too (at
+  // .6 the crown read as a rounded triangle); a conifer keeps it for its bough tips.
+  const float OVAL=.35;float lobes=k.needle?.6:.28;
+  vec4 shape=vec4(OVAL*cos(a.x),OVAL*sin(a.x),lobes*cos(a.y),lobes*sin(a.y))*amp;
   vec2 c2=vec2(n.x*n.x-n.y*n.y,2.*n.x*n.y),c3=vec2(n.x*(4.*n.x*n.x-3.),n.y*(3.-4.*n.y*n.y));
   float star=groundSmooth(1.5,5.,k.r/max(aa,1e-4));
   vec2 c5=vec2(c2.x*c3.x-c2.y*c3.y,c2.x*c3.y+c2.y*c3.x);
   vec2 c7=vec2(c2.x*c5.x-c2.y*c5.y,c2.x*c5.y+c2.y*c5.x);
-  vec2 phase=vec2(shape.x*shape.z-shape.y*shape.w,shape.x*shape.w+shape.y*shape.z)/(OVAL*.6*amp*amp);
-  float tips=k.needle?star*((.02+.012*forestU8(h,16u))*dot(c5,phase)+.015*dot(c7,shape.zw)/(.6*amp)+.015*dot(n,shape.xy)/(OVAL*amp)):0.;
+  vec2 phase=vec2(shape.x*shape.z-shape.y*shape.w,shape.x*shape.w+shape.y*shape.z)/(OVAL*lobes*amp*amp);
+  float tips=k.needle?star*((.02+.012*forestU8(h,16u))*dot(c5,phase)+.015*dot(c7,shape.zw)/(lobes*amp)+.015*dot(n,shape.xy)/(OVAL*amp)):0.;
   // From above a conifer is a dense rounded crown whose rim is a chain of soft bough clusters, never spikes.
   float boughs=0.;
   if(k.needle&&star>0.){
@@ -831,17 +859,50 @@ vec3 forestSnowed(vec3 crown,float load){return mix(crown,vec3(.84,.88,.90),load
 // mean, mid stand, resolved crowns of forestCrownSnow). The calendar's crown snow runs from crowns that shed their
 // snow (0: dark conifers, a light frost on limbs) to a fresh fall (1: laden boughs, rimed limbs).
 float forestSnowLoad(float needle){float c=v2SeasonCrownSnow();return mix(mix(.2,.8,c),mix(.24,.62,c),needle);}
-// Share of a crown that shows from above: its foliage and, under snow, the rimed limbs of a leafless crown (the mean
-// cover of forestBareCrown), so a bare stand stays a pale haze over the white floor at every zoom.
-float forestCrownShow(float leaf){return leaf+.36*(1.-leaf)*v2GroundSnow;}
-// Coverage of a leafless crown: forking limbs from the trunk over a haze of twigs, at their mean once under a few pixels.
-float forestBareCrown(float rel,vec2 slope,float tint,float pixels){
-  float angle=atan(slope.y,slope.x),limbs=3.+floor(tint*3.);
-  float limb=abs(sin(angle*limbs*.5+tint*6.2831853+1.2*rel));
-  float fork=abs(sin(angle*limbs+tint*9.+3.*rel));
-  float width=mix(.5,.2,rel);
-  float wood=max(1.-groundSmooth(width*.55,width,limb),.8*(1.-groundSmooth(width*.4,width*.8,fork))*groundSmooth(.3,.5,rel));
-  return mix(.36,max(wood,.3),groundSmooth(4.,12.,pixels));
+// Mean cover of a leafless broadleaf crown seen from above (limbs and twig haze over the ground): what
+// forestBareCrown integrates to at every crown size, and the share an unresolved bare stand shows.
+const float FOREST_BARE=.335;
+// Share of a crown that shows from above: its foliage, or the limbs and twig haze of a leafless crown, so a bare
+// stand is a grey-brown veil over its litter or snow at every zoom.
+float forestCrownShow(float leaf){return leaf+FOREST_BARE*(1.-leaf);}
+// Leafless wood (display RGB): the twig haze is a light grey-brown with a violet cast, the limb bark darker.
+vec3 forestBareColor(float tint,float wood){return mix(vec3(.37,.33,.315),vec3(.20,.17,.155),wood)*(.88+.24*tint);}
+// Coverage of a line of half-width w pixels at distance d pixels: an anti-aliased edge, dimmed below a pixel of
+// width so a sub-pixel twig keeps its mean coverage instead of aliasing.
+float forestLine(float d,float w){return clamp(max(w,.5)+.5-d,0.,1.)*min(2.*w,1.);}
+// A leafless crown from above, x its cover, y the share of that cover which is wood (limbs, trunk) rather than twig
+// haze. Resolved (radius over about 8 pixels): three to six main limbs leave the trunk at uneven angles, bend and fork
+// once at their own radius, over a twig haze that thins to nothing at the rim, and the trunk is a small dark spot.
+// Below that: a soft centre-weighted stipple without a rim. Both integrate to FOREST_BARE over the crown (measured
+// .332 to .338 from 8 to 60 pixels), so the far mean is the same. One tree hash and one limb hash, no noise.
+vec2 forestBareCrown(float rel,vec2 slope,float tint,float pixels){
+  // 2 FOREST_BARE (1-rel^2) has the mean FOREST_BARE over the disc (area weight 2 rel); .25 is the mean wood share
+  // of the resolved crown, so the stipple has its mean colour and snow load.
+  vec2 bare=vec2(2.*FOREST_BARE*(1.-rel*rel),.25);
+  float detail=groundSmooth(3.,8.,pixels);
+  if(detail>0.){
+    uint h=uint(tint*65536.)*0x9e3779b9u;
+    float limbs=3.+floor(forestU8(h,0u)*4.);
+    // Two low harmonics warp the polar angle: unevenly spaced limbs, no radial symmetry (1-.3-2*.15>0 keeps it monotone).
+    float a=atan(slope.y,slope.x);
+    a+=.3*sin(a+6.2831853*forestU8(h,8u))+.15*sin(2.*a+6.2831853*forestU8(h,16u));
+    float v=a*limbs/6.2831853+forestU8(h,24u),s=floor(v+.5),o=v-s;
+    // The nearest limb's own hash: bend, fork radius, fork spread and the side the branch leaves on.
+    uint hl=((uint(mod(s,limbs))+1u)*0x85ebca6bu)^h;
+    float rf=.3+.35*forestU8(hl,8u),spread=.18+.14*forestU8(hl,16u),side=forestU8(hl,24u)<.5?-1.:1.;
+    o-=(forestU8(hl,0u)-.5)*.3*rel*rel+.035*sin(9.*rel+6.2831853*forestU8(hl,4u));
+    // Past the fork one branch leaves at a wide angle, the other carries on almost straight.
+    float t=max(rel-rf,0.),split=min(abs(o-side*spread*t),abs(o+side*.3*spread*t));
+    float scale=6.2831853/limbs*rel*pixels;
+    float limb=forestLine(split*scale,pixels*(.045-.035*rel)*(1.-.25*groundSmooth(0.,.1,t)));
+    // Fine branchlets: three per limb sector, curving with the crown's own phase, faint and mostly sub-pixel: a haze.
+    float o2=3.*v+.6*rel*sin(2.*a+6.2831853*forestU8(h,12u));o2-=floor(o2+.5);
+    float twig=.5*forestLine(abs(o2)*scale/3.,pixels*.007)*groundSmooth(.2,.45,rel);
+    float wood=max(limb,forestLine(rel*pixels,max(.05*pixels,.6)));
+    float cover=1.-(1.-wood)*(1.-.45*(1.-rel*rel*rel))*(1.-twig);
+    bare=mix(bare,vec2(cover,wood/max(cover,1e-3)),detail);
+  }
+  return bare;
 }
 vec3 forestCanopy(ForestStand st,float needle,vec2 jitter,float special){
   vec3 c=forestPalette(st,needle),kind=forestKind(st.trop,st.dry);float temperate=1.-kind.x-kind.y-kind.z;
@@ -1021,34 +1082,21 @@ float forestCrownSnow(ForestCanopy hit,vec2 sun,float bough){
   float hold=thin+(forestSnowLoad(needle)-thin)/mix(.356,.619,c)*cap;
   return v2GroundSnow*min(hold*(1.+.3*(fract(hit.tint*4.37)-.5)),.97);
 }
-// Leaf clumps of a resolved crown: x a zero-mean albedo offset (light clumps bounded by darker gaps), yz the slope
-// of the clump relief. Two adjacent octaves of the fixed world lattices 2^k m bracket the crown-relative scale
-// (.7 radius) and cross-fade, so the pattern never swims with the stand's radius; each fades before its cells fall
-// under about three pixels. The crown's tint offsets the lookup: neighbouring crowns never share a motif.
-vec3 forestClump(vec2 world,float radius,float fp,float tint){
-  float e=log2(.7*max(radius,.5)),e0=floor(e),w=e-e0,n=0.,norm=0.;vec2 grad=vec2(0.);
-  vec2 offset=vec2(fract(tint*5.83),fract(tint*11.37))*97.;
-  for(int i=0;i<2;i++){
-    float scale=exp2(e0+float(i)),a=(i==0?1.-w:w)*(1.-groundSmooth(scale*.16,scale*.4,fp));
-    vec2 g=world/scale+offset;ivec2 c=ivec2(floor(g));
-    vec3 o=forestPerlin(g-vec2(c),forestGradient(c),forestGradient(c+ivec2(1,0)),forestGradient(c+ivec2(0,1)),forestGradient(c+ivec2(1,1)));
-    n+=a*o.x;grad+=a*o.yz/scale;norm+=a*a;
-  }
-  norm=sqrt(norm);float amp=groundSmooth(0.,.6,norm)*groundSmooth(2.5,5.,radius/fp);
-  n/=max(norm,1e-3);grad/=max(norm,1e-3);
-  // Each sign domain of the noise is one clump, a bump of height |n| whose creases are the gaps (.48: mean of the ramp).
-  return amp*vec3(groundSmooth(0.,.26,abs(n))-.48,.7*exp2(e)*n*inversesqrt(n*n+.0009)*grad);
-}
+${FOREST_CLUMP_GLSL}
 // Same forest hit, outline, dome normal, seasonal limbs and shadow for the planted grid.
-void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hit,vec3 leafClump){
+void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hit,vec3 leafClump,vec2 bare){
   ForestStand st=p.st;vec3 l=normalize(light),nGround=m.normal;
   float leaf=uRenderV2>0?v2SeasonLeaf():1.,snow=uRenderV2>0?v2GroundSnow*forestSnowLoad(0.):0.;
-  vec3 crown=forestSnowed(mix(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.),vec3(.31,.27,.23),1.-leaf),snow);
-  float cover=.31*mix(.35,1.,leaf)*forestHeightGate(forestField(st.p,0.).g*50.);
+  // A planted parcel is open land: its floor is the open ground (with its snow), as the forest path rebuilds it for
+  // open land, not the macro woods canopy, which under snow left a grey patch cut on the class texels.
+  if(uRenderV2>0)m.albedo=forestFloorAlbedo(clamp(renderGuideOpen,0.,1.));
+  vec3 crown=forestSnowed(mix(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.),forestBareColor(.5,.25),1.-leaf),snow);
+  // The unresolved crowns fade out with the smooth orchard share (applyGroundOccupation), not on the class texels.
+  float cover=.31*forestCrownShow(leaf)*forestHeightGate(forestField(st.p,0.).g*50.)*v2OrchardShare;
   vec3 normal=nGround;float shade=cover*.45;
   if(p.crownVis>0.&&uQuality==0){
     float tint=hit.tint;
-    float body=mix(forestBareCrown(hit.rel,hit.slope,tint,p.radius/max(p.fp,.01)),1.,leaf);
+    float body=mix(bare.x,1.,leaf);
     float resolved=hit.cover*body;
     crown=forestCrownColor(st,forestGuide(),0.,vec2(tint*2.-1.,0.),0.);
     vec3 kind=forestKind(st.trop,st.dry);float fall=forestSeason().x*(1.-kind.x-kind.y-kind.z);
@@ -1056,10 +1104,13 @@ void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hi
     // Leaf clumps of the foliage, strongest toward the rim; bare limbs carry none.
     float foliageDetail=leaf*mix(.55,1.,hit.rel);
     crown*=1.+.3*foliageDetail*leafClump.x;
-    crown=forestSnowed(mix(crown,vec3(.31,.27,.23)*(.85+.3*tint),1.-leaf),snow);
+    // Bare limbs hold little snow and stay dark over the white floor, the twig haze takes the rest of the mean load.
+    crown=forestSnowed(mix(crown,forestBareColor(tint,bare.y),1.-leaf),min(snow*mix(1.,mix(1.2,.4,bare.y),1.-leaf),.97));
     if(uForestTrees.w>0.)crown*=mix(1.,.6,1.-groundSmooth(uForestTrees.z,uForestTrees.w,distance(st.p,uForestTrees.xy)));
-    normal=normalize(vec3(-hit.slope.x-foliageDetail*leafClump.y,1.,-hit.slope.y-foliageDetail*leafClump.z));
-    cover=mix(cover,resolved,p.crownVis);shade=mix(shade,hit.shade*mix(.4,1.,leaf),p.crownVis);
+    // A leafless crown is no dome: its limbs lie flat to the light.
+    vec2 dome=hit.slope*mix(.2,1.,leaf);
+    normal=normalize(vec3(-dome.x-foliageDetail*leafClump.y,1.,-dome.y-foliageDetail*leafClump.z));
+    cover=mix(cover,resolved,p.crownVis);shade=mix(shade,hit.shade*mix(.25,1.,leaf),p.crownVis);
     forestResolvedCover=resolved*p.crownVis;
   }
   forestMapCover=cover;forestResolvedShade=shade;
@@ -1075,12 +1126,17 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // at full quality): the shader compilers inline every call, and without the auxiliary pass (3D) each call is the
   // whole near-crown search.
   ForestCanopy hit;vec3 leafClump=vec3(0.);
+  // Leafless crown cover and wood share (forestBareCrown), also one evaluation; painted brushes keep a flat share.
+  vec2 bare=vec2(FOREST_BARE,.25);
   if(p.crownVis>0.&&uQuality==0){
     hit=forestCanopyAt(p,normalize(light));
     // Leaf clumps once a crown spans a few pixels (painted brushes carry their own): one evaluation for both paths.
-    if(uForestBrushes==0){if(hit.cover>0.&&p.radius>2.5*p.fp)leafClump=forestClump(world,p.radius,p.fp,hit.tint);}
+    if(uForestBrushes==0){
+      if(hit.cover>0.&&p.radius>2.5*p.fp)leafClump=forestClump(world,p.radius,p.fp,hit.tint);
+      if(uRenderV2>0){if(hit.cover>0.&&v2SeasonLeaf()<1.)bare=forestBareCrown(hit.rel,hit.slope,hit.tint,p.radius/max(p.fp,.01));}
+    }
   }
-  if(p.st.orchard){applyOrchard(m,p,light,hit,leafClump);return;}
+  if(p.st.orchard){applyOrchard(m,p,light,hit,leafClump,bare);return;}
   ForestStand st=p.st;float fp=p.fp,openA=p.openA,forcedA=p.forcedA,hedgeA=p.hedgeA,crownVis=p.crownVis,radius=p.radius,reveal=p.reveal;
   // Crown share seen from above: foliage, plus the rimed limbs of leafless crowns under snow.
   float foliage=uRenderV2>0?forestCrownShow(v2Foliage):1.;
@@ -1192,7 +1248,9 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   vec3 litter=forestFloor(openGround,st,p.cold);
   // Render's canopy colour (its snow included) with the stand's tone residual.
   // Crowns carry the mean load of forestCrownSnow: laden boughs over the shaded floor of a conifer stand, rimed limbs.
-  vec3 mean=forestSnowed(forestCrownColor(st,forestGuide(),st.needle,vec2(0.),0.),uRenderV2>0?v2GroundSnow*forestSnowLoad(st.needle):0.);
+  vec3 mean=forestCrownColor(st,forestGuide(),st.needle,vec2(0.),0.);
+  // The leafless broadleaves' part of the shown crowns is twig haze, in the colour the resolved crowns average to.
+  if(uRenderV2>0)mean=forestSnowed(mix(mean,forestBareColor(.5,.25),(1.-v2Foliage)*FOREST_BARE/max(foliage,1e-3)),v2GroundSnow*forestSnowLoad(st.needle));
   // Mean crown self-shading (normal tilt) and occlusion, matched to the crown band.
   float selfShade=mix(.24,.42,st.needle);
   vec3 albedo=mix(forestFloorAlbedo(mix(openGround,litter,stand)),groundToLinear(mean)*(1.+mix(.5,.9,st.needle)*grain)*(1.-.2*margin),canopy);
@@ -1215,13 +1273,15 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     bool larch=uRenderV2>0&&hit.needle&&special<v2SeasonClimate().z;
     float leaf=uRenderV2>0&&(!hit.needle||larch)?v2SeasonLeaf():1.;
     if(leaf<1.){
-      float body=mix(uForestBrushes==1?.34:forestBareCrown(hit.rel,hit.slope,tint,p.radius/max(p.fp,.01)),1.,leaf);
-      hit.cover*=body;shade*=mix(.4,1.,leaf);forestResolvedCover*=body;
+      // Open limbs: the ground shows through and the cast shadow is the light one of bare branches.
+      float body=mix(bare.x,1.,leaf);
+      hit.cover*=body;shade*=mix(.25,1.,leaf);forestResolvedCover*=body;
     }
     forestResolvedShade=clamp(shade,0.,1.)*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
     forestMapCover=mix(forestMapCover,forestResolvedCover,crownVis);
     float clump=uForestBrushes==1?(hit.ink-.5)*2.:0.;
-    vec2 slope=uForestBrushes==1?.25*hit.slope:hit.slope;
+    // A leafless crown is no lit dome: its limbs lie nearly flat to the light.
+    vec2 slope=(uForestBrushes==1?.25:mix(.2,1.,leaf))*hit.slope;
     // Leaf clumps in the crown's colour and relief, strongest toward the rim: the whole effect on a broadleaf in
     // leaf, a light touch of colour on a spire (its whorls carry the relief), none on bare limbs.
     float foliageDetail=(hit.needle?.3:leaf)*mix(.55,1.,hit.rel);
@@ -1231,7 +1291,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     vec3 nCrown=normalize(vec3(-(macroSlope.x+slope.x),1.,-(macroSlope.y+slope.y)));
     // Shaded crowns keep their sky light (no black caps).
     nCrown=forestTilt(nCrown,l,shade*.3);
-    float occCrown=uForestBrushes==1?.94:max(.6+.4*(1.-hit.rel*hit.rel),.5);
+    float occCrown=uForestBrushes==1?.94:mix(.92,max(.6+.4*(1.-hit.rel*hit.rel),.5),leaf);
     float detailGain=uForestBrushes==1?.36:0.;
     // Branch whorls on a spire, once their rings span a few pixels.
     float branch=dot(hit.slope,jitter)*inversesqrt(1.+dot(hit.slope,hit.slope));
@@ -1265,9 +1325,10 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
         crown=mix(crown,hue*lum*lift/hueLum,fall*(pick<.86?.92:.4)*(.75+.25*late));
       }
       if(larch)crown=mix(crown,vec3(.70,.52,.17)*(.9+.2*tint),.85*forestSeason().x);
-      crown=mix(crown,vec3(.31,.27,.23)*(.85+.3*tint),1.-leaf);
+      crown=mix(crown,forestBareColor(tint,bare.y),1.-leaf);
       // Snow caps the top and lit flank of each crown and lies on its boughs or leaf clumps; the gaps stay dark.
-      crown=forestSnowed(crown,forestCrownSnow(hit,sun,hit.needle?bough:.64+foliageDetail*leafClump.x));
+      // Bare limbs hold little and stay dark against the white floor, the twig haze takes the rest of the mean load.
+      crown=forestSnowed(crown,min(forestCrownSnow(hit,sun,hit.needle?bough:.64+foliageDetail*leafClump.x)*mix(1.,mix(1.2,.4,bare.y),1.-leaf),.97));
     }
     // Forest floor under and right around crowns; open ground beyond.
     float under=uForestBrushes==1?hit.cover:1.-groundSmooth(1.,1.8,hit.near);

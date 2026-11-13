@@ -107,7 +107,7 @@ export function sitesSvg(sites: readonly ActivitySite[], parents: ReadonlyMap<st
       marks += `<circle cx="${num(s.x)}" cy="${num(s.y)}" r="${num(unit * 1.2)}" fill="${color}"><title>${esc(s.template)} (${esc(s.resource)} · ${esc(s.parent)})</title></circle>`;
       continue;
     }
-    if (parent) lines += `<line x1="${num(s.x)}" y1="${num(s.y)}" x2="${num(parent.x)}" y2="${num(parent.y)}"${seasonal ? ` stroke-dasharray="${num(unit * 1.5)} ${num(unit)}"` : ''}/>`;
+    if (parent && s.accessClass !== 'none') lines += `<line x1="${num(s.x)}" y1="${num(s.y)}" x2="${num(parent.x)}" y2="${num(parent.y)}"${seasonal ? ` stroke-dasharray="${num(unit * 1.5)} ${num(unit)}"` : ''}/>`;
     marks += `<rect x="${num(s.x - unit)}" y="${num(s.y - unit)}" width="${num(unit * 2)}" height="${num(unit * 2)}" fill="${seasonal ? '#ffffff' : color}" stroke="${seasonal ? color : '#ffffff'}"${seasonal ? ` stroke-width="${num(unit / 3)}"` : ''}><title>${esc(s.template)} (${esc(s.parent)})</title></rect>`;
   }
   return `${ground}</g>${lines}</g>${marks}</g>`;

@@ -100,6 +100,8 @@ export interface City3dOptions {
   getLayouts?(): readonly Layout[] | undefined;
   /** Regional roads crossing the map: their bridges are drawn too. */
   getRegionalStreets?(): readonly Street[] | undefined;
+  /** Ground-tile painter of the activity-site installations meeting `box`, or undefined when there are none; `natural` = satellite look. */
+  getSiteGround?(box: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): ((ctx: CanvasRenderingContext2D, natural: boolean) => void) | undefined;
   getPartitions?(): readonly Partition[] | undefined;
   getLotEnclosures?(): readonly import('../../../rust/bridge/urban').LotEnclosure[] | undefined;
   getSelected?(): string | undefined;
@@ -648,6 +650,9 @@ export function mountCity3d(options: City3dOptions): City3d {
       const target = roadLook==='natural'?groundContext():inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       drawTileRoads(target, roads, box, mpp, { look: roadLook, emphasis: planOptions?.roadEmphasis ?? 1, night: !satellite&&planOptions?.appearance?.ambience === 'night', colors: planOptions?.appearance?.colors }, planOptions?.roadInk, layoutPavementSites(options.getLayouts?.())); target.restore();
     }
+    // Remote accesses of activity sites (stairs, causeways, rope bridges, tunnels) lie in the ground tile like the roads.
+    const siteGround = !tile.preview ? options.getSiteGround?.(box, mpp) : undefined;
+    if (siteGround) { const target = groundContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); siteGround(target, !!satellite); target.restore(); }
     const footprintScene = planOptions?.buildingsVisible ? options.getScene() : undefined;
     let footprints = footprintScene && footprintPlans.get(footprintScene);
     if (footprintScene && !footprints) { footprints = buildCityBuildings(footprintScene); footprintPlans.set(footprintScene, footprints); }

@@ -29,7 +29,7 @@ import { rustSettlementRaster, townRoadStreets } from './rustUrban';
 import { getLanguage, onLanguageChange } from './i18n';
 import { getDistanceUnit } from './units';
 import { mapPresentation } from './mapPresentation';
-import { activityScene } from './activitySites';
+import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 import { provideFurniture3d, refreshFurniture3d } from '../ui/legendOverlay3d';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
 import { roadGroundTones, setRoadGround } from '../render/roadStyle';
@@ -309,6 +309,11 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       semantic: [...ruralSemanticLegend(world.landuse, lu.classes, lu.rural), ...(plan ? urbanSemanticLegend([plan], lu.urban) : [])] };
   });
   const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => cityRegionalStreets(v2Resolved3d(options.getSettings(), options.getWorld()), roads),
+    getSiteGround: (box, mpp) => {
+      const sites = activitySitesOf(options.getWorld());
+      const hit = sites.some(s => s.installations?.some(g => typeof g === 'object' && g.points.some(p => p.x >= box.minX - 20 && p.x <= box.maxX + 20 && p.y >= box.minY - 20 && p.y <= box.maxY + 20)));
+      return hit ? (ctx, natural) => { drawInstallations(ctx, sites, box, mpp, natural); } : undefined;
+    },
     getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground, getBackgroundImage: options.getBackgroundImage,
     getIllustrated: illustrated,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },

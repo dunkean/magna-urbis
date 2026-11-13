@@ -6,7 +6,8 @@ interface SurfaceData {
   minHeight: number; maxHeight: number;
 }
 interface Segment { a: number; b: number; estuary: number }
-interface Notch { a: number; b: number }
+/** A spill cut between two cells: `ra`, `rb` its half-width at each end (m), `skew` (-0.3..0.3) the asymmetry of its two walls. */
+interface Notch { a: number; b: number; ra: number; rb: number; skew: number }
 interface PreparedSurface {
   delta: Float32Array; hasDelta: boolean; hasSea: boolean;
   buckets: Map<number, number[]>; segments: Segment[]; bucketSize: number; side: number;
@@ -33,6 +34,11 @@ function prepare(hydro: HydrologyData): PreparedSurface {
   const buckets = new Map<number, number[]>(), segments: Segment[] = [], p = hydro.riverPoints;
   const notchBuckets = new Map<number, number[]>(), notches: Notch[] = [];
   const hn = hydro.resolution, hc = hydro.width / hn;
+  // Half-width of a spill cut: half a cell for a shallow cut (the opened spill and thin walls), wider with its depth
+  // (walls near 35 degrees) up to two cells, so a deep cut reads as a valley and no course runs in a trench of one width.
+  const reach = (i: number): number => Math.min(hc * 2, Math.max(hc * 0.5, (hydro.baseHeight[i] - hydro.surfaceHeight[i]) * 1.4));
+  // The two walls of a cut are not twins: one stable draw per cell.
+  const skewOf = (i: number): number => ((Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) >>> 8) / 16777216 - 0.5) * 0.6;
   for (const a of notchCells) {
     const x = a % hn, y = Math.floor(a / hn);
     const ax = (x + 0.5) * hc, ay = (y + 0.5) * hc;
@@ -47,9 +53,10 @@ function prepare(hydro: HydrologyData): PreparedSurface {
     if (!neighbors.length) neighbors.push(a);
     for (const b of neighbors) {
       const bx = (b % hn + 0.5) * hc, by = (Math.floor(b / hn) + 0.5) * hc, id = notches.length;
-      notches.push({ a, b });
-      const x0 = bucket(Math.min(ax, bx) - hc * 0.5, bucketSize, side), x1 = bucket(Math.max(ax, bx) + hc * 0.5, bucketSize, side);
-      const y0 = bucket(Math.min(ay, by) - hc * 0.5, bucketSize, side), y1 = bucket(Math.max(ay, by) + hc * 0.5, bucketSize, side);
+      const ra = reach(a), rb = reach(b), skew = skewOf(a), m = Math.max(ra, rb) * (1 + Math.abs(skew));
+      notches.push({ a, b, ra, rb, skew });
+      const x0 = bucket(Math.min(ax, bx) - m, bucketSize, side), x1 = bucket(Math.max(ax, bx) + m, bucketSize, side);
+      const y0 = bucket(Math.min(ay, by) - m, bucketSize, side), y1 = bucket(Math.max(ay, by) + m, bucketSize, side);
       for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
         const key = yy * side + xx, entries = notchBuckets.get(key);
         if (entries) entries.push(id); else notchBuckets.set(key, [id]);
@@ -142,9 +149,9 @@ export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData, u
       for (const id of surface.notchBuckets.get(y * side + x) ?? []) visibleNotches.add(id);
     }
   }
-  const hn = hydro.resolution, hc = hydro.width / hn, notchRadius = hc * 0.5;
+  const hn = hydro.resolution, hc = hydro.width / hn, notchFloor = hc * 0.25;
   for (const id of visibleNotches) {
-    const { a, b } = surface.notches[id];
+    const { a, b, ra, rb, skew } = surface.notches[id], notchRadius = Math.max(ra, rb) * (1 + Math.abs(skew));
     const ax = (a % hn + 0.5) * hc, ay = (Math.floor(a / hn) + 0.5) * hc;
     const bx = (b % hn + 0.5) * hc, by = (Math.floor(b / hn) + 0.5) * hc;
     const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
@@ -162,11 +169,13 @@ export function applyHydrologySurface(data: SurfaceData, hydro: HydrologyData, u
         const px = data.x + (x + 0.5) * cell;
         const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
         const distance = Math.hypot(px - ax - dx * t, py - ay - dy * t);
-        if (distance >= notchRadius) continue;
-        // The inner half retains the absolute opened-spill profile, even with
+        // The wall on each side runs from the floor to its own rim: wider where the cut is deep, and not the same on both sides.
+        const rim = notchFloor + (ra + (rb - ra) * t - notchFloor) * (1 + skew * Math.sign((px - ax) * dy - (py - ay) * dx));
+        if (distance >= rim) continue;
+        // The floor (a quarter cell each side) retains the absolute opened-spill profile, even with
         // incision disabled or positive fill nearby. Smooth banks join the fine
         // retained terrain; zoom samples this corridor rather than coarse pixels.
-        const u = Math.max(0, (distance / notchRadius - 0.5) * 2), blend = 1 - u * u * (3 - 2 * u);
+        const u = Math.max(0, (distance - notchFloor) / (rim - notchFloor)), blend = 1 - u * u * (3 - 2 * u);
         const target = hydro.surfaceHeight[a] + (hydro.surfaceHeight[b] - hydro.surfaceHeight[a]) * t;
         const i = y * n + x;
         cuts[i] = Math.max(cuts[i], Math.max(0, data.height[i] - target) * blend);

@@ -7,6 +7,8 @@ import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/ur
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import { pieceVolumes, readMassing } from './cityMassing';
 import type { TreeDwelling } from './cityTrees';
+import { roofPlaneLight } from './roofPlaneLight';
+import { mapCrownSeason, mapGroundSnow, mapSeasonKey } from './seasonPalette';
 
 /** Culture data: trunk spacing of the grove between the buildings (m), share of giant trees carrying a platform,
  * longest walkway span (m), share of the grid kept (clearings). A culture absent here grows no town grove. */
@@ -22,9 +24,9 @@ export interface CanopyTree {
 }
 export interface CanopyWalkway { a: Point; b: Point; /** Deck heights above the local ground at a and b (m). */ za: number; zb: number }
 export interface CanopyStair { x: number; y: number; /** Radius of the spiral around the trunk (m). */ r: number; trunk: number; z: number }
-export interface CityCanopy { trees: CanopyTree[]; dwellings: CanopyTree[]; walkways: CanopyWalkway[]; stairs: CanopyStair[] }
+export interface CityCanopy { trees: CanopyTree[]; dwellings: CanopyTree[]; walkways: CanopyWalkway[]; stairs: CanopyStair[]; /** Mean ground altitude of the buildings (m): snow line of the crowns. */ altitude: number }
 
-const EMPTY: CityCanopy = { trees: [], dwellings: [], walkways: [], stairs: [] };
+const EMPTY: CityCanopy = { trees: [], dwellings: [], walkways: [], stairs: [], altitude: 0 };
 function hash2(x: number, y: number, salt: number): number {
   let h = Math.imul(Math.round(x * 8) | 0, 0x27d4eb2d) ^ Math.imul(Math.round(y * 8) | 0, 0x165667b1) ^ Math.imul(salt | 0, 0x9e3779b1);
   h = Math.imul(h ^ h >>> 15, 0x85ebca6b); h = Math.imul(h ^ h >>> 13, 0xc2b2ae35); return ((h ^ h >>> 16) >>> 0) / 4294967296;
@@ -163,7 +165,8 @@ function deriveCanopy(layouts: readonly Layout[], buildings: readonly PlacedBuil
   const dwellings = dwellingList.map(d => d.tree);
   const { walkways, stairs } = linkPlatforms([...dwellings.filter(d => d.deck), ...trees.filter(t => t.deck)],
     dwellingList.map(d => TOWN_CANOPY[d.culture]?.span).find(Boolean) ?? groves.map(l => TOWN_CANOPY[l.culture].span)[0] ?? DEFAULT_SPAN, cores, coreBins);
-  return { trees, dwellings, walkways, stairs };
+  const altitude = buildings.reduce((s, b) => s + (b.ground_z_m || 0), 0) / buildings.length;
+  return { trees, dwellings, walkways, stairs, altitude };
 }
 
 /** Walkways: the minimum spanning forest of the platforms closer than `span`, plus a few short loops; never across a
@@ -231,6 +234,9 @@ const darken = (hex: string, k: number): string => {
   const v = parseInt(m[1], 16), c = [v >> 16 & 255, v >> 8 & 255, v & 255].map(x => Math.round(x * k));
   return `rgb(${c.join(',')})`;
 };
+/** Crown greens of the town trees, darkest first: the tree dwellings' 3D crowns (city3dMeshes TREE_CROWNS), the grove's
+ * 3D crowns and the 2D crowns on natural grounds. Close tones: a lit top lobe stays foliage, never a pale cap. */
+const CROWN_GREENS = ['5a7b41', '5d7f44', '618347', '65874a'];
 /** Shade direction of the plan (south-east, as the building shadows), per metre of height. */
 const SHADE = { x: 0.32, y: 0.42 };
 
@@ -244,6 +250,13 @@ export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy
   const far = o.mpp > 2.5, flat = !!ink.flat;
   const disc = (path: Path2D, x: number, y: number, r: number): void => { path.moveTo(x + r, y); path.arc(x, y, r, 0, Math.PI * 2); };
   ctx.save();
+  if (o.palette === 'terrain') {
+    // Natural grounds: the timber lies under the leaves, so the walkways go first and show between the crowns.
+    drawWalkways(ctx, canopy, o, ink, true);
+    drawNaturalCrowns(ctx, canopy, all, o);
+    ctx.restore();
+    return;
+  }
   // Cast shadows of the crowns on the ground (and on the low roofs they overhang).
   if (!flat) {
     const shade = new Path2D();
@@ -252,7 +265,7 @@ export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy
   }
   if (flat || far) {
     const crowns = new Path2D(); for (const t of all) disc(crowns, t.x, t.y, t.r);
-    ctx.fillStyle = flat ? ink.mid : ink.mid; ctx.fill(crowns);
+    ctx.fillStyle = ink.mid; ctx.fill(crowns);
     if (ink.stroke) { ctx.strokeStyle = ink.stroke; ctx.lineWidth = px(flat ? 0.6 : 0.45); ctx.stroke(crowns); }
   } else {
     // Layers: dark lower lobes (offset to the shade side), the body, then the lit tops (offset to the light).
@@ -268,43 +281,157 @@ export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy
     ctx.fillStyle = ink.mid; ctx.fill(mid);
     ctx.globalAlpha = 0.85; ctx.fillStyle = ink.light; ctx.fill(light); ctx.globalAlpha = 1;
   }
-  // Walkways among the crowns: a light shadow below, rails, planks; spiral stairs as a ring of treads.
-  const ways = canopy.walkways.filter(w => Math.max(w.a.x, w.b.x) + pad > v.minX && Math.min(w.a.x, w.b.x) - pad < v.maxX && Math.max(w.a.y, w.b.y) + pad > v.minY && Math.min(w.a.y, w.b.y) - pad < v.maxY);
-  if (ways.length) {
-    const width = Math.max(1.5, px(1.3)), line = new Path2D(), shade = new Path2D();
-    for (const w of ways) {
-      line.moveTo(w.a.x, w.a.y); line.lineTo(w.b.x, w.b.y);
-      if (!flat) { const ka = w.za * 0.3, kb = w.zb * 0.3; shade.moveTo(w.a.x + SHADE.x * ka, w.a.y + SHADE.y * ka); shade.lineTo(w.b.x + SHADE.x * kb, w.b.y + SHADE.y * kb); }
-    }
-    ctx.lineCap = 'butt';
-    if (!flat) { ctx.strokeStyle = 'rgba(20,16,8,0.22)'; ctx.lineWidth = width; ctx.stroke(shade); }
-    ctx.strokeStyle = ink.rail; ctx.lineWidth = width + Math.max(0.45, px(0.9)); ctx.stroke(line);
-    ctx.strokeStyle = ink.wood; ctx.lineWidth = width - Math.max(0.2, px(0.4)); ctx.stroke(line);
-    if (o.mpp < 0.45 && !flat) {
-      const planks = new Path2D(), half = width / 2;
-      for (const w of ways) {
-        const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y, l = Math.hypot(dx, dy); if (l < 0.5) continue;
-        const ux = dx / l, uy = dy / l;
-        for (let s = 0.4; s < l; s += 0.75) { const x = w.a.x + ux * s, y = w.a.y + uy * s; planks.moveTo(x - uy * half, y + ux * half); planks.lineTo(x + uy * half, y - ux * half); }
-      }
-      ctx.strokeStyle = ink.rail; ctx.globalAlpha = 0.5; ctx.lineWidth = px(0.5); ctx.stroke(planks); ctx.globalAlpha = 1;
-    }
-    const treads = new Path2D();
-    for (const s of canopy.stairs) {
-      if (s.x + pad < v.minX || s.x - pad > v.maxX || s.y + pad < v.minY || s.y - pad > v.maxY) continue;
-      treads.moveTo(s.x + s.r, s.y); treads.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5; treads.moveTo(s.x + Math.cos(a) * s.trunk, s.y + Math.sin(a) * s.trunk); treads.lineTo(s.x + Math.cos(a) * s.r, s.y + Math.sin(a) * s.r); }
-    }
-    ctx.strokeStyle = ink.rail; ctx.lineWidth = Math.max(0.25, px(0.7)); ctx.stroke(treads);
-  }
+  drawWalkways(ctx, canopy, o, ink, false);
   ctx.restore();
+}
+
+/** Walkways among the crowns: a light shadow below, rails, planks; spiral stairs as a ring of treads. `weathered`: the
+ * natural grounds, where grey timber under the leaves reads as a photographed deck (soft rails, faint planks) rather
+ * than as a plan symbol. */
+function drawWalkways(ctx: CanvasRenderingContext2D, canopy: CityCanopy, o: CanopyDrawOptions, ink: CanopyInk, weathered: boolean): void {
+  const v = o.viewport, pad = 20, px = (n: number): number => n * o.mpp, flat = !!ink.flat;
+  const ways = canopy.walkways.filter(w => Math.max(w.a.x, w.b.x) + pad > v.minX && Math.min(w.a.x, w.b.x) - pad < v.maxX && Math.max(w.a.y, w.b.y) + pad > v.minY && Math.min(w.a.y, w.b.y) - pad < v.maxY);
+  if (!ways.length) return;
+  const width = weathered ? 1.5 : Math.max(1.5, px(1.3)), line = new Path2D(), shade = new Path2D();
+  const wood = weathered ? (o.night ? '#3d362c' : '#8b7b64') : ink.wood, rail = weathered ? (o.night ? '#211c16' : '#4f4334') : ink.rail, railAlpha = weathered ? 0.55 : 1;
+  for (const w of ways) {
+    line.moveTo(w.a.x, w.a.y); line.lineTo(w.b.x, w.b.y);
+    if (!flat) { const ka = w.za * 0.3, kb = w.zb * 0.3; shade.moveTo(w.a.x + SHADE.x * ka, w.a.y + SHADE.y * ka); shade.lineTo(w.b.x + SHADE.x * kb, w.b.y + SHADE.y * kb); }
+  }
+  ctx.lineCap = 'butt';
+  if (!flat) { ctx.strokeStyle = 'rgba(20,16,8,0.22)'; ctx.lineWidth = width; ctx.stroke(shade); }
+  ctx.globalAlpha = railAlpha; ctx.strokeStyle = rail; ctx.lineWidth = width + Math.max(0.45, px(weathered ? 0.5 : 0.9)); ctx.stroke(line); ctx.globalAlpha = 1;
+  ctx.strokeStyle = wood; ctx.lineWidth = width - Math.max(0.2, px(0.4)); ctx.stroke(line);
+  if (o.mpp < 0.45 && !flat) {
+    const planks = new Path2D(), half = width / 2;
+    for (const w of ways) {
+      const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y, l = Math.hypot(dx, dy); if (l < 0.5) continue;
+      const ux = dx / l, uy = dy / l;
+      for (let s = 0.4; s < l; s += 0.75) { const x = w.a.x + ux * s, y = w.a.y + uy * s; planks.moveTo(x - uy * half, y + ux * half); planks.lineTo(x + uy * half, y - ux * half); }
+    }
+    ctx.strokeStyle = rail; ctx.globalAlpha = weathered ? 0.22 : 0.5; ctx.lineWidth = px(0.5); ctx.stroke(planks); ctx.globalAlpha = 1;
+  }
+  const treads = new Path2D();
+  for (const s of canopy.stairs) {
+    if (s.x + pad < v.minX || s.x - pad > v.maxX || s.y + pad < v.minY || s.y - pad > v.maxY) continue;
+    treads.moveTo(s.x + s.r, s.y); treads.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5; treads.moveTo(s.x + Math.cos(a) * s.trunk, s.y + Math.sin(a) * s.trunk); treads.lineTo(s.x + Math.cos(a) * s.r, s.y + Math.sin(a) * s.r); }
+  }
+  ctx.globalAlpha = railAlpha; ctx.strokeStyle = rail; ctx.lineWidth = Math.max(0.25, px(0.7)); ctx.stroke(treads); ctx.globalAlpha = 1;
+}
+
+// Natural grounds (satellite and the other material styles): every crown is its lobes seen from above, each lobe a
+// pre-shaded sprite. A sprite carries the light of the roofs (roofPlaneLight: NW sun, SE fill) on a dome, leaf clumps
+// lit and shaded by the same sun, darker gaps between clumps, and an alpha rim broken by the clumps (no ink line).
+// Colours: the 3D crown greens (CROWN_GREENS), so the plan shows the 3D trees seen from above; each tree takes one of
+// the four close greens (small natural variation, one coherent town). The season comes from the map calendar: leaf
+// fall thins the crown to a grey twig haze, autumn and spring tint it as the vector wood tone does (seasonPalette
+// woodTone), snow settles on the lit clump tops where the ground is snowy (mapGroundSnow at the town's altitude, times
+// the calendar's crown snow). Sprites are built once per season, snow and night state, then drawn once per lobe.
+
+/** Sprite side (px) and lighting variants per green. */
+const SPRITE = 112, VARIANTS = 4;
+type Rgb = [number, number, number];
+/** Sun direction in the plan (toward the sun, world y southwards), as roofPlaneLight. */
+const SUN = { x: -0.70 / Math.hypot(0.70, 0.36), y: -0.36 / Math.hypot(0.70, 0.36) };
+const BARE_TWIGS: Rgb = [0.40, 0.36, 0.32], AUTUMN_LEAF: Rgb = [0.718, 0.541, 0.243], SPRING_LEAF: Rgb = [0.651, 0.737, 0.447], SNOW_RGB: Rgb = [0.945, 0.953, 0.937];
+type SpriteCanvas = OffscreenCanvas | HTMLCanvasElement;
+interface CrownSprites { key: string; lobes: SpriteCanvas[][]; mean: string[]; shadow: SpriteCanvas }
+let crownSprites: CrownSprites | undefined;
+
+const spriteCanvas = (size: number): SpriteCanvas | undefined => typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size)
+  : typeof document !== 'undefined' ? Object.assign(document.createElement('canvas'), { width: size, height: size }) : undefined;
+const spriteContext = (c: SpriteCanvas): CanvasRenderingContext2D | null => c.getContext('2d') as CanvasRenderingContext2D | null;
+const rgbOf = (hex: string): Rgb => { const v = parseInt(hex, 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]; };
+const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const scaleRgb = (a: Rgb, k: number): Rgb => [a[0] * k, a[1] * k, a[2] * k];
+const smooth = (a: number, b: number, x: number): number => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** Smooth value noise on the integer lattice. */
+function valueNoise(x: number, y: number, seed: number): number {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash2(i, j, seed), b = hash2(i + 1, j, seed), c = hash2(i, j + 1, seed), d = hash2(i + 1, j + 1, seed);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+/** Leaf clump relief across a lobe of unit radius: a few clumps per radius and a finer second octave. */
+const clumps = (u: number, v: number, seed: number): number => 0.68 * valueNoise(u * 3.4 + 7, v * 3.4 + 3, seed) + 0.32 * valueNoise(u * 7.9 + 1, v * 7.9 + 5, seed + 17);
+
+function buildCrownSprites(key: string, night: boolean, groundSnow: number): CrownSprites | undefined {
+  const season = mapCrownSeason(), leaf = Math.max(0, Math.min(1, season.leaf)), deciduous = 1 - Math.max(0, Math.min(1, season.evergreen));
+  const snow = Math.min(1, groundSnow * season.crownSnow * 1.25), dim = night ? 0.42 : 1;
+  const shadow = spriteCanvas(64), sctx = shadow && spriteContext(shadow); if (!shadow || !sctx) return undefined;
+  const simg = sctx.createImageData(64, 64);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) simg.data[(y * 64 + x) * 4 + 3] = Math.round(255 * (1 - smooth(0.55, 1, Math.hypot((x + 0.5) / 32 - 1, (y + 0.5) / 32 - 1))));
+  sctx.putImageData(simg, 0, 0);
+  const lobes: SpriteCanvas[][] = [], mean: string[] = [], e = 0.06;
+  for (let g = 0; g < CROWN_GREENS.length; g++) {
+    const foliage = mixRgb(mixRgb(rgbOf(CROWN_GREENS[g]), AUTUMN_LEAF, 0.35 * season.autumn * deciduous), SPRING_LEAF, 0.15 * season.spring * deciduous);
+    const row: SpriteCanvas[] = [], sum = [0, 0, 0, 0];
+    for (let k = 0; k < VARIANTS; k++) {
+      const canvas = spriteCanvas(SPRITE), c2 = canvas && spriteContext(canvas); if (!canvas || !c2) return undefined;
+      const img = c2.createImageData(SPRITE, SPRITE), seed = 101 + g * 31 + k * 7;
+      for (let y = 0; y < SPRITE; y++) for (let x = 0; x < SPRITE; x++) {
+        const u = (x + 0.5) / SPRITE * 2 - 1, w = (y + 0.5) / SPRITE * 2 - 1, rr = Math.hypot(u, w);
+        if (rr > 1) continue;
+        const h = clumps(u, w, seed), toward = clumps(u + SUN.x * e, w + SUN.y * e, seed);
+        // The rim follows the clumps: a lobe ends in rounded leaf masses, not on a circle.
+        const rim = 0.8 + 0.2 * h; let a = 1 - smooth(rim - 0.05, rim + 0.04, rr); if (a <= 0) continue;
+        const q = Math.min(1, rr / (rim + 0.04)), z = Math.sqrt(Math.max(0, 1 - q * q));
+        let tone = 1 + (roofPlaneLight([u * 0.85, w * 0.85, z * 1.1 + 0.2]) - 1) * 0.5;   // the dome under the roofs' sun
+        tone *= 1 + Math.max(-0.35, Math.min(0.35, (h - toward) * 3));                      // clump faces toward or away from the sun
+        tone *= 0.74 + 0.26 * smooth(0.22, 0.62, h);                                         // gaps between clumps
+        tone *= 0.8 + 0.2 * z;                                                               // occlusion toward the lobe edge
+        let c = scaleRgb(foliage, tone);
+        if (leaf < 1) {
+          // Leaf fall: the crown thins to its twigs, a grey-brown haze with holes to the ground under it.
+          c = mixRgb(scaleRgb(BARE_TWIGS, 0.75 + 0.35 * tone), c, leaf);
+          a *= leaf + (1 - leaf) * (0.35 + 0.5 * smooth(0.3, 0.7, h));
+        }
+        if (snow > 0) c = mixRgb(c, scaleRgb(SNOW_RGB, Math.min(1.04, 0.72 + 0.3 * tone)), snow * smooth(0.35, 0.8, 0.55 * z + 0.6 * h) * (0.55 + 0.45 * leaf));
+        c = scaleRgb(c, dim);
+        const i = (y * SPRITE + x) * 4;
+        img.data[i] = Math.round(255 * Math.min(1, c[0])); img.data[i + 1] = Math.round(255 * Math.min(1, c[1])); img.data[i + 2] = Math.round(255 * Math.min(1, c[2])); img.data[i + 3] = Math.round(255 * a);
+        sum[0] += c[0] * a; sum[1] += c[1] * a; sum[2] += c[2] * a; sum[3] += a;
+      }
+      c2.putImageData(img, 0, 0); row.push(canvas);
+    }
+    lobes.push(row);
+    const n = Math.max(1e-6, sum[3]);
+    mean.push(`rgb(${[0, 1, 2].map(i => Math.round(255 * Math.min(1, sum[i] / n))).join(',')})`);
+  }
+  return { key, lobes, mean, shadow };
+}
+
+function drawNaturalCrowns(ctx: CanvasRenderingContext2D, canopy: CityCanopy, trees: readonly CanopyTree[], o: CanopyDrawOptions): void {
+  if (!trees.length) return;
+  const groundSnow = mapGroundSnow(canopy.altitude), key = `${mapSeasonKey()}|${groundSnow.toFixed(3)}|${o.night ? 1 : 0}`;
+  if (crownSprites?.key !== key) crownSprites = buildCrownSprites(key, !!o.night, groundSnow);
+  const sprites = crownSprites; if (!sprites) return;
+  const green = (t: CanopyTree): number => (t.seed >>> 3) % CROWN_GREENS.length;
+  // Taller trees last: their crowns cover the lower ones.
+  const order = [...trees].sort((a, b) => a.h + a.r * 0.6 - (b.h + b.r * 0.6));
+  // Cast shadows: one soft disc per tree, offset along the building shadows.
+  ctx.globalAlpha = o.night ? 0.18 : 0.34;
+  for (const t of order) { const k = (t.h + t.r * 0.6) * 0.35, r = t.r * 1.02; ctx.drawImage(sprites.shadow, t.x + SHADE.x * k - r, t.y + SHADE.y * k - r, 2 * r, 2 * r); }
+  ctx.globalAlpha = 1;
+  if (o.mpp > 2.5) {
+    // A few pixels per crown: the mean colour of its sprites, one batch per green.
+    const paths = CROWN_GREENS.map(() => new Path2D());
+    for (const t of order) { const p = paths[green(t)], r = t.r * 0.92; p.moveTo(t.x + r, t.y); p.arc(t.x, t.y, r, 0, Math.PI * 2); }
+    paths.forEach((p, g) => { ctx.fillStyle = sprites.mean[g]; ctx.fill(p); });
+    return;
+  }
+  ctx.imageSmoothingEnabled = true;
+  for (const t of order) {
+    const row = sprites.lobes[green(t)];
+    [...t.lobes].sort((a, b) => a.z - b.z).forEach((l, i) => { const r = l.r * 1.08; ctx.drawImage(row[(t.seed + i * 5) % VARIANTS], l.x - r, l.y - r, 2 * r, 2 * r); });
+  }
 }
 
 // ------------------------------------------------------------------ 3D
 
 type Mesh = ArchitectureVolume['roof_mesh'];
 const TRUNK = 'city3d:tree:trunk@4b3c2a', TIMBER = 'city3d:wall:timber';
-const CROWN = ['city3d:tree:crown@34502a', 'city3d:tree:crown@4c6d36', 'city3d:tree:crown@668a45', 'city3d:tree:crown@83a65a'];
+const CROWN = CROWN_GREENS.map(hex => `city3d:tree:crown@${hex}`);
 const crownMaterial = (tone: number): string => CROWN[Math.min(CROWN.length - 1, Math.floor(tone * CROWN.length))];
 
 function addFace(mesh: Mesh, points: { x: number; y: number; z: number }[], material: string): void {

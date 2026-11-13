@@ -121,6 +121,15 @@ pub(in crate::urban) struct CultureTraits {
     /// Facade openness 0..1 of the non-masonry walls of a Mediterranean or
     /// flavored culture, whose masonry has few openings (0: fully open).
     pub light_wall_openness: f64,
+    /// Era of a modern style: `modern` | `futuristic` | `alien`; empty for the
+    /// historical and fantasy cultures. The modern families of
+    /// `parcels/monuments/` build for the cultures that have one, and the web
+    /// reads it (road pavements, `gen/options.ts` `cultureEra`).
+    pub era: String,
+    /// Override groups of `roles_*.json` this culture shares, in order, after
+    /// its own `overrides.<culture id>` (styles of one building tradition share
+    /// their flat roofs, mansards or tower crowns without copying them).
+    pub role_groups: Vec<String>,
 }
 
 #[derive(Default, Deserialize)]

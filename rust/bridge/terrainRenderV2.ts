@@ -33,7 +33,7 @@ void v2ZoneEnv(inout V2Env e,vec3 s,vec2 world,float tpi,float fp){
   // stand mosaic that e.tone carries (its valley term removed). They yield to woods and to wet ground.
   float woody=e.woody;if(uForest==0)woody*=F.x;
   v2GroundUnits(V2_ZONE_UNITS[z],V2_ZONE_GRAVEL[z].a,s,world,tpi,fp,mottle,(e.tone-.5+.06*sstep(0.,-.10,tpi))/.13,(1.-sstep(.15,.5,woody))*(1.-v2ZoneWet)*step(0.,s.x));
-  vec4 G=v2GroundUnit;surfaceGroundSand=G.x;
+  vec4 G=v2GroundUnit;surfaceGroundSand=G.x;surfaceGroundStony=clamp(G.y+G.z,0.,1.);
   e.sand=clamp(e.sand+S.y*(1.-sstep(.1,.5,slope))*(1.-v2ZoneWet)+.5*G.x,0.,1.);
   // Exposed rock: steep slopes, and knobs/ridges broken by the same mottle
   // (glaciated outcrops, scree, limestone pavements). Stands open over it.

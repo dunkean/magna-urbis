@@ -17,7 +17,7 @@ import type { ResourcePayload } from '../../../rust/bridge/resources';
 export interface RustRegionSnapshot {placement:SettlementOutput;roads:RoadOutput|null}
 /** Road endpoints: settlements, then activity access points (settlements.ts roadSitesOf; not imported to keep that bundle lazy). */
 const roadSitesOf=(o:SettlementOutput):RoadSite[]=>[...o.settlements.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius})),
-  ...(o.activities??[]).map(a=>({key:a.id,population:0,culture:a.culture,center:a.access,radius:0,access:a.accessClass,parent:a.parent}))];
+  ...(o.activities??[]).flatMap(a=>a.accessClass==='none'?[]:[{key:a.id,population:0,culture:a.culture,center:a.access,radius:0,access:a.accessClass,parent:a.parent}])];
 let retainedEngine: { runtimeKey: string; terrainKey: string; engine: SettlementEngine } | undefined;
 /** Routing resolution controls sampling, not the information content of an imported coarse heightmap. */
 export function resampleRegionalRaster(source: SettlementRaster, n: number): SettlementRaster {

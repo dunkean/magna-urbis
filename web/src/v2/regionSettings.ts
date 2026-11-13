@@ -20,7 +20,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
     mode:settings.settlementCount?'counts':'auto',distribution:'classes',main:regionSpec(),
     counts:{city:0,town:0,village,hamlet:secondary-village,farmstead:0},list:[],relief:settings.terrain?.relief??o.relief,
     density:1,zipfExponent:1.1,minPopulation:8,populationJitter:.25,spread:1.3,smallTop:.35,mainClear:2.5,clustering:0,edgeMargin:.03,
-    flatnessWeight:1,buildableWeight:1,freshWaterWeight:1,riverWeight:1,coastWeight:1,floodWeight:1,defenseWeight:0,elevation:0,variationWeight:1,siteWeights:{},farmDensity:1,...p,
+    flatnessWeight:1,buildableWeight:1,freshWaterWeight:1,riverWeight:1,coastWeight:1,floodWeight:1,defenseWeight:0,elevation:0,variationWeight:1,siteWeights:{},farmDensity:1,remotePlaces:1,...p,
   };
   const mainPopulation = local.population ?? (o.population > 0 ? o.population : SIZE_SHORTCUT[o.size]);
   placement.main={...regionSpec('main',mainPopulation),culture:o.culture,siteType:o.siteType??'auto',position:o.center,sitePrefs:o.sitePrefs??{},...p?.main,key:'main'};
@@ -85,7 +85,7 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
   if (region.cropSurplus !== undefined) number(region.cropSurplus, 'Crop surplus', 0, 3);
   if (region.placement !== undefined) {
     const p = object(region.placement, 'placement settings');
-    const limits: Record<string, readonly [number, number]> = { density: [0, 10], zipfExponent: [.3, 3], minPopulation: [1, 100000], populationJitter: [0, 1], spread: [.1, 100], smallTop: [0, 1], mainClear: [0, 100], clustering: [0, 100], edgeMargin: [0, .3], flatnessWeight: [0, 100], buildableWeight: [0, 100], freshWaterWeight: [0, 100], riverWeight: [0, 100], coastWeight: [0, 100], floodWeight: [0, 100], defenseWeight: [0, 100], elevation: [-1, 1], variationWeight: [0, 100], farmDensity: [0, 10] };
+    const limits: Record<string, readonly [number, number]> = { density: [0, 10], zipfExponent: [.3, 3], minPopulation: [1, 100000], populationJitter: [0, 1], spread: [.1, 100], smallTop: [0, 1], mainClear: [0, 100], clustering: [0, 100], edgeMargin: [0, .3], flatnessWeight: [0, 100], buildableWeight: [0, 100], freshWaterWeight: [0, 100], riverWeight: [0, 100], coastWeight: [0, 100], floodWeight: [0, 100], defenseWeight: [0, 100], elevation: [-1, 1], variationWeight: [0, 100], farmDensity: [0, 10], remotePlaces: [0, 10] };
     fields(p, ['mode', 'distribution', 'main', 'counts', 'list', 'relief', 'siteWeights', ...Object.keys(limits)], 'placement');
     enumeration(p.mode, ['auto', 'counts', 'list'], 'regional composition'); enumeration(p.distribution, ['classes', 'zipf'], 'population distribution'); enumeration(p.relief, TERRAIN_RELIEFS, 'regional relief');
     for (const [key, range] of Object.entries(limits)) if (p[key] !== undefined) number(p[key], `placement.${key}`, ...range, key === 'minPopulation');

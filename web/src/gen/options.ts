@@ -8,6 +8,7 @@ import { BIOME_NAMES, biomeName, type BiomeName } from './biomes';
 import type { ImportedHeight } from './terrain/import';
 import { CULTURE_IDS, CULTURES as CULTURE_REGISTRY, mixToString, mixFromString, planToString, planFromString } from './urban/culture';
 import type { CultureMix, PlanOverride } from './urban/culture';
+import modernStyles from '../../../rust/crates/core/src/urban/forms/styles_modern.json';
 
 /** Map/extent preset of the legacy stages: the demographic classes, farmstead folded into hamlet and
  * megacity into metropolis. A size, never a political function (that is `programme.functions.capital`). */
@@ -91,6 +92,41 @@ const RUST_CULTURE_LABELS: Record<string, string> = {
   'giant-hold': 'Giants · megalithic hold',
   'goblin-warren': 'Goblins · hillside warren',
   'american-grid': 'Modern · American grid city (Chicago, Manhattan)',
+  'industrial-victorian': 'Modern · Industrial Victorian city (Manchester, Liverpool)',
+  'haussmannian': 'Modern · Haussmannian boulevard city (Paris)',
+  'belle-epoque': 'Modern · Belle Époque capital (Vienna, Budapest)',
+  'mediterranean-modern': 'Modern · Mediterranean modern city (Barcelona, Naples)',
+  'garden-city': 'Modern · Garden city (Letchworth, Welwyn)',
+  'art-deco-metropolis': 'Modern · Art Deco metropolis (New York, Miami)',
+  'modernist-functionalist': 'Modern · Modernist functional city (Brasília, Chandigarh)',
+  'soviet-socialist': 'Modern · Soviet socialist city (Moscow, Minsk)',
+  'american-suburbia': 'Modern · American suburbia (Los Angeles, Phoenix)',
+  'european-contemporary': 'Modern · European contemporary city (Copenhagen, Amsterdam)',
+  'global-high-rise': 'Modern · Global high-rise city (Hong Kong, Shenzhen)',
+  'gulf-contemporary': 'Modern · Gulf city (Dubai, Doha)',
+  'informal-urban-expansion': 'Modern · Informal urban expansion (Lagos, Lima)',
+  'eco-city': 'Modern · Eco-city (sustainable district)',
+  'japanese-contemporary': 'Modern · Japanese contemporary city (Tokyo, Osaka)',
+  'chinese-megacity': 'Modern · Chinese megacity (Shanghai, Guangzhou)',
+  'korean-high-rise': 'Modern · Korean high-rise city (Seoul, Busan)',
+  'southeast-asian-tropical': 'Modern · Southeast Asian tropical city (Bangkok, Ho Chi Minh City)',
+  'south-asian-metropolis': 'Modern · South Asian metropolis (Mumbai, Delhi)',
+  'latin-american-grid': 'Modern · Latin American grid city (Buenos Aires, Mexico City)',
+  'latin-american-hillside': 'Modern · Latin American hillside city (Rio, Medellín)',
+  'north-african-contemporary': 'Modern · North African contemporary city (Casablanca, Tunis)',
+  'sub-saharan-african-metropolis': 'Modern · Sub-Saharan African metropolis (Dakar, Accra)',
+  'middle-eastern-contemporary': 'Modern · Middle Eastern contemporary city (Amman, Beirut)',
+  'australian-suburban': 'Modern · Australian suburban city (Perth, Brisbane)',
+  'post-socialist-european': 'Modern · Post-socialist European city (Warsaw, Bucharest)',
+  'cyberpunk': 'Futuristic · Cyberpunk megacity',
+  'solarpunk': 'Futuristic · Solarpunk garden city',
+  'dieselpunk': 'Futuristic · Dieselpunk industrial metropolis',
+  'dystopian-brutalism': 'Futuristic · Dystopian brutalist city',
+  'atompunk-retrofuturist': 'Futuristic · Atompunk retrofuturist city',
+  'post-apocalyptic-ruins': 'Futuristic · Post-apocalyptic ruins',
+  'corporate-arcology': 'Futuristic · Corporate arcology',
+  'futuristic-space-colony': 'Futuristic · Space colony',
+  'biopunk-organic-city': 'Alien · Biopunk organic city',
 };
 /** Every culture the engine supports: the legacy TS registry plus the Rust-only cultures above
  *  (rust/crates/core/src/urban/catalogue.json is 2.7 MB, too heavy to bundle for its ids). */
@@ -98,6 +134,15 @@ export const CULTURES: Culture[] = [...CULTURE_IDS, ...Object.keys(RUST_CULTURE_
 /** [id, label] pairs for selectors. */
 export const CULTURE_LABELS: [string, string][] = CULTURES.map((id) => [id, CULTURE_REGISTRY[id]?.label ?? RUST_CULTURE_LABELS[id] ?? id]);
 export type { CultureMix, PlanOverride };
+/** Era of a modern style (`traits.era` of rust/crates/core/src/urban/forms/styles_modern.json); historical and fantasy cultures have none. */
+export type CultureEra = 'modern' | 'futuristic' | 'alien';
+const CULTURE_ERAS: Readonly<Record<string, CultureEra>> = Object.fromEntries(
+  Object.entries((modernStyles as unknown as { cultures: Record<string, { traits?: { era?: CultureEra } }> }).cultures)
+    .flatMap(([id, c]) => (c.traits?.era ? [[id, c.traits.era]] : [])));
+/** Era of a culture id (undefined: a historical or fantasy culture). */
+export function cultureEra(culture: string | null | undefined): CultureEra | undefined {
+  return culture ? CULTURE_ERAS[culture] : undefined;
+}
 
 export interface Options {
   /** Cartographic display only; generation geometry remains in metres. */

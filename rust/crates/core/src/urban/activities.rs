@@ -84,6 +84,75 @@ pub(crate) struct Site {
     pub seasonal: bool,
     pub claims: Vec<String>,
     pub only: Option<Vec<String>>,
+    /// A remote place (settlements/remote.rs): placed by its terrain situation, never by a resource anchor.
+    #[serde(default)]
+    pub remote: Option<RemotePlace>,
+}
+
+/// What makes a template a remote place: where it may stand and how one gets there.
+#[derive(Deserialize)]
+pub(crate) struct RemotePlace {
+    /// Situations it stands in (keys of `remote.situations`).
+    pub situations: Vec<String>,
+    /// Access kinds (keys of `remote.accesses`) and their draw weights.
+    pub access: BTreeMap<String, f64>,
+    /// Share of these places found in ruins.
+    #[serde(default)]
+    pub ruined: f64,
+    /// Draw weight among the templates of one situation.
+    pub weight: f64,
+}
+
+/// A terrain situation of the remote places: its draw weight and the thresholds its
+/// predicate reads (metres, grades, potentials; see `remote._doc`).
+#[derive(Deserialize)]
+pub(crate) struct Situation {
+    pub weight: f64,
+    #[serde(flatten)]
+    pub thresholds: BTreeMap<String, f64>,
+}
+impl Situation {
+    /// A threshold of the situation, 0 when it declares none of that name.
+    pub(crate) fn at(&self, key: &str) -> f64 {
+        self.thresholds.get(key).copied().unwrap_or(0.0)
+    }
+}
+
+/// A way to a remote place.
+#[derive(Deserialize)]
+pub(crate) struct Access {
+    /// Geometry: `none` (no path at all), `path` (an ordinary trail to the door), `fall`
+    /// (steps down the fall line), `span` (across water to the nearest other shore),
+    /// `bore` (a gallery through the rock).
+    pub line: String,
+    /// Installation archetype drawn along the line.
+    #[serde(default)]
+    pub installation: Option<String>,
+    /// Steepest grade of a `fall` line (rise over run).
+    #[serde(default)]
+    pub grade: f64,
+    /// Longest line (m).
+    #[serde(default)]
+    pub reach: f64,
+}
+
+/// Remote places (settlements/remote.rs): rarity, spacing and the two vocabularies.
+#[derive(Deserialize)]
+pub(crate) struct Remote {
+    /// Places on 100 km² of land at frequency 1; the count grows as the square root of the land.
+    pub rate: f64,
+    /// Most places of one region, whatever the frequency.
+    pub most: usize,
+    /// Distance kept between two remote places (m).
+    pub spacing: f64,
+    /// Distance kept from the edge of any settlement (m).
+    pub clear: f64,
+    /// Distance kept from the other countryside sites (m).
+    pub site_gap: f64,
+    /// Grade under which a stair stops: an ordinary trail takes over.
+    pub path_grade: f64,
+    pub situations: BTreeMap<String, Situation>,
+    pub accesses: BTreeMap<String, Access>,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +186,7 @@ pub(crate) struct Activities {
     pub ground: BTreeMap<String, Ground>,
     pub archetypes: Vec<Archetype>,
     pub sites: Vec<Site>,
+    pub remote: Remote,
     pub cultures: Cultures,
 }
 
@@ -518,6 +588,64 @@ pub(crate) fn formed(id: &str, culture: &str, yard: Vec<crate::settlements::acti
     out
 }
 
+/// Most broken-wall pieces of one ruined yard.
+const RUINED_YARD_PIECES: usize = 36;
+
+/// A yard fallen into ruin (the lost ruins of settlements/remote.rs): every building
+/// becomes the broken walls of its own footprint (parcels/ruins.rs `broken_walls`, the one
+/// ruin representation), so the ruin stands on the ground the building stood on. Each
+/// piece keeps the archetype of the building it comes from; its look is its ruin label
+/// (`ruin`, `ruin-corner`, `rubble`). A yard that leaves no wall is returned as it was.
+pub(crate) fn ruined(id: &str, culture: &str, yard: Vec<crate::settlements::activities::ActivityBuilding>) -> Vec<crate::settlements::activities::ActivityBuilding> {
+    use super::parcels::ruins;
+    use crate::settlements::activities::ActivityBuilding;
+    let mut rng = crate::rng::Rng::new(id).fork("ruined-yard");
+    let mut parts: Vec<(super::Shape, &'static str)> = vec![];
+    let mut owner: Vec<usize> = vec![];
+    for (j, b) in yard.iter().enumerate() {
+        let left = RUINED_YARD_PIECES.saturating_sub(parts.len());
+        if left == 0 {
+            break;
+        }
+        let mut budget = ruins::RUIN_BUDGET.min(left);
+        ruins::broken_walls(&b.ring, None, 0.3, (0.4, 1.0), &mut rng, &mut budget, &mut parts);
+        owner.resize(parts.len(), j);
+    }
+    if parts.is_empty() {
+        return yard;
+    }
+    let seed = format!("{id}/ruin");
+    let massing = super::massing::massing(&super::massing::Input {
+        parts: &parts,
+        arch: culture_arch(culture),
+        culture,
+        zone: "village",
+        role: "",
+        function: "collective",
+        landmark: false,
+        wealth: 0.4,
+        pressure: 0.0,
+        small_home: false,
+        population: 0,
+        fronts: &[],
+        low_rural: true,
+        distance: 2.0,
+        seed: &seed,
+        archetype: "",
+        complex: false,
+    });
+    parts
+        .iter()
+        .enumerate()
+        .map(|(k, (shape, label))| ActivityBuilding {
+            archetype: yard[owner[k]].archetype.clone(),
+            look: label.to_string(),
+            ring: shape.outer.clone(),
+            massing: serde_json::Value::Array(vec![massing.get(k).cloned().unwrap_or(serde_json::Value::Null)]),
+        })
+        .collect()
+}
+
 /// The activity grammar certifies its own buildings, rather than a residential
 /// admission envelope. Recheck containment after road cuts or parcel edits.
 pub(crate) fn retained_yard(layout: &super::Layout, template: &str, block: usize, shape: &super::Shape, ground: &dyn crate::settlements::installations::Ground) -> Vec<crate::settlements::activities::ActivityBuilding> {
@@ -738,10 +866,11 @@ mod tests {
         let cat: serde_json::Value = serde_json::from_str(include_str!("catalogue.json")).unwrap();
         let farm = &cat["farmstead"]["buildings"];
         let cultures: BTreeSet<&str> = cat["cultures"].as_object().unwrap().keys().map(String::as_str).collect();
-        // 332 archetypes (310 + 7 spring water buildings + 15 countryside works and monuments), unique ids, looks/ground resolve
-        assert_eq!(d.archetypes.len(), 332);
+        // 340 archetypes (310 + 7 spring water buildings + 15 countryside works and monuments
+        // + 3 remote sanctuaries and their 5 accesses), unique ids, looks/ground resolve
+        assert_eq!(d.archetypes.len(), 340);
         let ids: BTreeSet<&str> = d.archetypes.iter().map(|a| a.id.as_str()).collect();
-        assert_eq!(ids.len(), 332, "duplicate archetype id");
+        assert_eq!(ids.len(), 340, "duplicate archetype id");
         assert!(d.family_looks.values().all(|l| d.looks.contains_key(l)), "family_looks -> unknown look");
         let cats: BTreeSet<&str> = d.archetypes.iter().map(|a| a.category.as_str()).collect();
         let known_group = |x: &String| cultures.contains(x.as_str()) || d.cultures.families.contains_key(x);
@@ -772,7 +901,25 @@ mod tests {
             for r in &s.claims { assert!(services.contains(r.as_str()), "{}: claim {r}", s.id); }
             assert!(s.only.iter().flatten().all(known_group), "{}: only", s.id);
         }
-        assert_eq!(d.sites.len(), 77);
+        assert_eq!(d.sites.len(), 85);
+        // remote places: their situations and accesses resolve; an access with a line names its installation
+        let mut remote = 0;
+        for s in &d.sites {
+            let Some(r) = &s.remote else { continue };
+            remote += 1;
+            assert!(!s.required.is_empty() && s.context.is_empty(), "{}: a remote place has buildings and no resource context", s.id);
+            assert!(!r.situations.is_empty() && r.situations.iter().all(|k| d.remote.situations.contains_key(k)), "{}: remote situation", s.id);
+            assert!(!r.access.is_empty() && r.access.iter().all(|(k, w)| d.remote.accesses.contains_key(k) && *w > 0.0), "{}: remote access", s.id);
+            assert!((0.0..=1.0).contains(&r.ruined) && r.weight > 0.0, "{}: remote shares", s.id);
+        }
+        assert_eq!(remote, 8);
+        for (k, a) in &d.remote.accesses {
+            assert!(["none", "path", "fall", "span", "bore"].contains(&a.line.as_str()), "access {k}: line {}", a.line);
+            assert!(a.installation.iter().all(|i| archetype(i).is_some_and(|x| x.kind == "installation")), "access {k}: installation");
+            assert_eq!(a.installation.is_none(), matches!(a.line.as_str(), "none" | "path"), "access {k}: a line is drawn by an installation");
+            assert!(a.line != "fall" || a.grade > d.remote.path_grade, "access {k}: stair grade");
+        }
+        assert!(d.remote.situations.values().all(|s| s.weight > 0.0) && d.remote.rate > 0.0 && d.remote.most > 0);
         // cultures: each of the catalogue's cultures in exactly one family
         let mut seen = BTreeSet::new();
         for f in d.cultures.families.values() {

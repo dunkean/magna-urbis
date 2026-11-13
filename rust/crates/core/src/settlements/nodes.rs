@@ -294,6 +294,8 @@ fn build(s: &Spot, p: &Place, f: &Fields, roads: &RoadOutput) -> Option<Activity
         season_mask: 0x0fff,
         buildings,
         installations,
+        situation: String::new(),
+        approach: String::new(),
         id,
     })
 }

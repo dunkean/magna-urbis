@@ -42,15 +42,23 @@ pub struct ActivitySite {
     pub y: f64,
     /// Ground height at the site (m).
     pub ground: f64,
-    /// Point joining the road network.
+    /// Point joining the road network (the site itself when `access_class` is `none`).
     pub access: Point,
-    /// track | trail
+    /// track | trail | none (a remote place no path leads to: never routed)
     pub access_class: String,
     pub residents: u32,
     pub season_mask: u16,
     pub buildings: Vec<ActivityBuilding>,
     /// Ground installations (catalogue P5).
     pub installations: Vec<Installation>,
+    /// Remote places (remote.rs): the terrain situation the place stands in (`summit`,
+    /// `cliff-ledge`, `islet`…); empty for every other site.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub situation: String,
+    /// Remote places: how one gets there (`none`, `track`, `cliff-stair`, `rock-steps`,
+    /// `tunnel`, `causeway`, `rope-bridge`); its line is the installation of that access.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub approach: String,
 }
 
 /// Farthest edge-to-anchor distance of an attached site / a seasonal one (m).
@@ -282,6 +290,8 @@ fn build(s: &Settlement, c: &Candidate, f: &Fields) -> Option<ActivitySite> {
         season_mask: c.anchor.season_mask,
         installations,
         buildings,
+        situation: String::new(),
+        approach: String::new(),
         id,
     })
 }

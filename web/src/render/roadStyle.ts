@@ -244,8 +244,12 @@ export interface NaturalMarks { shadow: { color: string; alpha: number; extra: n
 /** The strokes of a natural road of `width` world units at `scale` px per unit; each shows only once it can be seen. */
 export function naturalMarks(rank: RoadRank, width: number, scale: number, style: RoadStyle): NaturalMarks {
   const s = ROAD_RANK_STYLE[rank], e = emphasisAlpha(style.emphasis), px = width * scale, snow = !style.night && mapGroundSnow();
+  // Earth tracks and paths held at their screen floor are thinner than a pixel on the ground: they fade with the
+  // share of the pixel they really cover (about 3 m and 1.6 m wide), and stay a little quieter at any scale, so
+  // a path that follows a river bank or a valley rim does not outline it on the far and mid views.
+  const faint = rank === 'track' || rank === 'path' ? .85 * clamp((rank === 'track' ? 3 : 1.6) * scale / s.floor, .35, 1) : 1;
   return { shadow: s.shoulder > 0 || snow ? { color: snow ? 'rgb(116,139,158)' : SHADOW, alpha: clamp((snow ? .2 : s.shoulder) * e, 0, .4), extra: Math.max(1.4 / scale, width * .34) } : undefined,
-    bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) },
+    bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) * (snow ? 1 : faint) },
     wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? .07 : .13) * e, share: .56, dash: WEAR_DASH } : undefined,
     // The grain tile is per-texel noise: below about one screen pixel per texel the unfiltered pattern aliases into
     // pixel speckle (a grainy, "pixelated" street at town zoom). It fades in between 1 and 2 px per texel.

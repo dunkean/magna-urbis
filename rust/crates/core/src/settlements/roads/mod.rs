@@ -79,7 +79,8 @@ pub struct RoadSite {
     pub center: Point,
     /// Settlement extent; 0 = from the population.
     pub radius: f64,
-    /// Access point of an activity site: `track` | `trail` (see `RoadConfig::activity_access`).
+    /// Access point of an activity site: `track` | `trail` (see `RoadConfig::activity_access`);
+    /// `none` is never routed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access: Option<String>,
     /// Parent settlement key of an activity access point.
@@ -670,7 +671,8 @@ pub(super) fn route(
     // Activity access points never take part in the settlement network itself.
     let places: Vec<RoadSite> = sites.iter().filter(|s| s.access.is_none()).cloned().collect();
     let activity: Vec<&RoadSite> = if cfg.activity_access {
-        sites.iter().filter(|s| s.access.is_some()).collect()
+        // `none`: a remote place no path leads to; it is not routed.
+        sites.iter().filter(|s| s.access.as_deref().is_some_and(|a| a != "none")).collect()
     } else {
         vec![]
     };

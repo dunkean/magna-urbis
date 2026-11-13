@@ -150,11 +150,13 @@ fn table() -> &'static File {
 }
 
 /// The rule of a label: the first override among `keys` (culture id, then
-/// monument family), else the shared rule. None: the label has no rule.
+/// monument family), a key's own override before those of the role groups its
+/// traits share (`roleGroups`), else the shared rule. None: the label has no rule.
 pub(in crate::urban) fn rule(label: &str, keys: &[&str]) -> Option<&'static MassRule> {
     let t = table();
+    let own = |k: &str| t.overrides.get(k).and_then(|o| o.get(label));
     keys.iter()
-        .find_map(|k| t.overrides.get(*k).and_then(|o| o.get(label)))
+        .find_map(|&k| own(k).or_else(|| super::kit::traits(k).role_groups.iter().find_map(|g| own(g.as_str()))))
         .or_else(|| t.roles.get(label))
 }
 

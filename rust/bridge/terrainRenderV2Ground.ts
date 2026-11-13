@@ -88,8 +88,8 @@ float v2GroundDunes(vec2 world,float fp,float amount){
       float keep=1.-sstep(.125,.25,fp*length(rate)/6.283185307);
       if(keep>0.){
         float skew=phase-.7*sin(phase),gain=swell*keep;
-        v2GroundFormSlope+=(k==0?.045:.022)*l*gain*cos(skew)*(1.-.7*cos(phase))*rate;
-        tone+=(k==0?.05:.025)*gain*sin(skew);
+        v2GroundFormSlope+=(k==0?.03:.022)*l*gain*cos(skew)*(1.-.7*cos(phase))*rate;
+        tone+=(k==0?.032:.025)*gain*sin(skew);
       }
     }
   }

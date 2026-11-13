@@ -341,24 +341,26 @@ vec4 groundFieldWithClasts(vec3 point,uint seed,float footprint,out float clasts
     vec3 r=vec3(c*point.x+s*point.z,point.y,-s*point.x+c*point.z);
     if(k==2){
       vec4 cap=groundGravel(r.xz/vec2(wavelength,wavelength*aspect),seed+uint(k+1)*0x6c8e9cf5u);
-      vec2 g=cap.yw/vec2(wavelength,wavelength*aspect);float a=groundAmplitude[k]*keep;
-      sum+=vec4((cap.x-.1)*a,(c*g.x-s*g.y)*a,0.,(s*g.x+c*g.y)*a);clasts=cap.x*keep;continue;
+      // Gravel caps are loose stones: on scree and the stony units only (surfaceGroundClasts, set by surfaceMicro).
+      vec2 g=cap.yw/vec2(wavelength,wavelength*aspect);float a=groundAmplitude[k]*keep*surfaceGroundClasts;
+      sum+=vec4((cap.x-.1)*a,(c*g.x-s*g.y)*a,0.,(s*g.x+c*g.y)*a);clasts=cap.x*keep*surfaceGroundClasts;continue;
     }
     vec3 q=vec3(dot(r,vec3(.36,-.8,.48)),dot(r,vec3(.48,.6,.64))/aspect,dot(r,vec3(-.8,0.,.6)))/wavelength;
     q+=vec3(17.137,3.731,-11.517)+float(k)*vec3(9.173,-5.731,7.337);
     vec4 n=groundNoise(q,seed+uint(k+1)*0x6c8e9cf5u);
-    // The crease of the 8 m band and the groove of the 2.2 m band lie on the zero set of a smooth noise. At
-    // battlemap range (surfaceFineGrain is zero and surfaceFineBreak one at every wider zoom) the fine grain of
-    // surfaceMicro shifts that zero set, so the line zigzags at 30 and 9 cm, and a groove stays open along
-    // part of its length only: a broken joint in the light, not the isoline of a noise.
-    float fray=k==0?.1:k==1?.08:0.,raw=n.x+fray*surfaceFineGrain.x;
-    float inverse=inversesqrt(1.+raw*raw),v=.72*raw*inverse,value=v,derivative=1.;
-    if(k==0){float rounded=sqrt(v*v+.02);value=.3-rounded;derivative=-v/rounded;}
-    else if(k==1){float groove=exp2(-32.*v*v);value=.4-groove;derivative=44.36141956*v*groove;}
-    float a=groundAmplitude[k]*keep*(k==1?surfaceFineBreak:1.),d=a*derivative*.72*inverse*inverse*inverse;
+    // The ridge of the 8 m band and the groove of the 2.2 m band lie on the zero set of a smooth noise. The
+    // displaced geometry keeps these profiles (surfaceFineBreak is 1 where no fragment was shaded). In a shaded
+    // fragment (0, set by surfaceMicro) the crest and the furrow would draw the closed loops of that noise in
+    // the light, so there each band is its plain undulation, at half height.
+    float inverse=inversesqrt(1.+n.x*n.x),v=.72*n.x*inverse,value=v,derivative=1.;
+    if(k==0){float rounded=sqrt(v*v+.02);value=mix(.5*v,.3-rounded,surfaceFineBreak);derivative=mix(.5,-v/rounded,surfaceFineBreak);}
+    else if(k==1){float groove=exp2(-32.*v*v);value=mix(.5*v,.4-groove,surfaceFineBreak);derivative=mix(.5,44.36141956*v*groove,surfaceFineBreak);}
+    float a=groundAmplitude[k]*keep,d=a*derivative*.72*inverse*inverse*inverse/wavelength;
     vec3 g=vec3(.36*n.y+.48*n.z/aspect-.8*n.w,-.8*n.y+.6*n.z/aspect,.48*n.y+.64*n.z/aspect+.6*n.w);
-    sum+=vec4(value*a,(vec3(c*g.x-s*g.z,g.y,s*g.x+c*g.z)/wavelength+fray*vec3(surfaceFineGrain.y,0.,surfaceFineGrain.z))*d);
-  }return sum;
+    sum+=vec4(value*a,vec3(c*g.x-s*g.z,g.y,s*g.x+c*g.z)*d);
+  }
+  // Under water (surfaceGroundDry 0, set by surfaceMicro) the bed is smooth sediment: no gravel caps, no relief.
+  return sum*surfaceGroundDry;
 }
 // surfaceMicroSlope is the relief of the colour bands of this fragment, so a
 // lit crack is also a dark one. Slope only: the height keeps its ground bands.

@@ -64,6 +64,8 @@ export interface HydrologyData {
   filled: Float32Array; lakeDepth: Float32Array; lakeLabels: Uint32Array;
   baseHeight: Float32Array; drainageHeight: Float32Array; surfaceHeight: Float32Array; adjustedHeight: Float32Array;
   riverPoints: Float32Array; riverOffsets: Uint32Array; riverMeta: Uint32Array;
+  /** One value per river point: the mouth gain applied to its width (1 outside a mouth). Absent on data saved before it existed. */
+  riverFlare?: Float32Array;
   lakePoints: Float32Array; lakeOffsets: Uint32Array; lakeMeta: Float32Array; lakeRingMeta: Uint32Array;
   lakeClosed: Uint32Array; waterField: Float32Array; closedLakeCount: number;
   nodePoints: Float32Array; nodeMeta: Uint32Array;
@@ -138,7 +140,7 @@ export class PreparedHydrology {
         avoidedFillVolumeM3: output.avoided_fill_volume_m3 ?? 0,
         filled: output.filled, lakeDepth: output.lake_depth, lakeLabels: output.lake_labels,
         baseHeight: this.baseHeight, drainageHeight: output.drainage_height, surfaceHeight: output.surface_height, adjustedHeight: output.adjusted_height,
-        riverPoints: output.river_points, riverOffsets, riverMeta,
+        riverPoints: output.river_points, riverOffsets, riverMeta, riverFlare: (output as { river_flare?: Float32Array }).river_flare,
         lakePoints: output.lake_points, lakeOffsets: output.lake_offsets, lakeMeta, lakeRingMeta: output.lake_ring_meta,
         lakeClosed, waterField: output.water_field, closedLakeCount: lakeClosed.reduce((sum, c) => sum + c, 0),
         nodePoints: output.node_points, nodeMeta: output.node_meta,

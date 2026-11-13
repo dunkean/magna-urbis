@@ -43,16 +43,118 @@ const GROUND: Record<string, { fill?: string; stroke: string; width: number; das
   underground_work: { stroke: '#7b6f61', width: 1.5, dash: [4, 3] },
   crossing: { stroke: '#7b5b3b', width: 1.5 },
 };
-/** Installations (weirs, quarry faces, heaps, piers, corrals…) as flat ground under the buildings; world-metre transform already set. */
-export function drawInstallations(ctx: CanvasRenderingContext2D, sites: readonly ActivitySite[], viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): number {
+type Pt = { x: number; y: number };
+type SiteLook = { band: string; casing?: string; tread: string; rope: string; plank: string; post: string; portal: string; wet: string };
+/** Ink looks (parchment / ink styles) keep an edge; natural looks are muted stone, timber and rope without outlines. */
+const SITE_LOOK: Record<'ink' | 'natural', SiteLook> = {
+  ink: { band: '#e6d5b2', casing: '#705d45', tread: '#705d45', rope: '#3d3226', plank: '#8a6a45', post: '#2b241c', portal: '#2a221a', wet: '#5c5045' },
+  natural: { band: '#b9ae97', tread: '#8a7f6a', rope: '#8c7a58', plank: '#7a6347', post: '#514332', portal: '#3b342d', wet: '#56605f' },
+};
+const hashOf = (text: string, x: number, y: number): number => {
+  let h = 2166136261 ^ Math.round(x * 7) ^ Math.round(y * 13) * 31;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+const tracePolyline = (ctx: CanvasRenderingContext2D, pts: readonly Pt[]): void => {
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+};
+/** Cross strokes of half-length `half` along a polyline at `step(i)` metres; `limit` caps the count. */
+function crossBars(ctx: CanvasRenderingContext2D, pts: readonly Pt[], half: number, step: (i: number) => number, limit: number): void {
+  let next = step(0) / 2, count = 0;
+  for (let i = 1; i < pts.length && count < limit; i++) {
+    const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+    if (length < 0.001) continue;
+    for (; next < length && count < limit; next += step(++count)) {
+      const x = a.x + dx * next / length, y = a.y + dy * next / length;
+      ctx.moveTo(x - dy * half / length, y + dx * half / length); ctx.lineTo(x + dy * half / length, y - dx * half / length);
+    }
+    next -= length;
+  }
+}
+const stroked = (ctx: CanvasRenderingContext2D, pts: readonly Pt[], color: string, width: number): void => {
+  ctx.beginPath(); tracePolyline(ctx, pts); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+};
+/** Remote accesses (cliff stair, rock steps, tidal causeway, rope bridge, rock tunnel) as their own marks; false when `archetype` has none. */
+function drawRemoteAccess(ctx: CanvasRenderingContext2D, archetype: string, pts: readonly Pt[], mpp: number, look: SiteLook, ink: boolean, seed: number): boolean {
+  const first = pts[0], last = pts[pts.length - 1];
+  switch (archetype) {
+    case 'cliff_stair': case 'rock_steps': {
+      const rough = archetype === 'rock_steps', width = Math.max(rough ? 1.2 : 2, mpp * 1.6);
+      ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+      if (look.casing && !rough) stroked(ctx, pts, look.casing, width + Math.max(.5, mpp * 1.2));
+      stroked(ctx, pts, look.band, width);
+      const spacing = rough ? 1.5 : 1.1;
+      if (spacing / mpp >= 3) {
+        // Rough steps: uneven spacing, a hash of the installation.
+        const step = (i: number): number => rough ? spacing * (.6 + ((Math.imul(seed ^ i, 2654435761) >>> 0) % 100) / 125) : spacing;
+        ctx.beginPath(); crossBars(ctx, pts, width * .46, step, 4000);
+        ctx.strokeStyle = look.tread; ctx.lineWidth = Math.max(.12, mpp * .7); ctx.globalAlpha = ink ? 1 : .75; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      return true;
+    }
+    case 'tidal_causeway': {
+      const width = Math.max(4, mpp * 2.5);
+      ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+      ctx.globalAlpha = ink ? 1 : .8; stroked(ctx, pts, look.wet, width + Math.max(1.2, mpp * 1.6)); ctx.globalAlpha = 1;
+      stroked(ctx, pts, look.band, width);
+      return true;
+    }
+    case 'rope_bridge': {
+      const dx = last.x - first.x, dy = last.y - first.y, length = Math.hypot(dx, dy);
+      if (length < .5) return false;
+      const ux = dx / length, uy = dy / length, half = .55, end = [first, last], rail = Math.max(.1, mpp * .8);
+      const left = [{ x: first.x - uy * half, y: first.y + ux * half }, { x: last.x - uy * half, y: last.y + ux * half }];
+      const right = [{ x: first.x + uy * half, y: first.y - ux * half }, { x: last.x + uy * half, y: last.y - ux * half }];
+      ctx.lineCap = 'butt';
+      if (mpp > .5) { stroked(ctx, end, look.plank, Math.max(1.1, mpp * 1.4)); return true; }
+      ctx.globalAlpha = .6; stroked(ctx, end, look.plank, half * 2); ctx.globalAlpha = 1;
+      if (.6 / mpp >= 2.5 && length / .6 < 1500) {
+        ctx.beginPath(); crossBars(ctx, end, half, () => .6, 1500); ctx.strokeStyle = look.plank; ctx.lineWidth = Math.max(.12, mpp * .8); ctx.stroke();
+      }
+      stroked(ctx, left, look.rope, rail); stroked(ctx, right, look.rope, rail);
+      ctx.fillStyle = look.post; ctx.beginPath();
+      const r = Math.max(.3, mpp * 1.2);
+      for (const p of [left[0], right[0], left[1], right[1]]) { ctx.moveTo(p.x + r, p.y); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); }
+      ctx.fill();
+      return true;
+    }
+    case 'rock_tunnel': {
+      const style = GROUND.underground_work;
+      ctx.lineCap = 'round'; ctx.setLineDash(style.dash!.map(d => d * Math.max(1, mpp)));
+      stroked(ctx, pts, style.stroke, Math.max(style.width, mpp * 1.2));
+      ctx.setLineDash([]); ctx.lineCap = 'butt';
+      ctx.beginPath();
+      for (const [end, from] of [[first, pts[1]], [last, pts[pts.length - 2]]] as const) {
+        const dx = end.x - from.x, dy = end.y - from.y, length = Math.hypot(dx, dy) || 1, h = Math.max(1.2, mpp * 1.5);
+        ctx.moveTo(end.x - dy * h / length, end.y + dx * h / length); ctx.lineTo(end.x + dy * h / length, end.y - dx * h / length);
+      }
+      ctx.strokeStyle = look.portal; ctx.lineWidth = Math.max(.9, mpp * 2.5); ctx.stroke();
+      return true;
+    }
+    default: return false;
+  }
+}
+
+/** Installations (weirs, quarry faces, heaps, piers, corrals…) as flat ground under the buildings; world-metre transform already set.
+ * `natural` selects the muted no-outline look of satellite / natural grounds for the remote accesses; the default keeps the ink edge.
+ * The same function paints the 2D map and the 3D ground tiles. */
+export function drawInstallations(ctx: CanvasRenderingContext2D, sites: readonly ActivitySite[], viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, natural = false): number {
   if (mpp > 8) return 0;
   let drawn = 0;
+  const look = SITE_LOOK[natural ? 'natural' : 'ink'];
   ctx.save();
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   for (const site of sites) {
     if (site.x < viewport.minX - 400 || site.x > viewport.maxX + 400 || site.y < viewport.minY - 400 || site.y > viewport.maxY + 400) continue;
     for (const g of site.installations ?? []) {
       if (typeof g !== 'object' || g.points.length < 2) continue;
+      if (!g.closed) {
+        ctx.save(); ctx.globalAlpha = 1;
+        const done = drawRemoteAccess(ctx, g.archetype, g.points, mpp, look, !natural, hashOf(g.archetype, g.points[0].x, g.points[0].y));
+        ctx.restore();
+        if (done) { drawn++; continue; }
+      }
       const style = GROUND[g.kind] ?? GROUND.industrial_ground;
       ctx.beginPath();
       ctx.moveTo(g.points[0].x, g.points[0].y);

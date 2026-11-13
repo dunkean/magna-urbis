@@ -23,7 +23,10 @@ float v2WinterClimate(float altitude,float perennial){
   float warmest=annual+amplitude,coldest=annual-amplitude-year.y;
   float phase=.5-.5*cos(6.283185307*fract(uV2Season+1.-V2_SEASON_LAG));
   float supply=clamp(uMaterialClimate.y/max(120.,10.*(warmest+coldest)+280.),0.,5.);
-  return max(v2Snow(mix(coldest,warmest,phase)+thaw,supply,0.,0.),perennial*v2PerennialSnow(warmest,supply,0.));
+  // Fresh water (perennial 0) only freezes in the cold half of the year: near the snow line the land of a summer
+  // map is drawn bare by its exposure, and a frozen torrent beside it would contradict it.
+  float seasonal=v2Snow(mix(coldest,warmest,phase)+thaw,supply,0.,0.)*(1.-(1.-perennial)*sstep(.5,.8,phase));
+  return max(seasonal,perennial*v2PerennialSnow(warmest,supply,0.));
 }
 // Snow cover of level ground for a climatic snow value: the far threshold of v2Local.
 float v2WinterCover(float snow){return sstep(.325,.575,snow);}

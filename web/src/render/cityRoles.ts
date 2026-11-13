@@ -68,6 +68,7 @@ export const ROLE_LABELS_EN: Record<string, string> = {
   'commerce.office-block': 'Office block', 'commerce.skyscraper': 'Skyscraper', 'commerce.department-store': 'Department store',
   'commerce.bank': 'Bank', 'commerce.hotel': 'Hotel', 'craft.factory': 'Factory', 'storage.elevator': 'Grain elevator',
   'worship.chapel': 'Chapel', 'worship.synagogue': 'Synagogue',
+  'housing': 'Collective housing', 'housing.slab': 'Housing slab', 'housing.tower': 'Residential tower', 'commerce.mall': 'Shopping mall', 'civic.stadium': 'Stadium', 'civic.power-plant': 'Thermal power plant', 'civic.power-plant.atomic': 'Atomic power plant', 'civic.tv-tower': 'Television tower', 'civic.arcology': 'Arcology', 'civic.megastructure': 'Megastructure', 'civic.habitat-dome': 'Habitat dome', 'civic.habitat-dome.ward': 'Neighbourhood dome', 'civic.vertical-farm': 'Vertical farm', 'civic.monument': 'Monument', 'civic.hive': 'Hive', 'civic.organic-spire': 'Organic spire',
   'dwelling': 'Dwelling', 'dwelling.row': 'Row house', 'dwelling.house': 'House', 'dwelling.courtyard': 'Courtyard house',
   'dwelling.compound': 'Family compound', 'dwelling.platform': 'Platform house', 'dwelling.tenement': 'Tenement',
   'dwelling.townhouse': 'Townhouse', 'dwelling.mansion': 'Mansion', 'dwelling.shop': 'Shop house', 'dwelling.farm': 'Farm',
@@ -112,7 +113,12 @@ export const ROLE_LABELS_EN: Record<string, string> = {
 };
 /** English names of `services.json` `familyLabels`: the family's own buildings keep their names (a funduq stays a funduq). */
 export const FAMILY_ROLE_LABELS_EN: Record<string, Record<string, string>> = {
-  industrial: { 'dwelling.row': 'Row house', 'dwelling.tenement': 'Tenement', 'dwelling.shop': 'Shop building', 'commerce.market': 'City hall square', 'civic.townhall': 'City hall', 'worship.parish': 'Church', 'commerce.tavern': 'Saloon', 'commerce.warehouse': 'Warehouse', 'craft.workshop': 'Workshop and small factory', 'open.garden': 'Public park', 'civic.theatre': 'Theatre', 'civic.library': 'Public library' },
+  industrial: { 'dwelling.row': 'Row house', 'dwelling.tenement': 'Tenement', 'dwelling.shop': 'Shop building', 'commerce.market': 'City hall square', 'civic.townhall': 'City hall', 'worship.parish': 'Church', 'commerce.tavern': 'Saloon', 'commerce.warehouse': 'Warehouse', 'craft.workshop': 'Workshop and small factory', 'open.garden': 'Public park', 'civic.theatre': 'Theatre', 'civic.library': 'Public library', 'civic.tv-tower': 'Airship mooring mast' },
+  modernist: { 'commerce.market': 'Central square', 'civic.townhall': 'Administration building', 'commerce.tavern': 'Café', 'open.garden': 'Park of culture', 'craft.workshop': 'Workshop' },
+  contemporary: { 'commerce.market': 'Central square', 'civic.townhall': 'City hall', 'commerce.tavern': 'Café', 'open.garden': 'City park', 'craft.workshop': 'Workshop', 'commerce.warehouse': 'Port warehouse' },
+  informal: { 'commerce.market': 'Open-air market', 'civic.townhall': 'District office', 'commerce.tavern': 'Street bar', 'craft.workshop': 'Street workshop' },
+  futuristic: { 'commerce.market': 'Plaza', 'civic.townhall': 'Administration hub', 'commerce.tavern': 'Bar', 'open.garden': 'Park', 'craft.workshop': 'Fabrication workshop', 'civic.tv-tower': 'Transmission tower' },
+  alien: { 'commerce.market': 'Exchange grounds', 'craft.workshop': 'Growth chamber', 'open.garden': 'Spawning garden' },
   islamic: { 'dwelling.courtyard': 'Courtyard house (dar)', 'dwelling.shop': 'Souk shop', 'open.cemetery': 'Muslim cemetery', 'storage.granary': 'Agadir (granary)', 'commerce.tavern': 'Coffee house (qahwa)', 'funerary.mausoleum': 'Qubba (saint’s tomb)', 'civic.library': 'Dar al-ʿilm (library)' },
   chinese: { 'dwelling.courtyard': 'Siheyuan', 'dwelling.shop': 'Street shop', 'commerce.warehouse': 'River warehouse', 'commerce.tavern': 'Teahouse', 'commerce.stable': 'Post relay (yi)', 'civic.arch': 'Paifang (memorial arch)', 'civic.academy': 'Shuyuan (academy)' },
   japanese: { 'dwelling.row': 'Machiya', 'dwelling.shop': 'Machiya shop', 'commerce.inn': 'Ryokan', 'worship.temple': 'Buddhist temple', 'worship.shrine': 'Shinto shrine', 'storage.granary': 'Kura (storehouse)', 'craft.brewery': 'Sake brewery', 'commerce.tavern': 'Chaya (teahouse)', 'civic.bathhouse': 'Sentō (public bath)', 'elite.manor': 'Yashiki (samurai residence)', 'civic.theatre': 'Kabuki theatre' },

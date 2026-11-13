@@ -6,7 +6,7 @@
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
 import { ForestRoom } from '../render/forestRoom';
-import { FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { FOREST_CLUMP_GLSL, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
 /** Horizontal distance from the eye (m): full trees within TREE_NEAR, none beyond TREE_FAR. */
 export const TREE_NEAR = 420, TREE_FAR = 600;
@@ -307,6 +307,11 @@ out vec3 world;
 out vec3 treeNormal;
 out vec3 tint;
 out float treeLevel;
+// Crown chart for the leaf clumps: xy the crown surface unrolled from its top (direction times the profile's arc
+// length in metres, so clumps keep their metric size down the flanks and stick to the tree), z a per-tree seed, w the
+// crown radius. Info: x needle, y no foliage (trunk, leafless crown), z snow share, w rim distance (0 top, 1 rim).
+out vec4 crownChart;
+out vec4 crownInfo;
 const float BROAD_U[5]=float[5](0.,.22,.5,.8,1.);
 const float BROAD_R[5]=float[5](.5,.93,1.,.74,0.);
 const float NEEDLE_U[5]=float[5](0.,.34,.37,.68,1.);
@@ -317,7 +322,7 @@ void main(){
   int dseg=corner==1||corner==2||corner==4?1:0,dring=corner==2||corner==4||corner==5?1:0;
   int ring=band+dring;
   float fade=1.-smoothstep(treeFade.z,treeFade.w,distance(treeBase.xy,treeFade.xy));
-  if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;return;}
+  if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
   bool needle=treeShape.z>.5;
   float r=treeBase.w,h=treeShape.x,bottom=needle?min(max(h-treeShape.y,.05*h),.1*h):clamp(h-treeShape.y,.3*h,.4*h);
   // A broadleaf seen from the side is a full crown on a short bole, deeper than its painted dome suggests.
@@ -326,10 +331,14 @@ void main(){
   float trunk=max(.07*r,.12),radius,y;
   // Snow: the mean load of the crown is the fraction of treeColor.w over .45 (its integer part is the leafless flag).
   // It lies on the top of the crown and on a spire's bough tips; the gaps between boughs and the underside stay dark.
-  float load=fract(treeColor.w)/.45,cap=0.;
+  float load=fract(treeColor.w)/.45,cap=0.,arc=0.;
   if(ring<2){radius=trunk;y=ring==0?-.4:bottom;}
   else {
     int k=ring-2;float u=needle?NEEDLE_U[k]:BROAD_U[k];
+    for(int j=k;j<4;j++){
+      float du=(needle?NEEDLE_U[j+1]-NEEDLE_U[j]:BROAD_U[j+1]-BROAD_U[j])*(h-bottom),dr=(needle?NEEDLE_R[j+1]-NEEDLE_R[j]:BROAD_R[j+1]-BROAD_R[j])*r;
+      arc+=sqrt(du*du+dr*dr);
+    }
     cap=needle?((seg+dseg)%2==0?1.3:.45)*mix(.8,1.2,u):mix(.45,1.4,u);
     radius=r*(needle?NEEDLE_R[k]:BROAD_R[k]);y=bottom+u*(h-bottom);
     // Alternating branch tips keep spruce serrated from above while the stacked cones keep a narrow spire.
@@ -342,8 +351,10 @@ void main(){
   else if(needle)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
   else {float mid=.5*(bottom+h),hd=max(.5*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
   world=vec3(treeBase.x-cameraOrigin.x+local.x,treeBase.z*exaggeration-cameraOrigin.y+local.y,treeBase.y-cameraOrigin.z+local.z);
-  tint=ring<2?vec3(.24,.19,.14):mix(treeColor.rgb,vec3(.84,.88,.90),min(load*cap,.95));
+  tint=ring<2?vec3(.24,.19,.14):treeColor.rgb;
   treeLevel=ring<2?0.:clamp((y-bottom)/max(h-bottom,.1),0.,1.);
+  crownChart=vec4(dir*arc,fract(treeShape.w*.15915494),r);
+  crownInfo=vec4(needle?1.:0.,ring<2||treeColor.w>.5?1.:0.,ring<2?0.:min(load*cap,.95),min(arc/max(r,.1),1.));
   gl_Position=matrix*vec4(world,1.);
 }`,
   fragment: `#version 300 es
@@ -352,17 +363,48 @@ in vec3 world;
 in vec3 treeNormal;
 in vec3 tint;
 in float treeLevel;
+in vec4 crownChart;
+in vec4 crownInfo;
 uniform vec3 eye;
 uniform vec3 treeLight;
 uniform float fogDistance;
 uniform int uNight;
 out vec4 color;
+float groundSmooth(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
+// Same gradient decoding as the painted crowns' forestGradient; the lattice seed is free (each crown offsets its lookup).
+vec2 forestGradient(ivec2 c){
+  uvec2 p=uvec2(c);uint h=(p.x*0x9e3779b9u)^(p.y*0x85ebca6bu)^0x6a09e667u;
+  h=(h^(h>>16u))*0x7feb352du;h=h^(h>>15u);
+  return vec2(float(h&255u),float((h>>8u)&255u))*(1./128.)+(.5/128.-1.);
+}
+${FOREST_PERLIN_GLSL}
+${FOREST_CLUMP_GLSL}
 void main(){
   vec3 n=normalize(treeNormal),l=normalize(treeLight);
+  // Pixel footprint (m), taken before any branch, as the 3D ground does for the painted crowns.
+  float fp=max(.001,max(length(dFdx(world)),length(dFdy(world))));
+  vec3 albedo=tint;float snow=crownInfo.z,r=crownChart.w,foliage=1.-crownInfo.y;
+  // Leaf clumps of the painted crowns (applyForest): same metric scale, strength, rim weighting and fade with the
+  // footprint; nothing once the crown spans under a few pixels. Needles carry a weak albedo grain and no relief.
+  if(foliage>0.&&r>2.5*fp){
+    vec3 clump=forestClump(crownChart.xy,r,fp,crownChart.z);
+    float detail=foliage*(crownInfo.x>.5?.3:1.)*mix(.55,1.,crownInfo.w);
+    albedo*=1.+.3*detail*clump.x;
+    // Snow gathers on the clumps and leaves the gaps dark, as on the painted crowns.
+    snow=min(snow*(1.+1.5*detail*clump.x),.95);
+    if(crownInfo.x<.5){
+      // Clump relief in the chart, laid on the surface: radial chart axis along the meridian, the other around it.
+      float len=length(crownChart.xy);vec2 d=len>1e-4?crownChart.xy/len:vec2(1.,0.);
+      vec3 across=vec3(-d.y,0.,d.x),down=cross(n,across);
+      vec2 g=clump.yz;
+      n=normalize(n-detail*(dot(g,d)*down+dot(g,vec2(-d.y,d.x))*across));
+    }
+  }
+  albedo=mix(albedo,vec3(.84,.88,.90),snow);
   // Relative to an upward crown top, the colour the painted crown shows from above.
   float lit=(.5+.62*max(dot(n,l),0.))/(.5+.62*max(l.y,0.));
   float occ=mix(.58,1.,treeLevel);
-  vec3 base=tint*lit*occ;
+  vec3 base=albedo*lit*occ;
   if(uNight==1)base*=vec3(.149,.196,.31);
   float fog=1.-exp(-pow(length(world-eye)/fogDistance,2.)*.11);
   base=mix(base,uNight==1?vec3(.018,.028,.065):vec3(.77,.85,.88),min(.62,fog));

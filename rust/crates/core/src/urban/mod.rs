@@ -1802,6 +1802,10 @@ pub fn generate_quarters(
             } else { Ok(layout) }
         };
         let mut layout = edits::with_quarter_edits(config, plan, finish)?;
+        // Invariant (no earth street on water), on the physical surface: after the last
+        // stage that adds or moves formal streets, before the shanty records their count
+        // (its own ways are laid dry). Slope wards reuse streets of such a layout.
+        network::clear_water(&mut layout, site.population, physical_surface, stilt.as_ref().map(|_| surface), config.max_street_grade);
         shanty::extend(seed, &mut layout, site, config, kind, physical_surface, roads);
         Ok(layout)
         };

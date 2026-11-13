@@ -11,6 +11,8 @@ export function farmRidges(f: Farmstead): Polyline[] {
   return out;
 }
 
+/** Ridge line of one farm building (see farmRidges), or null. */
+export const farmBuildingRidge = (b: FarmBuilding): Polyline | null => ridge(b);
 function ridge(b: FarmBuilding): Polyline | null {
   if (b.roof === 'flat' || b.roof === 'none' || b.poly.length !== 4) return null;
   const [p0, p1, p2, p3] = b.poly;

@@ -24,6 +24,7 @@ mod classical;
 mod fantasy;
 mod islamic;
 mod medieval;
+mod metropolis;
 mod modern;
 mod rural;
 mod utility;
@@ -69,8 +70,9 @@ pub(super) fn build(x: &mut Site, o: &Occupancy, family: &'static str, rng: &mut
         wealth: o.wealth,
         landmark: o.landmark,
     };
-    let families: [fn(&mut Site, &Brief, &mut Rng) -> bool; 11] = [
+    let families: [fn(&mut Site, &Brief, &mut Rng) -> bool; 12] = [
         modern::build,
+        metropolis::build,
         rural::build,
         classical::build,
         islamic::build,

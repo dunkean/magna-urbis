@@ -89,9 +89,18 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     // map-scale gullies, for the normal of v2GroundEnv. surfaceRockCavity: hollows of the fall-line wear
     // (x map scale, y close range), for its sky occlusion.
     vec2 surfaceChuteSlope=vec2(0.),surfaceRockSlope=vec2(0.),surfaceRockCavity=vec2(0.);
-    // Battlemap range, set by surfaceMicro for the ground field of the same fragment: the fine grain (value,
-    // world gradient) that frays its creases and grooves, and the share of a groove left open (1 at wider zooms).
-    vec3 surfaceFineGrain=vec3(0.);float surfaceFineBreak=1.;
+    // Set by surfaceMicro. surfaceFineGrain: the battlemap grain of the fragment (value, world gradient). For the
+    // ground field of the same fragment: surfaceFineBreak, the share of the ridge and groove profiles of its
+    // 8 and 2.2 m bands, 1 where no fragment was shaded (mesh displacement) and 0 after surfaceMicro (a profile
+    // on the zero set of a noise draws closed loops in the light); surfaceGroundDry, 0 under water, where the
+    // bed is smooth sediment with no stones, chips, joints or relief.
+    vec3 surfaceFineGrain=vec3(0.);float surfaceFineBreak=1.,surfaceGroundDry=1.;
+    // Loose stones lie on scree and on the stony units of deserts and arctic ground only, never on ordinary soil,
+    // sward, forest floor, fields or town ground. surfaceGroundStony: share of gravel plain and rock pavement of
+    // the fragment, to be set by v2ZoneEnv from v2GroundUnit (y+z) before the material, like surfaceGroundSand;
+    // 0 means none. surfaceGroundClasts: share of the gravel caps of the ground field, 1 where no fragment was
+    // shaded (mesh displacement), the stone share of the fragment after surfaceMicro.
+    float surfaceGroundStony=0.,surfaceGroundClasts=1.;
     vec2 surfaceGroundSlope=vec2(0.),surfaceGroundGradient=vec2(0.);
     vec4 surfaceGroundEnv=vec4(0.);float surfaceGroundHeight=0.,surfaceGroundShore=1e9,surfaceGroundBeach=0.,surfaceGroundNormalGain=1.;
 #ifdef RENDER3D_FOREST
@@ -125,15 +134,6 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
     // to the pixel instead of aliasing; E[exp2(-k n^2)] is subtracted at every width.
     float surfaceCrack(float n,float fp,float wavelength){
       float k=min(40.,.02*wavelength*wavelength/max(fp*fp,.0001));
-      return inversesqrt(1.+1.6*k)-exp2(-k*n*n);
-    }
-    // surfaceCrack down to 10 cm per pixel. Closer, the line stops being a band a tenth of the wavelength wide:
-    // it thins with the zoom to a hairline of two to three pixels, measured across the zero set with the world
-    // gradient g of n, so it stays that thin where finer bands make the line ragged, and pinches out where
-    // the noise is flat instead of pooling into a blot.
-    float surfaceHairline(float n,vec2 g,float fp,float wavelength){
-      float k=min(40.,.02*wavelength*wavelength/max(fp*fp,.0001));float close=1.-sstep(.03,.1,fp);
-      if(close>0.){float w=.9*fp+.003;k=mix(k,min(1./max(w*w*dot(g,g),1e-6),1e6),close);}
       return inversesqrt(1.+1.6*k)-exp2(-k*n*n);
     }
     // Jointed blocks on a 3x3 cellular search (a 2x2 search loses the second
@@ -224,7 +224,13 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
         if(k==0)n1=n;else if(k==1)n2=n;else if(k==2)n3=n;else if(k==3)n4=n;else if(k==4)n5=n;else n6=n;
       }
       vec2 fineSlope=.3*k5*n5.yz+.09*k6*n6.yz;
-      surfaceFineGrain=vec3(.55*k5*n5.x+.45*k6*n6.x,.55*k5*n5.yz+.45*k6*n6.yz);surfaceFineBreak=mix(1.,1.4*sstep(-.4,.4,n5.x-.5*n4.x),k5);
+      surfaceFineGrain=vec3(.55*k5*n5.x+.45*k6*n6.x,.55*k5*n5.yz+.45*k6*n6.yz);surfaceFineBreak=0.;
+      // Water over this fragment: the coverage the caller has already read for this point (v2Local), or the sea.
+      float dry=1.-sstep(0.,-.5,surfaceGroundHeight);
+#ifdef RENDER3D_FOREST
+      if(surfaceGroundWaterCached&&all(equal(world,surfaceGroundWaterPoint)))dry*=1.-clamp(surfaceGroundWaterSample,0.,1.);
+#endif
+      surfaceGroundDry=dry;
       surfaceMicroSlope=.1*(40.*k1*n1.yz+11.*k2*n2.yz+3.*k3*n3.yz+.8*k4*n4.yz+fineSlope);
       float mottle=.5*k1*n1.x+.38*k2*n2.x+(1.-.5*close)*(.3*k3*n3.x+.22*k4*n4.x);
       float soil=(1.-rock)*(1.-grass);float herb=(1.-rock)*grass;
@@ -249,7 +255,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
         // occlusion. The finer ones also follow the fall line of the 40 and 11 m undulations, so they gather
         // in their hollows, and they flute the ribs of the coarser one while its floor stays smooth.
         float steep=sstep(.12,.5,slope);float streaks=steep*surfaceStreakWeight;
-        float wear=0.,coarse=0.,thread=0.,threadKeep=0.,hollow=0.;vec2 furrow=vec2(0.);vec2 threadSlope=vec2(0.);
+        float wear=0.,coarse=0.,hollow=0.;vec2 furrow=vec2(0.);
         if(streaks>.01){
           for(int k=0;k<3;k++){
             float across=k==0?30.:k==1?9.:2.8;float keep=1.-sstep(across*.125,across*.25,fp);
@@ -260,7 +266,6 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
             float reach=length(fall);surfaceFall=reach>.0001?fall/reach:vec2(1.,0.);
             float chute=surfaceChute(world,across,6.5*across,salt+61u+uint(k));
             float amount=keep*(k==0?1.:.45+.55*sstep(-1.,.3,coarse));coarse=chute;
-            if(k==2){thread=chute;threadSlope=surfaceChuteSlope;threadKeep=keep*steep;}
             wear+=(k==0?.09:k==1?.07:.055)*amount*chute;
             furrow+=(k==0?.16:k==1?.13:.10)*across*amount*surfaceChuteSlope;
             hollow+=(k==0?.5:.3)*amount*max(-chute,0.);
@@ -268,27 +273,43 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
         }
         // The isotropic undulation of the bands gives way to the fall-line relief on worn faces.
         surfaceMicroSlope=surfaceMicroSlope*(1.-.7*rock*streaks)+rock*streaks*furrow;
-        surfaceRockCavity.y=rock*streaks*hollow;
-        // Fissures stay a close-up detail: at distance their isolines read as organic cells. On steep faces
-        // they take the zero set of the flutes, so they run down the face; massive rock has few of them.
-        // At battlemap range they are hairline joints: thin, darker, zigzagging with the 30 and 9 cm bands and
-        // open along part of their length only, never the smooth isoline of the 3 m or 0.8 m noise.
-        float joined=.85*threadKeep;float root=sqrt(1.16-joined*joined);
-        float fissure=(1.-.6*surfaceRockMassive)*(.75+.5*surfaceRockShatter)*(1.+.8*close);
-        float seam=joined*thread+root*n3.x+.3*k4*n4.x+.12*k5*n5.x+.05*k6*n6.x;
-        vec2 seamSlope=joined*threadSlope+root*n3.yz+.3*k4*n4.yz+.12*k5*n5.yz+.05*k6*n6.yz;
-        float craze=n4.x+.3*k5*n5.x+.12*k6*n6.x;vec2 crazeSlope=n4.yz+.3*k5*n5.yz+.12*k6*n6.yz;
-        float detail=fissure*(.24*k3*surfaceHairline(seam,seamSlope,fp,3.)*mix(1.,1.6*sstep(-.3,.5,n5.x+.5*n4.x),k5)
-          +.16*k4*surfaceHairline(craze,crazeSlope,fp,.8)*mix(1.,1.6*sstep(-.3,.5,n6.x+.5*n5.x),k6));
-        detail+=streaks*wear;
-        // Jointed blocks on outcrops and cliffs, not on rocky plains: a tone and a face tilt per block, dark
-        // joints once resolved. The lattices are stretched along the regional joint strike, bent by the
-        // undulation bands and weighted by them, and a joint opens along part of its length only: no face
-        // shows a net of equal cells, and massive faces show next to none.
+        surfaceRockCavity.y=rock*streaks*hollow*dry;
+        // Joints. A line on the zero set of a noise closes into loops and covers the ground with an even
+        // labyrinth, so none is drawn. Rock breaks along joint sets instead: straight runs, gently bent by the
+        // 11 and 3 m bands, in rows across a fixed direction. Each row has its own run length and each run
+        // its own place in the row, width and presence (about one in four), with tapered ends: sparse lines of
+        // unequal length, in echelon, never a mesh. Two sets of 6 and 9 m (the regional strike and 68 degrees
+        // from it) each mark part of the outcrops, as the 40 m band decides; a 1.1 m set of hairlines joins
+        // them under 20 cm per pixel. A joint is 2.4 cm wide and takes the tone its width leaves in a pixel:
+        // a faint line at 25 cm per pixel, a dark hairline on a battlemap. None where soil or sward share
+        // the ground, and fewer in massive rock.
+        float strike=float((salt>>10u)&1023u)*.00613592;vec2 run=vec2(cos(strike),sin(strike));
+        float jointing=sstep(.5,.85,rock)*k3*(1.-.6*surfaceRockMassive)*(.75+.5*surfaceRockShatter);
+        float detail=streaks*wear;
+        if(jointing>.01){
+          float cracks=0.;
+          for(int k=0;k<3;k++){
+            if(k==2&&k4<=0.)continue;
+            float spacing=k==0?6.:k==1?9.:1.1;
+            vec2 d=k==0?run:k==1?vec2(.37*run.x-.93*run.y,.93*run.x+.37*run.y):vec2(.86*run.x+.51*run.y,.86*run.y-.51*run.x);
+            float a=dot(world,vec2(-d.y,d.x))/spacing+(k==2?.35*n3.x+.12*n4.x:.25*n2.x+.05*n3.x);
+            float row=floor(a);uint h=surfaceHash(ivec3(int(row),k,7),salt+81u);
+            float b=dot(world,d)/(spacing*(1.6+2.4*float(h&255u)/255.))+.37*float((h>>8u)&255u);
+            float cell=floor(b);uint g=surfaceHash(ivec3(int(row),int(cell),k),salt+82u);
+            float t=b-cell;float w=max(.75*fp,.012)*(.7+.6*float((g>>16u)&255u)/255.);
+            float gap=(abs(a-row-.25-.5*float((g>>8u)&255u)/255.)*spacing)/w;
+            float outcrop=k==0?sstep(-.4,.2,n1.x):k==1?1.-sstep(-.3,.3,n1.x):k4*sstep(-.3,.4,n2.x);
+            cracks+=step(float(g&255u),k==0?72.:k==1?64.:56.)*outcrop*min(1.,.03/w)*exp2(-gap*gap)*sstep(0.,.12,t)*(1.-sstep(.88,1.,t));
+          }
+          detail-=.4*jointing*cracks;
+        }
+        // Jointed blocks on outcrops and cliffs, not on rocky plains: a tone and a face tilt per block. The
+        // lattices are stretched along the regional joint strike, bent by the undulation bands and weighted
+        // by them. The outline of a block stays a faint seam open along part of its length: drawn as dark
+        // lines the cells read as a mesh; the joint sets above carry the visible cracks.
         float blocky=surfaceFacetWeight*sstep(.1,.4,slope);
         if(blocky>.01){
           float block=0.;vec2 tilt=vec2(0.);
-          float strike=float((salt>>10u)&1023u)*.00613592;vec2 run=vec2(cos(strike),sin(strike));
           vec2 jointed=vec2(1.25*dot(world,run),.78*dot(world,vec2(-run.y,run.x)));
           for(int k=0;k<3;k++){
             if(k==1&&k2<=0.||k==2&&k3<=0.)continue;
@@ -300,12 +321,12 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
             float thinned=mix(1.,max(1.,.03*size/(4.*fp+.02)),close);
             float joint=surfaceJoint(f.y*thinned,1.25*fp*thinned/size)*sstep(-.4,.5,k==0?n2.x:k==1?n3.x:n4.x);
             float amount=(k==0?k1:k==1?k2:k3)*(.45+.55*sstep(-.6,.6,k==2?n2.x:n1.x));
-            block+=amount*((k==0?.10:k==1?.08:.06)*f.x-(k==0?.14:k==1?.13:.11)*joint);
+            block+=amount*((k==0?.10:k==1?.08:.06)*f.x-.045*joint);
             tilt+=amount*(k==0?.3:k==1?.4:.3)*f.zw;
           }
           detail+=blocky*block;surfaceMicroSlope+=rock*blocky*tilt;
         }
-        tone+=rock*relief*detail;
+        tone+=rock*relief*detail*dry;
         // Bed lines on faces; the period seen on the ground is the bed thickness over the slope. Beds are of
         // uneven thickness (a bounded warp of the bed coordinate, which never folds it), undulate with the
         // bands and show along part of a face only, where the blocks are weak: ledges, not contour rings.
@@ -320,15 +341,20 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
             ledges+=(k==0?.30:k==1?.22:k==2?.14:.10)*surfaceBed(z,salt+41u+uint(k))*(1.-sstep(.125,.25,fp*rate/(.55*t)))
               *(.25+.75*sstep(-.5,.5,k==3?-n4.x:k==2?-n2.x:-n1.x));
           }
-          tone+=face*relief*ledges;
+          tone+=face*relief*ledges*dry;
         }
       }
-      // Scree rests at the angle of repose, between soil and cliff; gravel on open soil. Debris is sorted:
-      // the stones of a talus show in patches of the next band, between smoother fine debris.
-      // At battlemap range the 21 cm gravel is bent by the 30 cm band and two cells in five merge into the matrix,
-      // so the stones differ in size and outline instead of tiling; a fourth, 7 cm cell set gives the chips.
-      float talus=sstep(.22,.42,slope)*(1.-sstep(.8,1.2,slope))*(1.-.85*grass);float clastic=max(talus,.55*soil);
-      float kc=1.-sstep(.00875,.0175,fp);vec4 chip=vec4(0.,1.,0.,0.);
+      // Loose stones. Scree rests at the angle of repose and needs rock above it: a bare soil slope carries none.
+      // Its debris is sorted: the stones show in patches of the next band, between smoother fine debris. The
+      // 21 cm gravel belongs to scree and to the stony units of deserts and arctic ground (surfaceGroundStony),
+      // the 7 cm chips to those and to bare rock. Ordinary soil, sward, forest floor, fields and town ground
+      // have neither, and nothing lies under water (dry 0): a bed seen through water is smooth sediment.
+      // At battlemap range the gravel is bent by the 30 cm band and two cells in five merge into the matrix,
+      // so the stones differ in size and outline instead of tiling.
+      float talus=sstep(.22,.42,slope)*(1.-sstep(.8,1.2,slope))*(1.-.85*grass)*sstep(.1,.45,rock)*dry;
+      float stony=clamp(surfaceGroundStony,0.,1.)*(1.-grass)*dry;float clastic=max(talus,stony);
+      float loose=max(talus*(1.-rock),stony);surfaceGroundClasts=clastic;
+      float kc=(1.-sstep(.00875,.0175,fp))*dry*step(.02,max(rock,loose));vec4 chip=vec4(0.,1.,0.,0.);
       for(int k=0;k<4;k++){
         if(k==0&&!(talus>.01&&fp<1.3)||k==1&&!(talus>.01&&fp<.34)||k==2&&!(clastic>.01&&fp<.09)||k==3&&kc<=0.)continue;
         vec2 bend=k==2?.03*k5*n5.yz:k==3?.009*k6*n6.yz:vec2(0.);
@@ -339,24 +365,24 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
         else if(k==2)tone+=clastic*sorted*(1.-sstep(.045,.09,fp))*(.22*st.x-.12*(.27-st.y));
         else chip=st;
       }
-      // Battlemap range: what the surface is made of. Grain of 30 and 9 cm on every substrate; 7 cm chips whose
-      // faces tilt in the normal (crystal faces and spalls on rock, crumbs and grit on soil and between the
-      // stones of a scree); one cell in four is a speck instead, rounded inside its cell, pale or dark
-      // (lichen and mineral spots on rock, pebbles on soil). Sward takes the grain and the chips as a mottle
-      // of leaves, in tone and in hue. The normal of soil and debris is raised to count after the low
-      // substrate gain of v2GroundEnv; rock gets half as much again as the other bands.
+      // Battlemap range: what the surface is made of. Every substrate takes the grain of 30 and 9 cm in its
+      // tone (and sward in its hue): soil and sward get nothing else, no pebble shape and no relief. Exposed
+      // rock (the share of a face, not rock under thin soil) and loose debris also take the 7 cm chips, whose
+      // faces tilt in the normal (crystal faces and spalls, grit between the stones); one cell in four is a
+      // speck instead, rounded inside its cell, pale or dark (lichen and mineral spots, pebbles). The normal
+      // of debris is raised to count after the low substrate gain of v2GroundEnv.
       if(k5>0.){
-        float grain=surfaceFineGrain.x;float loose=max(soil,talus*(1.-rock));
+        float grain=surfaceFineGrain.x;float bare=rock*sstep(.25,.6,rock);
         float speckled=step(.22,chip.x);float inside=kc*sstep(0.,.06+fp/.07,chip.y);
         float speck=speckled*kc*sstep(.03,.14+2.*fp/.07,chip.y)*2.*chip.z;
         float crumb=(1.-speckled)*inside*2.8*(chip.x+.14);
-        tone+=rock*(.05*grain+.09*speck+.035*crumb)+loose*(.07*grain+.09*speck+.06*crumb)+herb*(.045*grain+.03*crumb);
-        hue+=herb*(.03*grain+.02*crumb)*vec3(1.,.13,-.8)+rock*speck*vec3(.009,.015,-.03);
-        surfaceMicroSlope+=(.05*rock+.45*loose)*fineSlope+(1.-speckled)*inside*chip.zw*(.5*rock+2.*loose);
+        tone+=.05*rock*grain+bare*(.09*speck+.035*crumb)+loose*(.09*speck+.06*crumb)+.07*soil*grain+.045*herb*grain;
+        hue+=.03*herb*grain*vec3(1.,.13,-.8)+bare*speck*vec3(.009,.015,-.03);
+        surfaceMicroSlope+=(.05*bare+.45*loose)*fineSlope+(1.-speckled)*inside*chip.zw*(.5*bare+2.*loose);
       }
       // Add centred detail instead of multiplying correlated bands.
       surfaceMicroTone=hue*clamp(tone,.55,1.45)+surfaceGroundCover(world,slope,fp,rock,grass,salt,n1,n2);
-      surfaceMicroSlope+=surfaceGroundSlope;
+      surfaceMicroSlope=surfaceMicroSlope*dry+surfaceGroundSlope;
       return surfaceMicroTone;
     }
     // (unit-variance pattern of the resolved octaves, retained variance fraction).

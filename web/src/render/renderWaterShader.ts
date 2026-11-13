@@ -9,9 +9,7 @@
  * - a soft damp shadow on the land just outside it;
  * - gentle world-anchored surface variation (static value noise);
  * - with uRegime, the seasonal regime carried by the river colour (waterRegime.ts regimeRgb):
- *   a flat sandy bed, ice with a darker edge line, and the white water of sloping reaches as the river capsules
- *   drew it in the flow frame of the course (RIVER_FS in terrainGl.ts): soft streaks at a partial cover, a short
- *   bright bar at a waterfall;
+ *   a flat sandy bed, ice with a darker edge line;
  *   uRegime 2 (City Bench retained banks, city zoom): the dry bed is a flat silt band with a slightly darker edge.
  * Land pixels cost at most 24 taps; nothing is computed on the CPU per pixel. */
 import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
@@ -93,12 +91,10 @@ void main() {
   float bankA = .55 * bank * bank;
   if (uRegime >= 1) {
     vec4 own = tap(f);
-    // Decoded back to dry, ice, foam (regimeRgb stores running and open water so MAX keeps them on overlaps).
+    // Decoded back to dry and ice (regimeRgb stores running and open water so MAX keeps them on overlaps).
     vec3 regime = clamp(own.rgb / max(own.a, 1e-3), 0., 1.); regime.rg = 1. - regime.rg;
-    // b: white water below .5, a sediment plume above (plumeRgb). The river capsules have already drawn the white
-    // water of each slope class in the flow frame of the course: b / .49 is the white cover of this pixel, partial
-    // by construction (60 % at most in a cascade, 85 % in the short bar of a waterfall).
-    float plume = max(0., regime.b - .5) * 2.; regime.b = clamp(regime.b / .49, 0., 1.) * step(regime.b, .5);
+    // b: a sediment plume above .5 (plumeRgb); rivers carry 0.
+    float plume = max(0., regime.b - .5) * 2.;
     // Flow direction in the world (y down): along the bank, perpendicular to the nearest bank.
     vec2 bankDir = vec2(nearest.x, -nearest.y), along = vec2(-bankDir.y, bankDir.x);
     // Centre of the channel: 0 at the bank, 1 a few pixels in (hairline streams stay near 0.3).
@@ -113,9 +109,6 @@ void main() {
     // Open water never evaluates the shelf: smoothstep(0, 0, 0) is undefined and drew a dark seam along the banks.
     float frozen = regime.g >= .97 ? 1. : regime.g < .05 ? 0. : 1. - smoothstep(.8 * shelf, shelf, depth * uPx);
     if (frozen > 0.) color = mix(color, waterIceColor(world, 1. - smoothstep(.6 * uDpr, 2.2 * uDpr, depth), 0., along), frozen);
-    // White water as the capsules drew it, laid over the river's own colour at its partial cover: a pale
-    // blue-white, never an opaque white. The satellite map shader reads this cover back from the colour.
-    color = mix(color, vec3(.84, .90, .93), regime.b * (1. - frozen));
     // Land side: a dry bed has pale bars, not a dark wet bank; ice keeps a faint one.
     vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
     bankColor = mix(bankColor, vec3(.78, .70, .56), smoothstep(.3, .8, neighbour.r));

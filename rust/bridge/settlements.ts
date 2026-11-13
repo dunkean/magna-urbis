@@ -22,6 +22,8 @@ export interface SettlementConfig {
   siteWeights: Record<string, number>;
   /** Multiplies the dispersed farms of the countryside (1 ≈ 0.45 per km² of land, 0 = none). */
   farmDensity: number;
+  /** Frequency of the remote places (summit temples, cliff monasteries, lost ruins…): 1 ≈ one on 100 km² of land with dramatic ground, 0 = none. */
+  remotePlaces: number;
 }
 export const defaultSettlementSpec = (key = 'main', population = 300): SettlementSpec => ({ key, name: '', population, culture: 'european-organic', siteType: 'auto', sitePrefs: {} });
 export const defaultSettlementConfig = (): SettlementConfig => ({
@@ -29,7 +31,7 @@ export const defaultSettlementConfig = (): SettlementConfig => ({
   density: 1, zipfExponent: 1.1, minPopulation: 8, populationJitter: 0.25,
   spread: 1.3, smallTop: 0.35, mainClear: 2.5, clustering: 0, edgeMargin: 0.03,
   flatnessWeight: 1, buildableWeight: 1, freshWaterWeight: 1, riverWeight: 1, coastWeight: 1, floodWeight: 1, defenseWeight: 0, elevation: 0, variationWeight: 1,
-  siteWeights: {}, farmDensity: 1,
+  siteWeights: {}, farmDensity: 1, remotePlaces: 1,
 });
 export type ScoreTerm = 'flatness' | 'buildable' | 'freshWater' | 'river' | 'harbor' | 'flood' | 'culture' | 'site' | 'defense' | 'elevation' | 'cluster' | 'variation';
 export interface Settlement extends SettlementSpec {
@@ -45,8 +47,14 @@ export interface ActivityInstallation { archetype: string; kind: string; closed:
 export interface ActivitySite {
   id: string; template: string; mode: 'attached_external' | 'remote_seasonal' | 'network_node'; parent: string; anchor: string;
   kind: string; resource: string; culture: string; x: number; y: number; ground: number;
-  access: Point; accessClass: 'track' | 'trail'; residents: number; seasonMask: number;
+  /** `accessClass: 'none'`: a remote place no path leads to (never a road endpoint; `access` is the site itself). */
+  access: Point; accessClass: 'track' | 'trail' | 'none'; residents: number; seasonMask: number;
   buildings: ActivityBuilding[]; installations: ActivityInstallation[];
+  /** Remote places (Rust `settlements::remote`, `kind: 'remote'`): the terrain situation (`summit`, `crag`, `cliff-ledge`, `cliff-foot`, `gorge`, `islet`, `marsh-island`, `deep-forest`). */
+  situation?: string;
+  /** Remote places: how one gets there (`none`, `track`, `cliff-stair`, `rock-steps`, `tunnel`, `causeway`, `rope-bridge`); its line is the installation
+   * `cliff_stair` | `rock_steps` | `rock_tunnel` | `tidal_causeway` | `rope_bridge`, from the place to the end of the ordinary path. */
+  approach?: string;
 }
 export interface SettlementOutput { settlements: Settlement[]; warnings: string[]; requested: number; usableKm2: number; ms: number; activities?: ActivitySite[] }
 
@@ -81,7 +89,7 @@ export interface RoadSite { key: string; population: number; culture: string; ce
 /** Road endpoints of a placement: settlements, then activity access points (Rust `Output::road_sites`). */
 export function roadSitesOf(output: SettlementOutput): RoadSite[] {
   return [...output.settlements.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })),
-    ...(output.activities ?? []).map(a => ({ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent }))];
+    ...(output.activities ?? []).flatMap(a => a.accessClass === 'none' ? [] : [{ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent }])];
 }
 export interface RoadCrossing { kind: 'bridge' | 'ford' | 'causeway'; path: Point[] }
 export interface RoadSegment {

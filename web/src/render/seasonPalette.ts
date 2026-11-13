@@ -32,6 +32,13 @@ export function mapGroundSnow(altitude = 0, settings?: GroundSnowSettings): numb
   const cover = Math.max(smooth(2, -5, cold + (warm - cold) * phase + thaw), smooth(2.5, -2.5, warm)) * supply;
   return smooth(.405, .465, cover);
 }
+/** Crown state of the map season, for the town crowns painted over natural grounds (cityGrove.ts): leaf fullness,
+ * spring and autumn weights, winter leaf of the zone (evergreen share) and the calendar's crown snow setting. */
+export function mapCrownSeason(): { leaf: number; spring: number; autumn: number; evergreen: number; crownSnow: number } {
+  if (!zone) return { leaf: 1, spring: 0, autumn: 0, evergreen: 1, crownSnow: .7 };
+  const s = seasonPaint(season, zone, calendar);
+  return { leaf: s.leaf, spring: s.spring, autumn: s.autumn, evergreen: s.evergreen, crownSnow: calendar?.crownSnow ?? .7 };
+}
 export const roofSeasonKey = (): string => `${zone}|${season}|${JSON.stringify(calendar)}|${JSON.stringify(climate)}`;
 /** Part of every cache key of a seasonal map layer. */
 export const mapSeasonKey = (): string => zone ? `${zone}:${Math.round(season * 100)}:${JSON.stringify(calendar ?? {})}` : '';

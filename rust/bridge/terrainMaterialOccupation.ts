@@ -19,6 +19,11 @@ vec4 orchardDetail(vec2 world){
   uv=(clamp(floor(uv*uLandDetailN),vec2(0.),vec2(uLandDetailN-1.))+.5)/uLandDetailN;
   return landDetailSample(uv,0.);
 }
+// Signed distance (m) of the alpha channel to the nearest strip edge: positive inside a holding, negative outside.
+float landDetailDist(float a){return a*12.-6.;}
+// Smooth share of the orchard class at this fragment (applyGroundOccupation, before applyForest): the unresolved
+// orchard crowns fade with it instead of ending on the class texels. 1 where no occupation pass ran.
+float v2OrchardShare=1.;
 vec2 orchardRows(vec2 world){vec4 d=orchardDetail(world);vec2 c=d.gb*2.-1.;float a=.5*atan(c.y,c.x);return vec2(cos(a),sin(a));}
 `;
 
@@ -38,10 +43,10 @@ vec3 landCropTone(float t,float green){
 // limit between two holdings is a mix of their two tones. Rapeseed and sunflower are laid over it by landField
 // (landYellowCrop, landYellowShare); underneath, the ramp runs straight from barley to rye.
 vec3 landFieldTone(float t,float green){
-  // Ripe wheat turns gold in late summer before the reaping.
+  // Ripe wheat pales to a straw beige in late summer before the reaping.
   float ph=fract(uV2Season),ripe=groundSmooth(.42,.5,ph)*(1.-groundSmooth(.62,.68,ph));
   vec3 turned=vec3(.31,.25,.19),plough=vec3(.39,.32,.24),fallow=vec3(.44,.40,.31),stubble=vec3(.55,.49,.36);
-  vec3 wheat=mix(vec3(.58,.51,.32),vec3(.66,.55,.27),ripe),barley=vec3(.53,.51,.32);
+  vec3 wheat=mix(vec3(.58,.51,.32),vec3(.60,.54,.37),ripe),barley=vec3(.53,.51,.32);
   vec3 rye=vec3(.45,.47,.34),oats=vec3(.40,.45,.25),clover=vec3(.33,.44,.22),beans=vec3(.31,.39,.21);
   vec3 c=t<.07?mix(turned,plough,t/.07):t<.14?mix(plough,fallow,(t-.07)/.07):t<.21?mix(fallow,stubble,(t-.14)/.07):t<.32?mix(stubble,wheat,(t-.21)/.11)
     :t<.43?mix(wheat,barley,(t-.32)/.11):t<.7?mix(barley,rye,(t-.43)/.27):t<.79?mix(rye,oats,(t-.7)/.09):t<.89?mix(oats,clover,(t-.79)/.1):mix(clover,beans,(t-.89)/.11);
@@ -60,17 +65,18 @@ vec3 landFieldDryTone(float t,float green,vec3 bare){
 }
 // Share of rapeseed and sunflower around their ramp positions.
 float landYellowShare(float t){return groundSmooth(.45,.52,t)*(1.-groundSmooth(.62,.69,t));}
-// Rapeseed and sunflower over the year: green before their flowers, a clear yellow in season (rapeseed in late
-// spring, sunflower in high summer), then ripening and stubble. t picks one or the other.
+// Rapeseed and sunflower over the year: green before their flowers, then in season a soft greenish yellow (rapeseed,
+// late spring) or a dull olive yellow (sunflower, high summer), a small step from the pale stubble as aerial
+// photographs show them, then ripening and stubble. t picks one or the other.
 vec3 landYellowCrop(float t){
   float ph=fract(uV2Season);
   vec3 rape=mix(vec3(.28,.32,.20),vec3(.33,.42,.21),groundSmooth(.12,.22,ph));
-  rape=mix(rape,vec3(.72,.67,.24),groundSmooth(.28,.32,ph));
+  rape=mix(rape,vec3(.58,.57,.31),groundSmooth(.28,.32,ph));
   rape=mix(rape,vec3(.47,.46,.29),groundSmooth(.40,.45,ph));
   rape=mix(rape,vec3(.55,.49,.36),groundSmooth(.58,.63,ph));
   rape=mix(rape,vec3(.28,.32,.20),groundSmooth(.78,.88,ph));
   vec3 sun=mix(vec3(.35,.29,.21),vec3(.35,.42,.23),groundSmooth(.3,.4,ph));
-  sun=mix(sun,vec3(.70,.59,.21),groundSmooth(.45,.5,ph));
+  sun=mix(sun,vec3(.53,.50,.31),groundSmooth(.45,.5,ph));
   sun=mix(sun,vec3(.37,.33,.24),groundSmooth(.6,.66,ph));
   sun=mix(sun,vec3(.42,.36,.27),groundSmooth(.76,.84,ph));
   return mix(rape,sun,groundSmooth(.555,.585,t));
@@ -80,19 +86,23 @@ vec3 landYellowCrop(float t){
 // change on the texel grid, the distance follows the true polygon edge: read there, two holdings meet along the
 // smooth zero line of the distance instead of a blurred staircase of texels. The gradient comes from three reads on
 // a symmetric stencil half a texel wide; where it is too weak to trust (on the edge itself, at junctions, in strips
-// narrower than two texels) and from afar, uv is kept. edge returns the distance (m) at uv.
+// narrower than two texels) and from afar, uv is kept. The distance is signed: at the outer limit of the fields it
+// crosses zero linearly and the lookup holds right up to the edge. edge returns the distance (m) at uv, 0 outside.
 vec2 landDetailInside(vec2 uv,float footprint,out float edge){
   float cell=uLandDetailRect.z/uLandDetailN,r=.5/uLandDetailN;
-  edge=landDetailSample(uv,0.).a*6.;
-  if(footprint<cell*2.&&edge<cell*1.2){
+  float sd=landDetailDist(landDetailSample(uv,0.).a);
+  edge=max(sd,0.);
+  if(footprint<cell*2.&&abs(sd)<cell*1.2){
     float a0=landDetailSample(uv+vec2(0.,r),0.).a,a1=landDetailSample(uv+vec2(-.8660254,-.5)*r,0.).a,a2=landDetailSample(uv+vec2(.8660254,-.5)*r,0.).a;
     // Least squares on the stencil: g = 2/(3r) sum a_i d_i, here in metres of distance per metre.
-    vec2 g=(a0*vec2(0.,1.)+a1*vec2(-.8660254,-.5)+a2*vec2(.8660254,-.5))*6.*2./(3.*cell*.5);
+    vec2 g=(a0*vec2(0.,1.)+a1*vec2(-.8660254,-.5)+a2*vec2(.8660254,-.5))*12.*2./(3.*cell*.5);
     float s=length(g);
-    if(s>.5)uv+=g/s*(cell*1.2-edge)/uLandDetailRect.z;
+    if(s>.5)uv+=g/s*(cell*1.2-sd)/uLandDetailRect.z;
   }
   return uv;
 }
+// Crop byte and edge distance of the holding of this fragment, written by landField for its snow share; -1 outside.
+float landFieldCrop=-1.,landFieldEdge=6.;
 // A holding: mosaic of crops, faint plough ridges on some turned holdings, row grain, grass balks. Every band fades
 // before its period reaches two pixels. Each holding carries its own mottle (amplitude and pattern from its byte), so
 // neighbouring fields never share one marbling, and nothing periodic spans a field beyond the rows close up.
@@ -100,9 +110,11 @@ vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out ve
   slope=vec2(0.);rough=.94;
   vec2 uv=(world-uLandDetailRect.xy)/uLandDetailRect.z;
   float cell=uLandDetailRect.z/uLandDetailN;
-  float edge;
-  vec4 d=landDetailSample(landDetailInside(uv,footprint,edge),max(log2(max(footprint,.001)/cell),0.));
+  float edge,lod=max(log2(max(footprint,.001)/cell),0.);
+  landFieldCrop=-1.;
+  vec4 d=landDetailSample(landDetailInside(uv,footprint,edge),lod);
   if(d.a<=0.)return mix(bare,vec3(.39,.36,.22),.5);
+  landFieldCrop=d.r;landFieldEdge=edge;
   vec2 c2=d.gb*2.-1.;float a=.5*atan(c2.y,c2.x);
   vec2 along=vec2(cos(a),sin(a)),across=vec2(-along.y,along.x);
   float u=dot(world,across),v=dot(world,along);
@@ -135,19 +147,22 @@ vec3 landField(vec2 world,float footprint,float green,vec3 bare,float dry,out ve
   }
   float speckKeep=1.-groundSmooth(.25,.7,footprint);
   if(speckKeep>0.)c*=1.+speckKeep*.05*surfaceNoise(vec3(world*1.7,0.),salt+4u);
-  // Balks between strips: narrow grass lines, read at full resolution, gone before they alias.
+  // A limit is a change of crop, not a drawn outline. Along part of it (the holding's own 70 m mottle decides where)
+  // a narrow, faint grass balk, read at full resolution and gone before it aliases.
   float keep=1.-groundSmooth(.7,2.6,footprint);
   if(keep>0.){
-    float balk=keep*(1.-groundSmooth(.25,1.05,edge+.25*soil));
+    float balk=keep*groundSmooth(-.15,.35,patchy)*(1.-groundSmooth(.12,.55,edge+.15*soil));
     vec3 grass=mix(vec3(.33,.31,.21),vec3(.32,.38,.22),green)*(1.+.08*patchy);
-    c=mix(c,grass,balk*.7);
+    c=mix(c,grass,balk*.45);
     rough=mix(.94,.86,balk);
   }
-  // Holding limits (hedge, ditch, headland): one dark line a pixel or two wide from afar, so the patchwork of holdings
-  // reads at every zoom. Close up the grass balks above draw them instead; the line fades in as the balks fade out.
-  float limit=1.-groundSmooth(0.,max(footprint*.8,1.2),edge);
-  // Dry farmland is not washed toward the dry grass: its own crop ramp above keeps the holdings apart from the meadows.
-  c*=1.-.25*limit*groundSmooth(.7,2.6,footprint)*(1.-groundSmooth(14.,40.,footprint));
+  // From afar a faint darker seam (ditch, headland) where the crops on either side differ (the holding's byte against
+  // the wider mean around it), on part of the limit only; none between two holdings of one tone.
+  float limit=(1.-groundSmooth(0.,max(footprint*.8,1.2),edge))*groundSmooth(.7,2.6,footprint)*(1.-groundSmooth(14.,40.,footprint));
+  if(limit>0.){
+    float contrast=groundSmooth(.04,.15,abs(landDetailSample(uv,lod+1.5).r-d.r));
+    c*=1.-.1*limit*contrast*groundSmooth(-.3,.3,soil+.5*patchy);
+  }
   return c;
 }
 // Grassland keeps the ground's hue and breathes with soil and exposure instead of filling a polygon.
@@ -347,7 +362,7 @@ vec3 paperWater(float kind,float shore){
   return mix(sea,edge,.8*shore);
 }
 void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
-  paperCommonsShare=0.;paperTendedShare=0.;
+  paperCommonsShare=0.;paperTendedShare=0.;v2OrchardShare=1.;landFieldCrop=-1.;
   if(uRenderV2!=1||uHasOccupation==0)return;
   vec3 o=groundOccupation(world);
   float cell=uOccupationRect.z/uOccupationN;
@@ -361,18 +376,34 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   // A nearest class gate cut the filtered signed edge back to whole texels: blend categorical responses, not IDs.
   // The loops only sum class weights. Each material is then evaluated once: inlined in the loops, they multiplied
   // the shader eightfold and D3D compilers took minutes on the 3D ground.
-  float wField=0.,wOrchard=0.,wGarden=0.,wTown=0.,wLane=0.,hardShare=0.;
+  float wField=0.,wOrchard=0.,wGarden=0.,wTown=0.,wLane=0.,wBuilt=0.,hardShare=0.;
   for(int y=0;y<2;y++)for(int x=0;x<2;x++){
     int cls=int(texelFetch(uOccupation,clamp(base+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
     float weight=(x==0?1.-f.x:f.x)*(y==0?1.-f.y:f.y);
     // Class 11 clearings are wild ground: the lookup below gives them grass.
-    if(cls==8||cls<1||cls>11){hardShare+=weight;if(cls==8)paperTendedShare+=weight;}
+    if(cls==8||cls<1||cls>11){hardShare+=weight;if(cls==8){paperTendedShare+=weight;wBuilt+=weight;}}
     else if(cls==1)wField+=weight;
     else if(cls==4)wOrchard+=weight;
     else if(cls==5)wGarden+=weight;
     else if(cls==7)wTown+=weight;
     else if(cls==9)wLane+=weight;
   }
+  // Close up, the fields, orchards and gardens of the land detail meet the other land along their true polygon: its
+  // signed edge distance gives their joint share instead of the bilinear weights of the coarser class raster, which
+  // drew the limit as rounded texel steps. Only where the class neighbourhood holds no town, lane or building ground,
+  // which the detail does not know; between two detailed classes the class weights stay.
+  float detailed=wField+wOrchard+wGarden;
+  if(uHasLandDetail==1&&detailed>0.&&detailed<1.&&wTown+wLane+wBuilt<.001){
+    float dcell=uLandDetailRect.z/uLandDetailN,near=1.-groundSmooth(dcell,dcell*2.,footprint);
+    if(near>0.){
+      float sd=landDetailDist(landDetailSample((world-uLandDetailRect.xy)/uLandDetailRect.z,0.).a),w=.5*max(footprint,.25);
+      float share=mix(detailed,groundSmooth(-w,w,sd),near),rest=1.-detailed;
+      hardShare*=rest>.001?(1.-share)/rest:0.;
+      float k=share/detailed;wField*=k;wOrchard*=k;wGarden*=k;
+    }
+  }
+  // Unresolved orchard crowns end where the orchard share falls to a half, as the class itself does, with no step.
+  v2OrchardShare=clamp(2.*wOrchard-1.,0.,1.);
   float tendedShare=wField+wOrchard+wGarden+wTown+wLane;
   paperTendedShare+=tendedShare;
   vec4 tended=vec4(0.);float fieldShare=0.;vec2 fieldSlope=vec2(0.);
@@ -422,19 +453,16 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   float edgeWidth=fieldShare>.5*covered?max(footprint,cell*.6):cell*3.;
   float width=min(edgeWidth*(1.+1.5*dry),cell*6.);
   // Dry wild ground lets the bare earth through; tended land (fields, plots, town) keeps its full cover.
-  // Partial snow follows the land: each holding takes its own share of the local (relief-driven) cover, from a hash
-  // of its crop value; holding limits (hedges, ditches, headlands) hold less and stay darker; thin snow lets the
-  // strips show through. Full cover and bare ground are unchanged.
+  // Partial snow follows the land: each holding takes its own share of the local (relief-driven) cover, from its crop
+  // byte as landField read it (inside its own holding close up, so the share changes along the true limit); holding
+  // limits hold a little less; thin snow lets the strips show through. Full cover and bare ground are unchanged.
+  // The share is a smooth function of the byte: a filtered limit or a far view blends it instead of sparkling.
   float snow=v2GroundSnow;
-  if(fieldShare>0.&&uHasLandDetail==1&&snow>0.&&snow<1.){
-    vec2 luv=(world-uLandDetailRect.xy)/uLandDetailRect.z;
-    vec4 ld=landDetailSample((clamp(floor(luv*uLandDetailN),vec2(0.),vec2(uLandDetailN-1.))+.5)/uLandDetailN,0.);
-    if(ld.a>0.){
-      float h=fract(sin(ld.r*91.7+3.1)*43758.5);
-      float limit=1.-groundSmooth(0.,max(footprint*.8,1.5),landDetailSample(luv,0.).a*6.);
-      float own=clamp(snow+(h-.5)*2.8*snow*(1.-snow),0.,1.)*(1.-.55*limit);
-      snow=mix(snow,own,fieldShare/covered);
-    }
+  if(fieldShare>0.&&landFieldCrop>=0.&&snow>0.&&snow<1.){
+    float h=.5+.5*sin(landFieldCrop*211.+.7);
+    float limit=1.-groundSmooth(0.,max(footprint*.8,1.5),landFieldEdge);
+    float own=clamp(snow+(h-.5)*2.8*snow*(1.-snow),0.,1.)*(1.-.3*limit);
+    snow=mix(snow,own,fieldShare/covered);
   }
   // Town ground is trodden: about a third of its packed earth shows through a full snow cover.
   float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-.3*dry*wildShare/covered)*(1.-snow*(1.-.35*wTown/max(covered,.001)))*covered;

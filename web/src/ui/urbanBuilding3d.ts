@@ -3,7 +3,7 @@ import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, buildingRa
 import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, roofGrain, MATERIALS, type CoverGrain, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
 import { mapGroundSnow, roofSeasonKey } from '../render/seasonPalette';
-import { buildingHeat, buildingSnowDepth, roofSnowShare, snowRoofTint, townRoofAltitudes } from '../render/roofSnow';
+import { buildingHeat, roofSnowShare, snowRoofTint, townRoofAltitudes } from '../render/roofSnow';
 import type { BuildingTriangle } from '../render/urbanBuildingGeometry';
 import { buildingTint } from '../render/buildingPalette';
 import { MOONLIGHT_GLSL } from '../render/materialLook';
@@ -100,7 +100,7 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   else if(c==25){cw=vec4(.5,.9,.1,.1);k=vec4(0.,.012,.02,.03);run=vec2(.4);}                        // wattle and daub
   else if(c==26){bond=0.;cw=vec4(.1,2.2,.05,.35);k=vec4(.012,.04,.02,0.);}                                  // bamboo wall: upright canes
   else if(c==27){cw=vec4(.4,.3,.15,.1);k=vec4(.015,.01,.03,.02);run=vec2(.5);}                      // coral rag under lime
-  else if(c==28){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.06);run=vec2(.5,1.3);}                        // snow: thin places drawn down the slope
+  else if(c==28){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.03);run=vec2(.6);}                             // snow: a faint even grain, the same on every roof
   // Weathering once the units are no longer resolved: w.x its strength, w.yz its stretch along and down the face.
   vec3 w=vec3(.035,1.,1.);                                                                               // fired clay, stone, earth, hides: speckle
   if(c==3||c==16||c==17)w=vec3(.014,1.,2.5);                                                             // glazed tiles, metal, felt: even
@@ -120,6 +120,21 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   float level=log2(max(fp,.002)*6.),lo=floor(level);vec2 s=q/w.yz;
   g+=w.x*(1.-min(keepRow,keepColumn))*(1.-smoothstep(.5,1.,fp))*mix(grainNoise(s*exp2(-lo)+cls*3.7),grainNoise(s*exp2(-lo-1.)+cls*9.1),level-lo);
   return color*(1.+g);
+}
+`;
+/** Light of a roof face capped by what its cover can reflect, as the 2D plan does (planPanLight in
+ * roofPlaneLight.ts): around the level of a flat roof (1), with the same smooth knee. Matte covers (thatch, reed,
+ * palm, turf, shingle, bark, bamboo, earth, lime, felt, hide: classes 7 to 15, 17, 18) lighten by 9 % at most and
+ * darken by 14 %; tiles, slates and stone (1 to 6) by 14 % and 20 %; metal (16), snow, walls and faces without a
+ * class keep the full light. */
+const coverLight = `
+float coverLight(float light,float cls,vec3 N){
+  if(N.y<.05||cls<.5||cls>18.5||abs(cls-16.)<.5)return light;
+  float up=.09,down=.14;
+  if(cls<6.5){up=.14;down=.2;}
+  float d=light-1.;
+  if(d>0.)return 1.+up*(1.-exp(-d/up));
+  return 1.-down*(1.-exp(d/down));
 }
 `;
 const vertexColor = `#version 300 es
@@ -143,7 +158,8 @@ in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in 
 out vec4 color;
 ${nightWindows}
 ${materialGrain}
-void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));float light=buildingLight(N,N);color=vec4(buildingNight(materialGrain(base,materialClass,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);}`;
+${coverLight}
+void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));float light=coverLight(buildingLight(N,N),materialClass,N);color=vec4(buildingNight(materialGrain(base,materialClass,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -406,17 +422,17 @@ export class UrbanBuildingPass {
         }
       };
       const snow = this.appearance.style !== 'silhouette' && this.appearance.diagnostic === 'none' ? mapGroundSnow(this.snowAltitudes.get(building.id) ?? building.ground_z_m, this.appearance.roofSnow) : 0;
-      const heat = snow ? buildingHeat(building.id, building.function) : 0, depth = snow ? buildingSnowDepth(building.id) : 1;
+      const heat = snow ? buildingHeat(building.function) : 0;
       eachBuildingTriangle(building, face => {
         // Snow whitens the roof triangle itself: no inset overlay per triangle, so neither triangulation seams nor
         // a border draw stripes, and nothing needs a depth bias. Walls, steep faces and cover-only geometry
         // (chimneys, parapets, walls, trees, civil works) keep their material. Each face keeps its own share of the
-        // mantle (pitch, exposure, the building's thaw: roofSnowShare) thinned by the building's own depth
-        // (buildingSnowDepth), in eighths so the batches stay few.
+        // mantle (pitch, cover, exposure, the heat of the building's use: roofSnowShare, one rule for every roof), in
+        // eighths so the batches stay few.
         const material = face.material ?? face.materials.cladding;
         const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
         const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * .4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
-        paintFace(face, snow * Math.round(share * depth * 8) / 8);
+        paintFace(face, snow * Math.round(share * 8) / 8);
       }, overview, featureLod, yardLevel);
     }
     const batches: Batch[] = [];

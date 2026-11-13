@@ -372,3 +372,86 @@ fn segments_cross(a: (f32, f32), b: (f32, f32), c: (f32, f32), d: (f32, f32)) ->
     );
     o1 * o2 < 0.0 && o3 * o4 < 0.0
 }
+
+/// Two rivers, a large one and a brook, run down a plane to the sea through
+/// a coastal dune. Both get a mouth in `auto`: the width grows towards the
+/// coast, the water ends at sea level and the bed of the mouth stretch has
+/// no dam or step between the last river cell and the sea.
+#[test]
+fn river_mouths_open_to_the_sea() {
+    let (n, cell) = (128, 50.0_f32);
+    let coast = 800.0;
+    let mut ground = vec![0.0_f32; n * n];
+    for (i, z) in ground.iter_mut().enumerate() {
+        let x = point(i, n, cell).0;
+        *z = if x < coast {
+            -2.0
+        } else {
+            0.02 * (x - coast) + if x < coast + 100.0 { 3.0 } else { 0.0 }
+        };
+    }
+    let cfg = HydrologyConfig::default();
+    let mut edges = Vec::new();
+    let mut curves = Vec::new();
+    for (row, width) in [(20, 60.0), (44, 6.0)] {
+        let cells: Vec<usize> = (15..=60).rev().map(|c| row * n + c).collect();
+        let mut points: Vec<RiverPoint> = cells[..cells.len() - 1]
+            .iter()
+            .map(|&i| {
+                let (x, y) = point(i, n, cell);
+                RiverPoint {
+                    x,
+                    y,
+                    width,
+                    z: (0.02 * (x - coast) - 0.3).max(0.0),
+                }
+            })
+            .collect();
+        let y = point(cells[0], n, cell).1;
+        points.push(RiverPoint {
+            x: coast,
+            y,
+            width,
+            z: 0.0,
+        });
+        let estuary = choose_estuary(&cfg, &ground, n, cell, &cells, "mouth", width, 0.0, false);
+        edges.push(River {
+            cells,
+            from: 0,
+            to: 1,
+            flags: 4,
+            estuary,
+        });
+        curves.push(points);
+    }
+    assert!(edges[0].estuary >= 2, "a large river gets an estuary");
+    assert_eq!(edges[1].estuary, 1, "a brook gets a simple mouth");
+    let (mouth_from, _) = shape_mouths(&mut curves, &edges, &[None, None], cell, n as f32 * cell);
+    for (id, points) in curves.iter().enumerate() {
+        let (base, last) = (points[0].width, *points.last().unwrap());
+        assert!(last.width > base * 1.25, "river {id}: mouth {} for a channel of {base}", last.width);
+        assert!(
+            points.windows(2).all(|p| p[1].width >= p[0].width),
+            "river {id}: the width shrinks towards the sea"
+        );
+        assert_eq!(last.z, 0.0, "river {id}: the water ends at sea level");
+        assert!(mouth_from[id] + 2 < points.len(), "river {id}: no mouth stretch");
+        let mut carved = ground.clone();
+        carve_bed(points, &ground, &mut carved, n, cell, cfg.incision, mouth_from[id]);
+        // Along the axis of the mouth stretch, every land cell lies below the
+        // water and the bed never rises towards the sea.
+        let mut previous = f32::INFINITY;
+        for p in &points[mouth_from[id]..] {
+            if p.x < coast {
+                break;
+            }
+            let i = ((p.y / cell) as usize) * n + (p.x / cell) as usize;
+            if ground[i] <= 0.0 {
+                continue;
+            }
+            assert!(carved[i] < p.z, "river {id}: dam of {} at x {}", carved[i] - p.z, p.x);
+            assert!(carved[i] <= previous + 0.001, "river {id}: bed step at x {}", p.x);
+            previous = carved[i];
+        }
+    }
+}

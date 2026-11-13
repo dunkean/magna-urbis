@@ -56,7 +56,7 @@ Une règle par étiquette ; une étiquette sans règle garde l'élévation inté
 | `round` | Remplace l'emprise par un polygone régulier de ce nombre de côtés |
 | `wall`, `cover`, `openings`, `minor`, `overhang`, `floors`, `composable` | Matériaux, murs aveugles ou porte seule, petite masse décorative, débords, étages montrés, corps qui peut se rompre en parties |
 
-`overrides` remplace une règle pour un identifiant de culture ou une famille de monuments (`western`, `orthodox`, `maghreb`, `persian`, `chinese`, `japanese`, `indic`, `antique`, `american`, `african`) : c'est ainsi qu'une culture élève à sa façon une partie partagée.
+`overrides` remplace une règle pour un identifiant de culture ou une famille de monuments (`western`, `orthodox`, `maghreb`, `persian`, `chinese`, `japanese`, `indic`, `antique`, `american`, `african`) : c'est ainsi qu'une culture élève à sa façon une partie partagée. Une clé d'`overrides` peut aussi être un **groupe** que plusieurs cultures partagent : une culture liste ses groupes dans son trait `roleGroups`, lus après ses propres `overrides.<identifiant de culture>` (`roles_modern.json` : `modern-flat`, `concrete-flat`, `mansard`, `green-roof`, `tin-roof`, `informal`, `suburban` pour les maisons ; `art-deco`, `highrise`, `gulf`, `soviet`, `cyberpunk`, `brutalist`, `danji`, `atompunk`, `space-colony`, `biopunk` pour les tours et les parties particulières).
 
 Fichiers : `roles_core.json` (parties de maison et parties génériques), `roles_monuments_a.json` (classique, médiéval, islamique, civique), `roles_monuments_b.json` (utilitaire, Asie, Amériques, Afrique, fantasy), `roles_rural.json` (fermes, sites d'activité et monuments de campagne), `roles_modern.json` (styles modernes).
 
@@ -68,7 +68,7 @@ Un **kit** (`styles.json`, `kits.<id>.house`) porte les poids des plans, l'influ
 
 ## Bâtiments singuliers et utilitaires (`parcels/monuments/`)
 
-Une forme pose des parties étiquetées sur son site avec le mini-langage `Site` de `parcels/landmark.rs` : `rect`, `bar`, `disk`, `apse`, `small`, `poly`, `ellipse`, `wedges` (couronne de gradins), `ring`, `court`. `monuments::build` interroge chaque famille à son tour : `modern` et `rural` d'abord (elles ne répondent qu'à leurs propres rôles), puis les familles culturelles (`classical`, `islamic`, `asian`, `american`, `african`, `fantasy`, `medieval`), puis les formes partagées `civic` et `utility`. Une famille qui décline laisse le site et le flux aléatoire intacts, et les formes plus anciennes de `landmark.rs` s'appliquent alors.
+Une forme pose des parties étiquetées sur son site avec le mini-langage `Site` de `parcels/landmark.rs` : `rect`, `bar`, `disk`, `apse`, `small`, `poly`, `ellipse`, `wedges` (couronne de gradins), `ring`, `court`. `monuments::build` interroge chaque famille à son tour : `modern`, `metropolis` et `rural` d'abord (elles ne répondent qu'à leurs propres rôles ; `modern` et `metropolis` seulement pour les cultures dont les traits déclarent une `era`), puis les familles culturelles (`classical`, `islamic`, `asian`, `american`, `african`, `fantasy`, `medieval`), puis les formes partagées `civic` et `utility`. Une famille qui décline laisse le site et le flux aléatoire intacts, et les formes plus anciennes de `landmark.rs` s'appliquent alors.
 
 Quels rôles existent, pour quelles cultures et en quel nombre relève du programme : `services.json` (familles, `cultureServices`, `harbour`, comptes) et `roles.rs`. L'option de plan `singularDensity` règle combien un lieu en reçoit.
 
@@ -77,6 +77,56 @@ Quels rôles existent, pour quelles cultures et en quel nombre relève du progra
 Les sites d'activité et les monuments de campagne utilisent les mêmes formes que les villes. Un archétype de `activities.json` peut porter `form: {role, site, has, absorbs}` : `role` nomme la forme à bâtir (un rôle de `services.json` comme `worship.parish`, ou un rôle de campagne, `rural.windmill`, `rural.barrow`), `site` le terrain qu'elle demande en mètres (façade, profondeur), `has` une étiquette de partie que la forme de la culture doit contenir (sinon le bâtiment garde son anneau unique), `absorbs` les archétypes de la même cour que la forme contient déjà (un clocher, un cloître). `activities::formed` remplace alors le bâtiment par les parties de cette forme, un bâtiment par partie, sur un terrain que le site accepte ; une forme refusée par le terrain ou que la culture ne bâtit pas laisse la cour telle quelle.
 
 `rural.rs` porte les formes `rural.*` : moulins par type (à eau, à marée, sur pivot, tour, à jupe, à axe vertical), scieries, forges et fonderies, fours (chaux, briques, verre, charbon de bois, goudron), têtes de mine, carrières, salines, stations de pêche, pressoirs, granges dîmières, greniers, pigeonniers, bergeries, tours de guet et de feu, maisons de péage, ermitages, oratoires, croix et puits de chemin, mégalithes, tumulus et tombeaux. Un sous-rôle fixe une variante (`rural.windmill.post`) ; le rôle nu laisse la culture et le site choisir. Leurs parties sont élevées par `roles_rural.json`.
+
+## Lieux reculés (`remote` de `activities.json`, `settlements/remote.rs`)
+
+Des lieux uniques et rares dont la situation fait tout l'intérêt : un temple sur un sommet, un monastère sur une vire de falaise, un sanctuaire taillé au pied d'une paroi, une tour sur un piton, un ermitage sur un îlot rocheux, un tombeau dans une gorge, des ruines perdues au fond d'une forêt ou sur une île de marais. Ce sont des sites d'activité comme les autres (mêmes gabarits, cours, formes et test du terrain), placés par le relief et non par une ancre de ressource. Un gabarit de `activities.json` est un lieu reculé quand il porte `remote: {situations, access, ruined, weight}` ; le bloc `remote` du fichier contient les deux vocabulaires et la rareté.
+
+**Les situations** sont des tests peu coûteux sur la grille de planification : les hauteurs autour du point dans huit directions sur un anneau proche (1,5 cellule, 60 m au moins) et un anneau lointain (3 cellules, 180 m au moins), le masque d'eau et deux potentiels de ressources. Les seuils sont des données (`remote.situations.<id>`).
+
+| Situation | Le point s'y trouve quand |
+|---|---|
+| `summit` | tout est plus bas sur les deux anneaux, de `drop` mètres en moyenne sur l'anneau lointain, sans eau à cette distance |
+| `crag` | un sommet dont l'anneau proche tombe à `grade` ou plus dans `sides` directions sur huit |
+| `cliff-ledge` | dans une direction le sol tombe à `grade` sur l'anneau proche et de `drop` mètres sur l'anneau lointain (une vire ou un rebord de falaise ; plus spectaculaire quand le rocher monte derrière) |
+| `cliff-foot` | dans une direction le sol monte à `grade` et de `rise` mètres, le côté opposé restant sous `ease` |
+| `gorge` | le sol monte de `rise` mètres sur deux côtés opposés et se prolonge entre eux (plus spectaculaire avec une rivière) |
+| `islet` | de l'eau libre (mer ou lac) se trouve à moins de `reach` mètres dans `sides` directions sur huit ; `stack` mètres au-dessus de l'eau font un vrai piton marin |
+| `marsh-island` | un sol plat (`ease`) à `above_water` mètres au plus au-dessus de son eau, dans la tourbe (potentiel `peat`) ou avec de l'eau dans `sides` directions |
+| `deep-forest` | le potentiel `wood` tient ici et à 500 m tout autour, sur un sol sous `ease`, à `far` mètres au moins de tout lieu habité |
+
+**Les accès** (`remote.accesses.<id>`) : chaque gabarit liste les types qu'il peut avoir avec un poids ; ils sont essayés dans un ordre aléatoire pondéré et le premier que le terrain permet est retenu.
+
+| Accès | `line` | Ce que c'est |
+|---|---|---|
+| `none` | `none` | Aucun chemin : `accessClass` vaut `none`, le site n'est pas une extrémité de route et aucun itinéraire n'est cherché |
+| `track` | `path` | Le sentier ordinaire du site, jusqu'à sa porte |
+| `cliff-stair` | `fall` | Des marches taillées droit dans la ligne de plus grande pente, jusqu'à une pente (`grade`) de 1,2, sur `reach` mètres au plus |
+| `rock-steps` | `fall` | La même chose sur un rocher moins raide (`grade` 0,7) : les marches partent en traversée là où la ligne de pente est trop raide |
+| `tunnel` | `bore` | Une galerie dans le rocher, du lieu au premier sol facile en contrebas |
+| `causeway` | `span` | Une ligne à travers l'eau jusqu'à l'autre rive la plus proche, à moins de `reach` |
+| `rope-bridge` | `span` | La même chose au-dessus d'un vide plus court |
+
+Une ligne `fall` part du devant de la cour et prend, pas à pas, la descente la plus raide qu'un escalier peut suivre (la ligne de pente, sinon une traversée à côté), jusqu'à ce que la pente passe sous `path_grade` ou qu'elle rencontre l'eau ; elle peut dépasser toute pente de route mais jamais son propre `grade`. La ligne est une installation ouverte du site (`cliff_stair`, `rock_steps`, `rock_tunnel`, `tidal_causeway`, `rope_bridge` ; types de sol `engineered_path`, `underground_work`, `crossing`), et `access` en est l'autre bout : le sentier ordinaire du site n'est tracé que jusqu'à ce point. Le site porte aussi `situation` et `approach` (le type d'accès), et `kind: "remote"`.
+
+**Ce qui s'y dresse** relève du gabarit, dans les formes de la culture :
+
+| Gabarit | Situations | Bâtiment | Accès |
+|---|---|---|---|
+| `summit_sanctuary` | summit, crag | `rural.summit-temple` : le sanctuaire sur sa plateforme à gradins dans un mur de terrasse, l'escalier dans l'axe ; une chapelle et son abside dans l'Occident et l'Orient chrétiens | marches dans le roc, escalier de falaise, aucun, sentier |
+| `cliff_monastery_site` | cliff-ledge | `rural.cliff-monastery` : la salle contre le rocher, une aile de chaque côté, une rangée basse de cellules et la tour-porte au bord du vide, des marches entre les niveaux | escalier de falaise, aucun, tunnel, pont de corde |
+| `rock_sanctuary` | cliff-foot, gorge | `rural.rock-sanctuary` : la façade taillée contre le rocher, son porche et deux colosses | aucun, sentier, marches dans le roc |
+| `crag_tower` | crag, summit, cliff-ledge | la tour de guet (`rural.watchtower`) | escalier de falaise, marches dans le roc, aucun |
+| `stack_hermitage` | islet, cliff-ledge, crag, marsh-island | l'ermitage (`rural.hermitage`) | aucun, chaussée, pont de corde, escalier de falaise |
+| `lost_ruins` | deep-forest, marsh-island, gorge, islet | le temple ou la chapelle rurale de la culture, toujours en ruine | aucun, sentier, chaussée |
+| `gorge_tomb` | gorge, cliff-foot, islet | le tombeau de la culture (`rural.tomb`) | aucun, marches dans le roc, sentier |
+| `forgotten_stones` | deep-forest, marsh-island, summit | des mégalithes, un cairn pour les cultures qui n'en ont pas | aucun, sentier |
+
+`ruined` est la part d'un gabarit trouvée en ruine : `activities::ruined` change chaque bâtiment en murs brisés sur sa propre emprise (`parcels/ruins.rs`). Les cultures pondèrent les gabarits par le poids `prefer` de leur bâtiment requis (`cultures.families` et `overrides` : monastères de falaise pour les cultures tibétaine, himalayenne, byzantine, éthiopienne et caucasienne, sanctuaires rupestres pour les cultures antiques, éthiopienne et naine, temples de sommet en Asie orientale, en Inde et aux Amériques) ; le code ne teste jamais le nom d'une culture.
+
+**Rareté.** Une région reçoit `rate` × √(terres / 100 km²) × fréquence lieux (1,2 pour 100 km², 4,8 pour 1 600 km² à la fréquence 1 ; la fraction est tirée de la graine, `most` plafonne le total). Les candidats viennent d'une grille décalée de 48 × 48 sondes au plus, chacune affinée sur le haut de son relief et huit points autour, et des cellules de rivage des îles lues avec un pas (256 × 256 tests au plus, un îlot étant plus petit qu'une cellule de sonde) ; le score est le poids de la situation multiplié par son caractère spectaculaire. Les lieux se tiennent à `clear` mètres de tout lieu habité, à `spacing` les uns des autres et à `site_gap` des autres sites de campagne : une région sans relief marqué n'en reçoit aucun. L'option de placement `remotePlaces` (`settlements::Config.remote_places` ; « Fréquence des lieux reculés », à côté de la densité des fermes dispersées dans les réglages régionaux) est la fréquence : 0 n'en donne aucun, 1 est la valeur par défaut, 10 le maximum.
+
+**Terrain.** Une cour est posée sur le candidat, puis sur deux anneaux de huit emplacements autour de lui, tous ses coins au sec. Chaque corps passe `ground_fits` ; une forme prend tout son `site`, puis un site plus serré, sinon le corps unique reste. Un candidat qui ne porte aucun bâtiment requis est abandonné.
 
 ## Ajouter quelque chose
 
@@ -87,13 +137,38 @@ Les sites d'activité et les monuments de campagne utilisent les mêmes formes q
 | Une nouvelle partie de bâtiment | Une étiquette dans une forme et sa règle dans un `roles_*.json` |
 | Un monument ou un bâtiment utilitaire | Une forme dans le fichier de famille de `parcels/monuments/`, le rôle dans `services.json` |
 | Un site ou un monument de campagne | Une forme `rural.*` dans `parcels/monuments/rural.rs`, les règles de ses parties dans `roles_rural.json`, `form: {role, site}` sur l'archétype dans `activities.json` |
-| Un style moderne | Une culture dans `styles_modern.json` (kit, traits), son tissu dans `catalogue.json`, sa famille de services dans `services.json`, ses formes dans `parcels/monuments/modern.rs` et leurs règles dans `roles_modern.json` |
+| Un lieu reculé | Un gabarit dans `sites` de `activities.json` avec `remote: {situations, access, ruined, weight}` et sans `context`, son identifiant dans `ACTIVITY_TEMPLATES` de `rust/bridge/urbanConfig.ts` ; un poids `prefer` sur son bâtiment requis pour les cultures qui y sont portées |
+| Une situation | Ses seuils sous `remote.situations` et son prédicat dans `situations` de `settlements/remote.rs` |
+| Un accès | Une entrée sous `remote.accesses` avec l'une des lignes `none`, `path`, `fall`, `span`, `bore` et son archétype d'installation ; un nouveau type de ligne est une branche de `approach` dans `settlements/remote.rs` |
+| Un style moderne | Une culture dans `styles_modern.json` (kit, traits avec `era` et `roleGroups`), son tissu et ses cinq préréglages dans `catalogue.json`, sa ligne dans `MAPPINGS` de `culture.rs`, sa famille de services (`cultures`) et ses bâtiments propres (`cultureServices`) dans `services.json`, ses groupes dans `enclosures.json` et `activities.json` ; les nouvelles formes dans `parcels/monuments/modern.rs` ou `metropolis.rs` et leurs règles dans `roles_modern.json` ; côté web : son libellé anglais dans `gen/options.ts`, son libellé français dans `v2/interfaceMessages.ts`, ses toponymes dans `gen/names/profiles.ts`, `v2/cityCodeDefaults.json`, et sa zone climatique dans le `run.mjs` des planches v7 |
 | Un plan de maison | Une branche dans `compose` de `plan.rs` et son poids dans les kits |
 | Une forme de toit | Ses plans dans `roof.rs` |
 
 ## Traits de culture
 
-Ce qui distingue les bâtiments d'une culture sans figurer dans son tissu vit dans `cultures.<id>.traits` de `styles.json` (`styles_modern.json` pour les styles modernes) : la tradition de toit d'une culture dont le tissu ne déclare pas d'`arch` (`tradition`), le bâti méditerranéen (`mediterranean`), la famille de détails des toits plats (`flavor`), la taille des habitants (`bodyScale`), l'échelle de la maison entière (`metricScale`), la forme extérieure des maisons (`form` : tree, mushroom, longhouse, yurt, battered, mage, stilt) et la part des lots qui la prennent (`formShare`), un seul étage massif (`massiveStorey`), les maisons sur pilotis (`piles`), l'ouverture des façades (`openness`, `lightWallOpenness`). `massing.rs` lit ces traits et jamais le nom d'une culture.
+Ce qui distingue les bâtiments d'une culture sans figurer dans son tissu vit dans `cultures.<id>.traits` de `styles.json` (`styles_modern.json` pour les styles modernes) : la tradition de toit d'une culture dont le tissu ne déclare pas d'`arch` (`tradition`), le bâti méditerranéen (`mediterranean`), la famille de détails des toits plats (`flavor`), la taille des habitants (`bodyScale`), l'échelle de la maison entière (`metricScale`), la forme extérieure des maisons (`form` : tree, mushroom, longhouse, yurt, battered, mage, stilt) et la part des lots qui la prennent (`formShare`), un seul étage massif (`massiveStorey`), les maisons sur pilotis (`piles`), l'ouverture des façades (`openness`, `lightWallOpenness`), l'ère d'un style moderne (`era` : `modern`, `futuristic`, `alien` ; vide pour les cultures historiques et de fantasy) et les groupes de surcharges qu'il partage (`roleGroups`). `massing.rs` lit ces traits et jamais le nom d'une culture. Le web lit `era` par `cultureEra(culture)` de `gen/options.ts`, qui importe `styles_modern.json`.
+
+## Styles modernes, futuristes et extraterrestres
+
+Les 36 styles de `docs/Modern_cities_review.md` sont des cultures de `styles_modern.json` ; chacun a son tissu (cinq préréglages : cœur, extension, faubourg, village, hameau) dans `catalogue.json`. Les styles d'une même tradition de bâti partagent un kit, une famille de services et des groupes de surcharges ; leurs différences sont des paramètres de tissu et des traits.
+
+| Ère | Styles |
+|---|---|
+| `modern` | `american-grid`, `industrial-victorian`, `haussmannian`, `belle-epoque`, `mediterranean-modern`, `garden-city`, `art-deco-metropolis`, `modernist-functionalist`, `soviet-socialist`, `american-suburbia`, `european-contemporary`, `global-high-rise`, `gulf-contemporary`, `informal-urban-expansion`, `eco-city`, `japanese-contemporary`, `chinese-megacity`, `korean-high-rise`, `southeast-asian-tropical`, `south-asian-metropolis`, `latin-american-grid`, `latin-american-hillside`, `north-african-contemporary`, `sub-saharan-african-metropolis`, `middle-eastern-contemporary`, `australian-suburban`, `post-socialist-european` |
+| `futuristic` | `cyberpunk`, `solarpunk`, `dieselpunk`, `dystopian-brutalism`, `atompunk-retrofuturist`, `post-apocalyptic-ruins`, `corporate-arcology`, `futuristic-space-colony` |
+| `alien` | `biopunk-organic-city` |
+
+| Kit | Maisons |
+|---|---|
+| `brick-rowhouse` | Maisons en rangée et immeubles sans ascenseur en brique (damier, victorien, Art déco, dieselpunk) |
+| `masonry-apartment` | Immeubles d'habitation en pierre et en enduit (haussmannien, Belle Époque, méditerranéen, damier latino-américain, Afrique du Nord, Moyen-Orient, post-socialiste) |
+| `suburban-house` | Maisons isolées et jumelées à porche (cité-jardin, banlieue, Australie, atompunk) |
+| `concrete-slab` | Barres et tours (moderniste, soviétique, tours mondiales, Golfe, Chine, Corée, cyberpunk, brutaliste, arcologie) |
+| `eco-block`, `compact-mixed`, `informal-block`, `pod-habitat`, `organic-pod` | Îlots en bois, petites parcelles mixtes, maisons autoconstruites, modules d'habitat, cosses cultivées |
+
+Familles de services : `industrial` (XIXe et début du XXe siècle : usines, gares, grands magasins), `modernist` (barres, tours, stade, centrale, tour de télévision, monument), `contemporary` (centres commerciaux, bureaux, tours, stade ; lieux de culte par culture), `informal` (marchés ouverts, ateliers, écoles), `futuristic` (tours, centres commerciaux, centrales ; arcologies, mégastructures, dômes et fermes verticales par culture), `alien` (ruche, flèches organiques). Les bâtiments propres d'une culture, et les bâtiments de sa famille qu'elle n'a pas (une entrée avec `maxPop: 1`), sont dans `cultureServices`. `post-apocalyptic-ruins` est la famille informelle avec un `ruinShare` à toutes les tailles.
+
+Les formes de `metropolis.rs` : `housing.slab` (barres de part et d'autre d'une pelouse), `housing.tower` (tours ponctuelles, certaines sur un socle), `commerce.mall`, `civic.stadium`, `civic.power-plant` (et `.atomic` : dôme de réacteur), `civic.tv-tower` (tour de télévision, ou mât d'amarrage de dirigeables dans la famille industrielle), `civic.arcology`, `civic.megastructure`, `civic.habitat-dome` (et `.ward`), `civic.vertical-farm`, `civic.monument`, `civic.hive`, `civic.organic-spire`. Le gratte-ciel de `modern.rs` prend le couronnement de chaque tradition par les groupes : flèche Art déco, fût de verre, aiguille du Golfe, tour stalinienne, dôme atompunk.
 
 ## Villes hybrides : la feuille de styles
 
@@ -127,4 +202,4 @@ Un cœur ancien d'une culture dans des extensions d'une autre, les maisons d'un 
 
 ## Tests
 
-`cargo test -p magna-urbis-core --lib urban::forms::` (toits, rôles, kits, plans, feuille de styles), `urban::massing::`, `urban::parcels::`, `urban::activities::`. Web : `tests/v2/cityParity.test.ts`.
+`cargo test -p magna-urbis-core --lib urban::forms::` (toits, rôles, kits, plans, feuille de styles), `urban::massing::`, `urban::parcels::`, `urban::activities::`, `settlements::remote::` (lieux reculés). Web : `tests/v2/cityParity.test.ts`.

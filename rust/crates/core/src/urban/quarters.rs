@@ -1081,6 +1081,22 @@ fn armature_frame(streets: &[Street], origin: Point, hint: f64) -> Option<f64> {
         })
 }
 
+/// The lattice spacing of a grid place: the culture's, halved (twice at most)
+/// while it exceeds three fifths of the place's radius. A small place of a
+/// superblock culture would otherwise hold only the centre lines, which the
+/// roads crossing there already are, and no block would front a street.
+fn place_spacing(spacing: f64, radius: f64) -> f64 {
+    let mut sp = spacing;
+    for _ in 0..2 {
+        // Under 250 m a lattice is no superblock: existing cultures keep theirs.
+        if radius <= 0.0 || sp <= 0.6 * radius || sp < 250.0 {
+            break;
+        }
+        sp *= 0.5;
+    }
+    sp
+}
+
 /// Whether a line of the planned grid lattice (wards first, then lanes)
 /// crosses `shape` with at least `minWidth` of land on each side.
 fn lattice_lines(shape: &Shape, field: &Field<'_>, m: &Morph) -> bool {
@@ -1096,11 +1112,14 @@ fn lattice_lines(shape: &Shape, field: &Field<'_>, m: &Morph) -> bool {
             x: -heading.sin(),
             y: heading.cos(),
         };
-        let sp = spacing[if (heading - field.frame.unwrap_or(field.angle)).cos().abs() > 0.7 {
-            0
-        } else {
-            1
-        }];
+        let sp = place_spacing(
+            spacing[if (heading - field.frame.unwrap_or(field.angle)).cos().abs() > 0.7 {
+                0
+            } else {
+                1
+            }],
+            field.radius,
+        );
         if sp <= 0.0 {
             return false;
         }
@@ -1542,13 +1561,14 @@ fn split_quarter(
                         continue;
                     }
                     rank = if lane { 3 } else { 2 };
-                    let sp = spacing[if (heading - field.frame.unwrap_or(grid_angle)).cos().abs()
-                        > 0.7
-                    {
-                        0
-                    } else {
-                        1
-                    }];
+                    let sp = place_spacing(
+                        spacing[if (heading - field.frame.unwrap_or(grid_angle)).cos().abs() > 0.7 {
+                            0
+                        } else {
+                            1
+                        }],
+                        field.radius,
+                    );
                     if sp > 0.0 {
                         let project =
                             |p: Point| (p.x - field.center.x) * n.x + (p.y - field.center.y) * n.y;

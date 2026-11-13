@@ -1,5 +1,7 @@
 import { cityCountrysideTextureVisible } from './cityEnvironment';
-import type { CityScene } from './cityCanvas';
+import { CITY_LOD_LIMITS, type CityScene } from './cityCanvas';
+import { drawFarmRoofs } from './farmRoofs';
+import { yardStyle } from './yardStyle';
 import { DEFAULT_TEXT, textPlacement, drawMapLabels, cityTextLabels, type TextSettings } from './textLayer';
 import { cavernDisplayWorld } from './cavernDisplay';
 import { drawRuralDetails } from './ruralDetails';
@@ -1637,21 +1639,33 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (pat && l) { ctx.fillStyle = pat; for (const p of polyPaths(l)) ctx.fill(p, 'evenodd'); }
       }
       strokePolys('farm-platforms', pal.farmInk, lw(0.5, 0.4), 0.7, [px(3), px(2)]);
-      fillPolys('farm-yards', pal.farmYard, 0.9);
-      fillPolys('farm-pens', pal.farmYard);
-      strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
+      // On a natural ground a farm is painted as a town is: its yard is a light wash of trodden earth (not a flat
+      // plan tint), its walls take the yard-wall colour of the towns (no ink), its buildings are city buildings.
+      fillPolys('farm-yards', pal.farmYard, natural ? 0.3 : 0.9);
+      fillPolys('farm-pens', pal.farmYard, natural ? 0.3 : 1);
+      if (!natural) strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
       fillPolys('farm-ponds', pal.water.stops[0][1]);
       strokePolys('farm-ponds', pal.waterEdge, lw(0.5, 0.4));
-      strokeLines(linesOf((l) => l.name === 'farm-walls'), pal.farmInk, () => lw(0.9, 0.7), 1, [], 'butt');
+      if (natural) { const wall = yardStyle('wall', '', 'terrain'); strokeLines(linesOf((l) => l.name === 'farm-walls'), wall.color, () => lw(wall.width, wall.minPx), wall.alpha, [], 'butt'); }
+      else strokeLines(linesOf((l) => l.name === 'farm-walls'), pal.farmInk, () => lw(0.9, 0.7), 1, [], 'butt');
       if (lod.band >= 2 && polyL('farm-trees')) {
         if (brushes) brushTrees('farm-trees', true); else {
         fillPolys('farm-trees', pal.treeFill);
         strokePolys('farm-trees', pal.treeInk, lw(0.3, 0.3), 0.8);
         }
       }
-      fillPolys('farm-buildings', pal.farmRoof);
-      strokePolys('farm-buildings', pal.farmInk, lw(0.5, 0.6));
-      if (lod.band >= 2) strokeLines(linesOf((l) => l.name === 'farm-ridges'), pal.farmInk, () => lw(0.35, 0.4), 0.8, [], 'butt');
+      if (natural && px(1) <= CITY_LOD_LIMITS[1]) {
+        // The roof and wall painter of the towns, at the scales where a town shows its buildings (cast shadow, pan
+        // light, grain by cover and culture, weathering, snow); paths of the class this renderer records.
+        timedRec('farm-roofs', () => drawFarmRoofs(ctx, world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P }));
+      } else {
+        fillPolys('farm-buildings', pal.farmRoof);
+        // Further out a natural ground keeps the plain roof tint without ink, like the few pixels of a town roof.
+        if (!natural) {
+          strokePolys('farm-buildings', pal.farmInk, lw(0.5, 0.6));
+          if (lod.band >= 2) strokeLines(linesOf((l) => l.name === 'farm-ridges'), pal.farmInk, () => lw(0.35, 0.4), 0.8, [], 'butt');
+        }
+      }
     }
     if (luOn && lod.strips) timedRec('rural', () => drawRuralDetails(ctx, world, pal));
     // roads, tracks and the street strokes below never spill over the sea or the lakes (bridges come later)

@@ -15,16 +15,16 @@ use crate::rng::Rng;
 use crate::urban::activities as act;
 use std::f64::consts::TAU;
 
-fn hash01(key: &str) -> f64 {
+pub(super) fn hash01(key: &str) -> f64 {
     Rng::new(key).float()
 }
 
-fn dry(f: &Fields, p: Point) -> bool {
+pub(super) fn dry(f: &Fields, p: Point) -> bool {
     p.x >= 0.0 && p.y >= 0.0 && p.x < f.r.width && p.y < f.r.width && f.r.water[f.index(p)] == 0
 }
 
 /// Edge distance to the nearest settlement (index, m; negative inside).
-fn nearest(settlements: &[Settlement], p: Point) -> Option<(usize, f64)> {
+pub(super) fn nearest(settlements: &[Settlement], p: Point) -> Option<(usize, f64)> {
     settlements
         .iter()
         .enumerate()
@@ -33,7 +33,7 @@ fn nearest(settlements: &[Settlement], p: Point) -> Option<(usize, f64)> {
 }
 
 /// Angle of the yard frame whose `v` axis (angle + 90°) points along `v`.
-fn frame_angle(v: Point) -> f64 {
+pub(super) fn frame_angle(v: Point) -> f64 {
     (-v.x).atan2(v.y)
 }
 
@@ -72,7 +72,7 @@ fn wayside_template(culture: &str, h: f64) -> Option<&'static str> {
 }
 
 /// Every required entry of a template stands in the yard.
-fn complete(t: &act::Site, culture: &str, b: &[ActivityBuilding]) -> bool {
+pub(super) fn complete(t: &act::Site, culture: &str, b: &[ActivityBuilding]) -> bool {
     t.required.iter().all(|r| sites::resolve(r, culture).is_some_and(|a| b.iter().any(|x| x.archetype == a)))
 }
 
@@ -98,6 +98,8 @@ fn site(t: &act::Site, mode: &str, parent: &Settlement, anchor: String, centre: 
         season_mask: 0x0fff,
         buildings,
         installations,
+        situation: String::new(),
+        approach: String::new(),
         id,
     }
 }
@@ -380,6 +382,8 @@ pub(super) fn junctions(seed: &str, f: &Fields, road_sites: &[RoadSite], roads: 
             season_mask: 0x0fff,
             buildings,
             installations,
+            situation: String::new(),
+            approach: String::new(),
             id,
         });
     }

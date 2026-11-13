@@ -8,19 +8,20 @@
  * - a regional road follows, point by point, the nearest settlement: it changes surface half-way between a paved
  *   town and an unpaved one. Tracks and paths stay earth everywhere.
  * With no paved culture on the map every function answers 'earth' without any work, so nothing changes. */
+import { cultureEra } from '../gen/options';
 import type { Layout, Point } from '../../../rust/bridge/urban';
 import type { StyleMix, StyleSheet } from '../../../rust/bridge/urbanConfig';
 
 export type RoadPavement = 'earth' | 'asphalt';
 
-/** Surface by era of a culture (the engine does not send eras yet; `era` is read wherever a place carries one). */
-const ERA_PAVEMENT: Readonly<Record<string, RoadPavement>> = { modern: 'asphalt', contemporary: 'asphalt' };
+/** Surface by era of a culture: the place's own `era` where it carries one, else the culture's (gen/options cultureEra). */
+const ERA_PAVEMENT: Readonly<Record<string, RoadPavement>> = { modern: 'asphalt', contemporary: 'asphalt', futuristic: 'asphalt' };
 /** Surface by culture id, until every culture carries an era. The only place to list a paved culture. */
 const CULTURE_PAVEMENT: Readonly<Record<string, RoadPavement>> = { 'american-grid': 'asphalt' };
 
 /** Surface of the roads a culture builds. */
 export const culturePavement = (culture: string | undefined, era?: string): RoadPavement =>
-  (era && ERA_PAVEMENT[era]) || (culture && CULTURE_PAVEMENT[culture]) || 'earth';
+  ERA_PAVEMENT[era ?? cultureEra(culture) ?? ''] || (culture && CULTURE_PAVEMENT[culture]) || 'earth';
 
 /** A settlement as the regional roads see it. */
 export interface PavementSite { x: number; y: number; pavement: RoadPavement }

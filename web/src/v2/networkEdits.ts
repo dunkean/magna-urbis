@@ -557,14 +557,17 @@ function nativeAfter(native: TerrainData, removal: NativeRemoval): TerrainData {
   let kept = 0, vertices = 0;
   for (let r = 0; r < rows; r++) if (!removal.rows.has(r)) { kept++; vertices += h.riverOffsets[r + 1] - h.riverOffsets[r]; }
   const points = new Float32Array(vertices * 4), offsets = new Uint32Array(kept + 1), meta = new Uint32Array(kept * 6);
+  // The mouth gain is one value per river point: it follows the kept points.
+  const flare = h.riverFlare ? new Float32Array(vertices) : undefined;
   let row = 0, at = 0;
   for (let r = 0; r < rows; r++) {
     if (removal.rows.has(r)) continue;
     const from = h.riverOffsets[r], to = h.riverOffsets[r + 1];
     points.set(h.riverPoints.subarray(from * 4, to * 4), at * 4); meta.set(h.riverMeta.subarray(r * 6, r * 6 + 6), row * 6);
+    if (flare && h.riverFlare) flare.set(h.riverFlare.subarray(from, to), at);
     at += to - from; offsets[++row] = at;
   }
-  return { ...native, hydrology: { ...h, riverPoints: points, riverOffsets: offsets, riverMeta: meta, riverCount: kept } };
+  return { ...native, hydrology: { ...h, riverPoints: points, riverOffsets: offsets, riverMeta: meta, riverFlare: flare, riverCount: kept } };
 }
 /** Two-pass 3-4 chamfer distance (m) to the cells where `source` holds. */
 function chamfer(w: number, h: number, cell: number, source: (i: number) => boolean): Float32Array {

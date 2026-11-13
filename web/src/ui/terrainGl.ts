@@ -520,8 +520,6 @@ void main() {
     vec4 wIce=vec4(0.);float wIceEdge=0.;
     // Water climate tints applied after the evaluation (waterRegime.ts): x humic tea, y glacial milk, z sea sediment plume.
     vec3 wTint=vec3(0.);
-    // White water of sloping reaches, as a cover of the fragment, laid over the finished water below.
-    float wWhite=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
@@ -529,8 +527,8 @@ void main() {
       if(uRenderV2>0){
         v2w=true;wBase=color;wCover=water.a;wKind=s.x<0.?1.:3.;wDepth=s.x<0.?-s.x:8.;
         // Inland water of the seasonal regime (waterRegime.ts): the painted dry beds lie on the ground as painted
-        // (sandy); the wet remainder takes the Render v2 water, and the painted white water is laid over it. Ice is
-        // not painted for this ground: it comes from the land's snow at the water's altitude, below.
+        // (sandy); the wet remainder takes the Render v2 water. Ice is not painted for this ground: it comes from
+        // the land's snow at the water's altitude, below.
         if(s.x>=0.){
           // Bank crowns lean over the water: rooted on land (forestCrown), drawn whole above it.
           float bed=water.a*(1.-forestResolvedCover);wCover=bed;
@@ -540,17 +538,9 @@ void main() {
           // shallow, bed-coloured fringe along every course, most of what a narrow tributary showed beside its trunk.
           float solid=smoothstep(.05,.15,painted.r-painted.b);
           float damp=(1.-solid)*smoothstep(.005,.025,painted.g-max(painted.r,painted.b));
-          // White water: the compositor lays a pale blue-white over the river's colour at a partial cover. The cover
-          // is read back from how far the colour leaves the blue of painted water (red against blue) and laid again
-          // over the Render v2 water below, so a sloping reach keeps the river's own colour and depth under its
-          // streaks. A reach frozen across (v2WinterFresh) shows ice, not white water; only the bar of a waterfall,
-          // the one cover above 60 %, stays, as a pale ice fall.
-          float white=(1.-solid)*(1.-damp)*clamp((painted.r-.36*painted.b)/.54,0.,1.);
-          white*=1.-(underdark?0.:step(.97,v2WinterFresh))*(1.-smoothstep(.6,.72,white));
-          wWhite=bed*white;
-          // Underdark: no ice, dry beds or white foam under the vault; the whole course is cave water.
+          // Underdark: no ice or dry beds under the vault; the whole course is cave water.
           if(underdark)solid=0.;
-          // A dry course shows through the bank crowns; white water stays under them.
+          // A dry course shows through the bank crowns.
           float through=uMaterialZone>0?step(.001,V2_WATER_ARIDITY[waterZone()]):0.;
           bed=mix(bed,water.a,solid*through);
           wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
@@ -639,8 +629,6 @@ void main() {
     // only the open remainder takes the Render v2 water.
     if(uRenderV2>0)if(wIce.x>.001){
       vec4 sheet=v2FreshIce(world,uPx,wIce.x,wIce.y,wIce.z,wIce.w,wIceEdge);
-      // Border ice does not grow over white water: a rapid stays open until its reach is frozen across.
-      sheet.a*=1.-(1.-step(.97,wIce.x))*smoothstep(.04,.2,wWhite);
       wBase=mix(wBase,sheet.rgb,wCover*sheet.a);wCover*=1.-sheet.a;color=wBase;
     }
     if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(-s.x,0.);}
@@ -664,7 +652,6 @@ void main() {
       color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover);
       color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover);
       color=mix(color,vec3(.45,.38,.25),.55*wTint.z);
-      color=mix(color,vec3(.84,.90,.93),wWhite);
     }
     if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
       vec3 paper=paperWater(wKind,paperShore(world));
@@ -727,19 +714,16 @@ layout(location = 0) in vec4 aSeg;
 layout(location = 1) in vec2 aWidth;
 layout(location = 2) in vec3 aColor;
 uniform vec2 uCanvas; uniform vec2 uOrigin; uniform float uPx; uniform float uDpr;uniform int uPhysicalWidth;
-out vec2 vP; flat out vec4 vSeg; flat out vec2 vHalf; flat out vec3 vColor; flat out float vCoded;
+out vec2 vP; flat out vec4 vSeg; flat out vec2 vHalf; flat out vec3 vColor;
 void main() {
-  // A negative width marks a material course: its colour is the regime code and its blue the slope class
-  // (vectorWaterRender.ts riverSegments); the fragment shader then draws the white water of that class.
-  vec2 width = abs(aWidth); vCoded = aWidth.x < 0.0 ? 1.0 : 0.0;
   vec2 a = (aSeg.xy - uOrigin) / uPx, b = (aSeg.zw - uOrigin) / uPx;
   vec2 d = b - a; float l = length(d);
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
   // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
-  vec2 carto = clamp(0.35 + 0.4 * log2(max(width, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
-  vec2 half_ = (uPhysicalWidth==1?width/uPx:max(width/uPx,carto))*.5;
+  vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
+  vec2 half_ = (uPhysicalWidth==1?aWidth/uPx:max(aWidth/uPx,carto))*.5;
   float r = max(half_.x, half_.y) + 1.0;
   vec2 corner = vec2(gl_VertexID & 1, gl_VertexID >> 1);
   vec2 p = mix(a - dir * r, b + dir * r, corner.x) + nrm * r * (corner.y * 2.0 - 1.0);
@@ -749,37 +733,13 @@ void main() {
 
 export const RIVER_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
-in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor; flat in float vCoded;
+in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
 vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
 ${LAKE_GLSL}
-// White water of a sloping reach, in the flow frame of its course: arc is the arc length of the course at this
-// pixel (m, downstream, continuous through the joints of the segments), v the distance across the flow (m).
-// code is the slope class of the reach (waterRegime.ts slopeClass). Returns the white cover of the pixel, soft
-// and partial: thin streaks along the flow, gathered in bands across it. Ceilings: riffles 10 %, rapids 35 %,
-// cascade 60 %. Once the streaks are narrower than about two pixels the cover is its mean (three tenths of the
-// ceiling), so from far a steep reach is only a slightly paler river.
-float riverWhite(float code, float arc, float v) {
-  float ceiling = .10 * smoothstep(.03, .2, code) + .25 * smoothstep(.28, .6, code) + .25 * smoothstep(.6, .8, code);
-  float resolved = 1. - smoothstep(.55, 1.2, uPx), pattern = .3;
-  if (resolved > 0.) {
-    float streak = .5 + .5 * shoreNoise(vec2(arc / 16., v / 2.2));
-    float band = .5 + .5 * shoreNoise(vec2(arc / 5., v / 9.) + 31.7);
-    pattern = mix(.3, min(smoothstep(.42, .82, streak) * (.55 + .9 * band), 1.), resolved);
-  }
-  return ceiling * pattern;
-}
-// Waterfall, seen from above, on its own short piece laid over the course (x: metres along the flow from the
-// lip, s: position across the channel, -1 to 1): a short bright bar across the channel, 85 % white at most over
-// about three metres, and a foam tail that thins out downstream within half a channel width. Both fade toward
-// the banks and end inside the capsule, so no edge cuts them.
-float riverFall(float x, float s, float halfM, float arc, float v) {
-  float tail = .4 * step(0., x) * exp(-x / max(.35 * halfM, 3.)) * (.45 + .55 * (.5 + .5 * shoreNoise(vec2(arc / 9., v / 2.2))));
-  return max(.85 * exp(-x * x / 3.5), tail) * (1. - smoothstep(.7, 1., abs(s)));
-}
 void main() {
   vec2 a = vSeg.xy, b = vSeg.zw, pa = vP - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
@@ -792,22 +752,6 @@ void main() {
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
   vec3 color = vColor;
-  // Material course (vCoded): red is running water, green the arc length of the course at the start of this piece
-  // (-1 when frozen), blue the slope class / 2. The compositor reads red as running water, green as open water
-  // and blue as the white cover of the pixel (x .49, below the plume codes).
-  if (vCoded > .5) {
-    color.g = vColor.g < -.5 ? 0. : 1.;
-    color.b = 0.;
-    if (vColor.b > .004 && vColor.r > .5 && color.g > .5) {
-      float len = max(length(ba), 1e-6), t = dot(pa, ba) / (len * len), code = vColor.b * 2.;
-      float halfM = max(mix(vHalf.x, vHalf.y, h) * uPx, .5), v = (ba.x * pa.y - ba.y * pa.x) / len * uPx;
-      float arc = max(vColor.g, 0.) + t * len * uPx;
-      float white = 0.;
-      if (code > .84) white = riverFall((t - .5) * len * uPx, v / halfM, halfM, arc, v);
-      else white = riverWhite(code, arc, v);
-      color.b = .49 * white;
-    }
-  }
   if (uHasOverlay == 1) { vec4 overlay = texture(uOverlay, (uOrigin + vP * uPx) / uMapW); color = mix(color, overlay.rgb, overlay.a); }
   outColor = vec4(color * alpha, alpha);
 }`;

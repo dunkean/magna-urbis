@@ -231,7 +231,7 @@ These variables are upstream of the city. A CityBench scenario on fixed scenery 
 | Main river | `auto`, `none`, `stream`, `river`, `major` | Target watercourse family. |
 | Lakes | `auto`, `none`, `some` | Presence/addition of lakes subject to relief and available water. |
 | Meanders | `natural`, `reduced`, `none` | Watercourse and riverside terrain form. |
-| Estuary | `auto`, `simple`, `widening`, `funnel`, `tidal` | Mouth morphology depending on pipeline. |
+| Estuary | `auto`, `simple`, `widening`, `funnel`, `tidal` | Mouth form of every river reaching the sea, and of every lake inlet (lake inlets stop at `widening`: no tide). The channel widens monotonically over its last stretch, its width at the coast bounded by discharge (a brook keeps about half of its form's gain) and by half the distance to the nearest other mouth; the bed is opened to sea level with no dam, and the water surface ends at sea level. A cliff coast keeps a narrow `simple` mouth in every mode. `auto` picks from discharge and coast slope: brooks `simple`, rivers `widening`, large rivers on a gentle coast `funnel` or, for a seeded share, `tidal` (no tide setting exists). Rust pipeline. |
 | Depression policy | `auto`, `fill` | Hydrological treatment of relief. |
 | Preconditioning | `none`, `erosion`, `breach`, `both` | Terrain modification before water; technical submode. |
 | Hydrology pipeline | `vector`, `rust` | Implementation; some option domains differ. |

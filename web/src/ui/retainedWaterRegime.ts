@@ -116,12 +116,12 @@ function computeRegime(paths: readonly RetainedWaterPath[], width: number, clima
   const dryW = new Float32Array(cells), iceW = new Float32Array(cells), weight = new Float32Array(cells), span = Math.log(W1 / W0);
   for (let i = 0; i < cells; i++) {
     if (!water[i]) continue;
-    const q = clamp01(Math.log(Math.max(2 * half[i], W0 * .3) / W0) / span), s = riverState(climate, q, 0);
+    const q = clamp01(Math.log(Math.max(2 * half[i], W0 * .3) / W0) / span), s = riverState(climate, q);
     dryW[i] = s.dry; iceW[i] = s.ice; weight[i] = 1;
   }
   const r = Math.max(1, Math.round(SMOOTH / 3 / cell));
   blur(dryW, n, r); blur(iceW, n, r); blur(weight, n, r);
-  const trunk = riverState(climate, 1, 0), ring = 80 * climate.drop;
+  const trunk = riverState(climate, 1), ring = 80 * climate.drop;
   const m = Math.min(n, 1024), code = canvas(m), wet = canvas(m), dry = canvas(m), intermittent = canvas(m), ice = canvas(m);
   const images = [code, wet, dry, intermittent, ice].map(c => c.getContext('2d')!.createImageData(m, m));
   let frozen = false, drying = false;

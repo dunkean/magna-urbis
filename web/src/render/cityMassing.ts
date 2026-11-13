@@ -375,7 +375,7 @@ export function buildingRoof(footprint: Surface, massing: readonly MassingPiece[
 }
 /** Plan-view roof face (2D maps): `light` overrides the shading of the normal, `holes` cut courts out of the face,
  * `flat` marks the faces of a flat roof (rim, field, roof-top features). */
-export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean; terrace?: boolean; snow?: number; /** Face of a small decorative volume: one plain polygon. */ minor?: boolean }
+export interface PlanRoofFace extends RoofFace { holes?: Point[][]; light?: number; flat?: boolean; terrace?: boolean; snow?: number; /** Face of a small decorative volume: one plain polygon. */ minor?: boolean; /** Bevel of the rim around a flat roof (its parapet or kerb). */ rim?: boolean }
 /** Plan geometry is built once with the scene, shared by every 2D palette and backend.
  * Roof sets with entirely horizontal pans are slabs (including subdivided slabs); pitched roofs
  * and their horizontal caps keep their original faces. Terraces are painted low to high,
@@ -442,7 +442,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
         let nx = -(b.y - a.y) / l, ny = (b.x - a.x) / l;
         if (nx * ((a.x + b.x - inner[i].x - inner[j].x) / 2) + ny * ((a.y + b.y - inner[i].y - inner[j].y) / 2) < 0) { nx = -nx; ny = -ny; }
         const normal: [number, number, number] = [nx * RIM_TILT, ny * RIM_TILT, RIM_TILT];
-        (terrace ? rims : out).push({ ...base, points: [a, b, inner[j], inner[i]].map(p => at(p, z)), normal,
+        (terrace ? rims : out).push({ ...base, rim: true, points: [a, b, inner[j], inner[i]].map(p => at(p, z)), normal,
           ...(terrace ? { light: Math.max(-0.48, Math.min(0.32, -(nx + ny) * 0.48)) } : {}) });
       }
     });

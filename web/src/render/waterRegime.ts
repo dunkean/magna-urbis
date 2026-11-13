@@ -52,16 +52,10 @@ export function waterClimate(s: WaterSeason): WaterClimate {
 /** True when the regime changes anything on the map. */
 export const waterRegimeActive = (c: WaterClimate): boolean => c.aridity > 0 || c.ice > 0 || c.sediment > .05;
 
-/** Slope class of a channel slope (m/m) on a log scale, so a riffle, a rapid, a cascade and a waterfall stay apart:
- * 0 up to 0.8 %, .30 at 4 %, .61 at 20 %, .91 at 100 %, 1 from 160 %. */
-export const slopeClass = (slope: number): number => clamp01(Math.log(Math.max(slope, 1e-6) / .008) / Math.log(200));
-/** Class of a waterfall. Never reached by a mean slope (capped at 50 %): it is given to the short piece laid over a
- * knickpoint of the course (vectorWaterRender.ts riverFalls), where the capsule shader draws the bar of the fall. */
-export const FALL_CLASS = .87;
-/** State of a river vertex of relative size `q` (0 smallest drawn stream, 1 the map's trunk) and channel slope.
- * `foam` is the slope class of running open water (`slopeClass`), 0 on a dry or frozen reach. */
-export interface RiverState { dry: number; ice: number; foam: number }
-export function riverState(c: WaterClimate, q: number, slope: number): RiverState {
+/** State of a river vertex of relative size `q` (0 smallest drawn stream, 1 the map's trunk). A river is calm
+ * water whatever its slope: the regime carries dryness and ice only. */
+export interface RiverState { dry: number; ice: number }
+export function riverState(c: WaterClimate, q: number): RiverState {
   let dry = 0;
   if (c.aridity > 0) {
     // The perennial threshold rises with aridity; the season shifts it (wet season: more courses run).
@@ -72,19 +66,13 @@ export function riverState(c: WaterClimate, q: number, slope: number): RiverStat
   }
   // A river is frozen or open as a whole, by the same rule as lakes (ice >= .5): never by section size, which painted
   // white patches on some reaches of a course only.
-  const ice = c.ice >= .5 ? 1 : 0;
-  // Whitewater on steep reaches of running water; channel slope in m/m.
-  const foam = dry < .5 && !ice ? slopeClass(slope) : 0;
-  return { dry, ice, foam };
+  return { dry, ice: c.ice >= .5 ? 1 : 0 };
 }
 
-/** Segment colour of the material styles: r running water (1 − dry), g open water (1 − ice), b the slope class up to .5
- * (slope class / 2) and a sediment plume above (.5 + plume / 2, plume capsules only). Capsules blend with MAX, so
- * where a dry or frozen tributary overlaps a running trunk the running water wins. For a material course the
- * GPU segment carries the arc length of the course in green instead (riverSegments); the river capsule shader
- * (RIVER_FS in terrainGl.ts) draws the class in that flow frame and writes back, for the water compositor,
- * g open water and b the white water cover of the pixel (× .49, always partial). */
-export const regimeRgb = (s: RiverState): [number, number, number] => [1 - s.dry, 1 - s.ice, .5 * s.foam];
+/** Segment colour of the material styles: r running water (1 − dry), g open water (1 − ice), b 0 on a river and a
+ * sediment plume above .5 (.5 + plume / 2, plume capsules only). Capsules blend with MAX, so where a dry or frozen
+ * tributary overlaps a running trunk the running water wins. */
+export const regimeRgb = (s: RiverState): [number, number, number] => [1 - s.dry, 1 - s.ice, 0];
 export const plumeRgb = (plume: number): [number, number, number] => [1, 1, .5 + .5 * clamp01(plume)];
 
 /** Symbol class of the ink styles. */

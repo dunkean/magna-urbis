@@ -1,18 +1,53 @@
 {
-  "_doc": "Kits and cultures of the modern, contemporary and fictional styles. Same schema as styles.json (kits, derive, cultures: {<culture id>: {kit, traits}}); merged after it by forms/kit.rs.",
+  "_doc": "Kits and cultures of the modern, contemporary, futuristic and alien styles. Same schema as styles.json (kits, derive, cultures: {<culture id>: {kit, traits}}); merged after it by forms/kit.rs. Every culture here states traits.era (modern | futuristic | alien): the singular buildings of parcels/monuments/modern.rs and metropolis.rs serve the cultures that have one, and the web reads it (gen/options.ts cultureEra). traits.roleGroups names the override groups of roles_modern.json the culture shares, after its own overrides.",
   "kits": {
-    "brick-rowhouse": {
-      "house": {
-        "plans": { "bar": 6, "ell": 3, "tee": 1, "court": 0.6 },
-        "growth": 0.5,
-        "outshot": 0.35, "porch": 0.3, "turret": 0, "bay": 0.25, "chimney": 0.9, "dormer": 0,
-        "roofs": {},
-        "overhang": 0, "stack": "brick"
-      }
-    }
+    "brick-rowhouse": { "house": { "plans": { "bar": 6, "ell": 3, "tee": 1, "court": 0.6 }, "growth": 0.5, "outshot": 0.35, "porch": 0.3, "turret": 0, "bay": 0.25, "chimney": 0.9, "dormer": 0, "roofs": {}, "overhang": 0, "stack": "brick" } },
+    "masonry-apartment": { "house": { "plans": { "bar": 5, "ell": 3, "tee": 1.5, "court": 2 }, "growth": 0.6, "outshot": 0.1, "porch": 0, "turret": 0, "bay": 0.3, "chimney": 0.6, "dormer": 0.4, "roofs": {}, "overhang": 0.2, "stack": "stone" } },
+    "suburban-house": { "house": { "plans": { "bar": 3, "ell": 5, "tee": 1, "cross": 1 }, "growth": 0.6, "outshot": 0.2, "porch": 0.6, "turret": 0, "bay": 0.3, "chimney": 0.5, "dormer": 0.1, "roofs": {}, "overhang": 0.5, "stack": "brick" } },
+    "concrete-slab": { "house": { "plans": { "bar": 8, "ell": 2, "tee": 1 }, "growth": 0.3, "outshot": 0, "porch": 0, "turret": 0, "bay": 0, "chimney": 0, "dormer": 0, "roofs": {}, "overhang": 0, "stack": "plaster" } },
+    "eco-block": { "house": { "plans": { "bar": 5, "ell": 3, "court": 2 }, "growth": 0.5, "outshot": 0.15, "porch": 0.2, "turret": 0, "bay": 0.4, "chimney": 0, "dormer": 0, "roofs": {}, "overhang": 0.4, "stack": "plaster" } },
+    "compact-mixed": { "house": { "plans": { "bar": 8, "ell": 2 }, "growth": 0.3, "outshot": 0.2, "porch": 0.1, "turret": 0, "bay": 0.1, "chimney": 0, "dormer": 0, "roofs": {}, "overhang": 0.2, "stack": "plaster" } },
+    "informal-block": { "house": { "plans": { "bar": 6, "ell": 3, "tee": 1 }, "growth": 0.4, "outshot": 0.5, "porch": 0.2, "turret": 0, "bay": 0, "chimney": 0, "dormer": 0, "roofs": {}, "overhang": 0.2, "stack": "plaster" } },
+    "pod-habitat": { "house": { "plans": { "bar": 6, "ell": 2, "cross": 1 }, "growth": 0.3, "outshot": 0.3, "porch": 0, "turret": 0, "bay": 0, "chimney": 0, "dormer": 0, "roofs": {}, "overhang": 0, "stack": "plaster" } },
+    "organic-pod": { "house": { "plans": { "bar": 5, "ell": 3, "cross": 2 }, "growth": 0.4, "outshot": 0.3, "porch": 0, "turret": 0, "bay": 0.3, "chimney": 0, "dormer": 0, "roofs": {}, "overhang": 0.3, "stack": "plaster" } }
   },
   "derive": [],
   "cultures": {
-    "american-grid": { "kit": "brick-rowhouse", "traits": { "tradition": { "roof": "gable", "pitch": 46, "storeys": [3, 6], "cover": "slate", "wall": "brick" } } }
+    "american-grid": { "kit": "brick-rowhouse", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "gable", "pitch": 46, "storeys": [3, 6], "cover": "slate", "wall": "brick" } } },
+    "industrial-victorian": { "kit": "brick-rowhouse", "traits": { "era": "modern", "tradition": { "roof": "gable", "pitch": 38, "storeys": [2, 3], "cover": "slate", "wall": "brick" } } },
+    "haussmannian": { "kit": "masonry-apartment", "traits": { "era": "modern", "roleGroups": ["mansard"], "tradition": { "roof": "hip", "pitch": 30, "storeys": [5, 7], "cover": "slate", "wall": "stone" } } },
+    "belle-epoque": { "kit": "masonry-apartment", "traits": { "era": "modern", "tradition": { "roof": "hip", "pitch": 32, "storeys": [4, 6], "cover": "tile", "wall": "stone" } } },
+    "mediterranean-modern": { "kit": "masonry-apartment", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 6], "cover": "tile", "wall": "plaster" }, "mediterranean": true } },
+    "garden-city": { "kit": "suburban-house", "traits": { "era": "modern", "tradition": { "roof": "gable", "pitch": 45, "storeys": [2, 2], "cover": "tile", "wall": "brick" } } },
+    "art-deco-metropolis": { "kit": "brick-rowhouse", "traits": { "era": "modern", "roleGroups": ["modern-flat", "art-deco"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 8], "cover": "slate", "wall": "brick" } } },
+    "modernist-functionalist": { "kit": "concrete-slab", "traits": { "era": "modern", "roleGroups": ["concrete-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 6], "cover": "slate", "wall": "plaster" } } },
+    "soviet-socialist": { "kit": "concrete-slab", "traits": { "era": "modern", "roleGroups": ["soviet", "concrete-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [5, 9], "cover": "slate", "wall": "plaster" } } },
+    "american-suburbia": { "kit": "suburban-house", "traits": { "era": "modern", "roleGroups": ["suburban"], "tradition": { "roof": "hip", "pitch": 22, "storeys": [1, 2], "cover": "shingle", "wall": "plaster" } } },
+    "european-contemporary": { "kit": "eco-block", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 6], "cover": "slate", "wall": "brick" } } },
+    "global-high-rise": { "kit": "concrete-slab", "traits": { "era": "modern", "roleGroups": ["concrete-flat", "highrise"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 30], "cover": "slate", "wall": "plaster" } } },
+    "gulf-contemporary": { "kit": "concrete-slab", "traits": { "era": "modern", "roleGroups": ["concrete-flat", "gulf"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 3], "cover": "plaster", "wall": "plaster" } } },
+    "informal-urban-expansion": { "kit": "informal-block", "traits": { "era": "modern", "roleGroups": ["informal"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "metal", "wall": "plaster" } } },
+    "eco-city": { "kit": "eco-block", "traits": { "era": "modern", "roleGroups": ["green-roof"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [3, 5], "cover": "turf", "wall": "wood" } } },
+    "japanese-contemporary": { "kit": "compact-mixed", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 4], "cover": "metal", "wall": "plaster" } } },
+    "chinese-megacity": { "kit": "concrete-slab", "traits": { "era": "modern", "roleGroups": ["concrete-flat", "highrise"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 30], "cover": "slate", "wall": "plaster" } } },
+    "korean-high-rise": { "kit": "concrete-slab", "traits": { "era": "modern", "roleGroups": ["concrete-flat", "danji"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 25], "cover": "slate", "wall": "plaster" } } },
+    "southeast-asian-tropical": { "kit": "compact-mixed", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [3, 5], "cover": "metal", "wall": "plaster" } } },
+    "south-asian-metropolis": { "kit": "compact-mixed", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [3, 6], "cover": "plaster", "wall": "plaster" } } },
+    "latin-american-grid": { "kit": "masonry-apartment", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "plaster", "wall": "plaster" }, "mediterranean": true } },
+    "latin-american-hillside": { "kit": "informal-block", "traits": { "era": "modern", "roleGroups": ["informal"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 4], "cover": "metal", "wall": "brick" } } },
+    "north-african-contemporary": { "kit": "masonry-apartment", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [3, 5], "cover": "plaster", "wall": "plaster" }, "flavor": "maghreb" } },
+    "sub-saharan-african-metropolis": { "kit": "informal-block", "traits": { "era": "modern", "roleGroups": ["informal"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "metal", "wall": "plaster" } } },
+    "middle-eastern-contemporary": { "kit": "masonry-apartment", "traits": { "era": "modern", "roleGroups": ["modern-flat"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 6], "cover": "plaster", "wall": "stone" }, "flavor": "levant" } },
+    "australian-suburban": { "kit": "suburban-house", "traits": { "era": "modern", "roleGroups": ["suburban", "tin-roof"], "tradition": { "roof": "hip", "pitch": 24, "storeys": [1, 1], "cover": "metal", "wall": "brick" } } },
+    "post-socialist-european": { "kit": "masonry-apartment", "traits": { "era": "modern", "roleGroups": ["concrete-flat"], "tradition": { "roof": "gable", "pitch": 40, "storeys": [3, 5], "cover": "tile", "wall": "brick" } } },
+    "cyberpunk": { "kit": "concrete-slab", "traits": { "era": "futuristic", "roleGroups": ["concrete-flat", "highrise", "cyberpunk"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 30], "cover": "metal", "wall": "plaster" } } },
+    "solarpunk": { "kit": "eco-block", "traits": { "era": "futuristic", "roleGroups": ["green-roof"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [3, 5], "cover": "turf", "wall": "wood" } } },
+    "dieselpunk": { "kit": "brick-rowhouse", "traits": { "era": "futuristic", "roleGroups": ["modern-flat", "art-deco"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [5, 8], "cover": "slate", "wall": "brick" } } },
+    "dystopian-brutalism": { "kit": "concrete-slab", "traits": { "era": "futuristic", "roleGroups": ["concrete-flat", "brutalist"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 20], "cover": "stone", "wall": "stone" } } },
+    "atompunk-retrofuturist": { "kit": "suburban-house", "traits": { "era": "futuristic", "roleGroups": ["atompunk"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "plaster", "wall": "plaster" } } },
+    "post-apocalyptic-ruins": { "kit": "informal-block", "traits": { "era": "futuristic", "roleGroups": ["informal"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "metal", "wall": "brick" } } },
+    "corporate-arcology": { "kit": "concrete-slab", "traits": { "era": "futuristic", "roleGroups": ["concrete-flat", "highrise"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [6, 12], "cover": "metal", "wall": "plaster" } } },
+    "futuristic-space-colony": { "kit": "pod-habitat", "traits": { "era": "futuristic", "roleGroups": ["space-colony"], "tradition": { "roof": "dome", "pitch": 0, "storeys": [1, 2], "cover": "metal", "wall": "plaster" } } },
+    "biopunk-organic-city": { "kit": "organic-pod", "traits": { "era": "alien", "roleGroups": ["biopunk"], "tradition": { "roof": "dome", "pitch": 0, "storeys": [1, 3], "cover": "bark", "wall": "wood" }, "form": "mushroom", "formShare": 0.5 } }
   }
 }

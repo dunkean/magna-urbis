@@ -282,6 +282,10 @@ impl HydrologyOutput {
         self.output.river_meta.clone()
     }
     #[wasm_bindgen(getter)]
+    pub fn river_flare(&self) -> Vec<f32> {
+        self.output.river_flare.clone()
+    }
+    #[wasm_bindgen(getter)]
     pub fn node_points(&self) -> Vec<f32> {
         self.output.node_points.clone()
     }

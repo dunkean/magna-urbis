@@ -564,7 +564,9 @@ const MAPPINGS: &[(&str, &str, &str, bool, &str, &str)] = &[
         "compound",
     ),
     // Modern styles borrow a pack for the lot envelopes only (the narrow
-    // party-wall row house); their buildings are raised by `massing.rs`.
+    // party-wall row house, a compact house, a courtyard house); their
+    // buildings are raised by `massing.rs`. A regional style borrows its
+    // region's pack, whose monument family builds its temples and mosques.
     (
         "american-grid",
         "frontage",
@@ -573,6 +575,41 @@ const MAPPINGS: &[(&str, &str, &str, bool, &str, &str)] = &[
         "town",
         "frontage",
     ),
+    ("industrial-victorian", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("haussmannian", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("belle-epoque", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("mediterranean-modern", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("garden-city", "compact", "EUR-MED", true, "town", "compact"),
+    ("art-deco-metropolis", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("modernist-functionalist", "compact", "EUR-MED", true, "town", "compact"),
+    ("soviet-socialist", "compact", "EUR-MED", true, "town", "compact"),
+    ("american-suburbia", "compact", "EUR-MED", true, "town", "compact"),
+    ("european-contemporary", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("global-high-rise", "compact", "EUR-MED", true, "town", "compact"),
+    ("gulf-contemporary", "courtyard", "AS-MIDE", true, "town", "courtyard"),
+    ("informal-urban-expansion", "compact", "EUR-MED", true, "town", "compact"),
+    ("eco-city", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("japanese-contemporary", "compact", "AS-JAP", true, "town", "compact"),
+    ("chinese-megacity", "courtyard", "AS-CHI", true, "town", "courtyard"),
+    ("korean-high-rise", "courtyard", "AS-KOR", true, "town", "courtyard"),
+    ("southeast-asian-tropical", "compound", "AS-SEA", true, "town", "compound"),
+    ("south-asian-metropolis", "compact", "AS-IND", true, "town", "compact"),
+    ("latin-american-grid", "courtyard", "MED-ANT", true, "town", "courtyard"),
+    ("latin-american-hillside", "compact", "EUR-MED", true, "town", "compact"),
+    ("north-african-contemporary", "courtyard", "AF-MAG", true, "town", "courtyard"),
+    ("sub-saharan-african-metropolis", "compound", "AF-WEST", true, "town", "compound"),
+    ("middle-eastern-contemporary", "courtyard", "AS-MIDE", true, "town", "courtyard"),
+    ("australian-suburban", "compact", "EUR-MED", true, "town", "compact"),
+    ("post-socialist-european", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("cyberpunk", "compact", "EUR-MED", true, "town", "compact"),
+    ("solarpunk", "compact", "EUR-MED", true, "town", "compact"),
+    ("dieselpunk", "frontage", "EUR-MED", true, "town", "frontage"),
+    ("dystopian-brutalism", "compact", "EUR-MED", true, "town", "compact"),
+    ("atompunk-retrofuturist", "compact", "EUR-MED", true, "town", "compact"),
+    ("post-apocalyptic-ruins", "compact", "EUR-MED", true, "town", "compact"),
+    ("corporate-arcology", "compact", "EUR-MED", true, "town", "compact"),
+    ("futuristic-space-colony", "compact", "EUR-MED", true, "town", "compact"),
+    ("biopunk-organic-city", "compact", "EUR-MED", true, "town", "compact"),
 ];
 /// Culture → native recipe to use as the default route when the land-family
 /// heuristic of `recipe_profile` would pick a less specific house of the same pack
@@ -1718,8 +1755,21 @@ mod tests {
                     let blocks = layouts[0].blocks.len();
                     let lots = partitions[0].parcels.len();
                     if blocks == 0 || lots == 0 || sites.is_empty() {
+                        // Why the town is empty: what its lots are and what its programme asked and placed.
+                        let mut reasons = std::collections::BTreeMap::new();
+                        for p in &partitions[0].parcels {
+                            *reasons.entry(p.reason.as_str()).or_insert(0usize) += 1;
+                        }
+                        let programme = partitions[0].programme.as_ref().map(|pr| {
+                            format!(
+                                "{} demands, {} allocations, warnings {:?}",
+                                pr.demands.len(),
+                                pr.allocations.len(),
+                                pr.warnings.iter().take(3).collect::<Vec<_>>()
+                            )
+                        });
                         failures.push(format!(
-                            "{culture}: {blocks} blocks, {lots} lots, {} sites",
+                            "{culture}: {blocks} blocks, {lots} lots, {} sites; lots {reasons:?}; programme {programme:?}",
                             sites.len()
                         ));
                     }

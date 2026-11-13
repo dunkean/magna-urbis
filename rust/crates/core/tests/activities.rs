@@ -62,8 +62,8 @@ fn activity_sites_sit_on_anchors_by_culture_and_leave_roads_alone_when_off() {
     let out = t.place("p3", &places("european-organic")).unwrap();
     let anchors = &t.resources().anchors;
     assert!(!out.activities.is_empty(), "no activity site from {} anchors", anchors.len());
-    // Farms, monasteries and network nodes are placed on the countryside, not on a resource anchor.
-    for a in out.activities.iter().filter(|a| !matches!(a.kind.as_str(), "farm" | "worship" | "network_node")) {
+    // Farms, monasteries, remote places and network nodes are placed on the countryside, not on a resource anchor.
+    for a in out.activities.iter().filter(|a| !matches!(a.kind.as_str(), "farm" | "worship" | "network_node" | "remote")) {
         // On its own anchor, which offers what the template asks for.
         let anchor = anchors.iter().find(|x| format!("{:016x}", x.id) == a.anchor).expect("site without anchor");
         assert_eq!((anchor.x, anchor.y), (a.x, a.y), "{}", a.id);
@@ -83,10 +83,10 @@ fn activity_sites_sit_on_anchors_by_culture_and_leave_roads_alone_when_off() {
         assert_eq!(a.residents, 0);
         assert!(!a.buildings.is_empty() && a.buildings.iter().all(|b| b.massing.is_array()), "{}", a.id);
     }
-    let mut ids: Vec<&str> = out.activities.iter().filter(|a| !matches!(a.kind.as_str(), "farm" | "worship" | "network_node")).map(|a| a.anchor.as_str()).collect();
+    let mut ids: Vec<&str> = out.activities.iter().filter(|a| !matches!(a.kind.as_str(), "farm" | "worship" | "network_node" | "remote")).map(|a| a.anchor.as_str()).collect();
     ids.sort();
     ids.dedup();
-    let anchored_n = out.activities.iter().filter(|a| !matches!(a.kind.as_str(), "farm" | "worship" | "network_node")).count();
+    let anchored_n = out.activities.iter().filter(|a| !matches!(a.kind.as_str(), "farm" | "worship" | "network_node" | "remote")).count();
     assert!(anchored_n > 0, "no anchored site");
     assert_eq!(ids.len(), anchored_n, "two sites on one anchor");
     // Deterministic.
@@ -103,7 +103,8 @@ fn activity_sites_sit_on_anchors_by_culture_and_leave_roads_alone_when_off() {
     let all = out.road_sites();
     let settlements: Vec<_> = all.iter().filter(|s| s.access.is_none()).cloned().collect();
     assert!(all.len() > settlements.len());
-    let cfg = RoadConfig::default();
+    // The access switch is on by default: turn it off for the comparison.
+    let cfg = RoadConfig { activity_access: false, ..RoadConfig::default() };
     let base = serde_json::to_string(&t.roads("p3", &settlements, &cfg).unwrap()).unwrap();
     assert_eq!(base, serde_json::to_string(&t.roads("p3", &all, &cfg).unwrap()).unwrap(), "activityAccess off moved the network");
     let on = t.roads("p3", &all, &RoadConfig { activity_access: true, ..cfg }).unwrap();

@@ -270,42 +270,17 @@ function grainValue(kind: CoverGrain, x: number, y: number): number {
 type GrainCanvas = OffscreenCanvas | HTMLCanvasElement;
 const grainCanvas = (size: number): GrainCanvas | undefined => typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size)
   : typeof document !== 'undefined' ? Object.assign(document.createElement('canvas'), { width: size, height: size }) : undefined;
-/** Snow lying on a roof face, as a pattern of the snow's own colour whose opacity is the cover of the mantle: whole
- * with a few thin places ('snow'), or broken into patches that let the cover show ('snowPatchy'), each sunlit or in
- * shade (a little bluer). Thin places and patches are drawn out down the slope, where the snow slips. */
-export type SnowCover = 'snow' | 'snowShade' | 'snowPatchy' | 'snowPatchyShade';
-type RoofPattern = CoverGrain | SnowCover;
-/** Opacity (0..1) of the mantle at one pixel of the snow tile. */
-function snowValue(x: number, y: number, patchy: boolean): number {
-  const n = .55 * grainNoise(x, y, 16, 64, 31) + .3 * grainNoise(x, y, 8, 16, 32) + .15 * grainNoise(x, y, 4, 4, 33);
-  const t = Math.max(0, Math.min(1, patchy ? (n + .1) / .4 : (n + .6) / .45));
-  return t * t * (3 - 2 * t) * (patchy ? 1 : .9 + .1 * grainNoise(x, y, 2, 2, 34));
-}
-const grainTiles = new Map<RoofPattern, GrainCanvas[] | null>();
+const grainTiles = new Map<CoverGrain, GrainCanvas[] | null>();
 /** The tile of a family and its halved copies; null where the host has no canvas (the roofs keep their flat colour). */
-function grainLevels(kind: RoofPattern): GrainCanvas[] | null {
+function grainLevels(kind: CoverGrain): GrainCanvas[] | null {
   let levels = grainTiles.get(kind);
   if (levels !== undefined) return levels;
   levels = null;
   try {
     const n = GRAIN_TILE, base = grainCanvas(n), c = base?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
     if (base && c) {
-      const snow = kind === 'snow' || kind === 'snowShade' || kind === 'snowPatchy' || kind === 'snowPatchyShade';
       const built: GrainCanvas[] = [base];
-      if (snow) {
-        const image = c.createImageData(n, n), data = image.data;
-        const patchy = kind === 'snowPatchy' || kind === 'snowPatchyShade', tone = kind === 'snowShade' || kind === 'snowPatchyShade' ? [226, 232, 241] : [245, 246, 247];
-        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-          const o = (y * n + x) * 4;
-          data[o] = tone[0]; data[o + 1] = tone[1]; data[o + 2] = tone[2]; data[o + 3] = Math.round(255 * Math.max(0, Math.min(1, snowValue(x, y, patchy))));
-        }
-        c.putImageData(image, 0, 0);
-        for (let l = 1; l < GRAIN_LEVELS; l++) {
-          const half = grainCanvas(n >> l), h = half?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
-          if (!half || !h) break;
-          h.imageSmoothingEnabled = true; h.drawImage(built[l - 1], 0, 0, n >> l, n >> l); built.push(half);
-        }
-      } else {
+      {
         // Neutral marks: black and white change the lightness of the cover and keep its hue. A light mark moves a
         // mid-tone roof further than a dark mark of the same opacity: .7 balances the two.
         const paint = (target: CanvasRenderingContext2D, field: Float32Array, size: number): void => {
@@ -318,13 +293,13 @@ function grainLevels(kind: RoofPattern): GrainCanvas[] | null {
           target.putImageData(image, 0, 0);
         };
         let field = new Float32Array(n * n), mean = 0;
-        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) mean += field[y * n + x] = grainValue(kind as CoverGrain, x, y);
+        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) mean += field[y * n + x] = grainValue(kind, x, y);
         mean /= n * n;
         for (let i = 0; i < n * n; i++) field[i] -= mean;
         paint(c, field, n);
         // Coarser levels from the field itself: a box filter removes the units the level no longer resolves, then
         // the level is lifted (at most the factor white noise loses per level) back to the cover's weathering.
-        const weather = GRAIN_WEATHER[kind as CoverGrain];
+        const weather = GRAIN_WEATHER[kind];
         for (let l = 1, size = n >> 1; l < GRAIN_LEVELS; l++, size >>= 1) {
           const half = grainCanvas(size), h = half?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
           if (!half || !h) break;
@@ -367,10 +342,10 @@ export function coverGrainFrame(deviceMetresPerPixel: number): CoverGrainFrame |
 /** Patterns belong to the kind of context that made them (a recording context makes its own). */
 const grainPatterns = new WeakMap<object, Map<string, CanvasPattern | null>>();
 const grainMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-/** Repeating grain of a cover family, or snow cover, for a context drawing in world metres, turned so that its courses lie across the
+/** Repeating grain of a cover family for a context drawing in world metres, turned so that its courses lie across the
  * slope (`dir`: downslope direction in plan, radians) and shifted by (`shiftX`, `shiftY`) metres so two roofs never
  * show the same piece of it. The pattern is shared: set `fillStyle` and fill right away. */
-export function coverGrainPattern(ctx: CanvasRenderingContext2D, kind: CoverGrain | SnowCover, level: number, dir: number, shiftX = 0, shiftY = 0): CanvasPattern | undefined {
+export function coverGrainPattern(ctx: CanvasRenderingContext2D, kind: CoverGrain, level: number, dir: number, shiftX = 0, shiftY = 0): CanvasPattern | undefined {
   const owner = Object.getPrototypeOf(ctx) as object;
   let made = grainPatterns.get(owner); if (!made) grainPatterns.set(owner, made = new Map());
   const key = `${kind}/${level}`;

@@ -1,6 +1,7 @@
 //! Modern, contemporary and fictional styles (industrial, grid city, high-rise, cyberpunk…):
-//! factories, stations, apartment blocks, towers, civic buildings of the styles of
-//! `forms/styles_modern.json`.
+//! factories, stations, office blocks, towers, civic buildings of the styles of
+//! `forms/styles_modern.json` (the cultures whose traits state an `era`).
+//! Their contemporary, futuristic and alien buildings are in `metropolis.rs`.
 //!
 //! See `mod.rs` for the contract: lay labelled, non-overlapping parts on the
 //! site and return true for a role this family builds. The parts are raised by
@@ -14,11 +15,10 @@ use super::utility::{edges, end, laid};
 use super::{Brief, Site};
 use crate::rng::Rng;
 
-/// Styles whose singular and utility buildings this family builds.
-const STYLES: &[&str] = &["american-grid"];
-
+/// Builds for the styles whose traits state an `era` (modern, futuristic,
+/// alien: `forms/styles_modern.json`); the historical cultures keep their own families.
 pub(super) fn build(x: &mut Site, q: &Brief, rng: &mut Rng) -> bool {
-    if !STYLES.contains(&q.culture) {
+    if crate::urban::forms::kit::traits(q.culture).era.is_empty() {
         return false;
     }
     laid(x, |x| form(x, q, rng))
@@ -75,7 +75,7 @@ fn form(x: &mut Site, q: &Brief, rng: &mut Rng) -> bool {
 /// The rectangles of `outer` left around `inner` (both `[s0, s1, t0, t1]`):
 /// in front of it, behind it, on its left and on its right. A block around
 /// the tower, the dome or the light court that stands inside it.
-fn around(x: &mut Site, [a, b, c, e]: [f64; 4], [i0, i1, j0, j1]: [f64; 4], label: &'static str) -> bool {
+pub(super) fn around(x: &mut Site, [a, b, c, e]: [f64; 4], [i0, i1, j0, j1]: [f64; 4], label: &'static str) -> bool {
     let mut ok = x.rect(a, b, c, j0, label);
     ok |= x.rect(a, b, j1, e, label);
     ok |= x.rect(a, i0, j0, j1, label);

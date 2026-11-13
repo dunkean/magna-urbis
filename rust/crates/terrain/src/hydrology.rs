@@ -197,8 +197,13 @@ pub struct HydrologyOutput {
     pub river_offsets: Vec<u32>,
     /// id, from node, to node, downstream river + 1 (0 if terminal), flags, estuary; stride 6.
     /// Flags: 1 main, 2 externally fed, 4 sea mouth, 8 lake inlet, 16 lake outlet.
-    /// Estuary: 0 inland, 1 simple, 2 widening, 3 funnel, 4 tidal aspect.
+    /// Estuary: 0 no mouth, 1 simple, 2 widening, 3 funnel, 4 tidal aspect. Set on
+    /// every sea mouth and lake inlet; lake inlets stop at widening (no tide).
     pub river_meta: Vec<u32>,
+    /// One value per river point: the mouth gain applied to its width (1
+    /// outside a mouth stretch, up to the mouth's factor at the water). A
+    /// display that floors widths keeps the flare with `floor * gain`.
+    pub river_flare: Vec<f32>,
     /// x, y; stride 2. Nodes use zero-based indices.
     pub node_points: Vec<f32>,
     /// cell, lake id (0 if absent), kind; stride 3.
@@ -751,6 +756,7 @@ impl HydrologyEngine {
             river_points: vec![],
             river_offsets: vec![0],
             river_meta: vec![],
+            river_flare: vec![],
             node_points: vec![],
             node_meta: vec![],
             lake_points: vec![],
@@ -2116,8 +2122,11 @@ fn rivers(
         if out.lake_labels[start] > 0 && out.lake_labels[end] == 0 && !sea[end] {
             flags |= 16;
         }
-        let estuary = if sea[end] {
-            choose_estuary(cfg, h, n, cell, &cells, seed)
+        // Every course ending in the sea, or in a lake as an inlet, gets a mouth.
+        let estuary = if sea[end] || flags & 8 != 0 {
+            let base = channel_width(effective[cells[cells.len() - 2]], cfg);
+            let level = if sea[end] { 0.0 } else { drainage.filled[end] };
+            choose_estuary(cfg, h, n, cell, &cells, seed, base, level, !sea[end])
         } else {
             0
         };
@@ -2351,18 +2360,15 @@ fn rivers(
         sea,
     )?;
     smooth_network(&mut compact, cell);
+    let (mouth_from, flares) = shape_mouths(&mut compact, &edges, &dominant, cell, out.width);
     profile("network-clearance");
     for (id, edge) in edges.iter().enumerate() {
         let mut points = compact[id].clone();
-        if edge.flags & 4 != 0 {
-            widen_mouth(
-                &mut points,
-                edge.estuary,
-                out.width,
-                hash(*edge.cells.last().unwrap() as u32),
-            );
-        }
+        let mut mouth_start = mouth_from[id];
+        let mut flare = flares[id].clone();
         if main_source == Some(edge.cells[0]) && external && !points.is_empty() {
+            flare.insert(0, 1.0);
+            mouth_start = mouth_start.saturating_add(1);
             let b = boundary_point(edge.cells[0], n, cell, out.width);
             let first = points[0];
             let hb = sample(h, n, cell, b.0, b.1);
@@ -2385,6 +2391,8 @@ fn rivers(
         for p in &points {
             out.river_points.extend([p.x, p.y, p.width, p.z]);
         }
+        flare.resize(points.len(), 1.0);
+        out.river_flare.extend(flare);
         out.river_offsets.push((out.river_points.len() / 4) as u32);
         out.river_meta.extend([
             id as u32,
@@ -2401,7 +2409,7 @@ fn rivers(
             n,
             cell,
             cfg.incision,
-            edge.estuary,
+            mouth_start,
         );
     }
     out.accumulation = effective;
@@ -5318,6 +5326,45 @@ fn normalized(x: f32, y: f32) -> (f32, f32) {
     (x / length, y / length)
 }
 
+/// Mean bank slope above `level` in the 7 x 7 cells around a mouth, and the
+/// river's own gradient over its last six cells. Both are dimensionless.
+fn mouth_slopes(h: &[f32], n: usize, cell: f32, cells: &[usize], level: f32) -> (f32, f32) {
+    let end = cells.len() - 1;
+    let mouth = point(cells[end], n, cell);
+    let land = cells[end.saturating_sub(1)];
+    let (cx, cy) = ((land % n) as isize, (land / n) as isize);
+    let (mut sum, mut count) = (0.0_f32, 0.0_f32);
+    for dy in -3..=3_isize {
+        for dx in -3..=3_isize {
+            let (x, y) = (cx + dx, cy + dy);
+            if x < 0 || y < 0 || x >= n as isize || y >= n as isize {
+                continue;
+            }
+            let j = y as usize * n + x as usize;
+            let rise = h[j] - level;
+            if rise <= 0.0 {
+                continue;
+            }
+            let p = point(j, n, cell);
+            sum += rise / (p.0 - mouth.0).hypot(p.1 - mouth.1).max(cell);
+            count += 1.0;
+        }
+    }
+    let banks = if count > 0.0 { sum / count } else { 0.0 };
+    let start = end.saturating_sub(6);
+    let a = point(cells[start], n, cell);
+    let gradient = (h[cells[start]] - h[cells[end]].max(level)).max(0.0)
+        / (a.0 - mouth.0).hypot(a.1 - mouth.1).max(cell);
+    (banks, gradient)
+}
+
+/// Mouth form of a course ending in the sea or (`lake`) in a lake, never 0.
+/// A cliff coast keeps a narrow, simple mouth in every mode; a lake has no
+/// tide, so its inlets stop at a widening. `auto` reads discharge (the
+/// channel width `base`, metres) and the coast slope: brooks get a simple
+/// flare, rivers a widening, large rivers on a gentle coast a funnel or, for
+/// a seeded share of them, a tidal mouth (there is no tide setting).
+#[allow(clippy::too_many_arguments)]
 fn choose_estuary(
     cfg: &HydrologyConfig,
     h: &[f32],
@@ -5325,60 +5372,160 @@ fn choose_estuary(
     cell: f32,
     cells: &[usize],
     seed: &str,
+    base: f32,
+    level: f32,
+    lake: bool,
 ) -> u32 {
-    match cfg.estuary.as_str() {
+    let (banks, gradient) = mouth_slopes(h, n, cell, cells, level);
+    if banks > MOUTH_CLIFF_BANKS || gradient > MOUTH_CLIFF_GRADIENT {
+        return 1;
+    }
+    let kind = match cfg.estuary.as_str() {
         "simple" => 1,
         "widening" => 2,
         "funnel" => 3,
         "tidal" => 4,
         _ => {
-            let end = cells.len() - 1;
-            let start = end.saturating_sub(6);
-            let a = point(cells[start], n, cell);
-            let b = point(cells[end], n, cell);
-            let slope =
-                (h[cells[start]] - h[cells[end]]).max(0.0) / (a.0 - b.0).hypot(a.1 - b.1).max(cell);
-            if slope > 0.09 {
+            if base < MOUTH_BROOK_WIDTH {
                 1
-            } else if slope > 0.025 {
+            } else if lake || base < MOUTH_RIVER_WIDTH || banks.max(gradient) > MOUTH_GENTLE {
                 2
             } else {
-                let mut rng = Rng::new(seed).fork(&format!("hydrology-mouth-{}", cells[end]));
+                let end = cells[cells.len() - 1];
+                let mut rng = Rng::new(seed).fork(&format!("hydrology-mouth-{end}"));
                 if rng.float() < 0.35 { 4 } else { 3 }
             }
         }
-    }
-}
-/// Estuary flare: towards the sea the width grows exponentially (convergent
-/// estuaries, Savenije 2005) over some tens of channel widths, each mouth
-/// with its own length and profile. Small streams barely widen.
-fn widen_mouth(points: &mut [RiverPoint], kind: u32, map_width: f32, variation: u32) {
-    if points.len() < 2 {
-        return;
-    }
-    let base = points.last().unwrap().width;
-    let full = match kind {
-        2 => 1.8,
-        3 => 3.6,
-        4 => 2.6,
-        _ => 1.05,
     };
-    // 0 for a brook of 4 m or less, 1 for a river of 60 m or more.
-    let size = ((base / 4.0).max(1.0).ln() / 15.0_f32.ln()).min(1.0);
-    let factor = 1.0 + (full - 1.0) * size * size * (3.0 - 2.0 * size);
-    let unit = |shift: u32| (variation >> shift & 0xff) as f32 / 255.0;
-    let reach = (base * (10.0 + 18.0 * unit(0))).min(map_width * 0.05);
-    let profile = 1.3 + 1.2 * unit(8);
-    let mut along = 0.0;
-    for k in (0..points.len()).rev() {
-        if k + 1 < points.len() {
-            along += (points[k + 1].x - points[k].x).hypot(points[k + 1].y - points[k].y);
-        }
-        let t = (1.0 - along / reach).clamp(0.0, 1.0);
-        points[k].width *= factor.powf(t.powf(profile));
-    }
+    if lake { kind.min(2) } else { kind }
 }
 
+/// Mean bank slope above which a coast is a cliff and its mouths stay simple.
+const MOUTH_CLIFF_BANKS: f32 = 0.15;
+/// River gradient over its last cells above which its mouth stays simple.
+const MOUTH_CLIFF_GRADIENT: f32 = 0.09;
+/// Coast slope below which a large river may open a funnel or tidal mouth.
+const MOUTH_GENTLE: f32 = 0.03;
+/// `auto`: channels narrower than this (metres) get a simple flare.
+const MOUTH_BROOK_WIDTH: f32 = 15.0;
+/// `auto`: channels at least this wide (metres) may get a funnel or tidal mouth.
+const MOUTH_RIVER_WIDTH: f32 = 40.0;
+/// Mouth flare of every course ending in the sea or in a lake: towards the
+/// water the width grows exponentially (convergent estuaries, Savenije 2005)
+/// over some channel widths, each mouth with its own length and profile.
+/// The stretch follows the course upstream across its dominant confluences,
+/// so a junction just above the coast does not cut the flare short. Linear
+/// in the stretch's points; no coast-wide pass.
+///
+/// Invariants on each mouth stretch:
+/// - the width never decreases towards the water;
+/// - the width at the water is at least the channel's and at most
+///   `full` times it (the form's bound, scaled by discharge), and at most
+///   half the distance to the nearest other mouth, so neighbours never
+///   overlap or carve into each other;
+/// - at a sea mouth the water surface ends at sea level (0) and never rises
+///   towards the sea.
+///
+/// Returns, per edge, the first point of its sea mouth stretch
+/// (`usize::MAX` outside one), where `carve_bed` opens the bed to the sea,
+/// and per point the gain applied to its width (1 outside a mouth).
+fn shape_mouths(
+    curves: &mut [Vec<RiverPoint>],
+    edges: &[River],
+    dominant: &[Option<usize>],
+    cell: f32,
+    map_width: f32,
+) -> (Vec<usize>, Vec<Vec<f32>>) {
+    let mut mouth_from = vec![usize::MAX; edges.len()];
+    let mut flares: Vec<Vec<f32>> = curves.iter().map(|c| vec![1.0; c.len()]).collect();
+    let mouths: Vec<usize> = (0..edges.len())
+        .filter(|&id| {
+            edges[id].flags & (4 | 8) != 0 && edges[id].estuary > 0 && curves[id].len() >= 2
+        })
+        .collect();
+    let ends: Vec<(f32, f32)> = mouths
+        .iter()
+        .map(|&id| {
+            let p = curves[id].last().unwrap();
+            (p.x, p.y)
+        })
+        .collect();
+    for (m, &id) in mouths.iter().enumerate() {
+        let end = ends[m];
+        let spacing = ends
+            .iter()
+            .enumerate()
+            .filter(|&(o, _)| o != m)
+            .map(|(_, q)| (q.0 - end.0).hypot(q.1 - end.1))
+            .fold(f32::INFINITY, f32::min);
+        let sea = edges[id].flags & 4 != 0;
+        let base = curves[id].last().unwrap().width.max(0.01);
+        // Width gain at the water and stretch length in channel widths.
+        let (full, lengths) = match edges[id].estuary {
+            2 => (2.4, 16.0),
+            3 => (4.0, 28.0),
+            4 => (3.2, 40.0),
+            _ => (1.6, 8.0),
+        };
+        let variation = hash(*edges[id].cells.last().unwrap() as u32);
+        let unit = |shift: u32| (variation >> shift & 0xff) as f32 / 255.0;
+        // 0 for a brook of 4 m or less, 1 for a river of 60 m or more: a brook
+        // keeps half of its form's gain, a river all of it.
+        let size = ((base / 4.0).max(1.0).ln() / 15.0_f32.ln()).min(1.0);
+        let mouth = (base * (1.0 + (full - 1.0) * (0.5 + 0.5 * size)))
+            .min(spacing * 0.5)
+            .max(base);
+        let factor = mouth / base;
+        let reach = (base * lengths * (0.75 + 0.5 * unit(0)))
+            .max(cell * 3.0)
+            .min(map_width * 0.05);
+        let profile = 1.3 + 1.2 * unit(8);
+        let mut along = 0.0_f32;
+        let mut downstream: Option<RiverPoint> = None;
+        let mut edge = id;
+        'chain: loop {
+            let points = &mut curves[edge];
+            for k in (0..points.len()).rev() {
+                let mut p = points[k];
+                if let Some(next) = downstream {
+                    along += (next.x - p.x).hypot(next.y - p.y);
+                }
+                if along >= reach {
+                    break 'chain;
+                }
+                let t = 1.0 - along / reach;
+                p.width *= factor.powf(t.powf(profile));
+                match downstream {
+                    Some(next) => {
+                        p.width = p.width.min(next.width);
+                        if sea {
+                            p.z = p.z.max(next.z);
+                        }
+                    }
+                    None if sea => p.z = 0.0,
+                    None => {}
+                }
+                flares[edge][k] *= p.width / points[k].width.max(1e-6);
+                points[k] = p;
+                if sea {
+                    mouth_from[edge] = k;
+                }
+                downstream = Some(p);
+            }
+            match dominant[edge] {
+                Some(up) if !curves[up].is_empty() => edge = up,
+                _ => break,
+            }
+        }
+    }
+    (mouth_from, flares)
+}
+
+/// Carves the bed below the water surface. From `mouth_from` on (a sea mouth
+/// stretch) the cut is not bounded: the bed runs at water level minus the
+/// depth of the channel entering the mouth (wider, not deeper, towards the
+/// sea), so no bank, dune or step is left between the river and the sea,
+/// even without incision.
 fn carve_bed(
     points: &[RiverPoint],
     base_height: &[f32],
@@ -5386,12 +5533,19 @@ fn carve_bed(
     n: usize,
     cell: f32,
     incision: f32,
-    estuary: u32,
+    mouth_from: usize,
 ) {
-    if incision == 0.0 {
+    if incision == 0.0 && mouth_from >= points.len() {
         return;
     }
-    for pair in points.windows(2) {
+    let mouth_depth = points
+        .get(mouth_from)
+        .map_or(f32::INFINITY, |p| (p.width * 0.11).clamp(0.35, 12.0) * incision);
+    for (k, pair) in points.windows(2).enumerate() {
+        let mouth = k >= mouth_from;
+        if incision == 0.0 && !mouth {
+            continue;
+        }
         let a = pair[0];
         let b = pair[1];
         let dx = b.x - a.x;
@@ -5431,18 +5585,19 @@ fn carve_bed(
                     continue;
                 }
                 let water = a.z + (b.z - a.z) * t;
-                let depth = (width * 0.11).clamp(0.35, 12.0) * incision;
+                let mut depth = (width * 0.11).clamp(0.35, 12.0) * incision;
+                if mouth {
+                    depth = depth.min(mouth_depth);
+                }
                 let i = y * n + x;
-                let cut = (base_height[i] - (water - depth))
-                    .max(0.0)
-                    .min(depth * 2.0 + 0.75);
-                // Embouchures touch only a bounded local strip; no coast-wide bay carving.
-                let coastal = if estuary > 1 && water < depth {
-                    1.15
+                let cut = (base_height[i] - (water - depth)).max(0.0);
+                // The mouth stretch is bounded by its own reach (local, never coast-wide).
+                let cut = if mouth {
+                    cut
                 } else {
-                    1.0
+                    cut.min(depth * 2.0 + 0.75)
                 };
-                height[i] = height[i].min(base_height[i] - cut * blend * coastal);
+                height[i] = height[i].min(base_height[i] - cut * blend);
             }
         }
     }
