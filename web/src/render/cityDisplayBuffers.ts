@@ -72,7 +72,15 @@ export interface CitySiteVisual {
   programme?: Record<string, unknown>; surface: { outer: { x: number; y: number }[]; holes: { x: number; y: number }[][] }[];
   preview: boolean; ground_z_m: number; entrance: { x: number; y: number }; access_id: string;
 }
+/** The buffer each decoded site array came from: worker/page hops transfer it instead of cloning the objects (v2/urbanPack.ts). */
+const siteVisualPacks = new WeakMap<object, ArrayBuffer>();
+export const siteVisualsPackOf = (sites: object): ArrayBuffer | undefined => siteVisualPacks.get(sites);
 export function decodeCitySiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
+  const sites = decodeSiteVisuals(buffer);
+  siteVisualPacks.set(sites, buffer);
+  return sites;
+}
+function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
   const headLength = new DataView(buffer).getUint32(0, true);
   const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, headLength))) as {
     format: string; version: number; origin: { x: number; y: number }; count: number; tables: Record<string, string[]>; sections: Record<string, Section>;

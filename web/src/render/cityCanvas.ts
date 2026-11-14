@@ -785,6 +785,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') for (const i of scene.bins.parcels.query(viewport)) {
       const p = scene.parcels[i], use = p.use;
       const built = ['plot', 'compound', 'residual', 'court'].includes(use), open = ['place', 'market', 'common'].includes(use);
+      // A culture without lot limits (`hideLotLines`) leaves its lots unoutlined; squares keep their edge.
+      const lotLine = open || !scene.enclosureProfiles?.[p.layout]?.hideLotLines;
       if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) continue;
       stats.parcels++;
       const burialFill = funeraryLandFill(p.allocation?.role);
@@ -796,10 +798,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         // Plain lots add no wash over the block's (the buildings stand on it); gardens, commons and squares stack theirs.
         if (!(view === 'buildings' && ground)) batch.add({ fill: burialFill ?? plaza(use, w.color), alpha: burialFill ? 0.85 : a }, pathOf(p));
         if (slush && (use === 'place' || use === 'market')) batch.add({ fill: SLUSH, alpha: .3 * slush }, pathOf(p));
-        if (lod === 'close'&&!material) batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
+        if (lod === 'close' && !material && lotLine) batch.add({ stroke: softLine.color, width: px(0.5), alpha: softLine.alpha * (ground ? 0.8 : 1) }, pathOf(p));
       } else if (view === 'parcels') {
         const fill = palette === 'terrain' ? undefined : night ? openFill ?? C.lot : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone));
-        batch.add({ fill: plaza(use, fill), stroke: atLeast(lod, 'near') ? outline : undefined, width: lineW, alpha: p.peripheral ? 0.65 : 1 }, pathOf(p));
+        batch.add({ fill: plaza(use, fill), stroke: atLeast(lod, 'near') && lotLine ? outline : undefined, width: lineW, alpha: p.peripheral ? 0.65 : 1 }, pathOf(p));
       } else if (view === 'uses') {
         if (p.allocation) { const c = urbanFunctionColor(p.allocation.function); batch.add({ fill: c, alpha: 0.62 }, pathOf(p)); batch.add({ stroke: c, width: px(0.55) }, pathOf(p)); }
         else if (openFill) batch.add({ fill: openFill }, pathOf(p));
@@ -809,8 +811,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         if (p.allocation?.landmark) batch.add({ stroke: BUILDING_FAMILIES[family ?? 'civic'].color, width: px(1.6) }, pathOf(p));
       } else {
         // Buildings view: paved places and gardens, faint lot lines when close.
-        if (openFill) batch.add({ fill: plaza(use, openFill), stroke: lod === 'close' ? parchment ? PARCH.inkSoft : '#b9a98d' : parchment && (use === 'place' || use === 'market') ? PARCH.inkSoft : undefined, width: px(0.6), alpha: parchment && lod === 'close' ? 0.9 : 1 }, pathOf(p));
-        else if (lod === 'close') batch.add({ stroke: parchment ? PARCH.inkSoft : '#c4b597', width: px(0.6), alpha: parchment ? 0.45 : 1 }, pathOf(p));
+        if (openFill) batch.add({ fill: plaza(use, openFill), stroke: lod === 'close' && lotLine ? parchment ? PARCH.inkSoft : '#b9a98d' : parchment && (use === 'place' || use === 'market') ? PARCH.inkSoft : undefined, width: px(0.6), alpha: parchment && lod === 'close' ? 0.9 : 1 }, pathOf(p));
+        else if (lod === 'close' && lotLine) batch.add({ stroke: parchment ? PARCH.inkSoft : '#c4b597', width: px(0.6), alpha: parchment ? 0.45 : 1 }, pathOf(p));
       }
     }
     batch.flush(ctx);

@@ -7,9 +7,11 @@ import { createUrbanPool, ranges, type PoolArgs, type UrbanPool } from './urbanP
 import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlements';
 import { validatePhysicalTerrain } from './settlements';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
-import { nativeJson, nativeRasterClient } from './nativeEngine';
+import { contentType, nativeRasterClient, nativeRequest } from './nativeEngine';
+import { isWholeParcelPack, packBuffer, packHeader, packOf, partitionsFromPack } from './urbanParcelPack';
+export { packOf, partitionsFromPack, responsePartitions } from './urbanParcelPack';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
-import { digestValue, urbanCacheKey, readUrbanCache, writeUrbanCache, sha256 } from './urbanResultCache';
+import { digestValue, urbanCacheKey, readUrbanCache, writeUrbanCache, sha256, URBAN_CACHE_MAX_BYTES } from './urbanResultCache';
 import { requiresProgrammeFunctions, requireLocalProgrammeFunctions, requireWasmProgrammeFunctions } from './urbanProgrammeSupport';
 export type { UrbanSourceHandle } from './urbanSource';
 export type { Point } from './settlements';
@@ -48,10 +50,14 @@ export interface UrbanStructure {
   history: { epoch: number; kind: string; center: number; area: number }[];
   metrics: { targetArea: number; allocatedArea: number; streetArea: number; reservedArea: number; grossDensity: number; plannedPopulation: number; shortfallArea: number; components: number; accessAdded: number };
 }
-export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[] }
+/** Land and edge streets a town holds (world metres), for the towns generated after it (`urban/neighbours.rs`). */
+export interface Claim { key: string; land: Shape[]; streets: Street[] }
+/** A site of a `quarters` request: `neighbours` are the claims of the earlier towns it must keep off and join. */
+export type UrbanSite = RoadSite & { neighbours?: Claim[] };
+export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[]; claim?: Claim }
 export interface Parcel { pressure?: number; id?: string; parentIds?: string[]; provenance?: string[]; family?: string; reason?: string; contacts?: ParcelContact[]; envelope?: Shape; shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number } }
 export interface LotEnclosure { path: Point[]; material: 'wall' | 'hedge' | 'fence'; side: 'front' | 'side' | 'back' }
-export interface ResolvedEnclosure { plot: number; field: number; material: 'wall' | 'hedge' | 'fence'; fieldMaterial: 'wall' | 'hedge' | 'fence'; front: number; side: number; back: number }
+export interface ResolvedEnclosure { plot: number; field: number; material: 'wall' | 'hedge' | 'fence'; fieldMaterial: 'wall' | 'hedge' | 'fence'; front: number; side: number; back: number; /** The culture draws no lot limits (catalogue `render.plotLines: false`). */ hideLotLines?: boolean }
 export interface Partition { enclosure?: ResolvedEnclosure; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
 export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
 export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
@@ -89,13 +95,16 @@ export function layoutExtent(layouts?: Layout[]): { center: Point; radius: numbe
 export { regionalStreets } from './urbanRoads';
 export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity';
   /** Native parcels: `handle` returns only the retained source, the programme continues on the engine's parcels. */
-  reply?: 'handle'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime;
+  reply?: 'handle'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: UrbanSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime;
   /** Read a retained native snapshot across workers, without uploading geometry. */
   source?: UrbanSourceHandle; keys?: string[];
   /** Native programme: continue from the parcels the engine session holds (no layouts/partitions upload). */
   retained?: boolean }
 export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; placementRequests?: import('./urbanArchitecture').PlacementRequest[]; ms?: number; error?: string;
   urbanSource?: UrbanSourceHandle;
+  /** `magna-city-parcels` pack of the partitions, in place of `partitions`: the realm that
+   * consumes the response materialises it (`responsePartitions`, `partitionsFromPack`). */
+  partitionsPack?: ArrayBuffer;
   /** Browser WASM execution mode that produced this response (threads/single/pool). */
   wasm?: WasmThreadsInfo }
 export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse>; /** Native only: free this engine's retained session. */ release?(runtime: ExecutionRuntime): Promise<void> }
@@ -107,7 +116,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
   // Absent is off; keep the payload of old strict engines unchanged.
   const input: Partial<LayoutConfig> = { ...config };
   if (input.gateVillage === 0 && !input.gateVillages) delete input.gateVillage;
-  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity', 'naturalCampApproaches', 'streetFrontage', 'alignEnclosedGrid', 'hideUnusedQuarters', 'deepBlockLanes', 'villageBridgeBudget', 'linksJoinRoads', 'roadNetworkPrune'] as const)
+  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity', 'naturalCampApproaches', 'streetFrontage', 'alignEnclosedGrid', 'hideUnusedQuarters', 'deepBlockLanes', 'villageBridgeBudget', 'linksJoinRoads', 'roadNetworkPrune', 'villageStreets'] as const)
     if (input[key] === false || input[key] === undefined) delete input[key];
   for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness', 'lagoonCanals', 'campRingWobble'] as const)
     if (input[key] == null) delete input[key];
@@ -116,6 +125,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
   for (const key of ['roadWidthBySize', 'townMainRoad', 'polishRoadEnds', 'lowRuralHouses', 'riverSpurFilter', 'harbourBridgeClearance', 'wallGatePolicy', 'smallRoadLoops', 'isolatedAccess'] as const)
     if (input[key] === true || input[key] === undefined) delete input[key];
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
+  if (input.zoneDensity === 'phases' || !input.zoneDensity) delete input.zoneDensity;
   if (!input.parallelMerge) delete input.parallelMerge;
   if (input.outbuildings === 0.5 || input.outbuildings === undefined) delete input.outbuildings;
   if (input.houseComplexity === 'simple' || !input.houseComplexity) delete input.houseComplexity;
@@ -170,6 +180,22 @@ function capacityInput(scene: UrbanRequest['scene']) {
   };
 }
 
+/** A partial pack (built capacity: programme columns, no parcel geometry) is
+ * completed here with the partitions the request uploaded. */
+function packReply(request: UrbanRequest, pack: ArrayBuffer, envelope: Pick<UrbanResponse, 'id' | 'ms' | 'urbanSource'>): UrbanResponse {
+  if (!isWholeParcelPack(pack) && request.partitions) {
+    return { ...envelope, partitions: partitionsFromPack(pack, request.partitions) };
+  }
+  return { ...envelope, partitionsPack: pack };
+}
+/** A native `/urban` reply: JSON, or a `magna-city-parcels` pack whose header carries `id`, `ms`, `urbanSource`. */
+async function nativeUrbanReply(request: UrbanRequest, response: Response): Promise<UrbanResponse> {
+  if (contentType(response) !== 'application/octet-stream') return response.json() as Promise<UrbanResponse>;
+  const pack = await response.arrayBuffer();
+  const { id, ms, urbanSource } = packHeader(pack);
+  return packReply(request, pack, { id: id ?? request.id, ...(ms !== undefined ? { ms } : {}), ...(urbanSource ? { urbanSource } : {}) });
+}
+
 /** Both calls run exclusively in Rust and keep their own immutable terrain handle. */
 export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<UrbanEngine> {
   let core: CoreWasm | undefined = runtime?.profile !== 'local' ? await loadCoreWasm() : undefined;
@@ -187,7 +213,9 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   // layoutsId) reuses the Rust copy instead of re-sending ≈5 MB of JSON.
   // `json` is the layouts text the UI received, kept only for cache digests.
   let retainedLayouts: { id: number; items: Layout[]; json?: string; digest?: string; rust?: number; terrain?: SettlementTerrain } | undefined;
-  let retainedPartitions: { items: Partition[]; rust: number; terrain: SettlementTerrain } | undefined;
+  // Pack replies: `pack` is the buffer handed out; the partitions the caller
+  // materialises from it (`partitionsFromPack`) are recognised by `packOf`.
+  let retainedPartitions: { items?: Partition[]; pack?: ArrayBuffer; rust: number; terrain: SettlementTerrain } | undefined;
   // Rust JSON text of every product array this engine returned (cache digests and sizes).
   const texts = new WeakMap<object, string>(), digests = new WeakMap<object, Promise<string>>();
   const parsed = <T extends object>(json: string): T => { const value = JSON.parse(json) as T; texts.set(value, json); return value; };
@@ -195,6 +223,9 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     let digest = digests.get(value);
     const text = texts.get(value);
     if (!digest && text !== undefined) digests.set(value, digest = sha256([text]));
+    // Partitions materialised from a pack: the digest of its bytes (a transferred pack is detached, length 0).
+    const pack = !digest && Array.isArray(value) ? packOf(value as Partition[]) : undefined;
+    if (pack?.byteLength) digests.set(value, digest = sha256([new Uint8Array(pack)]));
     return digest;
   };
   // Cache hits skip the raster upload; build the terrain lazily on the first miss.
@@ -205,6 +236,20 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   const sameItems = <T>(a: readonly T[], b: readonly T[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
   // Older generated packages lack the resident API: they keep the JSON path.
   const resident = typeof (Terrain?.prototype as { urban_quarters_resident?: unknown } | undefined)?.urban_quarters_resident === 'function';
+  // Packages with the parcel pack exports (`resident.rs`) return partitions as packs.
+  type PackTerrain = SettlementTerrain & {
+    urban_parcels_resident_pack(seed: string, layoutsId: number, config: string, start: number, end: number): Uint8Array;
+    urban_programme_resident_pack(layoutsId: number, partitionsId: number): Uint8Array;
+    urban_parcel_pack_resident(partitionsId: number, groups: string): Uint8Array;
+    retain_partitions_pack(bytes: Uint8Array): number;
+    urban_built_capacity_resident(partitionsId: number, scene: string): Uint8Array;
+  };
+  const packs = (t: SettlementTerrain): t is PackTerrain => typeof (t as Partial<PackTerrain>).urban_parcels_resident_pack === 'function';
+  /** A pack out of WASM; its header names the resident id of exactly these partitions. */
+  const wasmPack = (bytes: Uint8Array): { pack: ArrayBuffer; rust: number } => {
+    const pack = packBuffer(bytes);
+    return { pack, rust: packHeader(pack).partitionsId ?? 0 };
+  };
   /** Rust id of `items` (default: the retained layouts), uploading them only when Rust no longer holds them. */
   const layoutsHandle = (t: SettlementTerrain, items: Layout[]): number => {
     const held = retainedLayouts?.terrain === t ? retainedLayouts.rust : undefined;
@@ -217,8 +262,13 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   };
   const partitionsHandle = (t: SettlementTerrain, items: Partition[]): number => {
     const held = retainedPartitions?.terrain === t ? retainedPartitions.rust : undefined;
-    if (held && t.resident_partitions_id() === held && sameItems(items, retainedPartitions!.items)) return held;
-    const rust = t.retain_partitions_json(JSON.stringify(nativePartitions(items)));
+    const pack = packOf(items);
+    const same = !!retainedPartitions && ((!!retainedPartitions.items && sameItems(items, retainedPartitions.items))
+      || (!!pack && pack === retainedPartitions.pack));
+    if (held && t.resident_partitions_id() === held && same) return held;
+    // Partitions materialised from a live pack go back as that pack: no JSON text.
+    const rust = pack && pack.byteLength && packs(t) ? t.retain_partitions_pack(new Uint8Array(pack))
+      : t.retain_partitions_json(JSON.stringify(nativePartitions(items)));
     retainedPartitions = { items, rust, terrain: t };
     return rust;
   };
@@ -235,9 +285,10 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     t.retain_layouts_json(json);
     return { layouts: parsed<Layout[]>(json), json };
   };
-  const parcelsResident = async (t: SettlementTerrain, seed: string, layoutsId: number, config: string): Promise<{ partitions: Partition[]; rust: number }> => {
+  const parcelsResident = async (t: SettlementTerrain, seed: string, layoutsId: number, config: string): Promise<{ partitions?: Partition[]; pack?: ArrayBuffer; rust: number }> => {
     const count = t.resident_layouts_len();
     if (!pool || pool.size < 2 || count < 2) {
+      if (packs(t)) return wasmPack(t.urban_parcels_resident_pack(seed, layoutsId, config, 0, 0xffffffff));
       const partitions = parsed<Partition[]>(t.urban_parcels_resident(seed, layoutsId, config, 0, 0xffffffff));
       return { partitions, rust: t.resident_partitions_id() };
     }
@@ -248,6 +299,8 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     const json = joinArrays(await pool.run('parcels-resident', jobs, { image },
       a => t.urban_parcels_resident(seed, layoutsId, config, Number(a.start), Number(a.end))));
     const rust = t.retain_partitions_json(json);
+    // The pack of the retained (normalised) values, as the serial path returns.
+    if (packs(t)) return { pack: packBuffer(t.urban_parcel_pack_resident(rust, '')), rust };
     return { partitions: parsed<Partition[]>(json), rust };
   };
   const sitesResident = async (t: SettlementTerrain, seed: string, layoutsId: number, partitionsId: number, culture: string | undefined): Promise<Requests> => {
@@ -322,12 +375,22 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     const items: Layout[] | undefined = request.layouts ?? (request.layoutsId === undefined ? [] : retainedLayouts?.id === request.layoutsId ? retainedLayouts.items : undefined);
     if (items === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');
     if (request.kind === 'builtCapacity') {
+      if (resident && packs(t)) {
+        // Programme columns only: completed here with the request's parcels.
+        const pack = packBuffer(t.urban_built_capacity_resident(partitionsHandle(t, request.partitions ?? []), JSON.stringify(capacityInput(request.scene))));
+        return packReply(request, pack, { id: request.id, ms: performance.now() - start });
+      }
       const partitions = JSON.parse(t.urban_built_capacity(JSON.stringify(nativePartitions(request.partitions ?? [])), JSON.stringify(capacityInput(request.scene)))) as Partition[];
       return { id: request.id, partitions, ms: performance.now() - start };
     }
     if (resident) {
       const layoutsId = layoutsHandle(t, items);
       if (request.kind === 'programme') {
+        if (packs(t)) {
+          const { pack, rust } = wasmPack(t.urban_programme_resident_pack(layoutsId, partitionsHandle(t, request.partitions ?? [])));
+          retainedPartitions = { pack, rust, terrain: t };
+          return { id: request.id, partitionsPack: pack, ms: performance.now() - start };
+        }
         const partitions = parsed<Partition[]>(t.urban_programme_resident(layoutsId, partitionsHandle(t, request.partitions ?? [])));
         retainedPartitions = { items: partitions, rust: t.resident_partitions_id(), terrain: t };
         return { id: request.id, partitions, ms: performance.now() - start };
@@ -336,9 +399,9 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         const placementRequests = await sitesResident(t, request.seed, layoutsId, partitionsHandle(t, request.partitions ?? []), request.architectureCulture);
         return { id: request.id, placementRequests, ms: performance.now() - start };
       }
-      const { partitions, rust } = await parcelsResident(t, request.seed, layoutsId, JSON.stringify(normalizeParcelConfig(request.parcelConfig)));
-      retainedPartitions = { items: partitions, rust, terrain: t };
-      return { id: request.id, partitions, ms: performance.now() - start };
+      const { partitions, pack, rust } = await parcelsResident(t, request.seed, layoutsId, JSON.stringify(normalizeParcelConfig(request.parcelConfig)));
+      retainedPartitions = { items: partitions, pack, rust, terrain: t };
+      return pack ? { id: request.id, partitionsPack: pack, ms: performance.now() - start } : { id: request.id, partitions, ms: performance.now() - start };
     }
     const layoutsJson = request.layouts || request.layoutsId === undefined ? JSON.stringify(nativeLayouts(items)) : retainedLayouts!.json!;
     if (request.kind === 'programme') {
@@ -394,8 +457,8 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       if (pendingDigest) key = await urbanCacheKey(keyed, { engine: engineId(), terrain: pendingDigest, retainedLayouts: layoutsDigest });
     } catch { key = undefined; }
     if (key) {
-      const hit = await readUrbanCache<Pick<UrbanResponse, 'layouts' | 'partitions' | 'placementRequests'>>(key);
-      if (hit && (hit.layouts || hit.partitions || hit.placementRequests)) {
+      const hit = await readUrbanCache<Pick<UrbanResponse, 'layouts' | 'partitions' | 'placementRequests' | 'partitionsPack'>>(key);
+      if (hit && (hit.layouts || hit.partitions || hit.placementRequests || hit.partitionsPack)) {
         if (request.kind === 'quarters' && hit.layouts) retainedLayouts = { id: request.id, items: hit.layouts };
         return { id: request.id, ...hit, ms: 0 };
       }
@@ -406,8 +469,12 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       const { id: _id, ms: _ms, wasm: _wasm, ...value } = response;
       // Byte size from the Rust texts when known: no JSON.stringify of the result.
       const present = ([value.layouts, value.partitions, value.placementRequests] as (object | undefined)[]).filter((v): v is object => !!v);
-      const known = present.length && present.every(v => texts.has(v)) ? present.reduce((n, v) => n + texts.get(v)!.length, 0) : undefined;
-      void writeUrbanCache(key, value, known);
+      const known = present.every(v => texts.has(v)) ? present.reduce((n, v) => n + texts.get(v)!.length, 0) : undefined;
+      // The pack is stored as bytes. Copy it now: the caller may transfer (detach) the response's buffer.
+      const pack = value.partitionsPack;
+      if (pack && pack.byteLength > URBAN_CACHE_MAX_BYTES / 2) { /* too large to cache */ }
+      else if (pack) void writeUrbanCache(key, { ...value, partitionsPack: pack.slice(0) }, known === undefined ? undefined : known + pack.byteLength);
+      else void writeUrbanCache(key, value, present.length ? known : undefined);
     }
     return response;
   };
@@ -415,22 +482,26 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     if (request.source) {
       try {
         validateUrbanSource(request.source);
-        if (request.runtime?.profile !== 'local' || request.kind !== 'buildingSites'
+        if (request.runtime?.profile !== 'local' || (request.kind !== 'buildingSites' && request.kind !== 'builtCapacity')
           || request.raster || request.layouts || request.partitions) throw new Error('Retained urban reads require a local source without uploaded geometry.');
         const { runtime: _runtime, ...input } = nativeUrbanInput(request);
         // The handle belongs to the urban worker's session, not this engine's
         // private raster client. A missing/stale source must remain an error.
-        const read = () => nativeJson<UrbanResponse>(request.runtime!, '/urban', { ...input, session: request.source!.session });
+        // A built-capacity read replies a pack of the programme columns only:
+        // `responsePartitions(response, base)` completes it with the caller's parcels.
+        const read = async () => nativeUrbanReply(request, await nativeRequest(request.runtime!, '/urban', JSON.stringify({ ...input,
+          ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}), session: request.source!.session })));
         return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(read) : read())
           .catch(error => ({ id: request.id, error: String(error) }));
       } catch (error) { return { id: request.id, error: String(error) }; }
     }
     if (request.runtime?.profile === 'local') {
-      const run = () => native<UrbanResponse>('/urban', { ...nativeUrbanInput(request), runtime: request.runtime!,
+      // `parcels`, `programme` and `builtCapacity` reply a parcel pack; the others JSON.
+      const run = async () => nativeUrbanReply(request, await native.raw('/urban', { ...nativeUrbanInput(request), runtime: request.runtime!,
         ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
         ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) }
           : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
-      });
+      }));
       return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(run) : run()).catch(error => ({ id: request.id, error: String(error) }));
     }
     return runCached(request);

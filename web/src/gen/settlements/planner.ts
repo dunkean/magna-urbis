@@ -397,13 +397,15 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
       const p = resolvePosition(terrain, S, q.position, {
         inset: 0.03 * S + 0.8 * ext + 40, maxMove: 400,
         slopeMax: 0.3 + 0.25 * (prefs.mountainFace ?? 0) + 0.08 * (prefs.woodland ?? 0),
-        allowed: (i, point) => okAgainst(point, q.pop, 0) && (f.dWater[i] >= 200 || f.hab[i] >= 1),
+        // An explicit position may lie against another settlement (the urban stage keeps their land apart);
+        // only a centre on another one's cell moves, so that each settlement keeps its own region.
+        allowed: (i, point) => (f.dWater[i] >= 200 || f.hab[i] >= 1) && placed.every(o => dist(o.center, point) >= cell),
       });
       if (p) {
         const i = Math.min(n - 1, Math.floor(p.y / cell)) * n + Math.min(n - 1, Math.floor(p.x / cell));
         chosen = { i, p, relax: 1 };
-        if (dist(p, q.position) > 0.01) warnings.push(`Settlement ${q.key} moved to ${Math.round(p.x)}, ${Math.round(p.y)} m to stay on usable land clear of other settlements`);
-      } else warnings.push(`Settlement ${q.key}: no usable land near the given position clear of other settlements`);
+        if (dist(p, q.position) > 0.01) warnings.push(`Settlement ${q.key} moved to ${Math.round(p.x)}, ${Math.round(p.y)} m to stay on usable land`);
+      } else warnings.push(`Settlement ${q.key}: no usable land near the given position`);
     } else {
       const bandKey = (q.pop < 15 ? 0 : q.pop < 100 ? 1 : q.pop < 1000 ? 2 : q.pop < 20000 ? 3 : 4) + '|' + q.culture + '|' + (q.siteType ?? '');
       // automatic mode: once a class finds no room, the rest of that class is skipped

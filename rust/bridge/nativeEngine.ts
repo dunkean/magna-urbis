@@ -72,24 +72,33 @@ export async function nativeJson<T>(runtime: ExecutionRuntime, path: string, val
   return (await nativeRequest(runtime, path, JSON.stringify(value))).json() as Promise<T>;
 }
 
+/** Content type of a reply without parameters (`application/octet-stream`, `application/json`). */
+export function contentType(response: Response): string {
+  return response.headers?.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? '';
+}
+
+type NativeCall = { runtime: ExecutionRuntime; raster?: SettlementRaster; [key: string]: unknown };
 /** Serialize mutations of a single retained raster, while other benches run independently. */
 export function nativeRasterClient() {
   let session: string | undefined;
   let queue: Promise<unknown> = Promise.resolve();
-  const call = <T>(path: string, request: { runtime: ExecutionRuntime; raster?: SettlementRaster; [key: string]: unknown }): Promise<T> => {
+  const send = <T>(path: string, request: NativeCall, read: (response: Response) => Promise<T>): Promise<T> => {
     const result = queue.then(async () => {
       session ??= nativeSession();
       const { runtime, raster, ...input } = request;
       if (raster) await uploadNativeRaster(runtime, session, raster);
-      return nativeJson<T>(runtime, path, { ...input, session });
+      return read(await nativeRequest(runtime, path, JSON.stringify({ ...input, session })));
     });
     queue = result.catch(() => undefined);
     return result;
   };
+  const call = <T>(path: string, request: NativeCall): Promise<T> => send(path, request, response => response.json() as Promise<T>);
+  /** The reply itself: its content type decides between JSON and a binary pack. */
+  const raw = (path: string, request: NativeCall): Promise<Response> => send(path, request, async response => response);
   /** Drop this client's retained native session (raster, urban products) once its owner is done. */
   const release = async (runtime: ExecutionRuntime): Promise<void> => {
     await queue; const id = session; session = undefined;
     if (id) try { await nativeJson(runtime, '/release', { session: id }); } catch { /* an exited or evicted session is already released */ }
   };
-  return Object.assign(call, { release });
+  return Object.assign(call, { release, raw });
 }

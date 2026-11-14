@@ -1,5 +1,5 @@
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
-import { nativeRequest } from './nativeEngine';
+import { contentType, nativeRequest } from './nativeEngine';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
 
 export interface UrbanDisplayRequest {
@@ -25,6 +25,36 @@ export async function readUrbanDisplayBuffers(input: UrbanDisplayRequest, runtim
     throw new Error('The local runtime did not return binary urban display buffers.');
   }
   return response.arrayBuffer();
+}
+
+export interface UrbanParcelPackOptions { keys?: string[]; groups?: string[] }
+/** `magna-city-parcels` pack of a retained native snapshot (decode with `urbanParcelPack.ts`);
+ * `keys` selects partitions, `groups` the columns (default: all). */
+export async function readUrbanParcelPack(runtime: ExecutionRuntime, source: UrbanSourceHandle, options: UrbanParcelPackOptions = {}): Promise<ArrayBuffer> {
+  if (runtime.profile !== 'local') throw new Error('Retained urban parcel packs require the local runtime.');
+  validateUrbanSource(source);
+  for (const list of [options.keys, options.groups]) {
+    if (list && (list.some(item => typeof item !== 'string' || !item) || new Set(list).size !== list.length)) throw new Error('Invalid retained urban parcel pack keys or groups.');
+  }
+  const response = await nativeRequest(runtime, '/urban', JSON.stringify({ kind: 'parcelPack', source, keys: options.keys, groups: options.groups }));
+  if (contentType(response) !== 'application/octet-stream') throw new Error('The local runtime did not return a binary urban parcel pack.');
+  return response.arrayBuffer();
+}
+
+/** One retained parcel with its programme records: the exact serde of the engine's values. */
+export interface UrbanParcelRecord {
+  parcel: import('./urban').Parcel;
+  allocations: import('./urban').UrbanAllocation[];
+  adjacency: { a: string; b: string; sharedLength: number }[];
+  environment: import('./urban').UrbanProgramme['environment'][number] | null;
+}
+/** Parcel `index` of the retained partition `key` (JSON). */
+export async function readUrbanParcelRecord(runtime: ExecutionRuntime, source: UrbanSourceHandle, key: string, index: number): Promise<UrbanParcelRecord> {
+  if (runtime.profile !== 'local') throw new Error('Retained urban parcel records require the local runtime.');
+  validateUrbanSource(source);
+  if (typeof key !== 'string' || !key || !Number.isInteger(index) || index < 0) throw new Error('Invalid retained urban parcel record.');
+  const response = await nativeRequest(runtime, '/urban', JSON.stringify({ kind: 'parcelRecord', source, key, index }));
+  return response.json() as Promise<UrbanParcelRecord>;
 }
 
 export interface UrbanSiteVisualsRequest { source: UrbanSourceHandle; seed: string; architectureCulture?: string }

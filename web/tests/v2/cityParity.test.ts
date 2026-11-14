@@ -256,6 +256,7 @@ describe('V2 and City Bench stay in sync', () => {
       const benchLayout = normalizeLayoutConfig(style.layout);
       const benchParcels = normalizeParcelConfig({ ...defaultParcelConfig(), culture });
       expect(v2.layout).toEqual(benchLayout);
+      expect(v2.layout.zoneDensity).toBe('phases');
       expect(v2.parcels).toEqual(benchParcels);
       // The bench panel sends parcel_fit explicitly, the V2 leaves it to the engine; both mean the same.
       expect(parcelFitOf(v2.houses)).toBe(CITY_DEFAULT_PARCEL_FIT);

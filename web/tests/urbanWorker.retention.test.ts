@@ -3,8 +3,13 @@ import type { Layout } from '../../rust/bridge/urban';
 import type { SettlementRaster } from '../../rust/bridge/settlements';
 
 const native = vi.hoisted(() => ({ quarters: vi.fn(), parcels: vi.fn(), free: vi.fn(), geometry: vi.fn() }));
+// The render geometry module starts loading WASM on import (through settlements.ts); node cannot fetch it.
+vi.mock('../../rust/bridge/renderGeometry', () => ({ loadRenderGeometry: async () => {}, renderGeometryReady: () => false }));
 vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
   default: vi.fn(),
+  // Every package export `wasmRuntime.ts` selects; only the settlement terrain is used here.
+  TerrainEngine: undefined, TerrainPipeline: undefined, GenerationNoisePlan: undefined, HydrologyEngine: undefined,
+  erosion_defaults: undefined, flood_hydrology: undefined, erode_relief: undefined, set_erosion_tuning: undefined,
   SettlementTerrain: class {
     free = native.free;
     urban_quarters = native.quarters;
@@ -14,12 +19,14 @@ vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
 }));
 import { createUrbanEngine } from '../../rust/bridge/urban';
 
+// An empty but valid WASM module: `compileWasm` checks `ok` and compiles what it downloads.
+const emptyWasm = () => ({ ok: true, status: 200, headers: new Headers(), arrayBuffer: async () => new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]).buffer });
 const raster = (): SettlementRaster => ({ width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4),
   waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4) });
 const layout: Layout = { key: 'town', culture: 'european-organic', center: { x: 1.2345678901234567, y: 0 },
   quarters: [], streets: [], blocks: [], warnings: [] };
 async function setup() {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(0) }));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(emptyWasm()));
   native.quarters.mockReturnValue(JSON.stringify([layout]));
   native.parcels.mockReturnValue('[]');
   const engine = await createUrbanEngine();

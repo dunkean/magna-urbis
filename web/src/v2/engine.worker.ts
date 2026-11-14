@@ -6,6 +6,7 @@ import { renameMap } from './mapNaming';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import { showCityStageOutput } from './cityStageOutput';
 import { packWorldLanduse } from './landusePack';
+import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 // Serialize actions; the procedural cores retain per-thread scratch buffers.
@@ -16,7 +17,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
     const {id,settings}=request;
     queue=queue.then(async()=>{
       try{
-        const world=retained.resolve(request.retainedWorldId,request.world);
+        const world=retained.resolve(request.retainedWorldId,unpackWorldPartitions(request.world));
         if(!world)throw new Error('Aucune carte à traiter.');
         scope.postMessage({id,type:'resources',payload:await(await import('./region')).regionResources(world,settings)} satisfies V2WorkerResponse);
       }catch(error){scope.postMessage({id,type:'error',error:error instanceof Error?error.message:String(error)} satisfies V2WorkerResponse);}
@@ -29,7 +30,8 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
     const send = (message: V2WorkerResponse): void => scope.postMessage(message);
     const progress: ProgressCallback = value => send({ id, type: 'progress', progress: value });
     try {
-      let world = retained.resolve(request.retainedWorldId,request.world);
+      // A world sent by the page carries its town partitions packed (urbanPack.ts).
+      let world = retained.resolve(request.retainedWorldId,unpackWorldPartitions(request.world));
       if (action === 'terrain' || action === 'all') world = await generateTerrain(settings, progress, undefined, request.assetBase, request.terrainStage);
       if (!world) throw new Error('Aucune carte à traiter.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress, action === 'all');
@@ -46,9 +48,9 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       else if (world.stats['v2.cityOutput']) { world = { ...world, stats: { ...world.stats } }; delete world.stats['v2.cityOutput']; delete world.stats['v2.cityOutputKeys']; }
       retained.retain(id,world);
       // The WASM mode this worker actually runs (window.magnaWasmThreads on the page).
-      // Land-use areas travel packed (landusePack.ts); the retained world keeps its own objects.
-      const packed = packWorldLanduse(world);
-      scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo() } satisfies V2WorkerResponse, packed.transfer);
+      // Land-use areas and town partitions travel packed (landusePack.ts, urbanPack.ts); the retained world keeps its own objects.
+      const landuse = packWorldLanduse(world), packed = packWorldPartitions(landuse.world);
+      scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo() } satisfies V2WorkerResponse, [...landuse.transfer, ...packed.transfer]);
     } catch (error) { send({ id, type: 'error', error: error instanceof Error ? error.message : String(error), wasm: wasmThreadsInfo() }); }
   });
 };

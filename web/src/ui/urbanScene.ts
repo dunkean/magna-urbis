@@ -3,10 +3,12 @@ import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits
 import type { Partition } from '../../../rust/bridge/urban';
 import SceneWorker from './urbanSceneWorker?worker&inline';
 import { createUrbanEngine } from '../../../rust/bridge/urban';
+import { partitionsFromPack } from '../../../rust/bridge/urbanParcelPack';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
 import type { ArchitectureBatchOptions, ArchitectureBatchProgress } from '../../../rust/bridge/architectureBatch';
 import { registerPlanArchives } from '../../../rust/bridge/compactPlanArchive';
 import { silhouetteScene, type CityPlacementRequest } from './urbanSilhouettes';
+import { pagedSilhouetteScene } from './urbanSilhouettePages';
 import { applyHouseEdits } from './cityEdits';
 import { createUrbanSceneAccumulator, urbanSceneCompletion, type UrbanSceneBatchCallback, type UrbanSceneCompletion } from './urbanSceneProgress';
 import { beginUrbanBuildingStage, type BuildingChunkBackend, type BuildingChunkManifest } from './urbanBuildingChunkStore';
@@ -161,6 +163,8 @@ export function createUrbanSceneClient() {
         return;
       }
       if (response.error) throw new Error(response.error);
+      // Paged silhouettes: ordered chunks without consumer callback or ACK.
+      if (response.scenePart) { item.published = true; item.accumulator.append(response.scenePart.delta, response.scenePart.progress); return; }
       if (response.batch) {
         if (!item.onBatch) throw new Error('Unexpected architecture stream.');
         item.published = true;
@@ -191,6 +195,7 @@ export function createUrbanSceneClient() {
   async function runFallback(request: UrbanSceneRequest): Promise<void> {
     const cancelled = (): boolean => current?.request.id !== request.id;
     try {
+      if (await pagedSilhouetteScene(request, cancelled, response => receive(response))) return;
       fallback ??= createUrbanEngine(request.runtime);
       const start = performance.now();
       const engine = await fallback;
@@ -221,7 +226,7 @@ export function createUrbanSceneClient() {
         const balance = await engine.run({ id: request.id, kind: 'builtCapacity', seed: request.seed, runtime: request.runtime, partitions: request.partitions, scene });
         if (cancelled()) return;
         if (balance.error) throw new Error(balance.error);
-        partitions = balance.partitions;
+        partitions = balance.partitionsPack ? partitionsFromPack(balance.partitionsPack, request.partitions) : balance.partitions;
       }
       await receive({ id: request.id, ...(request.progressive ? { complete: urbanSceneCompletion(scene) } : { scene, requests }),
         partitions, timing: { sites: sitesMs, placement: placementMs } });

@@ -1,6 +1,7 @@
 import catalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 import UrbanWorker from './urbanWorker?worker&inline';
 import { publishWasmThreads, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
+import { partitionsFromPack } from '../../../rust/bridge/urbanParcelPack';
 import { createUrbanEngine, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, type Layout, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
 import type { RoadOutput, RoadSite, SettlementRaster } from '../../../rust/bridge/settlements';
 import { benchLayout, type BenchOptions } from '../gen/urban/testbench';
@@ -178,7 +179,7 @@ export function createUrbanWorkshop(options: {
     if (request.kind === 'parcels') {
       const response = await native({ kind: 'parcels', seed: request.seed, raster, layouts,
         parcelConfig: workshopConfig(request.options, request.context, 'parcels') });
-      if (response.error) throw new Error(response.error); partitions = response.partitions;
+      if (response.error) throw new Error(response.error); partitions = response.partitionsPack ? partitionsFromPack(response.partitionsPack) : response.partitions;
     }
     if (request.kind === 'buildings') {
       if (!partitions) throw new Error('Générez les parcelles avant les bâtiments.');

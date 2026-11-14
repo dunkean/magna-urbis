@@ -17,7 +17,9 @@ async function drain(): Promise<void> {
       const request = pending; pending = undefined;
       if (raster && !request.raster) request.raster = raster;
       raster = undefined;
-      self.postMessage(await runActivityPlacement(e, request, () => !pending));
+      // A parcel pack is transferred, never copied: the page materialises it and this worker keeps nothing.
+      const response = await runActivityPlacement(e, request, () => !pending);
+      self.postMessage(response, { transfer: response.partitionsPack ? [response.partitionsPack] : [] });
     }
   } catch (error) {
     if (pending) self.postMessage({ id: pending.id, error: String(error) } satisfies UrbanResponse);

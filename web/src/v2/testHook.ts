@@ -52,8 +52,8 @@ export interface V2TestRequest {
   options?: string[]; params?: Record<string, string>;
   /** Programme intent (`activity` with an activities.json template, or an `isolated-*` intent) and settlement condition. */
   programme?: { intent: string; template?: string }; state?: string;
-  /** Footprint family (sheet `formes`) and fortification override. */
-  footprint?: string; fortification?: string;
+  /** Footprint family (sheet `formes`), or footprint fields (megacities: `{ nuclei, separation }`), and fortification override. */
+  footprint?: string | Record<string, string | number>; fortification?: string;
 }
 
 /** Review options without a V2 setting yet: render toggles of City Bench's own drawing code. */
@@ -91,7 +91,7 @@ function urbanSettings(req: V2TestRequest, layoutDefaults: Record<string, unknow
     else throw new Error(`Unknown PARAMS key: ${key}`);
   }
   if (req.programme || req.state) layout.programme = { ...(req.programme ?? {}), ...(req.state ? { state: req.state } : {}) };
-  if (req.footprint) layout.footprint = { family: req.footprint };
+  if (req.footprint) layout.footprint = typeof req.footprint === 'string' ? { family: req.footprint } : { ...req.footprint };
   if (req.fortification) layout.fortification = req.fortification;
   return { layout: layout as Partial<LayoutConfig>, parcels: parcels as Partial<ParcelConfig>, options: applied };
 }

@@ -172,6 +172,8 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
   const p0 = mesh.layers.parcels.features[0], parcelLevel: CityLod = view === 'uses' || view === 'roles' ? 'mid' : 'near';
   if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') scene.parcels.forEach((p, i) => {
     const use = p.use, built = BUILT.has(use), open = OPEN.has(use), f = p0 + i;
+    // A culture without lot limits (`hideLotLines`) leaves its lots unoutlined; squares keep their edge.
+    const lotLine = open || !scene.enclosureProfiles?.[p.layout]?.hideLotLines;
     if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) return;
     const burialFill = funeraryLandFill(p.allocation?.role);
     const openFill = burialFill ?? (parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
@@ -180,11 +182,11 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
       const kind: WashKind = use === 'garden' ? 'garden' : use === 'reserve' ? 'reserve' : use === 'common' ? 'common' : use === 'market' ? 'market' : use === 'place' ? 'place' : 'parcel';
       const w = washAt(kind, tone, p.shape), ground = kind === 'parcel' || kind === 'reserve';
       if (!(view === 'buildings' && ground)) put(fill, f, burialFill ?? w.color, burialFill ? 0.85 : w.alpha * (p.peripheral ? 0.7 : 1));
-      if (lod === 'close') { put(line, f, softLine.color, softLine.alpha * (ground ? 0.8 : 1)); draws.parcelLines = true; }
+      if (lod === 'close' && lotLine) { put(line, f, softLine.color, softLine.alpha * (ground ? 0.8 : 1)); draws.parcelLines = true; }
     } else if (view === 'parcels') {
       const color = palette === 'terrain' ? undefined : palette === 'ink' ? '#eee0c9' : parchment ? openFill ?? PARCH.lot : openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growth(p.zone));
       const alpha = p.peripheral ? 0.65 : 1;
-      put(fill, f, color, alpha); if (atLeast(lod, 'near')) { put(line, f, outline, alpha); draws.parcelLines = true; }
+      put(fill, f, color, alpha); if (atLeast(lod, 'near') && lotLine) { put(line, f, outline, alpha); draws.parcelLines = true; }
     } else if (view === 'uses') {
       if (p.allocation) { const c = urbanFunctionColor(p.allocation.function); put(fill, f, c, 0.62); put(line, f, c); draws.parcelLines = true; }
       else put(fill, f, openFill);
@@ -196,7 +198,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
       const paved = painted && lod === 'close' && !!openFill && (use === 'place' || use === 'market');
       if (openFill) put(fill, f, openFill, parchment && lod === 'close' ? 0.9 : paved ? PAVED_ALPHA : 1);
       if (paved) draws.paved = true;
-      if (lod === 'close') { put(line, f, openFill ? (parchment ? PARCH.inkSoft : '#b9a98d') : parchment ? PARCH.inkSoft : '#c4b597', !parchment ? 1 : openFill ? 0.9 : 0.45); draws.parcelLines = true; }
+      if (lod === 'close' && lotLine) { put(line, f, openFill ? (parchment ? PARCH.inkSoft : '#b9a98d') : parchment ? PARCH.inkSoft : '#c4b597', !parchment ? 1 : openFill ? 0.9 : 0.45); draws.parcelLines = true; }
       else if (parchment && openFill && (use === 'place' || use === 'market')) { put(line, f, PARCH.inkSoft, 0.7); draws.parcelLines = true; }
     }
     draws.parcels = true;

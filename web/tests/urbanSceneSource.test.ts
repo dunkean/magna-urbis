@@ -55,6 +55,8 @@ it('reads building sites by handle without terrain, preserves legacy geometry an
   const scope = { onmessage: undefined as ((event: MessageEvent<UrbanSceneWorkerMessage>) => void) | undefined,
     postMessage(message: UrbanSceneResponse) { messages.push(message); } };
   vi.stubGlobal('self', scope);
+  // An engine without paged site reads keeps the whole-city silhouette read.
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ service: 'magna-urbis-local', capabilities: [] }))));
   try {
     await import('../src/ui/urbanSceneWorker');
     const send = (request: UrbanSceneRequest) => scope.onmessage?.({ data: request } as MessageEvent<UrbanSceneWorkerMessage>);

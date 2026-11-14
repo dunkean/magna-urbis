@@ -20,8 +20,16 @@ const surfaceArea = (surface: Surface): number => surface.reduce((sum, shape) =>
 export function silhouetteScene(requests: CityPlacementRequest[]): PlacementBatch {
   return siteVisualScene(requests.map(projectUrbanSite));
 }
+/** The sites each unedited silhouette scene was built from: a worker/page hop rebuilds the scene from them (v2/urbanPack.ts). */
+const sceneSites = new WeakMap<PlacementBatch, UrbanSiteVisual[]>();
+export const siteVisualSceneSource = (scene: PlacementBatch): UrbanSiteVisual[] | undefined => sceneSites.get(scene);
 /** Same native preview, already projected in the worker; no site read or plan generation. */
 export function siteVisualScene(sites: UrbanSiteVisual[]): PlacementBatch {
+  const scene = buildSiteVisualScene(sites);
+  sceneSites.set(scene, sites);
+  return scene;
+}
+function buildSiteVisualScene(sites: UrbanSiteVisual[]): PlacementBatch {
   const buildings: CityBuilding[] = [], open_spaces: PlacementBatch['open_spaces'] = [];
   for (const request of sites) {
     // A lot the house generator could not take (slope, missing source) keeps its

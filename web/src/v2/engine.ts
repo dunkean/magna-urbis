@@ -25,6 +25,8 @@ import { generateMega } from '../gen/urban/mega/plan';
 import { EAGER_MAIN_POP } from '../gen/urban/mega/types';
 import { getCulture, populationCulture } from '../gen/urban/culture';
 import { generateNames, settlementNames } from '../gen/names';
+import { neighbourClaimsOf, planTownRun, townSeats, type TownRun } from './townNeighbours';
+import type { Claim } from '../../../rust/bridge/urban';
 import { mainPopulation, applyNameOverrides } from '../gen/pipeline';
 import type { World, TerrainLayer, LandUseLayer } from '../gen/types';
 import { TerrainCache, terrainCache, V2_ENGINE_VERSION } from './cache';
@@ -425,6 +427,19 @@ function assertRegion(world: World, settings: V2Settings): void {
 
 /** Independent native cities computed at once (the engine has one thread per connection). */
 const TOWN_CONCURRENCY = 4;
+/** Native towns of a run with the never-built earlier towns they may border, each after those it waits for
+ * (`townNeighbours`); the classic engine keeps the selection as it is. */
+function townRun(world: World, settings: V2Settings, keys: readonly string[]): TownRun | undefined {
+  const backend = settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
+  return backend === 'typescript' ? undefined : planTownRun(townSeats(world, settings), keys);
+}
+/** Stage of each town of a run: the requested one, except a town added as a dependent neighbour, which is
+ * regenerated through the stage it was built to (never further). */
+function runStages(world: World, run: TownRun | undefined, keys: readonly string[], through?: V2TownStage): Map<string, V2TownStage | undefined> {
+  const cities = world.debug?.v2RustCities as Record<string, { stage?: V2TownStage }> | undefined;
+  return new Map(keys.map(key => [key, run?.cascaded.has(key)
+    ? cities?.[key]?.stage ?? world.stats[`v2.urbanStage:${key}`] as V2TownStage | undefined : through]));
+}
 async function buildTown(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback, through?: V2TownStage,
   /** Native city already computed (or being computed) concurrently from the pre-loop world; only applied here. */
   precomputed?: Promise<Awaited<ReturnType<typeof import('./rustUrban').generateRustTown>>>): Promise<void> {
@@ -521,11 +536,19 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
   await (await import('./activitySites')).planActivityArchitecture(world, settings);
   report(onProgress, 'complete', 'Lieux gÃ©nÃ©rÃ©s', 1, 1);
 }
+/** One town with the never-built neighbours it needs first and the built neighbours that follow it. */
+async function buildTownRun(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback, stage?: V2TownStage): Promise<void> {
+  const run = townRun(world, settings, [key]), order = run?.order ?? [key], stages = runStages(world, run, order, stage);
+  for (const [i, place] of order.entries()) {
+    if (order.length > 1) { const s = world.settlements!.find(s => s.key === place)!; report(onProgress, 'town', `${s.name ?? s.key} : plan, rues, parcelles et bâtiments…`, i, order.length); }
+    await buildTown(world, settings, place, onProgress, stages.get(place));
+  }
+}
 export async function generateTown(regionWorld: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
   validateSettings(settings); assertRegion(regionWorld, settings);
   const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now();
   report(onProgress, 'town', 'Plan â†’ quartiers â†’ rues â†’ Ã®lots â†’ parcelles â†’ bÃ¢timentsâ€¦', 0, 1);
-  await buildTown(world, settings, key, onProgress);
+  await buildTownRun(world, settings, key, onProgress);
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
@@ -538,11 +561,15 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
   }
   const selected = keys ? new Set(keys) : undefined;
   const backend = settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
-  const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now(), places = world.settlements!.filter(s => (!selected || selected.has(s.key)) && (backend !== 'typescript' || s.detail !== 'farmstead'));
+  const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now(), chosen = world.settlements!.filter(s => (!selected || selected.has(s.key)) && (backend !== 'typescript' || s.detail !== 'farmstead'));
+  // Native towns: neighbours first (canonical order), never-built neighbours included; far towns keep the list order.
+  const run = townRun(world, settings, chosen.map(s => s.key));
+  const places = run ? run.order.map(key => world.settlements!.find(s => s.key === key)!) : chosen;
+  const stages = runStages(world, run, places.map(place => place.key), through);
   if (backend === 'typescript' || places.length < 2 || TOWN_CONCURRENCY < 2) {
     for (let i = 0; i < places.length; i++) {
       report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, places.length);
-      await buildTown(world, settings, places[i].key, onProgress, through);
+      await buildTown(world, settings, places[i].key, onProgress, stages.get(places[i].key));
     }
   } else {
     // Native cities only read the pre-loop world (roads, terrain key, their own retained snapshot) and write
@@ -555,10 +582,22 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     const forward = (i: number) => (p: Parameters<ProgressCallback>[0]): void => { last[i] = p; if (i === leader) onProgress?.(p); };
     const { generateRustTown, releaseUrbanLanes } = await import('./rustUrban');
     let next = 0, stop = false;
+    const index = new Map(places.map((place, i) => [place.key, i]));
     const lane = async (laneId: number): Promise<void> => {
       for (;;) {
         const i = next++; if (stop || i >= n) return;
-        try { waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), through, laneId) }); }
+        try {
+          // A town starts once the earlier towns it may border are done (they come first in `places`), with their fresh claims.
+          const fresh = new Map<string, Claim>();
+          for (const dep of run?.waits.get(places[i].key) ?? []) {
+            const outcome = await outcomes[index.get(dep)!];
+            if (!outcome.ok) throw outcome.error;
+            const claim = outcome.value.snapshot.layouts?.[0]?.claim;
+            if (claim) fresh.set(dep, claim);
+          }
+          const neighbours = run ? neighbourClaimsOf(world, settings, places[i].key, fresh) : undefined;
+          waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), stages.get(places[i].key), laneId, neighbours) });
+        }
         catch (error) { waiters[i]({ ok: false, error }); }
       }
     };
@@ -571,7 +610,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
         if (last[i]) onProgress?.(last[i]!);
         const outcome = await outcomes[i];
         if (!outcome.ok) throw outcome.error;
-        await buildTown(world, settings, places[i].key, undefined, through, Promise.resolve(outcome.value));
+        await buildTown(world, settings, places[i].key, undefined, stages.get(places[i].key), Promise.resolve(outcome.value));
       }
     } finally { stop = true; await Promise.allSettled(lanes); await releaseUrbanLanes(); }
   }
@@ -584,7 +623,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
 export async function generateTownStage(regionWorld: World, settings: V2Settings, key: string, stage: V2TownStage, onProgress?: ProgressCallback): Promise<World> {
   validateSettings(settings); assertRegion(regionWorld, settings);
   const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now();
-  await buildTown(world, settings, key, onProgress, stage);
+  await buildTownRun(world, settings, key, onProgress, stage);
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;

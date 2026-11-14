@@ -13,6 +13,20 @@ import { assertUrbanPhysicalCapability } from '../src/v2/terrainProjection';
 const native = vi.hoisted(() => ({ run: vi.fn(), plan: vi.fn() }));
 vi.mock('../../rust/bridge/urban', () => ({ createUrbanEngine: async () => ({ run: native.run }) }));
 vi.mock('../../rust/bridge/architecture', () => ({ planUrbanBuildings: native.plan }));
+// Parcel packs with the bridge's contract (materialisation memoised per buffer, `packOf` registry), as JSON bytes.
+const pack = vi.hoisted(() => {
+  const memo = new WeakMap<ArrayBuffer, unknown[]>(), packs = new WeakMap<object, ArrayBuffer>();
+  return {
+    encode: (partitions: unknown[]): ArrayBuffer => new TextEncoder().encode(JSON.stringify(partitions)).buffer as ArrayBuffer,
+    partitionsFromPack(buffer: ArrayBuffer): unknown[] {
+      let partitions = memo.get(buffer);
+      if (!partitions) { partitions = JSON.parse(new TextDecoder().decode(buffer)) as unknown[]; memo.set(buffer, partitions); packs.set(partitions, buffer); }
+      return partitions;
+    },
+    packOf: (partitions: object): ArrayBuffer | undefined => packs.get(partitions),
+  };
+});
+vi.mock('../../rust/bridge/urbanParcelPack', () => ({ partitionsFromPack: pack.partitionsFromPack, packOf: pack.packOf }));
 const square = (x = 0) => ({ outer: [{ x, y: 0 }, { x: x + 8, y: 0 }, { x: x + 8, y: 8 }, { x, y: 8 }], holes: [] });
 function building(parcel: string, floors: number): PlacedBuilding {
   return { id: `building-${parcel}`, parcel_id: parcel, function: 'domestic', culture: { culture: 'roman-core', pack: 'EUR-MED', mode: 'historical_inspired', borrowing: null }, recipe_id: 'EUR-MED-B01', variant_id: 'default', transform: { origin: { x: 0, y: 0 }, orientation_deg: 0 }, ground_z_m: 0,
@@ -22,7 +36,7 @@ function building(parcel: string, floors: number): PlacedBuilding {
 }
 function fixture() {
   const options = makeOptions({ seed: 'COW-native-retention', culture: 'roman-core', population: 50, coast: 'none', river: 'none' });
-  const settings: V2Settings = { options, extent: 100, settlementCount: 1, local: {}, generation: 'procedural', urban: { backend: 'rust' } };
+  const settings: V2Settings = { options, extent: 100, settlementCount: 1, local: {}, generation: 'procedural', urban: { backend: 'rust', architecture: 'detailed' } } as V2Settings;
   const heights = new Float32Array(4), world = { seed: options.seed, options, mapSize: 100, terrain: { height: { w: 2, h: 2, cell: 50, data: heights }, water: new Uint8Array(4), filled: heights, seaLevel: 0, coastline: [], lakes: [], rivers: [] },
     settlements: [{ key: 'main', center: { x: 50, y: 50 }, population: 50, radius: 20, culture: 'roman-core' }], stats: { 'v2.terrainKey': options.seed } } as unknown as World;
   return { settings, world };
@@ -36,7 +50,7 @@ beforeEach(() => {
     if (request.kind === 'quarters') return { layouts: [{ key: 'main', culture: 'roman-core', center: { x: 0, y: 0 }, quarters: [{ shape: square(), phase: 0 }], blocks: [], streets: [], warnings: [] }] };
     if (request.kind === 'parcels') return { partitions: [{ key: 'main', parcels: [], warnings: [] }] };
     if (request.kind === 'programme' || request.kind === 'builtCapacity') return { partitions: request.partitions.map((partition: object) => ({ ...partition, programme: { demands: [], builtBalance: request.kind === 'builtCapacity' ? { exactScene: true } : undefined } })) };
-    if (request.kind === 'buildingSites') return { placementRequests: ['p0', 'p1'].map((parcel, i) => ({ id: `${parcel}/request`, parcel_id: parcel, seed: parcel, culture: { pack: 'EUR-MED', mode: 'historical_inspired' }, cadastral: [square(i * 20)], neighbors: [] })) };
+    if (request.kind === 'buildingSites') return { placementRequests: ['p0', 'p1'].map((parcel, i) => ({ id: `${parcel}/request`, parcel_id: parcel, seed: parcel, culture: { pack: 'EUR-MED', mode: 'historical_inspired' }, cadastral: [square(i * 20)], buildable: [square(i * 20)], accesses: [], terrain: { ground_z_m: 0 }, neighbors: [] })) };
     throw new Error(`Unexpected native request ${request.kind}`);
   });
   native.plan.mockReset().mockImplementation(async (batch: PlacementBatchRequest): Promise<PlacementBatch> => ({ schema_version: '1', generator_version: 'architectural-plans-2', buildings: batch.requests.map(request => building(request.parcel_id, batch.settings?.floors ?? request.config?.overrides.floors ?? 1)), refusals: [], open_spaces: [], plan_archives: { 'native-retained-plan': 'exact-retained-native-archive' } }));
@@ -141,7 +155,8 @@ describe('immutable retained native stages', () => {
     const previous = freeze(first.snapshot), bytes = JSON.stringify(previous); world.debug = { v2RustCities: { main: previous } };
     const stopped = await generateRustTown(world, settings, 'main', undefined, 'layout');
     expect(stopped.urban.buildings).toHaveLength(0); expect(stopped.snapshot.scene).toBe(previous.scene); expect(previous.stage).toBe('buildings');
-    settings.urban!.parcels = { density: .7 }; native.run.mockResolvedValueOnce({ error: 'Native stage refused' });
+    // A refused stage is retried once with the uploaded geometry; both attempts are refused here.
+    settings.urban!.parcels = { density: .7 }; native.run.mockResolvedValueOnce({ error: 'Native stage refused' }).mockResolvedValueOnce({ error: 'Native stage refused' });
     await expect(generateRustTown(world, settings, 'main')).rejects.toThrow('Native stage refused');
     expect(JSON.stringify(previous)).toBe(bytes);
   });
@@ -213,6 +228,42 @@ describe('immutable retained native stages', () => {
     const sent = native.run.mock.calls.map(call => call[0]).find(request => request.kind === 'builtCapacity')!;
     expect(sent.scene).toBe(town.snapshot.scene);
     expect(town.snapshot.scene!.open_spaces.map(space => space.deficit?.request_id)).toEqual(scene.open_spaces.map(space => space.id));
+  });
+  it('materialises packed parcel, programme and built-capacity replies exactly like plain ones', async () => {
+    const plain = fixture(), reference = await generateRustTown(plain.world, plain.settings, 'main');
+    const run = native.run.getMockImplementation()!, packs: ArrayBuffer[] = [];
+    native.run.mockImplementation(async request => {
+      const { partitions, ...reply } = await run(request);
+      if (!partitions) return reply;
+      const buffer = pack.encode(partitions); packs.push(buffer);
+      return { ...reply, partitionsPack: buffer };
+    });
+    const { world, settings } = fixture(), town = await generateRustTown(world, settings, 'main');
+    expect(packs).toHaveLength(3);
+    expect(town.snapshot.cadastralPartitions).toBe(pack.partitionsFromPack(packs[0]));
+    expect(town.snapshot.programmePartitions).toBe(pack.partitionsFromPack(packs[1]));
+    expect(town.snapshot.partitions).toEqual(reference.snapshot.partitions);
+    expect(town.urban).toEqual(reference.urban);
+    world.debug = { v2RustCities: { main: freeze(town.snapshot) } };
+    const calls = native.run.mock.calls.length, hit = await generateRustTown(world, settings, 'main');
+    expect(native.run).toHaveBeenCalledTimes(calls);
+    expect(hit.snapshot.programmePartitions).toBe(town.snapshot.programmePartitions);
+    expect(hit.snapshot.cadastralPartitions).toBe(town.snapshot.cadastralPartitions);
+  });
+  it('sends the neighbours only when there are some, and regenerates a town only when their claims change', async () => {
+    const plain = fixture(), alone = await generateRustTown(plain.world, plain.settings, 'main');
+    expect(native.run.mock.calls.find(call => call[0].kind === 'quarters')![0].sites[0]).not.toHaveProperty('neighbours');
+    const claim = { key: 'big', land: [square(30)], streets: [] }, { world, settings } = fixture();
+    native.run.mockClear();
+    const first = await generateRustTown(world, settings, 'main', undefined, undefined, undefined, [claim]);
+    expect(native.run.mock.calls.find(call => call[0].kind === 'quarters')![0].sites[0].neighbours).toEqual([claim]);
+    expect(first.snapshot.layoutKey).not.toBe(alone.snapshot.layoutKey);
+    world.debug = { v2RustCities: { main: first.snapshot } };
+    const calls = native.run.mock.calls.length, same = await generateRustTown(world, settings, 'main', undefined, undefined, undefined, [structuredClone(claim)]);
+    expect(native.run).toHaveBeenCalledTimes(calls);
+    expect(same.snapshot.layoutKey).toBe(first.snapshot.layoutKey);
+    await generateRustTown(world, settings, 'main', undefined, undefined, undefined, [{ ...claim, land: [square(31)] }]);
+    expect(native.run.mock.calls.slice(calls).some(call => call[0].kind === 'quarters')).toBe(true);
   });
   it('does not alias editable input patches into retained house provenance', async () => {
     const { world, settings } = fixture();

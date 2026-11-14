@@ -302,6 +302,7 @@ const entries: readonly (readonly [string, string])[] = [
   ['L’opération a été annulée.', 'The operation was aborted.'],
   ['L’opération a été interrompue faute de réponse.', 'The operation was aborted due to timeout'],
   ['Délai d’attente dépassé', 'signal timed out'],
+  ['Villes voisines : l’enceinte n’est pas élevée, son tracé traverserait les terres d’une ville voisine.', 'Neighbouring towns: the enclosure is not raised, its circuit would cross the land of a neighbouring town.'],
 ];
 
 const frenchToEnglish = new Map<string, string>(entries);
@@ -327,6 +328,9 @@ function escapeRegex(value: string): string { return value.replace(/[.*+?^${}()|
 /** Only the named message slots below are variable. Their contents are retained verbatim. */
 const templatePairs: readonly (readonly [string, string])[] = [
   ['Population cible non atteinte : {achieved}/{target} habitants.', 'Population target not reached: {achieved}/{target} inhabitants.'],
+  ['Villes voisines : l’enceinte n’est pas élevée, son tracé traverserait les terres de {name}.', 'Neighbouring towns: the enclosure is not raised, its circuit would cross the land of {name}.'],
+  ['Villes voisines : il ne reste aucune terre libre à côté de {name} ; la ville est annoncée vide.', 'Neighbouring towns: no free land is left beside {name}; the town is announced empty.'],
+  ['Villes voisines : les terres de {name} limitent cette ville ; {done} ménages logés sur {total}.', 'Neighbouring towns: the land of {name} limits this town; {done} of {total} households housed.'],
   ['Moteur Rust/WASM · {done} / {total} Mio reçus','Rust/WASM engine · {done} / {total} MiB received'],
   ['Moteur Rust/WASM · {done} Mio reçus','Rust/WASM engine · {done} MiB received'],
   ['Chargement du moteur Rust/WASM impossible : HTTP {status}.','Rust/WASM engine download failed: HTTP {status}.'],
@@ -452,7 +456,9 @@ function translateLine(message: string, language: RuntimeLanguage): string {
     const values = Object.fromEntries(template.keys.map((key, index) => [key, match[index + 1]]));
     if (values.field) values.field = (language === 'en' ? fieldLabels : frenchFieldLabels).get(values.field) ?? values.field;
     if (values.reason) values.reason = translateLine(values.reason, language);
-    return template.target.replace(/\{([a-zA-Z]+)\}/g, (_placeholder, key: string) => values[key]);
+    // French elision before a name that starts with a vowel or an h (taken as mute): « les terres d’Aubeville ».
+    return template.target.replace(/(\bde )?\{([a-zA-Z]+)\}/g, (_placeholder, de: string | undefined, key: string) =>
+      de && language === 'fr' && /^[aeiouyhàâäéèêëîïôöùûüÿæœ]/iu.test(values[key]) ? `d’${values[key]}` : (de ?? '') + values[key]);
   }
   return message;
 }

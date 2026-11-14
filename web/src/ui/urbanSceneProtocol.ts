@@ -31,6 +31,8 @@ export interface UrbanSceneRequest { id: number;
 export interface UrbanSceneResponse { id: number;
   parentAcknowledged?: UrbanParentAcknowledged; parentDrained?: UrbanParentWorkerDrained; parentBegin?: UrbanParentWorkerBegin; parentBatch?: UrbanParentWorkerBatch; parentComplete?: UrbanParentWorkerCompletion; scene?: PlacementBatch; partitions?: Partition[];
   batch?: UrbanSceneBatch;
+  /** Paged silhouettes: one ordered chunk of the scene, appended without ACK; ends with `complete`. */
+  scenePart?: { delta: PlacementBatch; progress: import('../../../rust/bridge/architectureBatch').ArchitectureBatchProgress };
   /** Streamed runs finish with counts instead of another copy of the scene. */
   complete?: UrbanSceneCompletion;
   /** Native modes: the authoritative placement requests, before house edits (scoped edits replan from them). */

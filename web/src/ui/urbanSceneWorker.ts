@@ -3,6 +3,7 @@ import { sameParentSessionReceipt } from '../../../rust/bridge/nativeParentSessi
 import type { UrbanParentWorkerAck } from './urbanParentSceneProtocol';
 import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import { createUrbanEngine } from '../../../rust/bridge/urban';
+import { partitionsFromPack } from '../../../rust/bridge/urbanParcelPack';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
 import type { ArchitectureBatchOptions } from '../../../rust/bridge/architectureBatch';
 import { architectureProfile, type PlacementBatch, type PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
@@ -12,6 +13,7 @@ import { urbanSceneCompletion } from './urbanSceneProgress';
 import { silhouetteScene, type CityPlacementRequest } from './urbanSilhouettes';
 import { applyHouseEdits } from './cityEdits';
 import { projectUrbanSite } from './urbanSiteStore';
+import { pagedSilhouetteScene } from './urbanSilhouettePages';
 
 // The worker outlives plan changes: its engine keeps the native session (or the
 // WASM terrain) and the raster is only sent again when it changes.
@@ -128,6 +130,8 @@ async function drain(): Promise<void> {
         // Capability absence alone reaches the legacy full-site read below.
         // A failed begin/page bubbles out; it must never re-upload or regenerate.
       }
+      // Silhouettes of a retained source: read by pages, posted chunk by chunk.
+      if (await pagedSilhouetteScene(request, cancelled, response => { if (!cancelled()) self.postMessage(response); })) continue;
       engine ??= createUrbanEngine(request.runtime);
       // A new raster is uploaded once; later runs reuse the retained terrain.
       const upload = !request.source && request.raster && request.raster !== raster ? request.raster : undefined;
@@ -183,7 +187,7 @@ async function drain(): Promise<void> {
         const balance = await (await engine).run({ id: request.id, kind: 'builtCapacity', seed: request.seed, runtime: request.runtime, partitions: request.partitions, scene });
         if (cancelled()) continue;
         if (balance.error) throw new Error(balance.error);
-        partitions = balance.partitions;
+        partitions = balance.partitionsPack ? partitionsFromPack(balance.partitionsPack, request.partitions) : balance.partitions;
       }
       self.postMessage({ id: request.id, ...(request.progressive ? { complete: urbanSceneCompletion(scene) } : { scene, requests }),
         partitions, timing: { sites: sitesMs, placement: placementMs } } satisfies UrbanSceneResponse);

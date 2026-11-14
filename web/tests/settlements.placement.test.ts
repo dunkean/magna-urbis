@@ -123,7 +123,9 @@ describe('settlement centre overrides', () => {
     expect(plan.settlements[1].center).toEqual({ x: 450, y: 450 });
     expect(plan.warnings.join(' ')).toMatch(/moved/);
     const main = plan.settlements[0], moved = plan.settlements[2];
-    expect(dist(main.center, moved.center)).toBeGreaterThan(main.radius + moved.radius);
+    // Explicit positions may touch another settlement: only the shared centre moves, by a cell or so.
+    expect(dist(main.center, moved.center)).toBeGreaterThan(0);
+    expect(dist(main.center, moved.center)).toBeLessThan(main.radius);
     expect(moved.region.length).toBeGreaterThanOrEqual(3);
   });
 

@@ -26,12 +26,14 @@ const labels: Record<string, Words> = {
   alignEnclosedGrid:['À tester · Grille alignée sur son enceinte','Testing · Align grid to its enclosure','测试 · 网格对齐围墙','En prueba · Cuadrícula alineada con su recinto','Em teste · Grelha alinhada ao seu recinto'],
   villageBridgeBudget:['À tester · Ponts selon le besoin (village)','Testing · Bridges by need (village)','测试 · 按需建桥（村庄）','En prueba · Puentes según la necesidad (aldea)','Em teste · Pontes conforme a necessidade (aldeia)'],
   roadNetworkPrune:['À tester · Élaguer les routes inutiles','Testing · Prune useless roads','测试 · 删减无用道路','En prueba · Podar las calles inútiles','Em teste · Podar as ruas inúteis'],
+  villageStreets:['À tester · Rues de village','Testing · Village streets','测试 · 村庄街道','En prueba · Calles de aldea','Em teste · Ruas de aldeia'],
   linksJoinRoads:['À tester · Liaisons vers la route','Testing · Links join the road','测试 · 连接到道路','En prueba · Enlaces hacia la carretera','Em teste · Ligações à estrada'],
   hideUnusedQuarters:['À tester · Effacer les quartiers annulés','Testing · Hide cancelled quarters','测试 · 隐藏取消的街区','En prueba · Ocultar barrios cancelados','Em teste · Ocultar bairros cancelados'],
   deepBlockLanes:['À tester · Ruelles dans les îlots profonds','Testing · Back lanes in deep blocks','测试 · 深街区后巷','En prueba · Callejones en manzanas profundas','Em teste · Ruelas em quarteirões profundos'],
   organicBranchVariation:['À tester · Variation des branches','Testing · Branch variation','测试 · 支路变化','En prueba · Variación de ramales','Em teste · Variação dos ramais'],
   ribbonWidthVariation:['À tester · Variation de largeur des rubans','Testing · Ribbon width variation','测试 · 带状地块宽度变化','En prueba · Variación del ancho de franjas','Em teste · Variação da largura das faixas'],
   campGrowth:['Grands camps','Large camps','大型营地','Campamentos grandes','Acampamentos grandes'],
+  zoneDensity:['Densité des zones','Zone density','区域密度','Densidad de las zonas','Densidade das zonas'],
   smallPlaceCapacity:['À tester · Tolérance de capacité des petits lieux','Testing · Small-place capacity tolerance','测试 · 小聚落容量容差','En prueba · Tolerancia de capacidad de lugares pequeños','Em teste · Tolerância de capacidade de lugares pequenos'],
   countrysideEnclosures:['Clôtures à la campagne','Countryside enclosures','乡村围栏','Cercados en el campo','Cercas no campo'],
   outbuildings:['Dépendances des maisons','House outbuildings','房屋附属建筑','Dependencias de las casas','Dependências das casas'],
@@ -93,6 +95,7 @@ const options: Record<string, Record<string, Words>> = {
   placement:{center:['Plan culturel adapté au terrain','Cultural plan adapted to terrain','适应地形的文化规划','Plan cultural adaptado al terreno','Plano cultural adaptado ao terreno'],rectangle:['Rectangle','Rectangle','矩形','Rectángulo','Retângulo'],skew:['Oblique','Oblique','倾斜','Oblicuo','Oblíquo'],notched:['Avec encoche','Notched','带缺口','Con muesca','Com entalhe']},
   budget:{population:['Population / densité brute','Population / gross density','人口 / 毛密度','Población / densidad bruta','População / densidade bruta'],radius:['Rayon artistique','Artistic radius','艺术半径','Radio artístico','Raio artístico']},
   houseComplexity:{simple:['Simples','Simple','简单','Simples','Simples'],complex:['Complexes','Complex','复杂','Complejas','Complexas']},
+  zoneDensity:{phases:['Par phase','By phase','按阶段','Por fase','Por fase'],gradient:['Gradient','Gradient','渐变','Gradiente','Gradiente']},
 };
 const stageTitles: Record<string, Words> = {
   urbanQuarterStage:['3 · Plan urbain ','3 · Urban plan ','3 · 城市规划 ','3 · Plan urbano ','3 · Plano urbano '],

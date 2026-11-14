@@ -14,6 +14,7 @@ import type { DisplayOpts, RResponse } from '../ui/protocol';
 import { generationWorldInput } from './workerWorld';
 import { renderProjection } from './renderProjection';
 import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
+import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 import { sameDisplay } from './displayState';
 import type { BenchRenderer } from './benchRenderer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
@@ -29,6 +30,14 @@ import { ensureDesktopNeuralServer } from './desktopNeural';
 const MINI_DELAY_MS = 350;
 
 export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
+
+/** The world input of an engine request: a retained id, or the world with its town partitions packed. */
+function packedWorldInput(action: Action, world: World | undefined, retained?: { id: number; world: World }): { input: ReturnType<typeof generationWorldInput>; transfer: ArrayBuffer[] } {
+  const input = generationWorldInput(action, world, retained);
+  if (!input.world) return { input, transfer: [] };
+  const packed = packWorldPartitions(input.world);
+  return { input: { ...input, world: packed.world }, transfer: packed.transfer };
+}
 
 /** Generation and drawing stay on separate workers; a failed job keeps the previous map. */
 export class StudioClient {
@@ -114,7 +123,7 @@ export class StudioClient {
       if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
       if (m.id !== this.pending?.id) return;
       if (m.type === 'progress') (this.pending!.progress ?? this.onProgress)(m.progress);
-      else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldLanduse(m.world)); this.retained={id:m.id,world};p.resolve(world); }
+      else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldPartitions(unpackWorldLanduse(m.world))); this.retained={id:m.id,world};p.resolve(world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
     this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
@@ -164,7 +173,9 @@ export class StudioClient {
         }
         // Cancellation may have replaced the worker while native weights were loading.
         if (this.pending?.id !== id) return;
-        this.engine.postMessage({ id, action, settings, ...generationWorldInput(action,world,this.retained),key, keys, townStage,terrainStage,cityOutput,assetBase:document.baseURI });
+        // A resent world carries its town partitions packed (copies: the page keeps its objects).
+        const sent=packedWorldInput(action,world,this.retained);
+        this.engine.postMessage({ id, action, settings, ...sent.input,key, keys, townStage,terrainStage,cityOutput,assetBase:document.baseURI },sent.transfer);
       };
       void dispatch().catch(error => { if (this.pending?.id === id) { this.pending=null;reject(error instanceof Error?error:new Error(String(error))); } });
     });
@@ -185,7 +196,7 @@ export class StudioClient {
     const id = ++this.id;
     const payload = new Promise<ResourcePayload | undefined>((resolve, reject) => {
       this.resourceRequests.set(id, { resolve, reject });
-      try { this.engine.postMessage({ type: 'resources', id, settings, ...generationWorldInput('region', world, this.retained) }); }
+      try { const sent = packedWorldInput('region', world, this.retained); this.engine.postMessage({ type: 'resources', id, settings, ...sent.input }, sent.transfer); }
       catch (error) { this.resourceRequests.delete(id); reject(error instanceof Error ? error : new Error(String(error))); }
     });
     this.resourceCache = { key, payload };

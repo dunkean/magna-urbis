@@ -2,7 +2,8 @@ import { cityNamedSite } from '../render/cityGeneration';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
-import type { Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
+import type { Claim, Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
+import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint } from './townNeighbours';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
@@ -22,6 +23,7 @@ import { cityArchitectureOf } from '../render/cityContract';
 import { siteVisualScene, type CityPlacementRequest } from '../ui/urbanSilhouettes';
 import { projectUrbanSite, type UrbanSiteVisual } from '../ui/urbanSiteStore';
 import type { UrbanBuildingSiteQuery } from '../../../rust/bridge/urbanBuildingSite';
+import { partitionsFromPack } from '../../../rust/bridge/urbanParcelPack';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -308,7 +310,9 @@ export async function releaseUrbanLanes(): Promise<void> {
   }));
 }
 export async function generateRustTown(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback,
-  through?: V2TownStage, lane?: number): Promise<RustTownResult> {
+  through?: V2TownStage, lane?: number,
+  /** Claims of the earlier neighbouring towns; read from the world's retained towns when absent (`townNeighbours`). */
+  neighbourClaims?: readonly Claim[]): Promise<RustTownResult> {
   const place = world.settlements?.find(s => s.key === key);
   if (!place) throw new Error(`Lieu inconnu : ${key}`);
   const backend = urbanBackend(settings);
@@ -327,7 +331,10 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const previous = (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[key];
   const roads = townRoadStreets(world);
   const seed = urbanSeed(settings, key, 'composition'), streetSeed = urbanSeed(settings, key, 'streets');
-  const compositionKey = fingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout, roads]);
+  // A town is regenerated when the claims of its neighbours change; a town without neighbours keeps its key and payload.
+  const neighbours = [...(neighbourClaims ?? neighbourClaimsOf(world, settings, key))];
+  const compositionKey = fingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout, roads,
+    ...(neighbours.length ? [neighbourFingerprint(neighbours)] : [])]);
   const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
   const previousComposition = previous?.compositionKey === compositionKey ? previous.compositionLayouts
     : !previous?.compositionKey && previous?.layoutKey === compositionKey ? previous.layouts : undefined;
@@ -390,6 +397,9 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       let result = await pending;
       // An engine without the retained chain (or a session evicted meanwhile): upload the geometry as before.
       if (result.error && input !== extras && !heldPartitions.has(extras.partitions as Partition[])) result = await engine.run({ id: 1, kind, seed, runtime, ...extras });
+      // Parcels, programme and built capacity reply with a binary pack: the snapshot and the projection read objects
+      // (a built-capacity pack takes its parcels from the uploaded partitions).
+      if (result.partitionsPack && !result.partitions) result.partitions = partitionsFromPack(result.partitionsPack, extras.partitions as Partition[] | undefined);
       if (!result.error && raster) retained.terrainKey = terrainKey;
       if (backend === 'native' && !result.error) {
         if (kind === 'quarters') retained.layouts = result.layouts;
@@ -403,8 +413,9 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     } finally { if (primed) { retained.priming = undefined; primed(); } }
   };
   if (!snapshot.layouts.length) {
-    const inputs = { sites: [cityNamedSite({ key, name: place.name, population: options.population,
-      culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language)], roads };
+    const site = cityNamedSite({ key, name: place.name, population: options.population,
+      culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language);
+    const inputs = { sites: [neighbours.length ? { ...site, neighbours } : site], roads };
     if (!snapshot.compositionLayouts) {
       report('urban-layout', 'Rust · composition urbaine…', 0);
       snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');
@@ -626,7 +637,8 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   }
   // An earlier stopping stage intentionally removes the display of downstream products while retaining them for reuse.
   snapshot.stage = target;
-  snapshot.warnings = [...new Set([...snapshot.layouts.flatMap(layout => layout.warnings),
+  const townName = (other: string): string | undefined => world.names?.entries.find(entry => entry.id === `settlement:${other}`)?.text ?? world.settlements?.find(s => s.key === other)?.name;
+  snapshot.warnings = [...new Set([...snapshot.layouts.flatMap(layout => layout.warnings.map(warning => nameNeighbourWarning(warning, townName))),
     ...(stageIndex >= 1 ? snapshot.partitions?.flatMap(partition => partition.warnings) ?? [] : []),
     ...(stageIndex >= 3 ? snapshot.scene?.refusals.map(refusal => `${refusal.code}: ${refusal.message}`) ?? [] : [])])];
   const projection = stageIndex < 3 ? { ...snapshot, scene: undefined,
