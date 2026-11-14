@@ -3344,8 +3344,10 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) 
 /// (bridges, walkways, trims): `settle`'s rule against the final network.
 /// A gatehouse whose gate closed goes with it.
 pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
+    let mut laps = super::network::Lap::new("sync_gates");
     let old_masses = gate_masses(layout);
     super::network::wall_approaches(layout, surface);
+    laps.lap("wall_approaches");
     let streets = std::mem::take(&mut layout.streets);
     for e in layout.enclosures.iter_mut().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
         let remap = reconcile_gates(e, &streets, surface);
@@ -3358,7 +3360,9 @@ pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
             .collect();
     }
     layout.streets = streets;
+    laps.lap("reconcile");
     release_gate_reserve(layout, old_masses);
+    laps.lap("release");
 }
 
 fn gate_masses(layout: &super::Layout) -> Vec<Shape> {
@@ -4010,7 +4014,8 @@ mod tests {
                     let s = surface(&height, &water);
                     let cfg = LayoutConfig { site_archetype: if river_site { "bridge" } else { "plain" }.into(), ..LayoutConfig::default() };
                     let site = Site { key: "walls3-head".into(), name: String::new(), population: pop,
-                        culture: culture.clone(), center: pt(1000.0, 1000.0), radius: if pop == 500 { 180.0 } else { 500.0 } };
+                        culture: culture.clone(), center: pt(1000.0, 1000.0), radius: if pop == 500 { 180.0 } else { 500.0 },
+                        neighbours: Vec::new(), };
                     TRACE_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
                     CONTOUR_PAIRS.with(|p| *p.borrow_mut() = Some(vec![]));
                     let c = composition::generate("walls3-head", &site, &cfg, s, &streets(), site.radius).unwrap();
@@ -4485,6 +4490,7 @@ mod tests {
             culture: "european-organic".into(),
             center: pt(1024.0, 1024.0),
             radius: 420.0,
+            neighbours: Vec::new(),
         };
         generate_quarters("walls", &[site], &cfg, surface(&height, &water), &roads).unwrap()
     }
@@ -4827,6 +4833,7 @@ mod tests {
             phases: vec![],
             archetype: String::new(),
             structure: None,
+            claim: Default::default(),
         };
         settle(&mut layout, s);
         let e = &layout.enclosures[0];

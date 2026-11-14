@@ -15,9 +15,11 @@ fn merge_share(cfg: &LayoutConfig) -> f64 {
 pub(in crate::urban) fn clean_options(streets: &mut Vec<Street>, center: Point, radius: f64,
     fortified: bool, centers: &[Point], cfg: &LayoutConfig, surface: Surface<'_>) -> Vec<String> {
     let warnings = clean_terrain(streets, center, radius, fortified, centers, (merge_share(cfg) > 0.0).then_some(surface));
+    let mut laps = Lap::new("clean");
     if cfg.small_road_loops {
         policy::small_loops(streets, cfg.tissue == "grid" || cfg.align_enclosed_grid);
     }
+    laps.lap("small_loops");
     warnings
 }
 
@@ -25,11 +27,16 @@ pub(in crate::urban) fn narrow_options(streets: &mut Vec<Street>, enclosures: &[
     cfg: &LayoutConfig, surface: Surface<'_>) -> bool {
     if merge_share(cfg) <= 0.0 { return drop_narrow_doubles(streets, enclosures, radius); }
     let walls: Vec<_> = enclosures.iter().flat_map(|e| e.path.windows(2).map(|w| (w[0], w[1]))).collect();
+    let mut laps = Lap::new("narrow");
     let moved = merge_partial(streets, &walls, surface, cfg);
+    laps.lap("merge");
     if moved { planarize(streets, radius); }
+    laps.lap("planarize");
     let before = streets.len();
     drop_shadowed_within(streets, MIN_LAND, &walls, Some(surface));
+    laps.lap("shadowed");
     if streets.len() != before { planarize(streets, radius); }
+    laps.lap("planarize.2");
     moved || streets.len() != before
 }
 
@@ -41,12 +48,21 @@ pub(in crate::urban) fn narrow_options(streets: &mut Vec<Street>, enclosures: &[
 fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surface<'_>, cfg: &LayoutConfig) -> bool {
     const CELL: f64 = 32.0;
     let original = streets.to_vec();
-    let priority = |i: usize| (original[i].rank, std::cmp::Reverse((original[i].widths.iter().copied().fold(0.0, f64::max) * 1000.0) as i64), i);
+    let priorities: Vec<_> = (0..original.len())
+        .map(|i| (original[i].rank, std::cmp::Reverse((original[i].widths.iter().copied().fold(0.0, f64::max) * 1000.0) as i64), i))
+        .collect();
+    let priority = |i: usize| priorities[i];
+    // Walls by their box (a metre of slack for the tolerance of `segment_hit`).
+    let wall_grid = BoxGrid::new(&walls.iter().map(|&(a, b)| segment_box(a, b, 0.0)).collect::<Vec<_>>(), CELL);
+    let wall_between = |p: Point, q: Point| {
+        let (x0, y0, x1, y1) = segment_box(p, q, 1.0);
+        wall_grid.query(x0, y0, x1, y1).into_iter().any(|k| g::segment_hit(p, q, walls[k].0, walls[k].1).is_some())
+    };
     // Dosage: a street's runs are collapsed when its own draw falls under the share,
     // so the same street keeps or loses its doubles whatever else changes.
     let share = merge_share(cfg);
     let drawn = |s: &Street| share >= 1.0 || s.path.first().is_some_and(|p| crate::rng::Rng::new(&format!("parallel:{:.1},{:.1}", p.x, p.y)).float() < share);
-    let mut buckets: BTreeMap<(i64, i64), Vec<(usize, usize)>> = BTreeMap::new();
+    let mut buckets: std::collections::HashMap<(i64, i64), Vec<(usize, usize)>> = Default::default();
     let mut joints: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
     for (i, s) in original.iter().enumerate() {
         for &p in &s.path { joints.entry(key(p)).or_default().push(i); }
@@ -90,7 +106,7 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
                     let (d, _, q) = g::distance(p, a, b);
                     let gap = d - 0.5 * (own + width(other, seg).max(width(other, seg + 1)));
                     if gap >= MIN_LAND || different_level(surface, p, q)
-                        || walls.iter().any(|&(a, b)| g::segment_hit(p, q, a, b).is_some()) { continue; }
+                        || wall_between(p, q) { continue; }
                     if best.is_none_or(|(old, _, _)| priority(j) < priority(old)) { best = Some((j, q, d)); }
                 }
                 samples.push((p, own, t == 0 || t == n, best));

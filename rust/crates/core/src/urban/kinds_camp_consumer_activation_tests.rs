@@ -12,7 +12,8 @@ fn corpus() -> Corpus {
 }
 fn inputs(c: &Case) -> (Site, LayoutConfig, Vec<Street>) {
     let site = Site { key: c.id.clone(), name: c.id.clone(), culture: c.culture.clone(),
-        population: c.population, center: Point { x: 2000., y: 2000. }, radius: c.radius };
+        population: c.population, center: Point { x: 2000., y: 2000. }, radius: c.radius,
+        neighbours: Vec::new(), };
     let mut cfg = LayoutConfig::default();
     cfg.footprint.budget = "radius".into();
     let roads = vec![Street { path: vec![Point { x: 1000., y: c.road_y }, Point { x: 3000., y: c.road_y }],

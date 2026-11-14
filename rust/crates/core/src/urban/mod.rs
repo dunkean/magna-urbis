@@ -7,6 +7,8 @@ mod access;
 pub mod building_sites;
 mod house_mix;
 pub mod display;
+mod pack;
+pub mod parcel_pack;
 mod composition;
 mod deep_blocks;
 // Structural user edits (shape, delete, reroll): urban/edits.rs.
@@ -28,6 +30,8 @@ mod springs;
 mod shanty;
 mod lagoon;
 mod geometry;
+mod growth;
+pub use growth::grown_at;
 mod massing;
 pub use geography::{Geography, VectorGeography};
 mod influences;
@@ -56,6 +60,8 @@ mod routing;
 mod trim;
 mod slopes;
 mod widths;
+pub mod neighbours;
+mod zone_blend;
 
 use crate::rng::Rng;
 pub use crate::settlements::Point;
@@ -140,6 +146,9 @@ fn is_ring_growth(v: &str) -> bool {
 }
 fn is_simple_houses(v: &str) -> bool {
     v.is_empty() || v == "simple"
+}
+fn is_phase_density(v: &str) -> bool {
+    v.is_empty() || v == "phases"
 }
 fn is_one(v: &f64) -> bool {
     *v == 1.0
@@ -236,6 +245,9 @@ pub struct Layout {
     pub archetype: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structure: Option<UrbanStructure>,
+    /// The land and edge streets this town holds, for the towns generated after it.
+    #[serde(default)]
+    pub claim: neighbours::Claim,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -529,6 +541,10 @@ pub struct Site {
     pub culture: String,
     pub center: Point,
     pub radius: f64,
+    /// Claims of the towns generated before this one (`neighbours`): land this
+    /// town never builds on, streets it joins.
+    #[serde(default)]
+    pub neighbours: Vec<neighbours::Claim>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -679,6 +695,11 @@ pub struct LayoutConfig {
     /// porches, turrets, composite roofs with valleys, chimneys and dormers).
     #[serde(skip_serializing_if = "is_simple_houses")]
     pub house_complexity: String,
+    /// Density of open towns across their growth phases: `phases` (each phase
+    /// keeps its zone's tables) or `gradient` (blocks near another phase take
+    /// intermediate values, `zone_blend`; never across a town circuit).
+    #[serde(skip_serializing_if = "is_phase_density")]
+    pub zone_density: String,
     /// Density of singular and utility buildings (monuments, inns, taverns,
     /// stables, warehouses…): 1 the catalogue's counts, 0 only the nucleus
     /// landmark, up to 3.
@@ -736,6 +757,14 @@ pub struct LayoutConfig {
     /// doubled runs lose their least important side.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub road_network_prune: bool,
+    /// V7 (round 1114): village streets. A street village draws its cross-lanes
+    /// at an irregular rhythm, staggered, angled and gently curved, its green
+    /// off the middle, and sometimes a back lane drifting away from the main
+    /// street with a small quarter of its own (`kinds::linear`); in a village
+    /// (under 1 000 inhabitants) an exit (`outbound`, `peripheral`) that serves
+    /// no lot and ends in nothing is trimmed back to its junction (`trim`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub village_streets: bool,
     #[serde(skip_serializing_if = "is_zero")]
     pub organic_branch_variation: f64,
     #[serde(skip_serializing_if = "is_zero")]
@@ -916,6 +945,7 @@ impl Default for LayoutConfig {
             low_rural_houses: true,
             outbuildings: 0.5,
             house_complexity: "simple".into(),
+            zone_density: "phases".into(),
             singular_density: 1.0,
             back_buildings: 0.5,
             style_sheet: StyleSheet::default(),
@@ -932,6 +962,7 @@ impl Default for LayoutConfig {
             village_bridge_budget: false,
             links_join_roads: false,
             road_network_prune: false,
+            village_streets: false,
             organic_branch_variation: 0.0,
             ribbon_width_variation: 0.0,
             camp_growth: "ring".into(),
@@ -1516,6 +1547,7 @@ pub fn generate_quarters(
         || !config.site_adaptation.is_finite()
         || !(0.0..=2.0).contains(&config.site_adaptation)
         || !["phases", "sectors"].contains(&config.mix_mode.as_str())
+        || !["phases", "gradient"].contains(&config.zone_density.as_str())
         || !config.mix_share.is_finite()
         || !(0.0..=1.0).contains(&config.mix_share)
         || !config.mix_angle.is_finite()
@@ -1669,6 +1701,12 @@ pub fn generate_quarters(
         })
         .unwrap_or(sites.len());
     let laid = par::map(&sites[..valid], |_, site| -> Result<Layout, String> {
+        // A town with neighbours starts from free ground, and its roads stop at
+        // their land and lead on into their edge streets (`neighbours`).
+        let relocated = neighbours::relocate(site, surface);
+        let site = relocated.as_ref().unwrap_or(site);
+        let joined_roads = neighbours::roads(site, roads);
+        let roads = joined_roads.as_deref().unwrap_or(roads);
         let mut site_config;
         let config = if let Some(archetype) = config.site_archetypes.get(&site.key) {
             site_config = config.clone();
@@ -1694,6 +1732,7 @@ pub fn generate_quarters(
             .as_ref()
             .map_or((site, surface), |ground| (&ground.site, ground.surface(surface)));
         let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
+        let neighbour_land = neighbours::Mask::of(site);
         // Resolve the tissue for each attempt: the capacity ladder starts with
         // the culture's normal streets and only later tries contour terraces.
         let lay = |config: &LayoutConfig| -> Result<Layout, String> {
@@ -1716,6 +1755,8 @@ pub fn generate_quarters(
         // edits hook (urban/edits.rs): structural quarter edits splice a
         // variant plan into this one; without them this is plan then finish.
         let plan_at = |config: &LayoutConfig, site: &Site| -> Result<Layout, String> {
+            // One lap per call, each with its own duration (`URBAN_PROFILE`).
+            let mut laps = network::Lap::new("tail");
             let small = (kind.small() && config.footprint.mechanism != "legacy")
                 .then(|| kinds::lay_out(&key_seed, site, config, kind, &morph, surface, roads))
                 .flatten();
@@ -1725,32 +1766,54 @@ pub fn generate_quarters(
                     &key_seed, site, config, &morph, surface, roads, stilt.is_some(),
                 )?,
             };
+            laps.lap("quarters.generate");
             kinds::stamp(&mut layout, kind, original);
             trim::prepare(&mut layout);
+            laps.lap("trim.prepare");
             access::refine(&mut layout, config, &morph, surface);
+            laps.lap("access.refine");
             // Blocks nobody builds on go back to the fields, with their streets.
-            if layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
-                trim::run(seed, &mut layout, config, original, site.population, surface);
+            let trimmed = layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy");
+            // The lots the trim's allocation built: town circuits are fitted to them.
+            let mut built_lots = None;
+            if trimmed {
+                built_lots = Some(trim::run(seed, &mut layout, config, original, site.population, surface).1);
+                laps.lap("trim.run.1");
             }
+            // The plan as the trim left it.
+            let trimmed_plan = trim::signature(&layout);
             // Fortifications follow the final streets and blocks.
             macroplan::harbour::open_gates(&mut layout);
-            composition::fit_enclosures(&mut layout, site.population, surface);
+            laps.lap("open_gates");
+            composition::fit_enclosures(&mut layout, site.population, surface, built_lots.as_deref());
+            laps.lap("fit_enclosures.1");
             composition::join_side_by_side(&mut layout, surface);
+            laps.lap("join_side_by_side");
             fortification::settle(&mut layout, surface);
-            // Wall clipping can expose new terminal chains or change lot access.
-            if !layout.enclosures.is_empty() && layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy") {
-                trim::run(seed, &mut layout, config, original, site.population, surface);
-                // The trim removed the streets of land nobody builds: a circuit that still
+            laps.lap("fortification.settle.1");
+            // Wall clipping can expose new terminal chains or change lot access:
+            // the trim runs again only when the gates and walls changed the
+            // blocks or the streets it read.
+            if !layout.enclosures.is_empty() && trimmed && trim::signature(&layout) != trimmed_plan {
+                let (released, built_lots) = trim::run(seed, &mut layout, config, original, site.population, surface);
+                laps.lap("trim.run.2");
+                // The trim gave land back with its streets: a circuit that still
                 // holds a big piece of that land gives it back, and is rebuilt.
+                if released == 0 { return Ok(layout); }
                 let before: Vec<_> = layout.enclosures.iter().map(|e| e.path.clone()).collect();
-                composition::fit_enclosures(&mut layout, site.population, surface);
+                composition::fit_enclosures(&mut layout, site.population, surface, Some(&built_lots));
+                laps.lap("fit_enclosures.2");
                 if layout.enclosures.iter().map(|e| &e.path).ne(before.iter()) {
                     fortification::settle(&mut layout, surface);
+                    laps.lap("fortification.settle.2");
                 }
             }
             Ok(layout)
         };
         let finish = |layout: &mut Layout| -> Result<(), String> {
+            // One lap per call, each with its own duration (`URBAN_PROFILE`).
+            let mut laps = network::Lap::new("tail");
+            if let Some(mask) = &neighbour_land { neighbours::enforce(layout, mask, true); }
             // Regional spans just outside the built land still belong to the
             // visible transport network; keep their corrected decks and ramps.
             layout.streets.extend(roads.iter().filter(|s| {
@@ -1759,21 +1822,51 @@ pub fn generate_quarters(
             }).cloned());
             if let Some(ground) = &stilt { ground.walkways(&mut layout.streets, physical_surface); }
             network::bridge_water_on_ground(&mut layout.streets, surface, physical_surface, config.max_street_grade);
+            laps.lap("bridge_water_on_ground");
             let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
             if config.polish_road_ends { network::polish_ends(&mut layout.streets, &gates, config.road_remnants); }
+            laps.lap("polish_ends");
             if config.road_mouths { network::seat_mouths(&mut layout.streets); }
+            laps.lap("seat_mouths");
             if config.deep_block_lanes { deep_blocks::run(layout); }
+            laps.lap("deep_blocks");
             access::summarize(layout, config);
+            laps.lap("access.summarize");
             fortification::prepare_options(layout, config, surface);
+            laps.lap("prepare_options");
             programme::prepare(layout, site.population, &config.programme, surface)?;
+            laps.lap("programme.prepare.1");
             fortification::finish_options(layout, config, surface);
+            laps.lap("finish_options");
             kinds::finish(layout, kind, original);
-            if layout.structure.as_ref().is_some_and(|s|s.mechanism != "legacy") { trim::finish(seed,layout,physical_surface); }
+            laps.lap("kinds.finish");
+            if layout.structure.as_ref().is_some_and(|s|s.mechanism != "legacy") {
+                let built = trim::finish(seed,layout,physical_surface);
+                laps.lap("trim.finish");
+                // The lots that show a building are known on the final cadastre: a
+                // circuit that still holds a big empty piece (houses the slope
+                // refused, lanes pruned with them) gives it back and is rebuilt;
+                // the services are sited again on the blocks the works left.
+                if !built.is_empty() && layout.enclosures.iter().any(|e| e.purpose.is_empty()) {
+                    let before: Vec<_> = layout.enclosures.iter().map(|e| e.path.clone()).collect();
+                    composition::fit_built_circuits(layout, site.population, surface, &built);
+                    if layout.enclosures.iter().map(|e| &e.path).ne(before.iter()) {
+                        fortification::settle(layout, surface);
+                        access::summarize(layout, config);
+                        programme::prepare(layout, site.population, &config.programme, surface)?;
+                    }
+                    laps.lap("fit_enclosures.final");
+                }
+            }
+            laps.lap("trim.finish");
             if config.street_frontage { network::join_bank_networks(layout, physical_surface); }
+            laps.lap("join_bank_networks");
             if config.village_bridge_budget && network::village_crossings(site.population) {
                 network::tie_banks_to_road(layout, roads, physical_surface, config);
             }
+            laps.lap("tie_banks_to_road");
             network::select_bridges_graded(layout, site.population, physical_surface, roads, config.max_street_grade);
+            laps.lap("select_bridges_graded");
             // `roadNetworkPrune`: any place whose bank keeps a loose street end.
             if (config.village_bridge_budget && network::village_crossings(site.population)
                     && layout.streets.iter().any(|s| matches!(s.role.as_str(), "bridge" | "approach"))
@@ -1783,19 +1876,29 @@ pub fn generate_quarters(
                 trim::bridgeheads(seed, layout, physical_surface, roads);
                 network::remap_reservations(layout, &reserved);
             }
+            laps.lap("trim.bridgeheads");
             if macroplan::harbour::port_town(config) {
                 macroplan::harbour::protect_navigation(layout, physical_surface, roads);
             }
+            laps.lap("protect_navigation");
             fortification::sync_gates(layout, surface);
+            laps.lap("sync_gates");
             network::ensure_regional_access(layout, roads, physical_surface, config);
+            laps.lap("ensure_regional_access");
             trim::footprint(layout);
+            laps.lap("trim.footprint");
             if let Some(ground) = &stilt { ground.land_links(&mut layout.streets,physical_surface); }
             macroplan::harbour::platforms(layout, physical_surface);
+            laps.lap("platforms");
             lagoon::apply(layout,config,physical_surface);
+            laps.lap("lagoon.apply");
             // Reserve against the final network, after trim and water works.
             // Recompute block indices/environments after the source-site cuts.
-            if springs::reserve(layout, site, physical_surface, config) {
+            let reserved_sources = springs::reserve(layout, site, physical_surface, config);
+            laps.lap("springs.reserve");
+            if reserved_sources {
                 programme::prepare(layout, site.population, &config.programme, surface)?;
+                laps.lap("programme.prepare.2");
             }
             Ok(())
         };
@@ -1809,18 +1912,38 @@ pub fn generate_quarters(
         // Invariant (no earth street on water), on the physical surface: after the last
         // stage that adds or moves formal streets, before the shanty records their count
         // (its own ways are laid dry). Slope wards reuse streets of such a layout.
+        let mut laps = network::Lap::new("tail");
         network::clear_water(&mut layout, site.population, physical_surface, stilt.as_ref().map(|_| surface), config.max_street_grade);
+        laps.lap("clear_water");
         shanty::extend(seed, &mut layout, site, config, kind, physical_surface, roads);
+        laps.lap("shanty.extend");
         Ok(layout)
         };
-        let mut layout = lay(config)?;
         // A town whose strict house gates refuse most of its land (a user-placed
-        // town on a mountain flank) is laid out again with the slope gates
-        // relaxed step by step, until its houses may use half of its land or
-        // the gates are open. The strict pass alone runs on easy ground.
+        // town on a mountain flank) relaxes its slope gates. The level is read
+        // from the terrain before the first pass (`footprint::slope_relax_ahead`):
+        // the lowest at which its houses may use half of the land it would take.
+        // Ordinary ground reads 0 and keeps the strict pass, unchanged.
+        let relaxable = config.programme.slope_relax == 0.0 && config.programme.intent == "settlement" && site.population > 0;
+        let ahead = if relaxable && !kind.small() { footprint::slope_relax_ahead(&key_seed, site, config, surface, roads) } else { 0.0 };
+        #[cfg(not(target_arch = "wasm32"))]
+        if ahead > 0.0 && std::env::var("URBAN_PROFILE").is_ok() {
+            eprintln!("  slope_relax.ahead: {ahead}");
+        }
+        let ahead_config;
+        let first = if ahead > 0.0 {
+            let mut c = config.clone();
+            c.programme.slope_relax = ahead;
+            ahead_config = c;
+            &ahead_config
+        } else {
+            config
+        };
+        let mut layout = lay(first)?;
         // A slope town whose normal build falls short because of its slopes
-        // runs the household ladder (`slopes`); every other place keeps the
-        // normal layout and the flank ladder below, unchanged.
+        // runs the household ladder (`slopes`), from the level chosen above;
+        // every other place keeps the normal layout and the flank ladder
+        // below, unchanged.
         let mut sloped = false;
         if slopes::eligible(site, config, surface, kind) && slopes::short(&layout) {
             // After a ward is added to a finished layout: access and programme
@@ -1840,17 +1963,24 @@ pub fn generate_quarters(
                 Ok(())
             };
             let others: Vec<Point> = sites[..valid].iter().filter(|s| s.key != site.key).map(|s| s.center).collect();
-            layout = match slopes::complete(seed, site, config, surface, roads, &others, layout, &lay, retail) {
+            layout = match slopes::complete(seed, site, first, surface, roads, &others, layout, &lay, retail) {
                 Ok(done) => { sloped = true; done }
                 Err(normal) => normal,
             };
         }
-        if !sloped && config.programme.slope_relax == 0.0 && config.programme.intent == "settlement" && site.population > 0 {
+        // Safety net: when the first layout still leaves its houses less than
+        // half of its land, the whole town is laid out again with the gates
+        // relaxed further, step by step, until they suffice or are open.
+        if !sloped && relaxable {
             let mut share = housable_share(&layout);
-            let mut chosen = 0.0;
-            for relax in profiles::SLOPE_RELAX_STEPS {
+            let mut chosen = ahead;
+            for relax in profiles::SLOPE_RELAX_STEPS.into_iter().filter(|&relax| relax > ahead) {
                 if share >= profiles::SLOPE_RELAX_GOAL {
                     break;
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                if std::env::var("URBAN_PROFILE").is_ok() {
+                    eprintln!("  slope_relax.fallback: {relax} (housable share {share:.2})");
                 }
                 let mut relaxed = config.clone();
                 relaxed.programme.slope_relax = relax;
@@ -1867,6 +1997,8 @@ pub fn generate_quarters(
                 ));
             }
         }
+        neighbours::settle(seed, &mut layout, site, surface);
+        layout.claim = neighbours::claim(&layout);
         Ok(layout)
     });
     let mut out = Vec::with_capacity(laid.len());
@@ -1904,6 +2036,36 @@ fn housable_share(layout: &Layout) -> f64 {
         }
     }
     if total <= 0.0 { 1.0 } else { housable / total }
+}
+/// The cadastre a trim pass reads (`trim::unbuilt`), default parcel options:
+/// the lots, one allocation and the yard consolidation. The parcel edits, the
+/// second allocation and the final lot reconciliation of `generate_parcels`
+/// change neither which blocks hold a building nor the yards they keep.
+pub(super) fn probe_parcels(seed: &str, layout: &Layout) -> Result<Partition, String> {
+    let config = ParcelConfig::default();
+    let formal = shanty::formal_layout(layout);
+    let layout = formal.as_ref();
+    let culture = if config.culture == "site" { &layout.culture } else { &config.culture };
+    let morph = resolve(
+        culture,
+        &config.preset,
+        &config.recipe,
+        if config.zone == "auto" { "core" } else { &config.zone },
+        config.density,
+        &config.params,
+        "parcels",
+    )?;
+    let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
+    let mut laps = network::Lap::new("parcels.probe");
+    let mut partition = parcels::generate(&key_seed, layout, &config, &morph)?;
+    laps.lap("generate");
+    programme::allocate(layout, &mut partition);
+    laps.lap("allocate");
+    programme::camps::release_unbuilt(layout, &mut partition, false);
+    programme::consolidate(&mut partition);
+    roles::face_quays(layout, &mut partition);
+    laps.lap("consolidate");
+    Ok(partition)
 }
 pub fn generate_parcels(
     seed: &str,
@@ -1960,22 +2122,34 @@ pub fn generate_parcels(
             "parcels",
         )?;
         let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
+        // One lap per call, each with its own duration (`URBAN_PROFILE`).
+        let mut laps = network::Lap::new("parcels");
         let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
+        laps.lap("generate");
         programme::allocate(layout, &mut partition);
+        laps.lap("allocate.1");
         programme::camps::release_unbuilt(layout, &mut partition, false);
+        laps.lap("release_unbuilt.1");
         programme::consolidate(&mut partition);
+        laps.lap("consolidate");
         // Edits address the occupied properties, including their merged yards.
         edits::apply_parcel_edits(layout, &mut partition);
+        laps.lap("apply_parcel_edits");
         programme::allocate(layout, &mut partition);
+        laps.lap("allocate.2");
         programme::camps::release_unbuilt(layout, &mut partition, true);
+        laps.lap("release_unbuilt.2");
         programme::finish_lots(layout, &mut partition);
+        laps.lap("finish_lots");
         roles::face_quays(layout, &mut partition);
+        laps.lap("face_quays");
         // A populated place never ends without a dwelling silently.
         if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
             partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
         }
         partition.enclosure = Some(enclosure::resolve(culture, config));
         shanty::allocate(full_layout, &mut partition);
+        laps.lap("enclosure+shanty");
         Ok(partition)
     })
     .into_iter()

@@ -14,7 +14,25 @@ pub(super) struct UrbanProfile {
 }
 
 pub(super) fn profile(culture: &str) -> UrbanProfile {
-    from_plan(&catalogue()["cultures"][culture]["plan"])
+    // The profile of every catalogue culture, read once: a pure function of
+    // the static catalogue, asked for per block and per parcel.
+    static TABLE: std::sync::OnceLock<std::collections::HashMap<&'static str, UrbanProfile>> =
+        std::sync::OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        catalogue()["cultures"]
+            .as_object()
+            .map(|cultures| {
+                cultures
+                    .iter()
+                    .map(|(id, c)| (id.as_str(), from_plan(&c["plan"])))
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    table
+        .get(culture)
+        .copied()
+        .unwrap_or_else(|| from_plan(&catalogue()["cultures"][culture]["plan"]))
 }
 fn from_plan(p: &'static serde_json::Value) -> UrbanProfile {
     UrbanProfile {

@@ -32,7 +32,7 @@ mod tests {
         let (height, water) = (vec![10.0; n * n], vec![0u8; n * n]);
         let surface = Surface { geometry: None, width: 4000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let c = Point { x: 2000.0, y: 2000.0 };
-        let site = Site { key: "wobble".into(), name: String::new(), population: 500, culture: culture.into(), center: c, radius: 150.0 };
+        let site = Site { key: "wobble".into(), name: String::new(), population: 500, culture: culture.into(), center: c, radius: 150.0, neighbours: Vec::new() };
         let cfg = LayoutConfig { camp_ring_wobble: wobble, ..Default::default() };
         let plan = super::super::camp(&site, &cfg, &None, &[], surface, &mut Rng::new("wobble")).unwrap();
         let ring = plan.streets.iter().max_by_key(|s| s.path.len()).unwrap();

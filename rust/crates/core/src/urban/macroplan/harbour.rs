@@ -1303,11 +1303,26 @@ pub struct Quay {
 pub(in super::super) fn open_gates(layout: &mut super::super::Layout) {
     let fronts: Vec<Point> = layout.streets.iter().filter(|s| s.role == "quay")
         .flat_map(|s| s.path.iter().copied()).collect();
+    if fronts.is_empty() { return; }
+    // Quay points in 4 m cells: a point within 1 m lies in the cell or a neighbour.
+    let cell = |p: Point| ((p.x / 4.0).floor() as i64, (p.y / 4.0).floor() as i64);
+    let mut cells: std::collections::HashMap<(i64, i64), Vec<Point>> = Default::default();
+    for &q in &fronts { cells.entry(cell(q)).or_default().push(q); }
+    let on_front = |p: Point| {
+        let (cx, cy) = cell(p);
+        (cx - 1..=cx + 1).any(|x| (cy - 1..=cy + 1).any(|y| cells.get(&(x, y)).is_some_and(|v| v.iter().any(|&q| dist(p, q) < 1.0))))
+    };
+    // Curtain edges by their boxes, per enclosure: a street segment tests only those it may meet, in edge order.
+    let mut edges: Vec<Option<g::BoxGrid>> = layout.enclosures.iter().map(|_| None).collect();
     for st in &layout.streets {
-        if !st.path.iter().any(|p| fronts.iter().any(|&q| dist(*p, q) < 1.0)) { continue; }
-        for e in &mut layout.enclosures {
+        if !st.path.iter().any(|&p| on_front(p)) { continue; }
+        for (ei, e) in layout.enclosures.iter_mut().enumerate() {
+            let grid = edges[ei].get_or_insert_with(|| g::BoxGrid::new(e.path.windows(2)
+                .map(|w| (w[0].x.min(w[1].x), w[0].y.min(w[1].y), w[0].x.max(w[1].x), w[0].y.max(w[1].y))).collect()));
             for w in st.path.windows(2) {
-                for edge in e.path.windows(2) {
+                let seg = (w[0].x.min(w[1].x), w[0].y.min(w[1].y), w[0].x.max(w[1].x), w[0].y.max(w[1].y));
+                for k in grid.query(seg, 1e-3) {
+                    let edge = [e.path[k], e.path[k + 1]];
                     if let Some((_, p)) = g::segment_hit(w[0], w[1], edge[0], edge[1])
                         && !e.gates.iter().any(|&q| dist(p, q) < 4.0) {
                         e.gates.push(p);
@@ -1464,7 +1479,7 @@ mod tests {
 
     #[test]
     fn review_quay_budget_keeps_villages_short_and_ports_larger() {
-        let mut site = Site { key:"landing".into(),name:String::new(),population:500,culture:"hanseatic".into(),center:Point{x:180.0,y:128.0},radius:120.0 };
+        let mut site = Site { key:"landing".into(),name:String::new(),population:500,culture:"hanseatic".into(),center:Point{x:180.0,y:128.0},radius:120.0, neighbours: Vec::new() };
         let cfg = LayoutConfig::default();
         let village = quay_budget(&site,&cfg,Harbour::default());
         assert_eq!(village,20.0);
@@ -1484,7 +1499,7 @@ mod tests {
         let mut counts=vec![];
         let mut building_need=vec![];
         for pop in [500,10_000] {
-            let site=Site {key:"scale".into(),name:String::new(),population:pop,culture:"hanseatic".into(),center:Point{x:180.,y:128.},radius:120.};
+            let site=Site {key:"scale".into(),name:String::new(),population:pop,culture:"hanseatic".into(),center:Point{x:180.,y:128.},radius:120., neighbours: Vec::new()};
             let mut streets=vec![Street {path:vec![Point{x:180.,y:4.},Point{x:180.,y:252.}],widths:vec![5.;2],rank:1,role:"street".into()}];
             quays(std::slice::from_ref(&domain),&mut streets,surface,&cfg,&site,"hanseatic",true);
             let metres:f64=streets.iter().filter(|s|s.role=="quay").map(|s|length(&s.path)).sum();
@@ -1521,7 +1536,8 @@ mod tests {
             let height: Vec<f32> = (0..n*n).map(|i| 2.0 + if river { ((i / n) as f64 * width / n as f64 * 0.002) as f32 } else { 0.0 }).collect();
             let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default(),};
             let site = Site { key: "port-10k".into(), name: String::new(), population: 10_000, culture: culture.into(),
-                center: Point { x: 1500.0, y: 1400.0 }, radius: 480.0 };
+                center: Point { x: 1500.0, y: 1400.0 }, radius: 480.0,
+                neighbours: Vec::new(), };
             let cfg = LayoutConfig { site_archetypes: std::collections::BTreeMap::from([("port-10k".into(), if river { "bridge" } else { "harbor" }.into())]), ..LayoutConfig::default() };
             let roads = [Street { path: vec![Point { x: 100.0, y: 1400.0 }, Point { x: 1690.0, y: 1400.0 }], widths: vec![7.0; 2], rank: 1, role: "regional".into() }];
             let layouts = generate_quarters("port-invariant", &[site], &cfg, surface, &roads).unwrap();
@@ -1624,6 +1640,7 @@ mod tests {
             culture: "european-organic".into(),
             center: Point { x: 180.0, y: 128.0 },
             radius: 200.0,
+            neighbours: Vec::new(),
         };
         let mut streets = vec![road.clone()];
         quays(
@@ -1705,6 +1722,7 @@ mod tests {
             culture: "european-organic".into(),
             center: Point { x: 170.0, y: 128.0 },
             radius: 200.0,
+            neighbours: Vec::new(),
         };
         let mut cfg = LayoutConfig::default();
         cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
@@ -1815,6 +1833,7 @@ mod tests {
                 y: 1000.0,
             },
             radius: 600.0,
+            neighbours: Vec::new(),
         };
         let moved = sited(&site, &cfg, surface).expect("moves to its shore");
         let d = moved.center.x - 400.0;

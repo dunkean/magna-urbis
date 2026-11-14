@@ -432,7 +432,7 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
     // lot sizes); villages and hamlets stay low.
     let rural = matches!(m.zone, "village" | "hamlet" | "rural");
     let urban = if rural { 0.3 * m.pressure.clamp(0.0, 1.0) }
-        else if m.zone == "core" { m.pressure.clamp(0.0, 1.0).max(0.65) } else { m.pressure.clamp(0.0, 1.0) };
+        else { super::zone_blend::floored(m.arch, m.zone, m.pressure.clamp(0.0, 1.0)) };
     // A market town's centre stands lower than a city's: the full storey
     // range is reached from about 20 000 inhabitants (unknown: full range).
     let size = if m.population == 0 { 1.0 }
@@ -480,6 +480,14 @@ fn lot_floors(m: &Input, tr: &Tradition, rng: &mut Rng) -> u32 {
     } else if role.contains("farm") || role.contains("hut") || role.contains("platform") {
         x -= 0.4;
     }
+    // Near another phase (`zoneDensity: gradient`) the range leans toward its
+    // storeys, capped by the same height ladder.
+    let near = super::zone_blend::storeys_of(m.arch).map(|(w, o)| {
+        let o = super::forms::kit::capped_storeys([o[0] as u32, o[1] as u32], super::forms::kit::storey_cap(m.culture, m.population, m.user_core));
+        let [l, h] = super::zone_blend::mix([f64::from(lo), f64::from(hi)], Some((w, o.map(f64::from))));
+        (l.round().max(1.0) as u32, h.round().max(1.0) as u32)
+    });
+    let (lo, hi) = near.map_or((lo, hi), |(l, h)| (l.min(h), h.max(l)));
     let mut floors = lo + ((hi - lo) as f64 * x.clamp(0.0, 1.0)).round() as u32;
     if matches!(m.function, "warehouse" | "workshop") || role.starts_with("storage") {
         floors = floors.min(lo + 1);

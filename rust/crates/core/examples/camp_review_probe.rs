@@ -10,7 +10,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
     for culture in cultures.split(',') {
         let population=std::env::var("POP").ok().and_then(|s|s.parse().ok()).unwrap_or(if culture=="native-plains" {500}else{1500});
         let mut cfg:LayoutConfig=serde_json::from_str(include_str!("../src/urban/fixtures/small-layout-config.json"))?;cfg.camp_growth=std::env::var("GROWTH").unwrap_or(if culture=="nomad-camp" {"clusters"} else {"ring"}.into());cfg.camp_ring_wobble=std::env::var("WOBBLE").ok().map(|v|v.parse()).transpose()?;
-        let site=Site{key:format!("review-{culture}"),name:String::new(),culture:culture.into(),population,center:magna_urbis_core::urban::Point{x:2000.,y:2000.},radius:magna_urbis_core::settlements::extent_radius(population)};
+        let site=Site{key:format!("review-{culture}"),name:String::new(),culture:culture.into(),population,center:magna_urbis_core::urban::Point{x:2000.,y:2000.},radius:magna_urbis_core::settlements::extent_radius(population), neighbours: Vec::new()};
         let height=vec![10.;128*128];let water=vec![0;128*128];let level=vec![0.;128*128];
         let surface=Surface{geometry:None,width:4000.,n:128,height:&height,water:&water, interpolation: Default::default(),};
         let roads:Vec<Street>=vec![];

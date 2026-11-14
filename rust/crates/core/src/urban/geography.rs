@@ -776,7 +776,7 @@ mod tests {
         let height=(0..n*n).map(|k|if k%n>=112 {-20.} else {0.}).collect::<Vec<_>>();
         let surface=Surface{geometry:None,width,n,height:&height,water:&water, interpolation: Default::default(),};
         for culture in ["stilt-town","lizardfolk-swamp","merfolk-tidal"] {
-            let site=super::super::Site{key:"shore".into(),name:String::new(),population:10000,culture:culture.into(),center:Point{x:520.,y:500.},radius:700.};
+            let site=super::super::Site{key:"shore".into(),name:String::new(),population:10000,culture:culture.into(),center:Point{x:520.,y:500.},radius:700., neighbours: Vec::new()};
             let ground=stilt_ground(&site,culture,surface).unwrap();
             let planning=ground.surface(surface);
             assert!(!planning.wet(Point{x:530.,y:500.}));
@@ -789,7 +789,7 @@ mod tests {
         let river=(0..n*n).map(|k|u8::from((100..112).contains(&(k%n)))).collect::<Vec<_>>();
         let bed=river.iter().map(|&w|if w!=0 {-8.} else {0.}).collect::<Vec<_>>();
         let surface=Surface{height:&bed,water:&river,..surface};
-        let site=super::super::Site{key:"river".into(),name:String::new(),population:10000,culture:"lizardfolk-swamp".into(),center:Point{x:490.,y:500.},radius:700.};
+        let site=super::super::Site{key:"river".into(),name:String::new(),population:10000,culture:"lizardfolk-swamp".into(),center:Point{x:490.,y:500.},radius:700., neighbours: Vec::new()};
         let swamp=stilt_ground(&site,&site.culture,surface).unwrap();
         assert!(!swamp.surface(surface).wet(Point{x:530.,y:500.}),"a river inside the cultural distance/depth limits remains buildable across its channel");
         assert_eq!(swamp.surface(surface).height_at(Point{x:530.,y:500.}),0.,"planning follows the deck, not the river bed");
@@ -961,6 +961,7 @@ mod tests {
             culture: "stilt-town".into(),
             center: Point { x: 400.0, y: 500.0 },
             radius: 120.0,
+            neighbours: Vec::new(),
         };
         let ground = stilt_ground(&site, "stilt-town", surface).unwrap();
         assert!(

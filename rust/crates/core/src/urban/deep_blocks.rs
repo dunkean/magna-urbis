@@ -258,6 +258,7 @@ mod tests {
             phases: vec![],
             archetype: "district".into(),
             structure: None,
+            claim: Default::default(),
         };
         let before: f64 = layout.blocks.iter().map(|b| g::area(&b.shape)).sum();
         let lanes = run(&mut layout);

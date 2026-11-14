@@ -1273,6 +1273,7 @@ pub(super) fn block_morph<'a>(
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<serde_json::Map<_, _>>();
+    let params = serde_json::Value::Object(params);
     let (preset, selected) = super::composition::globals(chosen, &cfg.preset, &cfg.recipe);
     let morph = super::composition::phase_morph(
         culture,
@@ -1281,7 +1282,7 @@ pub(super) fn block_morph<'a>(
         preset,
         selected,
         cfg.density,
-        &serde_json::Value::Object(params),
+        &params,
         "parcels",
     )
     .ok()?;
@@ -1293,6 +1294,13 @@ pub(super) fn block_morph<'a>(
         .map_or("culture", |d| d.tissue.as_str());
     let mut morph = super::with_tissue(morph, tissue);
     if cfg.old_enclosure_citadel { morph.value["_innerWalls"] = serde_json::json!(true); }
+    super::zone_blend::blend_block(layout, super::zone_blend::block(layout, block), block, zone, &mut morph, |_, p, z| {
+        let other = super::composition::phase_morph(
+            if p.culture.is_empty() { culture } else { &p.culture },
+            &p.recipe, z, preset, selected, cfg.density, &params, "parcels",
+        ).ok()?;
+        Some(super::with_tissue(capacity_tissue(layout, None, b, &p.recipe, z, other), tissue))
+    });
     Some((&b.zone, morph))
 }
 /// The adaptive-capacity tissue of a block (`footprint::capacity`): densified,
@@ -1338,6 +1346,15 @@ pub(super) fn parcel_morph<'a>(
     culture: &str,
     block: usize,
 ) -> Option<(&'a str, super::Morph)> {
+    tissue_of(layout, partition, culture, block, false)
+}
+fn tissue_of<'a>(
+    layout: &'a super::Layout,
+    partition: &'a super::Partition,
+    culture: &str,
+    block: usize,
+    flip: bool,
+) -> Option<(&'a str, super::Morph)> {
     let Some(cfg) = &partition.config else {
         return block_morph(layout, culture, block);
     };
@@ -1374,7 +1391,37 @@ pub(super) fn parcel_morph<'a>(
         .as_ref()
         .and_then(|s| s.districts.iter().find(|d| d.quarters.contains(&b.quarter)))
         .map_or("culture", |d| d.tissue.as_str());
-    Some((zone, super::with_tissue(morph, tissue)))
+    let mut morph = super::with_tissue(morph, tissue);
+    let other = |p: &super::GrowthPhase, z: &str| {
+        let other = super::composition::phase_morph(
+            if p.culture.is_empty() { culture } else { &p.culture },
+            &p.recipe, z, preset, selected, cfg.density, &cfg.params, "parcels",
+        ).ok()?;
+        Some(super::with_tissue(capacity_tissue(layout, Some(cfg), b, &p.recipe, z, other), tissue))
+    };
+    let blend = super::zone_blend::block(layout, block);
+    // A lot dithered to the neighbouring zone reads the neighbour's tissue,
+    // blended toward this block's from the other side of the boundary.
+    if flip && let Some((nb, phase, z)) = super::zone_blend::neighbour(layout, blend, block, zone) {
+        let mut flipped = other(phase, z)?;
+        super::zone_blend::blend(&mut flipped, z, &morph, zone, nb.weight);
+        return Some((z, flipped));
+    }
+    super::zone_blend::blend_block(layout, blend, block, zone, &mut morph, |_, p, z| other(p, z));
+    Some((zone, morph))
+}
+/// The tissue of one lot: its block's (`parcel_morph`), or the neighbouring
+/// zone's for a lot dithered across a phase boundary (`zone_blend::lot_zone`).
+pub(super) fn lot_morph<'a>(
+    layout: &'a super::Layout,
+    partition: &'a super::Partition,
+    culture: &str,
+    parcel: &super::Parcel,
+) -> Option<(&'a str, super::Morph)> {
+    if super::zone_blend::lot_zone(layout, parcel).is_none() {
+        return parcel_morph(layout, partition, culture, parcel.block);
+    }
+    tissue_of(layout, partition, culture, parcel.block, true)
 }
 pub(super) fn parcel_mapping(
     layout: &super::Layout,
@@ -1430,6 +1477,7 @@ pub(super) fn parcel_mapping(
         .blocks
         .get(p.block)
         .map_or("core", |b| b.zone.as_str());
+    let zone = super::zone_blend::lot_zone(layout, p).unwrap_or(zone);
     contextual_mapping(culture, period, zone, &p.family, function)
 }
 pub(super) fn isolated_mapping(culture: &str, period: &str, role: &str) -> Option<CultureMapping> {
@@ -1734,6 +1782,7 @@ mod tests {
                 culture: culture.clone(),
                 center: Point { x: 800.0, y: 800.0 },
                 radius: 320.0,
+                neighbours: Vec::new(),
             };
             let seed = format!("culture-town-{culture}");
             let result = super::super::generate_quarters(&seed, &[site], &cfg, surface, &roads)

@@ -17,6 +17,7 @@ fn run(culture: &str, population: u32, cfg: &LayoutConfig) -> (Layout, Partition
     let site = Site {
         key: "matrix".into(), name: String::new(), population, culture: culture.into(),
         center: Point { x: 4500.0, y: 4560.0 }, radius: crate::settlements::extent_radius(population),
+        neighbours: Vec::new(),
     };
     let layouts = generate_quarters("matrix", &[site], cfg, surface, &[road]).expect("plan");
     let partitions = generate_parcels("matrix", &layouts, &ParcelConfig::default()).expect("parcels");
@@ -76,7 +77,7 @@ fn an_activity_intent_far_from_any_road_still_builds() {
         let mut cfg = LayoutConfig::default();
         cfg.programme.intent = "activity".into();
         cfg.programme.template = template.into();
-        let site = Site { key: "far".into(), name: String::new(), population: 500, culture: "european-organic".into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0 };
+        let site = Site { key: "far".into(), name: String::new(), population: 500, culture: "european-organic".into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0, neighbours: Vec::new() };
         let layouts = generate_quarters("far", &[site], &cfg, surface, &roads).expect("plan");
         let partitions = generate_parcels("far", &layouts, &ParcelConfig::default()).expect("parcels");
         let roles = built_roles(&partitions[0]);
@@ -98,7 +99,7 @@ fn every_utility_sheet_row_builds_its_yard() {
         let mut cfg = LayoutConfig::default();
         cfg.programme.intent = "activity".into();
         cfg.programme.template = template.into();
-        let site = Site { key: "row".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0 };
+        let site = Site { key: "row".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0, neighbours: Vec::new() };
         let road = Street { path: vec![Point { x: 300.0, y: 4500.0 }, Point { x: 8700.0, y: 4300.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() };
         let layouts = generate_quarters("row", &[site], &cfg, surface, &[road]).expect("plan");
         let partitions = generate_parcels("row", &layouts, &ParcelConfig::default()).expect("parcels");
@@ -160,4 +161,33 @@ fn metropolis_floor_is_multicentre_and_extrapolated_profiles_are_not_capped() {
     // A culture far beyond its documented scale keeps the requested population.
     let (pa, pp) = run("maori-pa", 120_000, &cfg);
     consistent(&pa, &pp, 120_000, &cfg, "metropolis");
+}
+
+/// Review 14/11 (walled towns too empty): housing land inside a town circuit
+/// is housed before any lot outside it. Outside the walls, only the
+/// population margin (one seed house per outer block) may be spent while a
+/// housing plot inside the circuit is left as a garden.
+#[test]
+fn walled_housing_land_is_housed_before_the_outer_lots() {
+    use super::super::geometry as g;
+    let mut cfg = LayoutConfig::default();
+    cfg.fortification_style = "flanked".into();
+    let (l, p) = run("european-organic", 4000, &cfg);
+    let walls: Vec<g::ContainmentIndex> = l.enclosures.iter().filter(|e| e.purpose.is_empty())
+        .map(|e| g::ContainmentIndex::new(&super::super::Shape { outer: e.path.clone(), holes: vec![] })).collect();
+    assert!(!walls.is_empty(), "town wall built");
+    let pr = p.programme.as_ref().expect("programme");
+    let role: std::collections::HashMap<&str, &str> = pr.allocations.iter().map(|a| (a.parcel_id.as_str(), a.role.as_str())).collect();
+    let (mut vacant_inside, mut housed_outside) = (0usize, 0usize);
+    for parcel in &p.parcels {
+        let inside = walls.iter().any(|w| w.contains(g::interior_point(&parcel.shape)));
+        match role.get(parcel.id.as_str()) {
+            Some(r) if r.starts_with("dwelling") && !inside => housed_outside += 1,
+            Some(&"open.garden") if inside && parcel.use_kind == "plot" => vacant_inside += 1,
+            _ => {}
+        }
+    }
+    let households: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+    assert!(vacant_inside == 0 || (housed_outside as f64) <= 0.3 * households + 1.0,
+        "{vacant_inside} housing plot(s) left empty inside the wall while {housed_outside} lot(s) outside are housed ({households} households)");
 }

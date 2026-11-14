@@ -196,11 +196,34 @@ pub fn district_label(role: &str, culture: &str) -> String {
     let fam = cat.family_district_labels.get(family(culture));
     lookup(role, fam, &cat.district_labels).unwrap_or_else(|| "Quartier".into())
 }
+/// One occupancy entry of the service catalogue, read once: the profile when
+/// it deserialises, and the provenance and calibration texts it declares.
+struct OccupancyEntry {
+    declared: Option<Occupancy>,
+    provenance: Option<&'static str>,
+    calibration: Option<&'static str>,
+}
+fn occupancy_table() -> &'static BTreeMap<&'static str, OccupancyEntry> {
+    static TABLE: OnceLock<BTreeMap<&'static str, OccupancyEntry>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        catalogue()
+            .occupancy
+            .iter()
+            .map(|(family, value)| {
+                let entry = OccupancyEntry {
+                    declared: serde_json::from_value(value.clone()).ok(),
+                    provenance: value.get("provenance").and_then(serde_json::Value::as_str),
+                    calibration: value.get("calibration").and_then(serde_json::Value::as_str),
+                };
+                (family.as_str(), entry)
+            })
+            .collect()
+    })
+}
 pub fn occupancy(culture: &str) -> Occupancy {
-    catalogue()
-        .occupancy
+    occupancy_table()
         .get(family(culture))
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .and_then(|entry| entry.declared)
         .unwrap_or(Occupancy {
             household_size: 4.5,
             floor_per_household: 60.0,
@@ -1720,6 +1743,7 @@ mod tests {
                 y: 1250.0,
             },
             radius: 330.0,
+            neighbours: Vec::new(),
         };
         let run = |config: &LayoutConfig, parcels: &ParcelConfig| {
             let layouts = generate_quarters(
@@ -1932,6 +1956,7 @@ mod tests {
                 culture: culture.into(),
                 center: Point { x: c, y: c },
                 radius: 30.0 * (pop as f64).sqrt(),
+                neighbours: Vec::new(),
             };
             let t = std::time::Instant::now();
             let layouts = generate_quarters(
@@ -2013,6 +2038,7 @@ mod tests {
                 y: 1200.0,
             },
             radius: 330.0,
+            neighbours: Vec::new(),
         };
         let t = std::time::Instant::now();
         let layouts = generate_quarters(
@@ -2169,6 +2195,7 @@ parcels {} demands {:?}; quarters {quarters_ms} ms, parcels+alloc {parcels_ms} m
                 y: 1200.0,
             },
             radius: 420.0,
+            neighbours: Vec::new(),
         };
         // An open harbour (no sea wall between the town and its quays).
         let config = LayoutConfig {

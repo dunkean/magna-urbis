@@ -950,7 +950,8 @@ mod tests {
         for seed in ["bridge-invariant", "bridge-invariant-2", "bridge-invariant-3"] {
         for culture in ["bagan", "bastide", "elven", "indus-planned", "necropolis", "orcish", "wizard-city", "venetian-lagoon", "stilt-town"] {
         let site = Site { key: "river-10k".into(), name: String::new(), population: 10000,
-            culture: culture.into(), center: Point { x: 1380.0, y: 1500.0 }, radius: 450.0 };
+            culture: culture.into(), center: Point { x: 1380.0, y: 1500.0 }, radius: 450.0,
+            neighbours: Vec::new(), };
         let ground = geography::stilt_ground(&site, culture, surface);
         let transport = ground.as_ref().map_or(surface, |g| g.surface(surface));
         let layout = generate_quarters(seed, &[site], &cfg, surface, &roads).unwrap().remove(0);
@@ -984,7 +985,7 @@ mod tests {
         let height: Vec<f32> = (0..n*n).map(|i| 2.0 + ((i / n) as f64 * width / n as f64 * 0.002) as f32).collect();
         let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default(),};
         for culture in ["indian-temple", "swahili-stone-town"] {
-        let site = Site { key: "port-10k".into(), name: String::new(), population: 10000, culture: culture.into(), center: Point { x: 1500.0, y: 1400.0 }, radius: 480.0 };
+        let site = Site { key: "port-10k".into(), name: String::new(), population: 10000, culture: culture.into(), center: Point { x: 1500.0, y: 1400.0 }, radius: 480.0, neighbours: Vec::new() };
         let cfg = LayoutConfig { site_archetypes: BTreeMap::from([("port-10k".into(), "bridge".into())]), ..Default::default() };
         let mut road = street(&[(100.0, 1400.0), (1690.0, 1400.0)], "regional"); road.widths = vec![7.0; 2];
         let roads = [road];

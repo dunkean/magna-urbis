@@ -1010,8 +1010,13 @@ fn fixed_wet_points_are_not_silently_relocated_and_invalid_configs_fail() {
     map.strip(2);
     let cfg = list(vec![fixed("wet", 300, 8000.0, 8000.0)]);
     let out = generate("wet", map.raster(), &cfg).unwrap();
-    assert!(out.settlements.is_empty());
+    // The wet point is refused with a warning; a list still places every
+    // requested settlement, so the place is forced onto a dry site and says so.
     assert!(out.warnings.iter().any(|w| w.contains("manual position")));
+    assert!(out.warnings.iter().any(|w| w.contains("implantation forcée")));
+    assert_eq!(out.settlements.len(), 1);
+    let placed = out.settlements[0].center;
+    assert!((placed.x - 8000.0).hypot(placed.y - 8000.0) > 1.0);
     let cfg = list(vec![
         fixed("dup", 300, 3000.0, 8000.0),
         fixed("dup", 300, 13000.0, 8000.0),

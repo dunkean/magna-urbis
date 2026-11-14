@@ -1,8 +1,11 @@
 //! Exact native V2 HTTP-body replay without HTTP, a listening port or terrain generation.
 //! MANIFEST OUTPUT [REPEATS=1] [START_DELAY_SECONDS=0]. Prepare manifests with cities-native/prepare.py.
+//! Replies are written as `<index>.json`; a parcels pack reply as `<index>.bin`, plus
+//! `<index>.partitions.json` (`{"partitions": [...]}`, the unpacked pack) when `PACK_JSON=1`.
 #[allow(dead_code)]
 #[path = "../src/main.rs"]
 mod engine;
+use magna_urbis_core::urban::parcel_pack;
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Mutex, time::{Duration, Instant}};
 #[derive(Deserialize)]
@@ -14,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out=PathBuf::from(a.get(2).ok_or("Missing OUTPUT")?); std::fs::create_dir_all(&out)?;
     let repeat:usize=a.get(3).map(|s|s.parse()).transpose()?.unwrap_or(1);
     let delay:u64=a.get(4).map(|s|s.parse()).transpose()?.unwrap_or(0);
+    let pack_json=std::env::var("PACK_JSON").is_ok_and(|v|v=="1");
     let calls:Vec<Call>=serde_json::from_slice(&std::fs::read(&manifest)?)?;
     let inputs:Vec<_>=calls.iter().map(|c|std::fs::read(root.join(&c.request))).collect::<Result<_,_>>()?;
     println!("pid {} ready; {} requests, {} repeats",std::process::id(),calls.len(),repeat);
@@ -35,11 +39,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let started=Instant::now();
             let reply=engine::dispatch(&call.path,input,&sessions).map_err(|e|format!("{} {}: {}",call.city,call.stage,e))?;
             let ms=started.elapsed().as_secs_f64()*1000.;
-            if call.path=="/urban" && reply.body.first()==Some(&b'{') && let Ok(value)=serde_json::from_slice::<serde_json::Value>(&reply.body)
+            // Parcels, programme and built capacity reply with a `magna-city-parcels` pack whose
+            // JSON header carries the envelope (`id`, `ms`, `urbanSource`).
+            let pack_header=(call.path=="/urban" && reply.kind=="application/octet-stream")
+                .then(|| parcel_pack::header(&reply.body).ok()).flatten()
+                .filter(|header| header["format"]==parcel_pack::FORMAT);
+            let json_envelope=(pack_header.is_none() && call.path=="/urban" && reply.body.first()==Some(&b'{'))
+                .then(|| serde_json::from_slice::<serde_json::Value>(&reply.body).ok()).flatten();
+            if let Some(value)=pack_header.as_ref().or(json_envelope.as_ref())
                 && let Some(session)=value["urbanSource"]["session"].as_str() {
                 handles.insert(session.to_owned(),value["urbanSource"].clone());
             }
-            if iteration==0 {std::fs::write(out.join(format!("{i:04}.json")),&reply.body)?;}
+            if iteration==0 {
+                if pack_header.is_some() {
+                    std::fs::write(out.join(format!("{i:04}.bin")),&reply.body)?;
+                    // The comparison tools read partitions as JSON: write the unpacked pack beside it.
+                    if pack_json {
+                        let partitions=parcel_pack::unpack(&reply.body)?;
+                        let mut text=b"{\"partitions\":".to_vec();
+                        serde_json::to_writer(&mut text,&partitions)?;
+                        text.push(b'}');
+                        std::fs::write(out.join(format!("{i:04}.partitions.json")),&text)?;
+                    }
+                } else {
+                    std::fs::write(out.join(format!("{i:04}.json")),&reply.body)?;
+                }
+            }
             metrics.push(serde_json::json!({"iteration":iteration,"i":i,"city":call.city,"stage":call.stage,"ms":ms}));
         }
     }

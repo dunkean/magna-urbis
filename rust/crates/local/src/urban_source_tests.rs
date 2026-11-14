@@ -92,19 +92,10 @@ fn raster_bytes(session: &str) -> Vec<u8> {
     body
 }
 
-#[test]
-fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replacement() {
-    let sessions = Mutex::new(Sessions::default());
-    dispatch("/raster", &raster_bytes("urban-owner"), &sessions).unwrap();
-    let status: Value = decode(&dispatch("/status", b"", &sessions).unwrap().body).unwrap();
-    assert!(
-        status["capabilities"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("urban.retained-source"))
-    );
-    // Two translated versions of the native cadastral test's street-fronting
-    // 100x40 m block, with fractional coordinates exercising the wire boundary.
+/// Two translated versions of the native cadastral test's street-fronting
+/// 100x40 m block, with fractional coordinates exercising the wire boundary,
+/// prepared for the programme and serialised as the page sends them.
+fn fixture_layouts() -> Value {
     let raw_layouts = ["a", "b"]
         .iter()
         .enumerate()
@@ -139,7 +130,30 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
         )
         .unwrap();
     }
-    let raw_layouts = serde_json::to_value(prepared).unwrap();
+    serde_json::to_value(prepared).unwrap()
+}
+
+/// A parcels-family reply: octet-stream pack, its header and its unpacked partitions.
+fn pack_reply(reply: Reply) -> (Value, Vec<urban::Partition>, Vec<u8>) {
+    assert_eq!(reply.kind, "application/octet-stream");
+    let header = urban::parcel_pack::header(&reply.body).unwrap();
+    assert_eq!(header["format"], urban::parcel_pack::FORMAT);
+    let partitions = urban::parcel_pack::unpack(&reply.body).unwrap();
+    (header, partitions, reply.body)
+}
+
+#[test]
+fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replacement() {
+    let sessions = Mutex::new(Sessions::default());
+    dispatch("/raster", &raster_bytes("urban-owner"), &sessions).unwrap();
+    let status: Value = decode(&dispatch("/status", b"", &sessions).unwrap().body).unwrap();
+    assert!(
+        status["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("urban.retained-source"))
+    );
+    let raw_layouts = fixture_layouts();
     // Match quarters' existing decimal-normalized layoutsId cache.
     let layouts: Arc<Vec<urban::Layout>> =
         Arc::new(decode(&serde_json::to_vec(&raw_layouts).unwrap()).unwrap());
@@ -152,11 +166,18 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
     let call = |input: Value| -> ApiResult<Value> {
         decode(&dispatch("/urban", &serde_json::to_vec(&input).unwrap(), &sessions)?.body)
     };
-    let reply = call(
+    // Parcels replies are packs: the envelope is the pack header.
+    let call_pack = |input: Value| -> ApiResult<(Value, Vec<urban::Partition>)> {
+        let (header, partitions, _) =
+            pack_reply(dispatch("/urban", &serde_json::to_vec(&input).unwrap(), &sessions)?);
+        Ok((header, partitions))
+    };
+    let (reply, reply_partitions) = call_pack(
         json!({"session":"urban-owner","id":8,"kind":"parcels","seed":"retained-test",
         "layoutsId":7,"parcelConfig":{}}),
     )
     .unwrap();
+    let reply_partitions = serde_json::to_value(&reply_partitions).unwrap();
     let source: UrbanSourceHandle = value(&reply["urbanSource"]).unwrap();
     {
         let state = owner.lock().unwrap();
@@ -173,7 +194,7 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
         );
         same_json(
             &serde_json::to_value(snapshot.partitions.as_ref()).unwrap(),
-            &reply["partitions"],
+            &reply_partitions,
             "retained partitions",
         );
     }
@@ -229,7 +250,7 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
     );
     let explicit = call(
         json!({"session":"urban-owner","id":9,"kind":"buildingSites","seed":"retained-test",
-        "layouts":raw_layouts,"partitions":reply["partitions"]}),
+        "layouts":raw_layouts,"partitions":reply_partitions}),
     )
     .unwrap();
     same_json(
@@ -419,7 +440,7 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
     assert!(call(read.clone()).is_ok()); // rejected reads did not mutate the source
 
     for kind in ["parcels", "programme", "builtCapacity", "quarters"] {
-        let fresh = call(
+        let (fresh, _) = call_pack(
             json!({"session":"urban-owner","id":8,"kind":"parcels","seed":"retained-test",
             "layouts":raw_layouts,"parcelConfig":{}}),
         )
@@ -448,7 +469,7 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
         old["kind"] = json!("displayBuffers");
         assert!(call(old).err().unwrap().contains("[urban_source_stale]"));
     }
-    let fresh = call(
+    let (fresh, _) = call_pack(
         json!({"session":"urban-owner","id":8,"kind":"parcels","seed":"retained-test",
         "layouts":raw_layouts,"parcelConfig":{}}),
     )
@@ -459,4 +480,76 @@ fn retained_source_routes_share_geometry_validate_keys_and_expire_before_replace
     invalid_raster.pop();
     assert!(dispatch("/raster", &invalid_raster, &sessions).is_err());
     assert!(call(old).is_err());
+}
+
+#[test]
+fn parcels_reply_packs_the_retained_partitions_and_source_reads_serve_packs_and_records() {
+    let sessions = Mutex::new(Sessions::default());
+    dispatch("/raster", &raster_bytes("pack-owner"), &sessions).unwrap();
+    let post = |input: Value| dispatch("/urban", &serde_json::to_vec(&input).unwrap(), &sessions);
+    let parcels = json!({"session":"pack-owner","id":3,"kind":"parcels","seed":"retained-test",
+        "layouts":fixture_layouts(),"parcelConfig":{}});
+    let (header, unpacked, _) = pack_reply(post(parcels.clone()).unwrap());
+    assert_eq!(header["id"], 3);
+    assert!(header["ms"].is_number());
+    let source: UrbanSourceHandle = value(&header["urbanSource"]).unwrap();
+
+    // The pack unpacks to exactly the partitions the session retained.
+    let owner = sessions.lock().unwrap().existing("pack-owner").unwrap();
+    let (retained_text, key, last, parcel) = {
+        let state = owner.lock().unwrap();
+        let snapshot = state.urban.validate_source("pack-owner", &source).unwrap();
+        let partition = &snapshot.partitions[0];
+        assert!(!partition.parcels.is_empty());
+        let last = partition.parcels.len() - 1;
+        (
+            serde_json::to_string(snapshot.partitions.as_slice()).unwrap(),
+            partition.key.clone(),
+            last,
+            // Through the same text and parser as the reply, so values compare exactly.
+            decode::<Value>(&serde_json::to_vec(&partition.parcels[last]).unwrap()).unwrap(),
+        )
+    };
+    assert_eq!(serde_json::to_string(&unpacked).unwrap(), retained_text);
+
+    // `parcelRecord` returns the retained parcel at that index.
+    let record: Value = decode(
+        &post(json!({"kind":"parcelRecord","source":source,"key":key,"index":last}))
+            .unwrap()
+            .body,
+    )
+    .unwrap();
+    assert_eq!(record["parcel"], parcel);
+    assert!(
+        post(json!({"kind":"parcelRecord","source":source,"key":key,"index":last + 1})).is_err()
+    );
+
+    // `parcelPack`: the whole snapshot, one city, or only some groups.
+    let (_, whole, _) = pack_reply(post(json!({"kind":"parcelPack","source":source})).unwrap());
+    assert_eq!(serde_json::to_string(&whole).unwrap(), retained_text);
+    let (_, one, _) =
+        pack_reply(post(json!({"kind":"parcelPack","source":source,"keys":[key]})).unwrap());
+    assert_eq!(one.len(), 1);
+    assert_eq!(one[0].key, key);
+    let core = post(json!({"kind":"parcelPack","source":source,"groups":["core"]})).unwrap();
+    assert_eq!(core.kind, "application/octet-stream");
+    let core_header = urban::parcel_pack::header(&core.body).unwrap();
+    let sections = core_header["sections"].as_object().unwrap();
+    assert!(sections.keys().any(|name| name.starts_with("parcels.")));
+    assert!(!sections.keys().any(|name| name.starts_with("contacts")));
+
+    // Source reads stay reads: a replaced snapshot answers like every other source read.
+    assert!(
+        post(json!({"kind":"parcelPack"}))
+            .err()
+            .unwrap()
+            .contains("[urban_source_invalid]")
+    );
+    pack_reply(post(parcels).unwrap());
+    assert!(
+        post(json!({"kind":"parcelPack","source":source}))
+            .err()
+            .unwrap()
+            .contains("[urban_source_stale]")
+    );
 }

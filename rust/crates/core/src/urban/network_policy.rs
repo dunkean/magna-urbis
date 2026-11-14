@@ -9,21 +9,33 @@ const CELL: f64 = 32.0;
 #[derive(Default)]
 struct Near {
     lines: Vec<(Point, Point)>,
-    cells: BTreeMap<Key, Vec<usize>>,
+    cells: std::collections::HashMap<Key, Vec<usize>>,
 }
 impl Near {
     fn add(&mut self, a: Point, b: Point) {
         let id = self.lines.len();
         self.lines.push((a, b));
         let n = (distance(a, b) / (CELL * 0.5)).ceil().max(1.0) as usize;
-        let mut visited = BTreeSet::new();
+        let mut visited: Vec<Key> = vec![];
         for i in 0..=n {
             let p = lerp(a, b, i as f64 / n as f64);
             let k = ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
-            if visited.insert(k) {
+            if !visited.contains(&k) {
+                visited.push(k);
                 self.cells.entry(k).or_default().push(id);
             }
         }
+    }
+    /// Whether some line lies within `reach` of `p`: `distance(p, reach) <= reach`, stopping at the first.
+    fn within(&self, p: Point, reach: f64) -> bool {
+        let (x, y) = ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
+        let n = (reach / CELL).ceil() as i64 + 1;
+        (-n..=n).any(|dx| (-n..=n).any(|dy| {
+            self.cells.get(&(x + dx, y + dy)).into_iter().flatten().any(|&i| {
+                let (a, b) = self.lines[i];
+                g::distance(p, a, b).0 <= reach
+            })
+        }))
     }
     fn distance(&self, p: Point, reach: f64) -> f64 {
         let (x, y) = ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
@@ -46,7 +58,7 @@ fn remove_edges(streets: &mut Vec<Street>, gone: &BTreeSet<(usize, usize)>) {
         return;
     }
     let before = Graph::new(streets);
-    let land: BTreeSet<_> = streets
+    let land: std::collections::HashSet<_> = streets
         .iter()
         .filter(|s| !matches!(s.role.as_str(), "bridge" | "ford" | "causeway"))
         .flat_map(|s| s.path.iter().copied().map(key))
@@ -134,6 +146,7 @@ pub(super) fn river_spurs(layout: &mut Layout, surface: Surface<'_>) {
     {
         return;
     }
+    let mut laps = Lap::new("river_spurs");
     let mut purposes = Near::default();
     let mut frontage = Near::default();
     for s in &layout.streets {
@@ -157,6 +170,7 @@ pub(super) fn river_spurs(layout: &mut Layout, surface: Surface<'_>) {
             frontage.add(a, b);
         }
     }
+    laps.lap("near");
     // Sample the existing trajectories so that an occupied head can keep its
     // frontage while only the empty tail disappears. Widths follow the samples.
     for s in &mut layout.streets {
@@ -177,6 +191,7 @@ pub(super) fn river_spurs(layout: &mut Layout, surface: Surface<'_>) {
         s.path = path;
         s.widths = widths;
     }
+    laps.lap("sample");
     struct Edge {
         street: usize,
         offset: usize,
@@ -184,26 +199,34 @@ pub(super) fn river_spurs(layout: &mut Layout, surface: Surface<'_>) {
         b: Key,
         removable: bool,
     }
-    let mut edges = vec![];
-    let mut incident: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
-    let mut points = BTreeMap::new();
-    for (i, s) in layout.streets.iter().enumerate() {
+    // Whether each piece of a street may go: its three samples keep off the
+    // occupied frontage. Independent per street, so measured in parallel.
+    let removable = crate::urban::par::map(&layout.streets, |_, s| {
         let can = !CROSSINGS.contains(&s.role.as_str())
             && !private(s)
             && !matches!(
                 s.role.as_str(),
                 "regional" | "outbound" | "track" | "trail" | "mill"
             );
+        s.path.windows(2).enumerate().map(|(j, w)| {
+            if !can || key(w[0]) == key(w[1]) {
+                return false;
+            }
+            let reach = width(s, j).max(width(s, j + 1)) * 0.5 + 8.0;
+            [w[0], lerp(w[0], w[1], 0.5), w[1]].iter().all(|&p| !frontage.within(p, reach))
+        }).collect::<Vec<bool>>()
+    });
+    laps.lap("removable");
+    let mut edges = vec![];
+    let mut incident: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
+    let mut points = BTreeMap::new();
+    for (i, s) in layout.streets.iter().enumerate() {
         for (j, w) in s.path.windows(2).enumerate() {
             let (a, b) = (key(w[0]), key(w[1]));
             if a == b {
                 continue;
             }
-            let reach = width(s, j).max(width(s, j + 1)) * 0.5 + 8.0;
-            let removable = can
-                && [w[0], lerp(w[0], w[1], 0.5), w[1]]
-                    .iter()
-                    .all(|&p| frontage.distance(p, reach) > reach);
+            let removable = removable[i][j];
             let id = edges.len();
             edges.push(Edge {
                 street: i,
@@ -218,12 +241,12 @@ pub(super) fn river_spurs(layout: &mut Layout, surface: Surface<'_>) {
             points.insert(b, w[1]);
         }
     }
+    laps.lap("edges");
     let mut degree: BTreeMap<_, _> = incident.iter().map(|(&p, e)| (p, e.len())).collect();
-    let mut queue: Vec<_> = points
-        .iter()
-        .filter(|(_, p)| near_water(surface, **p) && purposes.distance(**p, 12.0) > 12.0)
-        .map(|(&p, _)| (p, true))
-        .collect();
+    let points: Vec<(Key, Point)> = points.into_iter().collect();
+    let starts = crate::urban::par::map(&points, |_, (_, p)| near_water(surface, *p) && !purposes.within(*p, 12.0));
+    let mut queue: Vec<_> = points.iter().zip(starts).filter(|(_, start)| *start).map(|((p, _), _)| (*p, true)).collect();
+    laps.lap("queue");
     let mut alive = vec![true; edges.len()];
     let mut gone = BTreeSet::new();
     while let Some((p, bank)) = queue.pop() {
@@ -242,7 +265,9 @@ pub(super) fn river_spurs(layout: &mut Layout, surface: Surface<'_>) {
             queue.push((if e.a == p { e.b } else { e.a }, false));
         }
     }
+    laps.lap("peel");
     remove_edges(&mut layout.streets, &gone);
+    laps.lap("remove");
 }
 
 fn near_water(surface: Surface<'_>, p: Point) -> bool {
@@ -262,22 +287,34 @@ fn near_water(surface: Surface<'_>, p: Point) -> bool {
 /// narrower than a usable frontage. Crossings and access ways are immutable.
 pub(super) fn small_loops(streets: &mut Vec<Street>, grid: bool) {
     let max_edge = if grid { 100.0 } else { 60.0 };
-    let mut links: BTreeMap<Key, BTreeSet<Key>> = BTreeMap::new();
-    let mut edges = BTreeMap::new();
-    let mut points = BTreeMap::new();
+    let mut pairs: Vec<(Key, Key)> = vec![];
+    let mut edges: std::collections::HashMap<(Key, Key), (usize, usize)> = Default::default();
+    let mut points: std::collections::HashMap<Key, Point> = Default::default();
     for (i, s) in streets.iter().enumerate() {
         for (j, w) in s.path.windows(2).enumerate() {
             let (a, b) = (key(w[0]), key(w[1]));
             if a == b || distance(w[0], w[1]) > max_edge {
                 continue;
             }
-            links.entry(a).or_default().insert(b);
-            links.entry(b).or_default().insert(a);
+            pairs.push((a, b));
+            pairs.push((b, a));
             edges.insert(if a < b { (a, b) } else { (b, a) }, (i, j));
             points.insert(a, w[0]);
             points.insert(b, w[1]);
         }
     }
+    // Neighbours of each point, built from the sorted links at once.
+    pairs.sort_unstable();
+    pairs.dedup();
+    let mut n = 0;
+    let mut grouped = vec![];
+    while n < pairs.len() {
+        let a = pairs[n].0;
+        let m = n + pairs[n..].iter().take_while(|p| p.0 == a).count();
+        grouped.push((a, pairs[n..m].iter().map(|p| p.1).collect::<BTreeSet<Key>>()));
+        n = m;
+    }
+    let links: BTreeMap<Key, BTreeSet<Key>> = grouped.into_iter().collect();
     let edge = |a: Key, b: Key| if a < b { (a, b) } else { (b, a) };
     let mut gone = BTreeSet::new();
     for (&a, neighbors) in &links {

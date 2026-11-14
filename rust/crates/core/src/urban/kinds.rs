@@ -1099,6 +1099,7 @@ pub(super) fn lay_out(
         }],
         archetype: kind.id().into(),
         structure: Some(structure),
+        claim: Default::default(),
     })
 }
 
@@ -1423,6 +1424,11 @@ fn linear(
     let pop = f64::from(site.population);
     let depth = morph.range("plotDepth", "village");
     let village = kind == Kind::StreetVillage;
+    // `villageStreets`: the street village is read from its site
+    // (`kinds_street_village.rs`), on its own random stream.
+    let varied = village && cfg.village_streets;
+    let organic = (0.3 + morph.number_or("curvature", 0.5)).clamp(0.3, 1.3);
+    let mut module = 30.0;
     let (depth, length) = if village {
         // One farm per household along both sides of the street: the ribbon
         // is as long as their frontages, plus the cross-lanes and the green.
@@ -1435,10 +1441,14 @@ fn linear(
         } else {
             30.0
         };
+        module = front;
         let d = depth[1].clamp(40.0, 90.0);
+        // A site-read village leaves gaps and thins at its ends: a longer window.
+        let gaps = if varied { 1.35 } else { 1.0 };
+        let extra = if varied { 140.0 } else { 60.0 };
         (
             d,
-            (households / 2.0 * front * 1.15 + 60.0).clamp(120.0, 2400.0),
+            (households / 2.0 * front * 1.15 * gaps + extra).clamp(120.0, if varied { 3200.0 } else { 2400.0 }),
         )
     } else {
         let farms = (pop / 5.0).ceil().clamp(2.0, 30.0);
@@ -1508,9 +1518,18 @@ fn linear(
         }
     }
     let mut blocks: Vec<(Shape, &'static str)> = vec![];
+    let lane = if cfg.road_width_by_size { super::network::town_table(morph, site.population, true)[3] } else { 3.5 };
+    if varied {
+        let households = (pop / 4.5).ceil();
+        let (blocks, lanes, center) = street_village::plan(
+            site, cfg, culture(site, cfg), &axis, half, depth, households * module * 1.15, module, lane,
+            organic, &blocked, surface, rng,
+        )?;
+        streets.extend(lanes);
+        return Some(Plan { blocks, streets, center, axis: along });
+    }
     if village {
         // Cross-lanes every 110-200 m lead from the street to the fields.
-        let lane = if cfg.road_width_by_size { super::network::town_table(morph, site.population, true)[3] } else { 3.5 };
         let mut cuts = vec![];
         let mut variation = rng.fork("v7-linear-variation");
         let mut lanes = rng.fork("street-village-field-lanes");
@@ -1958,6 +1977,7 @@ mod tests {
                 y: 4060.0,
             },
             radius: crate::settlements::extent_radius(population),
+            neighbours: Vec::new(),
         };
         let layouts = generate_quarters("kinds", &[site], cfg, surface, &[road]).unwrap();
         let partitions = generate_parcels("kinds", &layouts, &ParcelConfig::default()).unwrap();
@@ -2007,6 +2027,7 @@ mod tests {
             culture: "european-organic".into(),
             center: p(1004.0, 1004.0),
             radius: 30.0,
+            neighbours: Vec::new(),
         };
         for (role, planned) in [
             ("isolated-shrine", 16.0 * 20.0),
@@ -2042,7 +2063,7 @@ mod tests {
         let cell = 2000.0 / n as f64;
         let water: Vec<u8> = (0..n * n).map(|k| 3 * u8::from((1300.0..1340.0).contains(&(((k % n) as f64 + 0.5) * cell)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
-        let site = Site { key: "activity".into(), name: String::new(), population: 12, culture: "european-organic".into(), center: Point { x: 1004.0, y: 1004.0 }, radius: 30.0 };
+        let site = Site { key: "activity".into(), name: String::new(), population: 12, culture: "european-organic".into(), center: Point { x: 1004.0, y: 1004.0 }, radius: 30.0, neighbours: Vec::new() };
         for template in ["river_watermill", "stone_quarry", "forest_logging"] {
             let mut cfg = LayoutConfig::default();
             cfg.programme.intent = "activity".into();
@@ -2159,6 +2180,7 @@ mod field_lane_tests {
         let site = Site {
             key: "field-lanes".into(), name: String::new(), population: 500,
             culture: "hanseatic".into(), center: p(1000.0, 1000.0), radius: 100.0,
+            neighbours: Vec::new(),
         };
         let near = nearest(site.center, &roads, 600.0);
         let morph = Morph { value: serde_json::json!({
@@ -2232,7 +2254,8 @@ mod demographic_morphology_tests {
     use super::*;
     fn site(population: u32) -> Site {
         Site { key: "demographic-morphology".into(), name: String::new(), population,
-            culture: "european-organic".into(), center: Point { x: 4000.0, y: 4000.0 }, radius: 200.0 }
+            culture: "european-organic".into(), center: Point { x: 4000.0, y: 4000.0 }, radius: 200.0,
+            neighbours: Vec::new(), }
     }
     #[test]
     fn demographic_morphology_boundaries_are_distinct_without_changing_population() {
@@ -2276,6 +2299,9 @@ mod demographic_morphology_tests {
         cfg.settlement_form = "ribbon".into(); assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::Metropolis);
     }
 }
+
+#[path = "kinds_street_village.rs"]
+mod street_village;
 
 #[cfg(test)]
 #[path = "scenario_matrix_tests.rs"]

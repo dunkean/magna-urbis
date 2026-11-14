@@ -46,6 +46,7 @@ mod site_selection {
         let site = Site {
             key: placed.spec.key.clone(), name: String::new(), population: placed.spec.population,
             culture: placed.spec.culture.clone(), center: placed.center, radius: placed.radius,
+            neighbours: Vec::new(),
         };
         let surface = Surface { geometry: None, width, n, height: &height, water: &water,
             interpolation: Default::default() };
@@ -110,6 +111,7 @@ fn an_inherited_bent_crossroads_is_the_village_spine_without_a_parallel_cultural
         culture: "swahili-stone-town".into(),
         center,
         radius: 211.0,
+        neighbours: Vec::new(),
     };
     let mut cfg = LayoutConfig {
         fortification: "none".into(),
@@ -168,6 +170,7 @@ fn accessible_growth_approaches_a_dry_coast_without_spending_land_on_water() {
         culture: "swahili-stone-town".into(),
         center: Point { x: 700.0, y: 700.0 },
         radius: 200.0,
+        neighbours: Vec::new(),
     };
     let mut cfg = LayoutConfig {
         fortification: "none".into(),
@@ -271,6 +274,7 @@ fn primary_regional_entry_rotates_the_foundation_over_culture_and_nearby_tracks(
         culture: "chinese".into(),
         center,
         radius: 200.0,
+        neighbours: Vec::new(),
     };
     let mut cfg = LayoutConfig {
         fortification: "none".into(),
@@ -331,6 +335,7 @@ fn mixed_influences_share_land_exactly_and_reach_parcels() {
         culture: "european-organic".into(),
         center: Point { x: 800.0, y: 800.0 },
         radius: 200.0,
+        neighbours: Vec::new(),
     };
     for mode in ["phases", "sectors"] {
         let cfg = LayoutConfig {
@@ -444,6 +449,7 @@ fn deep_layout() -> Layout {
             }],
             ..UrbanStructure::default()
         }),
+        claim: Default::default(),
     }
 }
 
@@ -644,6 +650,7 @@ fn spatial_phase_recipes_do_not_create_artificial_sector_boundaries() {
         culture: "european-organic".into(),
         center: Point { x: 800.0, y: 800.0 },
         radius: 350.0,
+        neighbours: Vec::new(),
     };
     let config = LayoutConfig {
         tissue: "grid".into(),
@@ -716,6 +723,7 @@ fn natural_auto_respects_geography_and_explicit_foundations_remain_available() {
             y: 2000.0,
         },
         radius: 310.0,
+        neighbours: Vec::new(),
     };
     let mut cfg = LayoutConfig {
         fortification: "none".into(),
@@ -856,6 +864,7 @@ fn open_peripheral_frontage_has_parcels_on_both_sides_without_extra_outer_roads(
         culture: "european-organic".into(),
         center: Point { x: 800.0, y: 800.0 },
         radius: 310.0,
+        neighbours: Vec::new(),
     };
     let cfg = LayoutConfig {
         fortification: "none".into(),
@@ -937,6 +946,7 @@ fn unbuildable_terrain_leaves_an_explicit_budget_deficit_and_no_phantom_center()
             y: 1500.0,
         },
         radius: 310.0,
+        neighbours: Vec::new(),
     };
     let cfg = LayoutConfig {
         footprint: FootprintConfig {
@@ -965,6 +975,7 @@ fn zone_overrides_change_one_zone_and_old_configs_still_load() {
         culture: "european-organic".into(),
         center: Point { x: 800.0, y: 800.0 },
         radius: 200.0,
+        neighbours: Vec::new(),
     };
     let old: LayoutConfig = serde_json::from_str("{}").unwrap();
     assert!(old.phase_overrides.is_empty());
@@ -995,6 +1006,7 @@ fn chosen_zones_ignore_global_recipe_and_preset() {
         culture: "european-organic".into(),
         center: Point { x: 800.0, y: 800.0 },
         radius: 200.0,
+        neighbours: Vec::new(),
     };
     let zones = ["core", "middle", "edge", "faubourg", "village"]
         .map(|z| format!(r#""{z}":{{"culture":"roman-core"}}"#))

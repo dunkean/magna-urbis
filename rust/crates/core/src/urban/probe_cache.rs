@@ -10,6 +10,7 @@
 //!
 //! The memo is live only inside a `Scope` (opened by `generate_quarters`) and
 //! is emptied when the last open scope closes, so nothing outlives a request.
+//! `URBAN_VERIFY_MEMO=1` recomputes every block-cut hit and reports a mismatch.
 //! `URBAN_NO_PROBE_CACHE=1` disables it (debug, and the equivalence test).
 use super::{Point, Shape};
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ impl Drop for Scope {
             super::parcels::clear_probe_cache();
             super::roles::clear_probe_cache();
             super::building_sites::clear_probe_cache();
+            super::programme::clear_probe_cache();
         }
     }
 }
@@ -162,6 +164,7 @@ mod tests {
         let site = Site {
             key: "memo".into(), name: String::new(), population, culture: culture.into(),
             center: Point { x: 2800.0, y: 3000.0 }, radius: 150.0,
+            neighbours: Vec::new(),
         };
         let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         let roads = vec![Street {

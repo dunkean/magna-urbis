@@ -24,6 +24,7 @@ fn village_with(culture: &str, population: u32, fortification: Option<&str>) -> 
         culture: culture.into(),
         center: Point { x: 2000.0, y: 2000.0 },
         radius: 150.0,
+        neighbours: Vec::new(),
     };
     let mut layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     if let Some(kind) = fortification.filter(|k| *k != "none") { layout_config.fortification = kind.into(); }
@@ -116,6 +117,7 @@ fn village_shape(culture: &str, population: u32, slope: f64) -> (f64, f64, f64) 
         culture: culture.into(),
         center: Point { x: 3000.0, y: 3000.0 },
         radius: 150.0,
+        neighbours: Vec::new(),
     };
     let road = Street {
         path: (0..=12).map(|i| Point { x: 500.0 * i as f64, y: 3000.0 + 40.0 * ((i as f64) * 0.9).sin() }).collect(),
@@ -171,7 +173,7 @@ fn empty_blocks(culture: &str) -> (usize, usize, f64) {
     let w = vec![0_u8; n * n];
     let level = vec![0.0_f32; n * n];
     let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
-    let site = Site { key: "probe".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 2000.0, y: 2000.0 }, radius: 150.0 };
+    let site = Site { key: "probe".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 2000.0, y: 2000.0 }, radius: 150.0, neighbours: Vec::new() };
     let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
     let layouts = generate_quarters("small-settlement", &[site], &layout_config, s, &[]).unwrap();
@@ -254,7 +256,7 @@ fn village_layout(culture: &str, population: u32) -> Layout {
     let h = vec![10.0_f32; n * n];
     let w = vec![0_u8; n * n];
     let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
-    let site = Site { key: "probe".into(), name: String::new(), population, culture: culture.into(), center: Point { x: 2000.0, y: 2000.0 }, radius: 150.0 };
+    let site = Site { key: "probe".into(), name: String::new(), population, culture: culture.into(), center: Point { x: 2000.0, y: 2000.0 }, radius: 150.0, neighbours: Vec::new() };
     let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     generate_quarters("small-settlement", &[site], &cfg, s, &[]).unwrap().remove(0)
 }
@@ -355,7 +357,7 @@ fn an_overlarge_enclosure_replans_its_land_budget_before_filling() {
     let height = vec![10.;n*n];
     let water = vec![0;n*n];
     let surface = Surface{geometry:None,width:6000.,n,height:&height,water:&water, interpolation: Default::default(),};
-    let site = Site{key:"fill-budget".into(),name:String::new(),population:500,culture:"celtic-oppidum".into(),center:Point{x:3000.,y:3000.},radius:150.};
+    let site = Site{key:"fill-budget".into(),name:String::new(),population:500,culture:"celtic-oppidum".into(),center:Point{x:3000.,y:3000.},radius:150., neighbours: Vec::new()};
     let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     cfg.footprint.gross_density = 5.;
     let layout = generate_quarters("fill-budget",&[site],&cfg,surface,&[]).unwrap().remove(0);
@@ -577,7 +579,8 @@ fn large_camps_reached_by_track_ends_keep_their_homes() {
             // The bench site keeps its 5000-inhabitant radius (562 m).
             let seed = format!("camp-roads-{k}");
             let site = Site { key: "city".into(), name: String::new(), population: 1500, culture: culture.into(),
-                center: p(2000., 2000.), radius: 561.79 };
+                center: p(2000., 2000.), radius: 561.79,
+                neighbours: Vec::new(), };
             let layouts = generate_quarters(&seed, &[site], &cfg, s, &roads).unwrap();
             let parts = generate_parcels(&seed, &layouts, &ParcelConfig::default()).unwrap();
             let requests = building_sites::requests(&seed, &layouts, &parts, s, &level, None).unwrap();
@@ -618,7 +621,8 @@ fn review12_a_longhouse_village_on_trail_ends_builds_its_longhouses() {
     for (name, cfg) in [("off", base), ("sheet", sheet)] {
         let seed = "city-temperate-coast-s-1";
         let site = Site { key: "city".into(), name: String::new(), population: 500, culture: "native-iroquoian".into(),
-            center: Point { x: 2000., y: 2000. }, radius: 561.79 };
+            center: Point { x: 2000., y: 2000. }, radius: 561.79,
+            neighbours: Vec::new(), };
         let layouts = generate_quarters(seed, &[site], &cfg, s, &roads).unwrap();
         let parts = generate_parcels(seed, &layouts, &ParcelConfig::default()).unwrap();
         let requests = building_sites::requests(seed, &layouts, &parts, s, &level, None).unwrap();
@@ -644,7 +648,8 @@ fn outbuildings_share_thins_village_house_dependencies() {
     let farms = |outbuildings: f64| {
         let cfg = LayoutConfig { outbuildings, ..base.clone() };
         let site = Site { key: "city".into(), name: String::new(), population: 500, culture: "european-organic".into(),
-            center: Point { x: 2000., y: 2000. }, radius: 561.79 };
+            center: Point { x: 2000., y: 2000. }, radius: 561.79,
+            neighbours: Vec::new(), };
         let layouts = generate_quarters(seed, &[site], &cfg, s, &[]).unwrap();
         let parts = generate_parcels(seed, &layouts, &ParcelConfig::default()).unwrap();
         let requests = building_sites::requests(seed, &layouts, &parts, s, &level, None).unwrap();
@@ -707,7 +712,7 @@ fn a_town_forced_onto_a_steep_flank_houses_half_its_households() {
     let w = vec![0_u8; n * n];
     let level = vec![0.0_f32; n * n];
     let s = Surface { geometry: None, width, n, height: &h, water: &w, interpolation: Default::default(),};
-    let site = Site { key: "flank".into(), name: String::new(), population: 500, culture: "european-organic".into(), center: Point { x: 3000.0, y: 3000.0 }, radius: 150.0 };
+    let site = Site { key: "flank".into(), name: String::new(), population: 500, culture: "european-organic".into(), center: Point { x: 3000.0, y: 3000.0 }, radius: 150.0, neighbours: Vec::new() };
     let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
     let layouts = generate_quarters("steep-flank", &[site], &layout_config, s, &[]).unwrap();
@@ -740,7 +745,8 @@ fn cone_village(population: u32, grade: f64, radius: f64) -> (Layout, Partition,
     let level = vec![0.0_f32; n * n];
     let s = Surface { geometry: None, width, n, height: &h, water: &w, interpolation: Default::default(),};
     let site = Site { key: "cone".into(), name: String::new(), population, culture: "european-organic".into(),
-        center: Point { x: apex.x + radius, y: apex.y }, radius: 150.0 };
+        center: Point { x: apex.x + radius, y: apex.y }, radius: 150.0,
+        neighbours: Vec::new(), };
     let layout_config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
     let layouts = generate_quarters("cone", &[site], &layout_config, s, &[]).unwrap();
@@ -806,7 +812,8 @@ fn small_farms_and_roadside_shrines_on_a_steep_cone_keep_their_buildings() {
             cfg.organic_branch_variation = 0.5;
             cfg.ribbon_width_variation = 0.5;
             let site = Site { key: "city".into(), name: String::new(), population: 500, culture: culture.into(),
-                center: Point { x: 4200.0, y: 3000.0 }, radius: 221.25 };
+                center: Point { x: 4200.0, y: 3000.0 }, radius: 221.25,
+                neighbours: Vec::new(), };
             let generated = generate_quarters("utility-cone", &[site], &cfg, surface, &[]).unwrap();
             let mut replay = clipped[index].clone();
             programme::prepare(&mut replay, 500, &cfg.programme, surface).unwrap();
@@ -856,7 +863,8 @@ fn a_town_and_village_use_the_buildable_terraces_of_a_volcano_flank() {
         let surface = Surface { geometry: None, width, n, height: &height, water: &water,
             interpolation: Default::default() };
         let site = Site { key: "cone".into(), name: String::new(), population,
-            culture: culture.into(), center, radius: if population == 10_000 { 735.0 } else { 330.0 } };
+            culture: culture.into(), center, radius: if population == 10_000 { 735.0 } else { 330.0 },
+            neighbours: Vec::new(), };
         let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         cfg.street_frontage = true;
         cfg.align_enclosed_grid = true;
@@ -907,7 +915,7 @@ fn slope_ladder_houses_10k_canyon_and_volcano_towns() {
         }).collect();
         let surface = Surface {geometry:None,width,n,height:&height,water:&water,interpolation:Default::default()};
         let center = if canyon {Point{x:3080.0,y:3000.0}} else {Point{x:4200.0,y:3000.0}};
-        let site = Site {key:"slope-town".into(),name:String::new(),population:10_000,culture:culture.into(),center,radius:735.0};
+        let site = Site {key:"slope-town".into(),name:String::new(),population:10_000,culture:culture.into(),center,radius:735.0, neighbours: Vec::new()};
         let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         cfg.street_frontage=true;cfg.align_enclosed_grid=true;cfg.hide_unused_quarters=true;
         cfg.organic_branch_variation=0.5;cfg.ribbon_width_variation=0.5;
@@ -961,7 +969,8 @@ fn flat_towns_keep_the_normal_layout() {
     cfg.street_frontage = true;
     for (population, radius) in [(500, 330.0), (10_000, 735.0)] {
         let site = Site { key: "flat".into(), name: String::new(), population, culture: "european-organic".into(),
-            center: Point { x: 3000.0, y: 3000.0 }, radius };
+            center: Point { x: 3000.0, y: 3000.0 }, radius,
+            neighbours: Vec::new(), };
         let layouts = generate_quarters("flat-town", std::slice::from_ref(&site), &cfg, surface, &[]).unwrap();
         let (effective, kind) = kinds::effective(&site, &cfg, &[]);
         assert!(!super::slopes::eligible(&site, &effective, surface, kind), "{population}: flat site surveyed as a slope");

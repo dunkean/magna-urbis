@@ -46,17 +46,72 @@ fn sites(layout: &Layout) -> &[SpringSite] {
 pub(super) fn site<'a>(layout: &'a Layout, id: &str) -> Option<&'a SpringSite> {
     sites(layout).iter().find(|s| s.id == id)
 }
-fn targets(layout: &Layout, p: Point) -> Vec<Point> {
-    let mut out = layout.streets.iter()
-        .filter(|s| !matches!(s.role.as_str(), "bridge" | "pier" | "mole"))
-        .flat_map(|s| s.path.windows(2)).map(|ab| {
-            let (a,b)=(ab[0],ab[1]); let (dx,dy)=(b.x-a.x,b.y-a.y);
-            let t=(((p.x-a.x)*dx+(p.y-a.y)*dy)/(dx*dx+dy*dy).max(1e-9)).clamp(0.,1.);
-            Point{x:a.x+t*dx,y:a.y+t*dy}
-        }).collect::<Vec<_>>();
-    out.sort_by(|&a,&b| distance(a,p).total_cmp(&distance(b,p)));
-    out.dedup_by(|a,b| distance(*a,*b)<0.1);
+/// The (up to) 12 nearest distinct points of the given street segments to `p`, nearest first.
+fn nearest(segs: &[(Point, Point)], p: Point) -> Vec<(f64, Point)> {
+    let mut out = segs.iter().map(|&(a,b)| {
+        let (dx,dy)=(b.x-a.x,b.y-a.y);
+        let t=(((p.x-a.x)*dx+(p.y-a.y)*dy)/(dx*dx+dy*dy).max(1e-9)).clamp(0.,1.);
+        let q=Point{x:a.x+t*dx,y:a.y+t*dy};
+        (distance(q,p),q)
+    }).collect::<Vec<_>>();
+    out.sort_by(|a,b| a.0.total_cmp(&b.0));
+    out.dedup_by(|a,b| distance(a.1,b.1)<0.1);
     out.truncate(12);
+    out
+}
+/// The street segments (bridges, piers and moles apart) near a source, for the
+/// nearest-street search of its candidate sites: those whose box meets the square
+/// of half-side `radius` round the source, in street order. A segment left out
+/// is farther than `radius` from the source, so a candidate `d` from the source
+/// whose 12th nearest point is within `radius - d` has them all: the answer is
+/// exactly the one over every street; otherwise the square doubles.
+struct Near<'a> { layout: &'a Layout, source: Point, radius: f64, segs: Vec<(Point, Point)>, complete: bool }
+impl<'a> Near<'a> {
+    fn new(layout: &'a Layout, source: Point) -> Self { Self::scan(layout, source, 256.) }
+    fn scan(layout: &'a Layout, source: Point, radius: f64) -> Self {
+        let (mut segs, mut total) = (vec![], 0usize);
+        for s in layout.streets.iter().filter(|s| !matches!(s.role.as_str(), "bridge" | "pier" | "mole")) {
+            for ab in s.path.windows(2) {
+                total += 1;
+                let (a,b)=(ab[0],ab[1]);
+                if a.x.min(b.x)<=source.x+radius && a.x.max(b.x)>=source.x-radius
+                    && a.y.min(b.y)<=source.y+radius && a.y.max(b.y)>=source.y-radius { segs.push((a,b)); }
+            }
+        }
+        let complete = segs.len()==total || radius>1e9;
+        Self { layout, source, radius, segs, complete }
+    }
+    fn targets(&mut self, p: Point) -> Vec<Point> {
+        loop {
+            let out = nearest(&self.segs, p);
+            if self.complete || (out.len()==12 && out[11].0 <= self.radius-distance(p,self.source)) {
+                return out.into_iter().map(|(_,q)|q).collect();
+            }
+            *self = Self::scan(self.layout, self.source, self.radius*2.);
+        }
+    }
+}
+#[cfg(test)]
+fn targets(layout: &Layout, p: Point) -> Vec<Point> { Near::new(layout, p).targets(p) }
+/// The ribbons of a street path where it comes within `pad` of a zone (a box):
+/// the runs of segments that meet a zone, with the segment on each side so that
+/// the joins are the ones of the whole ribbon.
+fn local_ribbons(path: &[Point], widths: &[f64], zones: &[(f64, f64, f64, f64)]) -> Vec<Shape> {
+    let pad=widths.iter().copied().fold(4.0_f64,f64::max)*0.5+1.;
+    let near: Vec<bool> = path.windows(2).map(|w| {
+        let b=(w[0].x.min(w[1].x)-pad,w[0].y.min(w[1].y)-pad,w[0].x.max(w[1].x)+pad,w[0].y.max(w[1].y)+pad);
+        zones.iter().any(|&z|g::boxes_meet(b,z))
+    }).collect();
+    let keep=|i: usize| near[i] || (i>0 && near[i-1]) || near.get(i+1).copied().unwrap_or(false);
+    let (mut out, mut i)=(vec![],0);
+    while i<near.len() {
+        if !keep(i) {i+=1; continue;}
+        let from=i;
+        while i<near.len() && keep(i) {i+=1;}
+        // Segments from..i run over points from..=i.
+        let w: Vec<f64> = (from..=i).map(|k| widths.get(k).or(widths.first()).copied().unwrap_or(4.0)).collect();
+        out.extend(g::ribbon(&path[from..=i],&w));
+    }
     out
 }
 fn dry(surface: Surface<'_>, shape: &Shape) -> bool {
@@ -88,19 +143,18 @@ fn overlaps(a: &Shape, b: &Shape) -> bool {
 /// are cheap; a full route is not, and an unreachable source (steep bank, across a river) would
 /// otherwise route every offset x angle x street x archetype, minutes per town.
 const ROUTE_BUDGET: usize = 16;
-/// `roads`: the ribbons of the layout's streets, in street order (`reserve` keeps them).
-fn find(layout: &Layout, roads: &[Shape], source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig, budget: &mut usize) -> Option<SpringSite> {
+/// `forbidden`: what a site may not overlap near the sources (street ribbons,
+/// enclosure reserves, the sites already placed); `reserve` keeps it.
+fn find(layout: &Layout, forbidden: &[Shape], near: &mut Near<'_>, source: Point, archetype: &str, surface: Surface<'_>, cfg: &LayoutConfig, budget: &mut usize) -> Option<SpringSite> {
     let a=act::archetype(archetype)?;
     let look=act::data().looks.get(a.look.as_deref()?)?;
     let (w,d)=(look.footprint.w[0],look.footprint.d[0]);
-    let forbidden=layout.enclosures.iter().flat_map(|e|&e.reserve).chain(roads)
-        .chain(sites(layout).iter().map(|s|&s.shape)).collect::<Vec<_>>();
     for step in 0..=(rules().max_offset_m/4.).floor() as usize {
         let count=if step==0 {1} else {16};
         for i in 0..count {
             let angle=i as f64*std::f64::consts::TAU/count as f64;
             let c=Point{x:source.x+4.*step as f64*angle.cos(),y:source.y+4.*step as f64*angle.sin()};
-            for goal in targets(layout,c) {
+            for goal in near.targets(c) {
                 let angle=(goal.y-c.y).atan2(goal.x-c.x)-std::f64::consts::FRAC_PI_2;
                 let u=Point{x:angle.cos(),y:angle.sin()};
                 let shape=rectangle(c,u,w,d);
@@ -136,26 +190,40 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
     let radius=layout.quarters.iter().flat_map(|q|&q.shape.outer)
         .map(|&p|distance(p,town.center)).fold(town.radius,f64::max);
     let reach=(radius*r.radius_multiple).max(r.minimum_reach_m);
+    let quarter_boxes=layout.quarters.iter().map(|q|g::bbox(&q.shape)).collect::<Vec<_>>();
     let mut sources=geography.springs.iter().copied().filter(|&p|distance(p,town.center)<=reach
-        || layout.quarters.iter().any(|q|g::contains(&q.shape,p))).collect::<Vec<_>>();
+        || layout.quarters.iter().zip(&quarter_boxes).any(|(q,&b)|g::boxes_meet(b,(p.x,p.y,p.x,p.y)) && g::contains(&q.shape,p))).collect::<Vec<_>>();
     sources.sort_by(|&a,&b|distance(a,town.center).total_cmp(&distance(b,town.center))
         .then(a.x.total_cmp(&b.x)).then(a.y.total_cmp(&b.y)));
+    // Only the first `max_sites` distinct sources are ever used.
     let mut unique=vec![];
-    for source in sources {if !unique.iter().any(|&p|distance(source,p)<1.) {unique.push(source);}}
+    for source in sources {
+        if unique.len()>=r.max_sites {break;}
+        if !unique.iter().any(|&p|distance(source,p)<1.) {unique.push(source);}
+    }
     let family=act::family_of(&layout.culture).map(|(f,_)|f).unwrap_or("");
     let preferences=r.families.get(family).unwrap_or(&r.default).iter().chain(&r.default)
         .filter(|id|r.types.get(*id).is_some_and(|t|town.population>=t.min_population)
             && (act::family_of(&layout.culture).is_none() || act::allowed(&layout.culture,id)))
         .cloned().collect::<Vec<_>>();
     let mut masks=vec![];
-    // Street ribbons, built at the first attempt and extended with each path added below: the
-    // list every source and archetype reads, instead of one rebuild per attempt.
-    let mut roads:Option<Vec<Shape>>=None;
-    for (i,source) in unique.into_iter().take(r.max_sites).enumerate() {
+    // A site is tried within `max_offset_m` of its source: only the ground near the sources can
+    // be overlapped. The list is built at the first attempt (street ribbons and enclosure
+    // reserves that meet a source zone) and extended with each site and path added below.
+    let extent=preferences.iter().filter_map(|id|{
+        let look=act::data().looks.get(act::archetype(id)?.look.as_deref()?)?;
+        Some((look.footprint.w[0]+2.).hypot(look.footprint.d[0]+2.))
+    }).fold(0.,f64::max);
+    let zones=unique.iter().map(|s|{let m=r.max_offset_m+extent+1.;(s.x-m,s.y-m,s.x+m,s.y+m)}).collect::<Vec<_>>();
+    let mut ground:Option<Vec<Shape>>=None;
+    for (i,source) in unique.into_iter().enumerate() {
         let mut budget=ROUTE_BUDGET;
         let found=if preferences.is_empty() {None} else {
-            let roads:&[Shape]=roads.get_or_insert_with(||layout.streets.iter().flat_map(|s|g::ribbon(&s.path,&s.widths)).collect());
-            preferences.iter().find_map(|id|find(layout,roads,source,id,surface,cfg,&mut budget))
+            let forbidden:&[Shape]=ground.get_or_insert_with(||layout.enclosures.iter().flat_map(|e|&e.reserve)
+                .filter(|s|{let b=g::bbox(s);zones.iter().any(|&z|g::boxes_meet(b,z))}).cloned()
+                .chain(layout.streets.iter().flat_map(|s|local_ribbons(&s.path,&s.widths,&zones))).collect());
+            let mut near=Near::new(layout,source);
+            preferences.iter().find_map(|id|find(layout,forbidden,&mut near,source,id,surface,cfg,&mut budget))
         };
         let Some(mut water)=found else {
             layout.warnings.push(format!("Spring at {:.1},{:.1}: no dry accessible water-building site within {} m",source.x,source.y,r.max_offset_m));
@@ -169,18 +237,26 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
         masks.push(rectangle(c,u,w+2.,distance(water.shape.outer[1],water.shape.outer[2])+2.));
         let ribbon=g::ribbon(&water.path,&[r.path_width_m]);
         masks.extend(ribbon.iter().cloned());
-        if let Some(roads)=roads.as_mut() {roads.extend(ribbon);}
+        if let Some(ground)=ground.as_mut() {ground.push(water.shape.clone()); ground.extend(ribbon);}
         layout.streets.push(Street{path:water.path.clone(),widths:vec![r.path_width_m],rank:3,role:"path".into()});
         layout.structure.get_or_insert_with(UrbanStructure::default).spring_sites.push(water);
     }
     routing::tally("springs");
     if masks.is_empty() {return false;}
     // Re-indexing is intentional; programme::prepare follows this operation.
-    layout.blocks=layout.blocks.iter().flat_map(|block| {
+    // The overlay grid depends only on the bounds of its operands, and a mask whose box misses
+    // the block cuts nothing: against its bounding rectangle (4 vertices) the block comes out
+    // as the same reduced ring the overlay against the mask itself gives.
+    let cuts=masks.iter().map(|m|{let b=g::bbox(m);(b,g::rectangle(b.0,b.1,b.2,b.3))}).collect::<Vec<_>>();
+    layout.blocks=super::par::map(&layout.blocks,|_,block| {
+        let bb=g::bbox(&block.shape);
         let mut pieces=vec![block.shape.clone()];
-        for mask in &masks {pieces=pieces.iter().flat_map(|p|g::difference(p,mask)).collect();}
+        for (mask,(mb,rect)) in masks.iter().zip(&cuts) {
+            let cut=if g::boxes_meet(*mb,bb) {mask} else {rect};
+            pieces=pieces.iter().flat_map(|p|g::difference(p,cut)).collect();
+        }
         pieces.into_iter().filter(|s|g::area(s)>=4.).map(|shape|Block{shape,..block.clone()}).collect::<Vec<_>>()
-    }).collect();
+    }).into_iter().flatten().collect();
     true
 }
 
@@ -255,7 +331,8 @@ mod tests {
         let h=vec![10.0_f32;64*64]; let w=vec![0_u8;64*64]; let levels=h.clone();
         let surface=Surface{geometry:Some(&geography),width:4000.,n:64,height:&h,water:&w,interpolation:Default::default()};
         let town=Site{key:"spring-village".into(),name:String::new(),population:500,
-            culture:"european-organic".into(),center:Point{x:2000.,y:2000.},radius:150.};
+            culture:"european-organic".into(),center:Point{x:2000.,y:2000.},radius:150.,
+            neighbours: Vec::new(),};
         let mut cfg:LayoutConfig=serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         cfg.fortification="none".into();
         let parcel_cfg=serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();

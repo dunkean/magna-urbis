@@ -11,7 +11,8 @@ fn town(culture: &str, population: u32, width: f64, slope: f64, island: Option<f
     let level = vec![0.0; n*n];
     let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
     let site = Site { key: "package-g".into(), name: String::new(), population, culture: culture.into(), center,
-        radius: crate::settlements::extent_radius(population) };
+        radius: crate::settlements::extent_radius(population),
+        neighbours: Vec::new(), };
     let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
     cfg.align_enclosed_grid = true;
     let layouts = generate_quarters("magna-urbis-v2", &[site], &cfg, surface, &[]).unwrap();

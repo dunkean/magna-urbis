@@ -275,6 +275,7 @@ mod tests {
                 y: 1200.0,
             },
             radius: 700.0,
+            neighbours: Vec::new(),
         };
         let layout = &generate_quarters(
             "districts",

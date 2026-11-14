@@ -95,7 +95,7 @@ fn grade(p: Point, d: f64, surface: Surface<'_>) -> f64 {
 
 /// Households requested and housed by the actual cadastre, after occupancy
 /// trimming and reservations. None when the trial cannot be subdivided.
-fn households(seed: &str, layout: &Layout) -> Option<(f64, f64)> {
+pub(super) fn households(seed: &str, layout: &Layout) -> Option<(f64, f64)> {
     let layouts = std::slice::from_ref(layout);
     let parts = super::generate_parcels(seed, layouts, &ParcelConfig::default()).ok()?;
     let parts = programme::reallocate(layouts, &parts).ok()?;
@@ -130,9 +130,11 @@ pub(super) fn complete(
     }
     if !densified { base = cfg.clone(); }
     // Then the culture streets with relaxed house gates, while the gates
-    // refuse most of the land (otherwise relaxing them cannot help).
-    let mut relaxed = 0.0;
-    for relax in STREET_RELAX {
+    // refuse most of the land (otherwise relaxing them cannot help). The
+    // ladder starts above the level the terrain already chose
+    // (`footprint::slope_relax_ahead`, carried by `cfg`).
+    let mut relaxed = cfg.programme.slope_relax;
+    for relax in STREET_RELAX.into_iter().filter(|&relax| relax > cfg.programme.slope_relax) {
         if housed >= goal || super::housable_share(&best) >= profiles::SLOPE_RELAX_GOAL { break; }
         let mut trial = base.clone();
         trial.programme.slope_relax = relax;
@@ -206,11 +208,12 @@ fn expand(b: (f64, f64, f64, f64), m: f64) -> (f64, f64, f64, f64) { (b.0 - m, b
 
 fn inside_bounds(b: (f64, f64, f64, f64), p: Point) -> bool { p.x >= b.0 && p.x <= b.2 && p.y >= b.1 && p.y <= b.3 }
 
-/// Closer to this town's centre than to any other site: two towns never
-/// claim the same flank or road stretch.
+/// Closer to this town's centre than to any other site of the request, and
+/// off the land of the towns generated before it (`neighbours`): two towns
+/// never claim the same flank or road stretch.
 fn own_side(site: &Site, others: &[Point], p: Point) -> bool {
     let d = (p.x - site.center.x).hypot(p.y - site.center.y);
-    others.iter().all(|o| (p.x - o.x).hypot(p.y - o.y) > d)
+    others.iter().all(|o| (p.x - o.x).hypot(p.y - o.y) > d) && super::neighbours::clear(site, p)
 }
 
 type Bounded = Vec<((f64, f64, f64, f64), Shape)>;
@@ -446,7 +449,8 @@ mod tests {
         let height: Vec<f32> = (0..n * n).map(|i| 10.0 + (i % n) as f32 * 20.0).collect();
         let surface = slope_surface(&height, &vec![0; n * n], n);
         let site = Site { key: "city".into(), name: String::new(), population: 10_000, culture: "byzantine-greek".into(),
-            center: Point { x: 2000.0, y: 2000.0 }, radius: 735.0 };
+            center: Point { x: 2000.0, y: 2000.0 }, radius: 735.0,
+            neighbours: Vec::new(), };
         let path = vec![Point { x: 2000.0, y: 1400.0 }, Point { x: 2050.0, y: 2600.0 }, Point { x: 2100.0, y: 1400.0 }];
         // A far road the town must not import, beyond its reach.
         let far = vec![Point { x: 100.0, y: 100.0 }, Point { x: 300.0, y: 100.0 }];
@@ -480,7 +484,8 @@ mod tests {
         let path = vec![Point { x: 2050.0, y: 1000.0 }, Point { x: 2050.0, y: 3000.0 }];
         let roads = vec![Street { widths: vec![4.0; 2], path, rank: 2, role: "regional".into() }];
         let a = Site { key: "a".into(), name: String::new(), population: 10_000, culture: "byzantine-greek".into(),
-            center: Point { x: 2000.0, y: 1700.0 }, radius: 735.0 };
+            center: Point { x: 2000.0, y: 1700.0 }, radius: 735.0,
+            neighbours: Vec::new(), };
         let b = Site { key: "b".into(), center: Point { x: 2000.0, y: 2300.0 }, ..a.clone() };
         let reserve = Shape { outer: vec![Point { x: 2000.0, y: 1500.0 }, Point { x: 2100.0, y: 1500.0 },
             Point { x: 2100.0, y: 1560.0 }, Point { x: 2000.0, y: 1560.0 }], holes: vec![] };

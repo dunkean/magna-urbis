@@ -60784,8 +60784,8 @@
             1200
           ],
           "village": [
-            500,
-            1300
+            380,
+            950
           ]
         },
         "roomDepth": [
@@ -60878,8 +60878,8 @@
             13
           ],
           "village": [
-            18,
-            40
+            12,
+            28
           ]
         },
         "plotDepth": {
@@ -60900,8 +60900,8 @@
             60
           ],
           "village": [
-            40,
-            80
+            32,
+            60
           ]
         },
         "plotTilt": 6,
@@ -61021,11 +61021,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 95,
-          "middle": 80,
-          "edge": 60,
-          "faubourg": 40,
-          "village": 35
+          "core": 110,
+          "middle": 100,
+          "edge": 80,
+          "faubourg": 55,
+          "village": 55
         }
       }
     },
@@ -61068,8 +61068,8 @@
             1200
           ],
           "village": [
-            500,
-            1300
+            380,
+            950
           ]
         },
         "roomDepth": [
@@ -61162,8 +61162,8 @@
             13
           ],
           "village": [
-            18,
-            40
+            12,
+            28
           ]
         },
         "plotDepth": {
@@ -61184,8 +61184,8 @@
             60
           ],
           "village": [
-            40,
-            80
+            32,
+            60
           ]
         },
         "plotTilt": 6,
@@ -61305,11 +61305,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 95,
-          "middle": 80,
-          "edge": 60,
-          "faubourg": 40,
-          "village": 35
+          "core": 110,
+          "middle": 100,
+          "edge": 80,
+          "faubourg": 55,
+          "village": 55
         }
       }
     },
@@ -61352,8 +61352,8 @@
             1200
           ],
           "village": [
-            500,
-            1300
+            380,
+            950
           ]
         },
         "roomDepth": [
@@ -61446,8 +61446,8 @@
             13
           ],
           "village": [
-            18,
-            40
+            12,
+            28
           ]
         },
         "plotDepth": {
@@ -61468,8 +61468,8 @@
             60
           ],
           "village": [
-            40,
-            80
+            32,
+            60
           ]
         },
         "plotTilt": 6,
@@ -61589,11 +61589,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 95,
-          "middle": 80,
-          "edge": 60,
-          "faubourg": 40,
-          "village": 35
+          "core": 110,
+          "middle": 100,
+          "edge": 80,
+          "faubourg": 55,
+          "village": 55
         }
       }
     },
@@ -129799,6 +129799,16 @@
         0.1
       ],
       "village": {
+        "street": {
+          "green": {
+            "spindle": 0.45,
+            "side": 0.35
+          },
+          "depth": 1.0,
+          "spread": 1.0,
+          "backLane": 0.35,
+          "fieldLanes": 160
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -129888,6 +129898,16 @@
         0.1
       ],
       "village": {
+        "street": {
+          "green": {
+            "square": 0.6
+          },
+          "depth": 1.0,
+          "spread": 0.5,
+          "backLane": 0.6,
+          "fieldLanes": 140,
+          "obliquity": 0.3
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -130237,6 +130257,16 @@
         0.15
       ],
       "village": {
+        "street": {
+          "green": {
+            "side": 0.2
+          },
+          "depth": 1.2,
+          "spread": 0.5,
+          "backLane": 0.5,
+          "fieldLanes": 130,
+          "obliquity": 0.4
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -130889,6 +130919,17 @@
         0.2
       ],
       "village": {
+        "street": {
+          "green": {
+            "spindle": 0.2,
+            "side": 0.4
+          },
+          "depth": 1.3,
+          "spread": 0.7,
+          "backLane": 0.25,
+          "fieldLanes": 220,
+          "obliquity": 0.6
+        },
         "form": "auto",
         "enclosure": {
           "wall": "none"
@@ -131234,6 +131275,17 @@
         0.08
       ],
       "village": {
+        "street": {
+          "green": {
+            "side": 0.3,
+            "square": 0.5
+          },
+          "depth": 0.7,
+          "spread": 0.8,
+          "backLane": 0.5,
+          "fieldLanes": 110,
+          "obliquity": 1.2
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -131346,6 +131398,17 @@
         0.06
       ],
       "village": {
+        "street": {
+          "green": {
+            "side": 0.6
+          },
+          "depth": 0.8,
+          "spread": 0.6,
+          "backLane": 0.45,
+          "fieldLanes": 120,
+          "waterLanes": 3,
+          "obliquity": 0.6
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -131570,6 +131633,17 @@
         0.12
       ],
       "village": {
+        "street": {
+          "green": {
+            "side": 0.3,
+            "square": 0.5
+          },
+          "depth": 0.75,
+          "spread": 0.9,
+          "backLane": 0.5,
+          "fieldLanes": 100,
+          "obliquity": 1.4
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -131793,6 +131867,16 @@
         0.08
       ],
       "village": {
+        "street": {
+          "green": {
+            "side": 0.3
+          },
+          "depth": 1.8,
+          "spread": 1.4,
+          "backLane": 0.15,
+          "fieldLanes": 260,
+          "obliquity": 0.5
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -131893,6 +131977,16 @@
         0.12
       ],
       "village": {
+        "street": {
+          "green": {
+            "side": 0.3
+          },
+          "depth": 0.9,
+          "spread": 1.1,
+          "backLane": 0.3,
+          "fieldLanes": 140,
+          "obliquity": 1.2
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -132105,6 +132199,17 @@
         0.06
       ],
       "village": {
+        "street": {
+          "green": {
+            "spindle": 0.4,
+            "side": 0.3
+          },
+          "depth": 0.9,
+          "spread": 1.0,
+          "backLane": 0.4,
+          "fieldLanes": 150,
+          "obliquity": 1.3
+        },
         "form": "auto"
       },
       "hamlet": {
@@ -133044,7 +133149,8 @@
         "enclosure": {
           "shape": "circle",
           "wall": "none",
-          "fossil": "none"
+          "fossil": "none",
+          "open": {"role": "open.common", "share": 0.1}
         }
       },
       "ring": null,
@@ -133093,7 +133199,8 @@
             "shape": "organic",
             "wall": "palisade",
             "fossil": "street",
-            "orientation": "terrain"
+            "orientation": "terrain",
+            "open": {"role": "open.common", "share": 0.1}
           }
         },
         "ring": {

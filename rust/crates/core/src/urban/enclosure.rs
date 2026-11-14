@@ -25,6 +25,10 @@ pub struct Resolved {
     pub front: f64,
     pub side: f64,
     pub back: f64,
+    /// The culture draws no lot limits (catalogue `render.plotLines: false`: camps,
+    /// myconid colonies...): the plan views leave the built lots unoutlined.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hide_lot_lines: bool,
 }
 
 fn entry(culture: &str, key: &str) -> Option<&'static Value> {
@@ -47,6 +51,7 @@ pub(super) fn resolve(culture: &str, cfg: &ParcelConfig) -> Resolved {
         field: cfg.field_enclosure.unwrap_or_else(|| if cfg.countryside_enclosures { num(culture, "field") } else { 0.0 }).clamp(0.0, 1.0),
         field_material: if material_forced(cfg) { cfg.enclosure_material.clone() } else { entry(culture, "fieldMaterial").and_then(Value::as_str).unwrap_or("hedge").to_string() },
         material, front: num(culture, "front"), side: num(culture, "side"), back: num(culture, "back"),
+        hide_lot_lines: super::catalogue()["cultures"][culture]["render"]["plotLines"].as_bool() == Some(false),
     }
 }
 pub(super) fn valid(cfg: &ParcelConfig) -> bool {
@@ -72,6 +77,10 @@ mod tests {
                 .any(|g| g["cultures"].as_array().unwrap().iter().any(|x| x == c.as_str()));
             assert!(listed, "culture {c} missing from enclosures.json");
         }
+        // Lot limits follow the catalogue's `render.plotLines`; a myconid colony has neither lot limits nor yards.
+        let open = resolve("myconid-colony", &ParcelConfig::default());
+        assert!(open.hide_lot_lines && open.plot == 0.0, "{open:?}");
+        assert!(!resolve("european-organic", &ParcelConfig::default()).hide_lot_lines);
         cfg.enclosure_material = "bogus".into();
         assert!(!valid(&cfg));
     }

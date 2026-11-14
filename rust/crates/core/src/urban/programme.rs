@@ -301,6 +301,22 @@ fn function_class(function: &str) -> &'static str {
 pub fn prepare(layout: &mut Layout, population: u32, context: &ProgrammeContext, surface: Surface<'_>) -> Result<(), String> {
     prepare_inner(layout, population, context, surface, true)
 }
+/// Inscribed radius of a block outline (`deep_blocks`): a pure function of the
+/// outline, kept across the programme probes of one quarters run.
+static RADII: super::probe_cache::Memo<f64> = super::probe_cache::Memo::new();
+pub(super) fn clear_probe_cache() {
+    RADII.clear();
+}
+fn block_radius(shape: &Shape) -> f64 {
+    let mut key = super::probe_cache::Key::new("programme.inscribed_radius/v1");
+    key.shape(shape);
+    if let Some(r) = RADII.get(&key) {
+        return r;
+    }
+    let r = super::deep_blocks::inscribed_radius(shape);
+    RADII.put(key, r);
+    r
+}
 fn prepare_inner(
     layout: &mut Layout,
     population: u32,
@@ -323,6 +339,14 @@ fn prepare_inner(
         return Err("Invalid urban programme context".into());
     }
     let base = mapping(&layout.culture).ok_or("Unknown urban cultural mapping")?;
+    // The reservations are drawn again from scratch: a block an earlier
+    // preparation held for an institution is an ordinary block again. Left
+    // marked, it would be neither reserved nor housed (a dead block in town).
+    for b in &mut layout.blocks {
+        if b.kind == "reserve:programme" {
+            b.kind = "block".into();
+        }
+    }
     let cultural_functions = base.functional_profile.as_str();
     let mut ids = vec![layout.culture.clone()];
     for phase in &layout.phases {
@@ -685,6 +709,12 @@ fn prepare_inner(
         .map(|_| std::array::from_fn(|_| OnceLock::new()))
         .collect();
     let radii: Vec<OnceLock<f64>> = layout.blocks.iter().map(|_| OnceLock::new()).collect();
+    type Frontage = OnceLock<Option<(usize, f64, bool)>>;
+    let frontages: Vec<[Frontage; 2]> = layout
+        .blocks
+        .iter()
+        .map(|_| std::array::from_fn(|_| OnceLock::new()))
+        .collect();
     let centroids: Vec<Point> = super::par::map(&layout.blocks, |_, b| centroid(&b.shape));
     let areas: Vec<f64> = super::par::map(&layout.blocks, |_, b| area(&b.shape));
     // The town plan is built land: inside the wall, or without a wall in the
@@ -718,6 +748,28 @@ fn prepare_inner(
         .filter(|(bi, b)| enclosed[*bi] && matches!(b.kind.as_str(), "place" | "market" | "common" | "reserve:market" | "reserve:common"))
         .map(|(bi, _)| areas[bi])
         .sum();
+    // The culture of each block, as a slot in the list of distinct cultures:
+    // facts that depend on the culture alone are resolved once per culture.
+    let (block_cultures, culture_slot): (Vec<String>, Vec<usize>) = {
+        let mut names: Vec<String> = vec![];
+        let slots = (0..layout.blocks.len())
+            .map(|bi| {
+                let culture = block_culture(layout, bi);
+                names.iter().position(|n| n == culture).unwrap_or_else(|| {
+                    names.push(culture.to_owned());
+                    names.len() - 1
+                })
+            })
+            .collect();
+        (names, slots)
+    };
+    // Whether the town is a camp does not change while blocks are reserved.
+    let camp = camps::camp(layout, population);
+    let functional_mode = match context.mode.as_str() {
+        "strict" => "historical_strict",
+        "fantasy" => "fantasy_mix",
+        _ => "historical_inspired",
+    };
     for di in reservation_order {
         let d = &mut demands[di];
         if d.requires.iter().any(|r| r == "navigableAccess") && !navigable {
@@ -734,13 +786,17 @@ fn prepare_inner(
         // Query the same versioned coverage decision as site production before
         // reserving land through a residential admission profile. Other roles
         // retain the cached envelope/foundation path and its performance.
+        // Both facts below depend on the block's culture alone (its pack is the
+        // culture's), so each is resolved once per distinct culture.
         let missing_source:Vec<bool> = if !isolated && super::culture::requires_functional_source(&d.role,&d.function) {
-            let mode=match context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"};
-            layout.blocks.iter().enumerate().map(|(bi,_)|
-                super::culture::functional_source_gap(block_culture(layout,bi),
-                    &profile_pack(layout,bi,&d.function,&context.period),&d.role,&d.function,&context.period,mode).is_some()
-            ).collect()
+            let gaps: Vec<bool> = block_cultures.iter().map(|culture|
+                super::culture::functional_source_gap(culture,
+                    super::culture::architecture_pack(culture).unwrap_or_default(),&d.role,&d.function,&context.period,functional_mode).is_some()
+            ).collect();
+            culture_slot.iter().map(|&slot| gaps[slot]).collect()
         } else { Vec::new() };
+        let functional_profiles: Vec<Option<super::culture::CultureMapping>> = block_cultures.iter().map(|culture|
+            super::culture::functional_mapping(culture,&d.role,&d.function,&context.period,functional_mode)).collect();
         let source_missing_count=missing_source.iter().filter(|&&missing|missing).count();
         if source_missing_count>0 {
             d.reasons.push(format!("source_absente: Functional architectural source coverage missing in {source_missing_count} block context(s); no residential recipe certifies or excludes this facility's footing"));
@@ -749,7 +805,7 @@ fn prepare_inner(
         let (layout_ref, used_ref, demand) = (&*layout, &used, &*d);
         let mut options = super::par::map(&layout_ref.blocks, |bi, b| {
             let (layout, used, d) = (layout_ref, used_ref, demand);
-            if !camps::supported(layout, population, bi, d, context) { return None; }
+            if camp && !camps::supported(layout, population, bi, d, context) { return None; }
             if missing_source.get(bi)==Some(&true) { return None; }
             if needs_water && !environment[bi].waterfront {
                 return None;
@@ -763,8 +819,7 @@ fn prepare_inner(
                 return None;
             }
             let isolated_profile;
-            let functional_profile=super::culture::functional_mapping(block_culture(layout,bi),&d.role,&d.function,&context.period,
-                match context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"});
+            let functional_profile=&functional_profiles[culture_slot[bi]];
             let profile = if isolated {
                 isolated_profile = super::culture::isolated_mapping(
                     block_culture(layout, bi),
@@ -773,7 +828,7 @@ fn prepare_inner(
                 )?
                 .admissibility;
                 &isolated_profile
-            } else if let Some(ref functional) = functional_profile { &functional.admissibility } else {
+            } else if let Some(functional) = functional_profile { &functional.admissibility } else {
                 admissions[bi][class_index(class)]
                     .get_or_init(|| {
                         super::culture::block_mapping(
@@ -791,30 +846,33 @@ fn prepare_inner(
             if context.intent != "activity" && environment[bi].slope > super::profiles::house_slope(block_culture(layout, bi), profile.max_slope, context.slope_relax) {
                 return None;
             }
-            let filtered;
-            let public_contacts: &[_] = if d.function == "common" {
-                filtered = block_contacts[bi]
-                    .iter()
-                    .filter(|c| matches!(c.kind.as_str(), "public" | "collective"))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                &filtered
-            } else {
-                &block_contacts[bi]
-            };
-            let contact = public_contacts.iter().max_by(|a, b| {
-                a.length
-                    .total_cmp(&b.length)
-                    .then_with(|| b.street.cmp(&a.street))
-            })?;
-            let (street, front) = (
-                contact.street,
-                super::parcels::continuous_frontage(public_contacts),
-            );
+            // The longest contact, its street and the continuous frontage are
+            // the block's own, for the contacts a common may use or for all.
+            let (street, front, shared_door) = (*frontages[bi][(d.function == "common") as usize].get_or_init(|| {
+                let filtered;
+                let public_contacts: &[_] = if d.function == "common" {
+                    filtered = block_contacts[bi]
+                        .iter()
+                        .filter(|c| matches!(c.kind.as_str(), "public" | "collective"))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    &filtered
+                } else {
+                    &block_contacts[bi]
+                };
+                let contact = public_contacts.iter().max_by(|a, b| {
+                    a.length
+                        .total_cmp(&b.length)
+                        .then_with(|| b.street.cmp(&a.street))
+                })?;
+                Some((
+                    contact.street,
+                    super::parcels::continuous_frontage(public_contacts),
+                    matches!(contact.kind.as_str(), "private" | "collective"),
+                ))
+            }))?;
             let a = areas[bi];
-            let minimum = if d.function == "common"
-                || matches!(contact.kind.as_str(), "private" | "collective")
-            {
+            let minimum = if d.function == "common" || shared_door {
                 profile.min_access_width
             } else {
                 d.target_frontage
@@ -911,7 +969,7 @@ fn prepare_inner(
             // its land nor under half of it (a shrunken building): it then falls
             // to a plot of the tissue. Only a landmark holds a larger precinct.
             if !isolated && matches!(d.function.as_str(), "warehouse" | "collective" | "workshop") {
-                let radius = *radii[bi].get_or_init(|| super::deep_blocks::inscribed_radius(&b.shape));
+                let radius = *radii[bi].get_or_init(|| block_radius(&b.shape));
                 if 4.0 * radius * radius < 0.3 * a || (!d.landmark && (a > 2.0 * target || a < 0.5 * target)) {
                     return None;
                 }
@@ -1242,8 +1300,13 @@ fn shared(a: &Shape, b: &Shape) -> f64 {
     sum
 }
 fn graph(partition: &Partition) -> (Vec<Adjacency>, Vec<Vec<usize>>) {
-    let mut bins: BTreeMap<(i32, i32), Vec<usize>> = BTreeMap::new();
+    // Parcels are binned on a 64 m grid, one entry per (cell, parcel). Sorted
+    // by (cell, parcel index), the entries give the cells in (x, y) order and
+    // the parcels of one cell in index order.
+    let mut entries: Vec<(i32, i32, usize)> = vec![];
     let mut boxes = Vec::with_capacity(partition.parcels.len());
+    // Cell range of each box: ((first x, last x), (first y, last y)).
+    let mut spans: Vec<((i32, i32), (i32, i32))> = Vec::with_capacity(partition.parcels.len());
     for (i, p) in partition.parcels.iter().enumerate() {
         let (mut x0, mut y0, mut x1, mut y1) = (
             f64::INFINITY,
@@ -1258,24 +1321,38 @@ fn graph(partition: &Partition) -> (Vec<Adjacency>, Vec<Vec<usize>>) {
             y1 = y1.max(p.y);
         }
         boxes.push((x0, y0, x1, y1));
-        for x in ((x0 - 0.03) / 64.0).floor() as i32..=((x1 + 0.03) / 64.0).floor() as i32 {
-            for y in ((y0 - 0.03) / 64.0).floor() as i32..=((y1 + 0.03) / 64.0).floor() as i32 {
-                bins.entry((x, y)).or_default().push(i);
+        let xs = (((x0 - 0.03) / 64.0).floor() as i32, ((x1 + 0.03) / 64.0).floor() as i32);
+        let ys = (((y0 - 0.03) / 64.0).floor() as i32, ((y1 + 0.03) / 64.0).floor() as i32);
+        spans.push((xs, ys));
+        for x in xs.0..=xs.1 {
+            for y in ys.0..=ys.1 {
+                entries.push((x, y, i));
             }
         }
     }
-    let mut tested = BTreeSet::new();
+    entries.sort_unstable();
     let mut edges = vec![];
     let mut neighbours = vec![vec![]; partition.parcels.len()];
-    for ids in bins.values() {
-        for (at, &a) in ids.iter().enumerate() {
-            for &b in &ids[at + 1..] {
+    let mut start = 0;
+    while start < entries.len() {
+        let (cx, cy, _) = entries[start];
+        let mut end = start + 1;
+        while end < entries.len() && entries[end].0 == cx && entries[end].1 == cy {
+            end += 1;
+        }
+        let ids = &entries[start..end];
+        start = end;
+        for (at, &(_, _, a)) in ids.iter().enumerate() {
+            for &(_, _, b) in &ids[at + 1..] {
                 // Disjoint boxes cannot share an edge: skip the exact test.
                 let (p, q) = (boxes[a], boxes[b]);
                 if p.0 > q.2 + 0.05 || q.0 > p.2 + 0.05 || p.1 > q.3 + 0.05 || q.1 > p.3 + 0.05 {
                     continue;
                 }
-                if !tested.insert((a.min(b), a.max(b))) {
+                // A pair is tested once, in the first cell (x, y order) that
+                // both boxes cover: the lowest corner of their common cells.
+                let (sa, sb) = (spans[a], spans[b]);
+                if (cx, cy) != (sa.0.0.max(sb.0.0), sa.1.0.max(sb.1.0)) {
                     continue;
                 }
                 let length = shared(&partition.parcels[a].shape, &partition.parcels[b].shape);
@@ -1321,35 +1398,138 @@ fn open_access_with(p: &Parcel, minimum: f64, public_frontage: f64) -> bool {
                 matches!(a.kind.as_str(), "public" | "collective") && a.front_length >= minimum
             }))
 }
+/// Fast deterministic hasher (Fx) for the allocation memo: every entry is a
+/// pure function of its key and the maps are never iterated for a result, so
+/// the hash choice cannot reach the output.
+#[derive(Default, Clone, Copy)]
+struct FxHasher(u64);
+impl FxHasher {
+    #[inline]
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+impl std::hash::Hasher for FxHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            let mut word = [0u8; 8];
+            word.copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(word));
+        }
+        for &byte in chunks.remainder() {
+            self.add(u64::from(byte));
+        }
+    }
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.add(u64::from(i));
+    }
+    #[inline]
+    fn write_u32(&mut self, i: u32) {
+        self.add(u64::from(i));
+    }
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.add(i);
+    }
+    #[inline]
+    fn write_usize(&mut self, i: usize) {
+        self.add(i as u64);
+    }
+}
+type FastMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<FxHasher>>;
+/// A candidate parcel ordered by (cost, index), costs compared with `total_cmp`.
+struct Ranked(f64, usize);
+impl PartialEq for Ranked {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl Eq for Ranked {}
+impl PartialOrd for Ranked {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Ranked {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0).then(self.1.cmp(&other.1))
+    }
+}
+/// The demand reserved on each block, by block index (the last reservation of
+/// a block wins).
+struct ReservedFor {
+    by_block: Vec<Option<String>>,
+}
+impl ReservedFor {
+    fn new(pr: &UrbanProgramme) -> Self {
+        let len = pr.reservations.iter().map(|r| r.block + 1).max().unwrap_or(0);
+        let mut by_block = vec![None; len];
+        for r in &pr.reservations {
+            by_block[r.block] = Some(r.demand_id.clone());
+        }
+        Self { by_block }
+    }
+    fn get(&self, block: &usize) -> Option<&String> {
+        self.by_block.get(*block).and_then(Option::as_ref)
+    }
+    fn contains_key(&self, block: &usize) -> bool {
+        self.get(block).is_some()
+    }
+}
 /// Allocation memo: contextual mappings per (block, plot family, function class)
 /// and envelope witnesses per (parcel, width, depth). Both are pure, and they
 /// were recomputed for every demand x parcel.
 #[derive(Default)]
 struct Memo {
-    camp_sources: HashMap<(usize, String, String), bool>,
-    mappings: HashMap<(usize, String, &'static str), Option<CultureMapping>>,
-    envelopes: HashMap<(usize, u64, u64), bool>,
+    camp_sources: FastMap<(usize, String, String), bool>,
+    /// Court and compound lots without a parcel index (tests): per lot.
+    mappings: FastMap<(usize, String, &'static str), Option<CultureMapping>>,
+    /// Court and compound lots choose their profile per lot (full court house
+    /// or the pack's compact house), so they are memoised per lot.
+    lots: FastMap<(usize, &'static str), Option<CultureMapping>>,
+    /// Other families: per (block, function class), the mapping of each family.
+    by_family: FastMap<(usize, &'static str), Vec<(String, Option<CultureMapping>)>>,
+    envelopes: FastMap<(usize, u64, u64), bool>,
     /// Continuous frontage per parcel: (all contacts, public contacts only).
-    frontages: HashMap<usize, (f64, f64)>,
+    frontages: FastMap<usize, (f64, f64)>,
     /// Reserved-block witnesses per (parcel, width, depth), on one street index.
-    witnesses: HashMap<(usize, u64, u64), bool>,
+    witnesses: FastMap<(usize, u64, u64), bool>,
     index: Option<super::parcels::FrontageIndex>,
     /// Per-parcel fronts shared by every envelope size tested on it.
-    fronts: HashMap<usize, Vec<super::parcels::Front>>,
+    fronts: FastMap<usize, Vec<super::parcels::Front>>,
     /// Per-parcel witnesses shared across allocation passes (`probe_cache`).
-    shared_envelopes: HashMap<usize, Option<std::sync::Arc<super::parcels::EnvelopeMemo>>>,
+    shared_envelopes: FastMap<usize, Option<std::sync::Arc<super::parcels::EnvelopeMemo>>>,
+    /// Whether the town is a camp (a pure function of the layout), read once.
+    camp: Option<bool>,
+    /// First reservation of each block (`u32::MAX`: none), built once.
+    reservations: Option<std::sync::Arc<Vec<u32>>>,
 }
 impl Memo {
     /// Takes the entries of a memo filled on other parcels and blocks. Every
     /// entry is a pure function of its key, so a key both hold has one value.
     fn absorb(&mut self, other: Memo) {
-        fn merge<K: std::hash::Hash + Eq, V>(into: &mut HashMap<K, V>, from: HashMap<K, V>) {
+        fn merge<K: std::hash::Hash + Eq, V>(into: &mut FastMap<K, V>, from: FastMap<K, V>) {
             for (k, v) in from {
                 into.entry(k).or_insert(v);
             }
         }
         merge(&mut self.camp_sources, other.camp_sources);
         merge(&mut self.mappings, other.mappings);
+        merge(&mut self.lots, other.lots);
+        for (key, families) in other.by_family {
+            let slot = self.by_family.entry(key).or_default();
+            for entry in families {
+                if !slot.iter().any(|known| known.0 == entry.0) {
+                    slot.push(entry);
+                }
+            }
+        }
         merge(&mut self.envelopes, other.envelopes);
         merge(&mut self.frontages, other.frontages);
         merge(&mut self.witnesses, other.witnesses);
@@ -1357,6 +1537,41 @@ impl Memo {
         merge(&mut self.shared_envelopes, other.shared_envelopes);
         if self.index.is_none() {
             self.index = other.index;
+        }
+    }
+    /// Reads the town-wide facts once, so that the memos started for the
+    /// parallel scan (`Memo::seeded`) share them instead of rebuilding them
+    /// per block.
+    fn prepare(&mut self, layout: &Layout, pr: &UrbanProgramme) {
+        self.camp(layout, pr);
+        let _ = self.reservation(pr, 0);
+    }
+    /// An empty memo that already holds the town-wide facts of `prepare`.
+    fn seeded(camp: Option<bool>, reservations: Option<std::sync::Arc<Vec<u32>>>) -> Memo {
+        Memo {
+            camp,
+            reservations,
+            ..Memo::default()
+        }
+    }
+    fn camp(&mut self, layout: &Layout, pr: &UrbanProgramme) -> bool {
+        *self
+            .camp
+            .get_or_insert_with(|| camps::camp(layout, pr.population))
+    }
+    /// The first reservation of a block, as `reservations.iter().find` gives it.
+    fn reservation<'a>(&mut self, pr: &'a UrbanProgramme, block: usize) -> Option<&'a Reservation> {
+        let index = self.reservations.get_or_insert_with(|| {
+            let len = pr.reservations.iter().map(|r| r.block + 1).max().unwrap_or(0);
+            let mut first = vec![u32::MAX; len];
+            for (i, r) in pr.reservations.iter().enumerate().rev() {
+                first[r.block] = i as u32;
+            }
+            std::sync::Arc::new(first)
+        });
+        match index.get(block) {
+            Some(&i) if i != u32::MAX => pr.reservations.get(i as usize),
+            _ => None,
         }
     }
     fn block_witness(&mut self, layout: &Layout, pi: usize, p: &Parcel, w: f64, d: f64) -> bool {
@@ -1392,20 +1607,38 @@ impl Memo {
         }
         *self.frontages.entry(pi).or_insert_with(compute)
     }
-    fn mapping(&mut self, layout: &Layout, p: &Parcel, function: &str) -> Option<&CultureMapping> {
-        // Court and compound lots choose their profile per lot (full court
-        // house or the pack's compact house), so they are memoised per lot.
-        let family = match p.family.as_str() {
-            "reserve" => "reserve".to_string(),
-            "courtyard" | "compound" => format!("{}\u{1}{}", p.family, p.id),
-            _ => p.family.clone(),
+    fn mapping(&mut self, layout: &Layout, pi: usize, p: &Parcel, function: &str) -> Option<&CultureMapping> {
+        let class = function_class(function);
+        if matches!(p.family.as_str(), "courtyard" | "compound") {
+            if pi != usize::MAX {
+                return self
+                    .lots
+                    .entry((pi, class))
+                    .or_insert_with(|| {
+                        super::culture::parcel_mapping(layout, p, parcel_culture(layout, p), function)
+                    })
+                    .as_ref();
+            }
+            return self
+                .mappings
+                .entry((p.block, format!("{}\u{1}{}", p.family, p.id), class))
+                .or_insert_with(|| {
+                    super::culture::parcel_mapping(layout, p, parcel_culture(layout, p), function)
+                })
+                .as_ref();
+        }
+        let families = self.by_family.entry((p.block, class)).or_default();
+        let at = match families.iter().position(|known| known.0 == p.family) {
+            Some(at) => at,
+            None => {
+                families.push((
+                    p.family.clone(),
+                    super::culture::parcel_mapping(layout, p, parcel_culture(layout, p), function),
+                ));
+                families.len() - 1
+            }
         };
-        self.mappings
-            .entry((p.block, family, function_class(function)))
-            .or_insert_with(|| {
-                super::culture::parcel_mapping(layout, p, parcel_culture(layout, p), function)
-            })
-            .as_ref()
+        families[at].1.as_ref()
     }
     fn envelope(&mut self, pi: usize, p: &Parcel, width: f64, depth: f64) -> bool {
         let key = (pi, width.to_bits(), depth.to_bits());
@@ -1486,10 +1719,12 @@ fn eligible_memo(
     pr: &UrbanProgramme,
     memo: &mut Memo,
 ) -> bool {
+    // `camps::supported` holds for any town that is not a camp (or isolated).
     if matches!(d.function.as_str(), "collective" | "warehouse" | "workshop")
+        && memo.camp(layout, pr)
         && !*memo.camp_sources.entry((p.block, d.role.clone(), d.function.clone()))
             .or_insert_with(|| camps::supported(layout, pr.population, p.block, d, &pr.context)) { return false; }
-    let Some(c) = memo.mapping(layout, p, &d.function).map(Admit::of) else {
+    let Some(c) = memo.mapping(layout, pi, p, &d.function).map(Admit::of) else {
         return false;
     };
     if pr.context.mode == "strict" && c.borrowed {
@@ -1520,7 +1755,7 @@ fn eligible_memo(
             memo.envelope(pi, p, c.min_frontage, c.min_depth)
         }
     };
-    if let Some(res) = pr.reservations.iter().find(|r| r.block == p.block) {
+    if let Some(res) = memo.reservation(pr, p.block) {
         if res.demand_id != d.id {
             return false;
         }
@@ -1710,11 +1945,31 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     pr.adjacency = edges;
     lap("graph");
     let mut assignments: Vec<Option<usize>> = vec![None; parcels.len()];
-    let reserved_for = pr
-        .reservations
-        .iter()
-        .map(|r| (r.block, r.demand_id.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let reserved_for = ReservedFor::new(&pr);
+    // Reserved blocks of each demand, and the parcels of every reserved block
+    // (ascending): sited and reserved demands visit only their own land.
+    let mut blocks_of: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (block, id) in reserved_for.by_block.iter().enumerate() {
+        if let Some(id) = id {
+            blocks_of.entry(id.as_str()).or_default().push(block);
+        }
+    }
+    let mut block_parcels: Vec<Vec<usize>> = vec![vec![]; reserved_for.by_block.len()];
+    for (pi, p) in parcels.iter().enumerate() {
+        if reserved_for.contains_key(&p.block) {
+            block_parcels[p.block].push(pi);
+        }
+    }
+    let reserved_parcels = |id: &str| -> Vec<usize> {
+        let mut out: Vec<usize> = blocks_of
+            .get(id)
+            .into_iter()
+            .flatten()
+            .flat_map(|&block| block_parcels[block].iter().copied())
+            .collect();
+        out.sort_unstable();
+        out
+    };
     let land_areas = parcels.iter().map(|p| area(&p.shape)).collect::<Vec<_>>();
     let centres = parcels
         .iter()
@@ -1725,24 +1980,24 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .map(|&c| dist(c, layout.center))
         .collect::<Vec<_>>();
     let prime = parcels.iter().map(prime_frontage).collect::<Vec<_>>();
-    // Whether a parcel centre lies inside an enclosure: evaluated lazily, once.
-    let enclosure_shapes: Vec<Shape> = layout
+    // Whether a parcel centre lies inside an enclosure (any circuit, a later
+    // epoch's wall included), read once for every parcel through an index.
+    let enclosure_shapes: Vec<super::geometry::ContainmentIndex> = layout
         .enclosures
         .iter()
-        .map(|e| Shape { outer: e.path.clone(), holes: vec![] })
+        .map(|e| super::geometry::ContainmentIndex::new(&Shape { outer: e.path.clone(), holes: vec![] }))
         .collect();
-    let mut enclosed_memo: Vec<Option<bool>> = vec![None; parcels.len()];
-    let mut enclosed_at = |pi: usize| -> bool {
-        *enclosed_memo[pi].get_or_insert_with(|| {
-            enclosure_shapes.iter().any(|s| super::geometry::contains(s, centres[pi]))
-        })
+    let enclosed: Vec<bool> = if enclosure_shapes.is_empty() {
+        vec![false; parcels.len()]
+    } else {
+        super::par::map(&centres, |_, &c| enclosure_shapes.iter().any(|s| s.contains(c)))
     };
+    let enclosed_at = |pi: usize| -> bool { enclosed[pi] };
     let frame = Frame::new(layout, &pr.environment);
-    let facts: Vec<SiteFacts> = parcels
-        .iter()
-        .zip(&centres)
-        .map(|(p, &c)| frame.facts(c, pr.environment.get(p.block)))
-        .collect();
+    let facts: Vec<SiteFacts> = {
+        let environment = &pr.environment;
+        super::par::map(parcels, |pi, p| frame.facts(centres[pi], environment.get(p.block)))
+    };
     let districts = layout
         .structure
         .as_ref()
@@ -1791,9 +2046,11 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         let groups: Vec<Vec<usize>> = by_block.into_values().collect();
         let mut rows = vec![vec![false; parcels.len()]; pending.len()];
         if !pending.is_empty() {
+            memo.prepare(layout, &pr);
+            let (seed_camp, seed_reservations) = (memo.camp, memo.reservations.clone());
             let pr_ref = &pr;
             let done = super::par::map(&groups, |_, group| {
-                let mut local = Memo::default();
+                let mut local = Memo::seeded(seed_camp, seed_reservations.clone());
                 let part: Vec<Vec<bool>> = pending
                     .iter()
                     .map(|&(_, di)| {
@@ -1830,14 +2087,11 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 return vec![false; parcels.len()];
             }
             if d.sites > 0 {
-                return parcels
-                    .iter()
-                    .enumerate()
-                    .map(|(pi, p)| {
-                        reserved_for.get(&p.block) == Some(&d.id)
-                            && eligible_memo(layout, pi, p, d, &pr, &mut memo)
-                    })
-                    .collect();
+                let mut row = vec![false; parcels.len()];
+                for pi in reserved_parcels(&d.id) {
+                    row[pi] = eligible_memo(layout, pi, &parcels[pi], d, &pr, &mut memo);
+                }
+                return row;
             }
             let key = class_key(d);
             if !classes.contains_key(&key) {
@@ -1852,10 +2106,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 classes.insert(key.clone(), base);
             }
             let mut row = classes[&key].clone();
-            for (pi, p) in parcels.iter().enumerate() {
-                if reserved_for.get(&p.block) == Some(&d.id) {
-                    row[pi] = eligible_memo(layout, pi, p, d, &pr, &mut memo);
-                }
+            for pi in reserved_parcels(&d.id) {
+                row[pi] = eligible_memo(layout, pi, &parcels[pi], d, &pr, &mut memo);
             }
             row
         })
@@ -1920,10 +2172,14 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     // Band 1: reserved institutions take their own blocks; legacy area demands
     // (commons, markets without a catalogue) keep the bounded scan.
     let mut order = (0..pr.demands.len()).collect::<Vec<_>>();
+    // Admitted parcels per demand, counted once for the sort keys.
+    let admitted: Vec<usize> = admission
+        .iter()
+        .map(|row| row.iter().filter(|&&ok| ok).count())
+        .collect();
     order.sort_by_key(|&di| {
         let d = &pr.demands[di];
-        let count = admission[di].iter().filter(|&&ok| ok).count();
-        (!d.landmark, count, d.id.clone())
+        (!d.landmark, admitted[di], d.id.clone())
     });
     for &di in &order {
         let d = &pr.demands[di];
@@ -1932,11 +2188,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         }
         if d.sites > 0 {
             let id = d.id.clone();
-            for pi in 0..parcels.len() {
-                if admission[di][pi]
-                    && assignments[pi].is_none()
-                    && reserved_for.get(&parcels[pi].block) == Some(&id)
-                {
+            for pi in reserved_parcels(&id) {
+                if admission[di][pi] && assignments[pi].is_none() {
                     let cap = capacity(land_areas[pi], &pr.demands[di]);
                     take(&mut pr, &mut assignments, pi, di, cap);
                 }
@@ -1962,16 +2215,23 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     // A block demand whose reservation failed falls back to the same rule.
     // Trades take at most a share of the plots fit for housing that follows
     // the singular density: 24 % at the default, 4 % at 0, 45 % at most.
+    let dwelling = pr
+        .demands
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.unit == "domesticUnits")
+        .map(|(di, _)| di)
+        .collect::<Vec<_>>();
     let housing_plots = (0..parcels.len())
         .filter(|&pi| {
-            assignments[pi].is_none()
-                && pr
-                    .demands
-                    .iter()
-                    .enumerate()
-                    .any(|(di, d)| d.unit == "domesticUnits" && admission[di][pi])
+            assignments[pi].is_none() && dwelling.iter().any(|&di| admission[di][pi])
         })
         .count();
+    // Parcels each demand holds before the sited trades are placed.
+    let mut held_by = vec![0usize; pr.demands.len()];
+    for &di in assignments.iter().flatten() {
+        held_by[di] += 1;
+    }
     let density = layout
         .config
         .as_ref()
@@ -1984,7 +2244,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         if d.sites == 0 || d.unit == "domesticUnits" {
             continue;
         }
-        let placed = assignments.iter().filter(|a| **a == Some(di)).count();
+        let placed = held_by[di];
         if d.placement == "block" && placed > 0 {
             continue;
         }
@@ -2008,23 +2268,28 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 (
                     pi,
                     roles::site_cost(&d.site, &facts[pi]) + size * 0.5
-                        + super::fortification::service_cost(layout, d, centroid(&parcels[pi].shape))
+                        + super::fortification::service_cost(layout, d, centres[pi])
                         - if district { 1.0 } else { 0.0 }
                         + if open_front { 2.0 } else { 0.0 },
                 )
             })
             .collect();
-        candidates.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
         // Only the best few hundred admissible candidates compete for the
-        // spread penalty; eligibility is tested in cost order until then.
+        // spread penalty; eligibility is tested in cost order until then, so
+        // the candidates leave a heap in (cost, index) order instead of being
+        // sorted whole.
         let pool = 400 + d.sites * 40;
         let mut kept = Vec::with_capacity(pool);
-        for c in candidates {
-            if kept.len() >= pool {
+        let mut by_cost: BinaryHeap<Reverse<Ranked>> = candidates
+            .drain(..)
+            .map(|(pi, cost)| Reverse(Ranked(cost, pi)))
+            .collect();
+        while kept.len() < pool {
+            let Some(Reverse(Ranked(cost, pi))) = by_cost.pop() else {
                 break;
-            }
-            if eligible_memo(layout, c.0, &parcels[c.0], d, &pr, &mut memo) {
-                kept.push(c);
+            };
+            if eligible_memo(layout, pi, &parcels[pi], d, &pr, &mut memo) {
+                kept.push((pi, cost));
             }
         }
         // Crowding by already chosen sites, updated once per pick.
@@ -2062,14 +2327,17 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let occupancy = roles::occupancy(&layout.culture);
     let village = pr.population < 500 || camps::camp(layout, pr.population)
         || mapping(&layout.culture).is_some_and(|m| m.functional_profile == "communal");
-    let mut morphs: HashMap<(usize, String), Option<(f64, [f64; 2], bool, Option<f64>)>> = HashMap::new();
-    let dwelling = pr
-        .demands
-        .iter()
-        .enumerate()
-        .filter(|(_, d)| d.unit == "domesticUnits")
-        .map(|(di, _)| di)
-        .collect::<Vec<_>>();
+    // Tissue of a (block, culture): resolved once, with its storey cap.
+    #[derive(Clone, Copy)]
+    struct Tissue {
+        coverage: f64,
+        longhouse: bool,
+        households: Option<f64>,
+        cap: Option<u32>,
+        storeys: [f64; 2],
+    }
+    // Keyed by block, culture and the lot's dithered zone (`zone_blend::lot_zone`).
+    let mut tissues: HashMap<(usize, &str, Option<&str>), Tissue> = HashMap::new();
     let densify = super::footprint::capacity::of(layout)
         .filter(|_| {
             part.config
@@ -2084,36 +2352,39 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             if !dwelling.iter().any(|&di| admission[di][pi]) {
                 return 0.0;
             }
-            let culture = parcel_culture(layout, p).to_string();
-            let tissue = morphs
-                .entry((p.block, culture.clone()))
-                .or_insert_with(|| {
-                    super::culture::parcel_morph(layout, part, &culture, p.block).map(
-                        |(zone, m)| {
-                            let c = m.range("coverage", zone);
+            let culture = parcel_culture(layout, p);
+            let tissue = *tissues.entry((p.block, culture, super::zone_blend::lot_zone(layout, p))).or_insert_with(|| {
+                let (coverage, raw, longhouse, households, blend) =
+                    super::culture::lot_morph(layout, part, culture, p)
+                        .map(|(zone, m)| {
+                            let c = super::zone_blend::coverage(&m, zone);
                             let s = &m.value["arch"]["storeys"];
                             (
                                 ((c[0] + c[1]) * 0.5).clamp(0.2, 0.95),
                                 [s[0].as_f64().unwrap_or(1.0), s[1].as_f64().unwrap_or(1.0)],
                                 matches!(m.value["arch"]["typology"].as_str().unwrap_or(""), "longhouse" | "maloca" | "plank-house"),
                                 camps::households_per_house(&m),
+                                super::zone_blend::storeys_of(&m.value["arch"]),
                             )
-                        },
-                    )
-                })
-                .unwrap_or((0.5, [1.0, 1.0], false, None));
+                        })
+                        .unwrap_or((0.5, [1.0, 1.0], false, None, None));
+                // The style's height ladder caps the storeys as massing.rs does.
+                let cap = super::forms::kit::storey_cap(culture, pr.population, super::massing::user_core(layout, p.block));
+                let capped = |r: [f64; 2]| super::forms::kit::capped_storeys([r[0] as u32, r[1] as u32], cap).map(f64::from);
+                // Near another phase (`zoneDensity: gradient`) the range leans toward its storeys.
+                let storeys = super::zone_blend::mix(capped(raw), blend.map(|(w, o)| (w, capped(o))));
+                Tissue { coverage, longhouse, households, cap, storeys }
+            });
             let zone_village = layout
                 .blocks
                 .get(p.block)
                 .is_some_and(|b| b.zone == "village");
             let limits = memo
-                .mapping(layout, p, "domestic")
+                .mapping(layout, pi, p, "domestic")
                 .map_or([1, 1], |c| c.admissibility.floors);
             // A densified tissue (adaptive capacity) raises the floors toward
             // the upper bound its houses admit, never past it.
-            // The style's height ladder caps the storeys as massing.rs does.
-            let cap = super::forms::kit::storey_cap(&culture, pr.population, super::massing::user_core(layout, p.block));
-            let storeys = super::forms::kit::capped_storeys([tissue.1[0] as u32, tissue.1[1] as u32], cap).map(f64::from);
+            let (cap, storeys) = (tissue.cap, tissue.storeys);
             let drawn = storeys[0] + (storeys[1] - storeys[0]) * p.pressure.clamp(0.0, 1.0);
             let top = f64::from(limits[1].max(limits[0])).min(cap.map_or(f64::MAX, f64::from));
             let floors = (drawn + (top - drawn).max(0.0) * densify)
@@ -2121,13 +2392,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 .clamp(f64::from(limits[0]).min(top), top);
             let capacity = household_capacity(
                 land_areas[pi],
-                tissue.0,
+                tissue.coverage,
                 floors,
                 &occupancy,
                 district_of(p).map_or(0.5, |d| d.wealth),
-                (village || zone_village) && !tissue.2,
+                (village || zone_village) && !tissue.longhouse,
             );
-            tissue.3.unwrap_or(capacity)
+            tissue.households.unwrap_or(capacity)
         })
         .collect::<Vec<_>>();
     // Forced dwellings hold their stated households (else the plot capacity).
@@ -2153,7 +2424,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .sum();
     let free = assignments.iter().map(Option::is_none).collect::<Vec<_>>();
     let pressures = parcels.iter().map(|p| p.pressure).collect::<Vec<_>>();
-    let mut households = spread_households(&household_caps, &pressures, &free, wanted.ceil());
+    let mut households = spread_households(&household_caps, &pressures, &free, wanted.ceil(),
+        super::zone_blend::enabled(layout).then_some(&land_areas[..]));
     // Band 3 and 4: shops first but only for their share of the land actually
     // left, then housing; shops can no longer starve households.
     let short = if wanted > 0.0 {
@@ -2164,10 +2436,17 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let mut extra_households = vec![false; parcels.len()];
     let requested: f64 = dwelling.iter().map(|&di| pr.demands[di].requested).sum();
     let fill_limit = (requested * 1.3).floor().max(requested.ceil());
-    // Seed enclosed blocks before open growth, then core outward, before
-    // cohesion can consume the programme on peripheral street fronts. The
-    // footprint bounds enclosed blocks by the population margin; spending
-    // that margin outside first could still leave a far-bank ward empty.
+    // Core standing of each block: 1 or 0 by zone, shared across a phase
+    // boundary with `zoneDensity: gradient` (`zone_blend::core_weight`).
+    let zone_blends = super::zone_blend::blocks(layout);
+    let core_weight = |block: usize| super::zone_blend::core_weight(layout, zone_blends.get(block).copied().flatten(), block);
+    // Seed the blocks, enclosed ones first then core outward, before cohesion
+    // can consume the programme on peripheral street fronts. A circuit whose
+    // housing lots exceed the programme by enough land to move a curtain is
+    // not seeded: inside it land is dear, the walled lots are housed outward
+    // from the centre without a gap (the dwelling heap below), and what the
+    // households do not reach is one outer belt, which the trim releases and
+    // the curtain gives back (`composition::fit_to_built`).
     if !roles::is_isolated(&pr.context.intent) {
         let mut built = vec![false; layout.blocks.len()];
         for (pi, assignment) in assignments.iter().enumerate() {
@@ -2175,18 +2454,35 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 built[parcels[pi].block] = true;
             }
         }
+        let (enclosed_lots, enclosed_land) = (0..parcels.len())
+            .filter(|&pi| assignments[pi].is_none() && enclosed[pi] && dwelling.iter().any(|&di| admission[di][pi]))
+            .fold((0usize, 0.0), |(n, land), pi| (n + 1, land + land_areas[pi]));
+        // Land of the enclosed housing lots the programme cannot fill.
+        let surplus = (enclosed_lots as f64 - fill_limit).max(0.0) * enclosed_land / enclosed_lots.max(1) as f64;
+        let belt = surplus >= ENCLOSED_BELT;
         let mut candidates: Vec<usize> = (0..parcels.len())
-            .filter(|&pi| assignments[pi].is_none() && dwelling.iter().any(|&di| admission[di][pi]))
+            .filter(|&pi| assignments[pi].is_none() && !(belt && enclosed[pi]) && dwelling.iter().any(|&di| admission[di][pi]))
             .collect();
+        // Enclosure and core flags of the candidates, read once for the sort.
+        let mut flags = vec![(false, 0.0); parcels.len()];
+        for &pi in &candidates {
+            flags[pi] = (enclosed_at(pi), core_weight(parcels[pi].block));
+        }
         candidates.sort_by(|&a, &b| {
-            let core = |pi: usize| layout.blocks.get(parcels[pi].block).is_some_and(|b| b.zone == "core");
-            enclosed_at(b).cmp(&enclosed_at(a)).then(core(b).cmp(&core(a))).then(prime[b].cmp(&prime[a]))
+            flags[b].0.cmp(&flags[a].0).then(flags[b].1.total_cmp(&flags[a].1)).then(prime[b].cmp(&prime[a]))
                 .then(center_distances[a].total_cmp(&center_distances[b])).then(parcels[a].id.cmp(&parcels[b].id))
         });
         let mut held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
+        // Beside a circuit, the blocks are seeded from the population margin
+        // only: the households of the programme go to the enclosed land first.
+        let mut outside_budget = fill_limit - requested.ceil();
         for pi in candidates {
             let block = parcels[pi].block;
             if built[block] || held + 1.0 > fill_limit { continue; }
+            if !flags[pi].0 && !layout.enclosures.is_empty() {
+                if outside_budget < 1.0 { continue; }
+                outside_budget -= 1.0;
+            }
             let Some(di) = dwelling.iter().copied().find(|&di| admission[di][pi]) else { continue };
             take(&mut pr, &mut assignments, pi, di, 1.0);
             households[pi] = 1.0;
@@ -2231,13 +2527,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     (false, true) => 1.0,
                     _ => 0.0,
                 };
-                let core = !commercial && layout.blocks.get(p.block).is_some_and(|b| b.zone == "core");
+                let core = if commercial { 0.0 } else { core_weight(p.block) };
                 p.pressure * if commercial { 3.0 } else { 0.5 }
                     + front.min(30.0) * if commercial { 0.15 } else { 0.02 }
                     - center_distances[pi] / if commercial { 250.0 } else { 1500.0 }
                     + quarter
                     + street
-                    + if core { 2.0 * PRIME_TIER } else { 0.0 }
+                    + 2.0 * PRIME_TIER * core
                     + 2.4 * PRIME_TIER * super::composition::gate_activity(layout, centres[pi])
             })
             .collect::<Vec<_>>()); }
@@ -2250,7 +2546,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                         && matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                 })
                 .collect();
-            ranked.sort_by(|&a, &b| base[b].total_cmp(&base[a]).then(a.cmp(&b)));
+            // Enclosed land first, then the best shop fronts.
+            ranked.sort_by(|&a, &b| enclosed[b].cmp(&enclosed[a]).then(base[b].total_cmp(&base[a])).then(a.cmp(&b)));
             let wanted_plots = 3 * goal.ceil() as usize + 50;
             let mut found = 0;
             for pi in ranked {
@@ -2274,13 +2571,19 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 !bits
             }
         };
+        // Enclosed land is one tier above every score: inside a circuit, land
+        // is housed before any lot outside it, up to the programme's need, and
+        // from the centre outward: the lots left over form the outer belt.
+        let rank = |pi: usize, cohesion: usize| {
+            score_key(if enclosed[pi] { -center_distances[pi] } else { base[pi] + 2.0 * cohesion as f64 })
+        };
         for (pi, p) in parcels.iter().enumerate() {
             if row[pi] && assignments[pi].is_none() {
-                heap.push((score_key(base[pi]), Reverse(p.id.as_str()), pi, 0usize));
+                heap.push((enclosed[pi], rank(pi, 0), Reverse(p.id.as_str()), pi, 0usize));
             }
         }
         while pr.demands[di].parcel_capacity + 0.01 < goal {
-            let Some((_, _, pi, version)) = heap.pop() else {
+            let Some((_, _, _, pi, version)) = heap.pop() else {
                 break;
             };
             if assignments[pi].is_some() || cohesion[pi] != version {
@@ -2294,7 +2597,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 if row[j] && assignments[j].is_none() {
                     cohesion[j] += 1;
                     heap.push((
-                        score_key(base[j] + 2.0 * cohesion[j] as f64),
+                        enclosed[j],
+                        rank(j, cohesion[j]),
                         Reverse(parcels[j].id.as_str()),
                         j,
                         cohesion[j],
@@ -2330,7 +2634,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         }
         // Fill serviced land within the same bounded population margin.
         let mut extra = 0usize;
-        while let Some((_, _, pi, version)) = heap.pop() {
+        while let Some((_, _, _, pi, version)) = heap.pop() {
             if assignments[pi].is_some() || cohesion[pi] != version {
                 continue;
             }
@@ -2384,7 +2688,11 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             donors.entry(di).or_default().push((households[j] as u64,Reverse(j)));
         }
     }
-    for pi in 0..parcels.len() {
+    // Enclosed frontages first, from the centre outward, then the open street fronts.
+    let mut vacant: Vec<usize> = (0..parcels.len()).collect();
+    vacant.sort_by(|&a, &b| enclosed[b].cmp(&enclosed[a])
+        .then(if enclosed[a] && enclosed[b] { center_distances[a].total_cmp(&center_distances[b]) } else { std::cmp::Ordering::Equal }));
+    for pi in vacant {
         if assignments[pi].is_some() || !public_street(&parcels[pi]) && !enclosed_at(pi) { continue; }
         let Some(di) = dwelling.iter().copied().filter(|&di|admission[di][pi] && donors.get(&di).is_some_and(|h|!h.is_empty()))
             .max_by_key(|di|donors[di].peek().copied()) else { continue };
@@ -2433,23 +2741,62 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             take(&mut pr, &mut assignments, pi, gi, land_areas[pi]);
         }
     }
+    // Land a circuit keeps open is a land use, not a blank: a block nobody
+    // builds on and the field plots at the back of a deep block take the
+    // open role of the culture's enclosures (`core.enclosure.open`).
+    let enclosed_open: Vec<usize> = (0..parcels.len())
+        .filter(|&pi| {
+            !isolated
+                && assignments[pi].is_none()
+                && enclosed[pi]
+                && parcels[pi].family == "reserve"
+                && (parcels[pi].use_kind == "reserve" && parcels[pi].reason == "reserve"
+                    || matches!(parcels[pi].reason.as_str(), "backland-field" | "public-garden" | "enclosed-common"))
+                && !reserved_for.contains_key(&parcels[pi].block)
+                && pr.environment.get(parcels[pi].block).is_none_or(|e| !e.wet)
+        })
+        .collect();
+    if !enclosed_open.is_empty() {
+        let total: f64 = enclosed_open.iter().map(|&pi| land_areas[pi]).sum();
+        let mut d = demand(
+            &part.key,
+            "common",
+            total,
+            false,
+            "Unbuilt land kept inside the circuit: the open land of the culture's enclosures".into(),
+        );
+        d.id = format!("{}/demand/enclosed-open", part.key);
+        d.role = super::composition::enclosed_open(&layout.culture, pr.population).0.into();
+        let di = pr.demands.len();
+        pr.demands.push(d);
+        for &pi in &enclosed_open {
+            take(&mut pr, &mut assignments, pi, di, land_areas[pi]);
+        }
+    }
+    // Parcel of each allocation, in allocation order.
+    let mut allocation_parcels: Vec<usize> = Vec::with_capacity(parcels.len());
     for (pi, &assignment) in assignments.iter().enumerate() {
         let Some(di) = assignment else { continue };
         let p = &parcels[pi];
         let d = &pr.demands[di];
         // Gardens need no building recipe; they keep the parcel's cultural route.
         let user = forced[pi].as_ref();
-        let c = match memo.mapping(layout, p, &d.function).cloned() {
-            Some(c) => c,
-            None if d.role == "open.garden" || user.is_some() => {
-                match memo.mapping(layout, p, "domestic").cloned().or_else(|| {
-                    super::culture::mapping_for(parcel_culture(layout, p), &pr.context.period)
-                }) {
+        let found = memo.mapping(layout, pi, p, &d.function).is_some();
+        let fallback: Option<CultureMapping>;
+        let c: &CultureMapping = if found {
+            memo.mapping(layout, pi, p, &d.function).expect("mapping memoised above")
+        } else if d.role == "open.garden" || user.is_some() {
+            if memo.mapping(layout, pi, p, "domestic").is_some() {
+                memo.mapping(layout, pi, p, "domestic").expect("mapping memoised above")
+            } else {
+                fallback = super::culture::mapping_for(parcel_culture(layout, p), &pr.context.period);
+                match &fallback {
                     Some(c) => c,
                     None => continue,
                 }
             }
-            None => continue,
+        } else {
+            continue;
         };
         let same = neighbours[pi]
             .iter()
@@ -2469,7 +2816,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             r.clone()
         } else if dwelling && d.function == "domestic" && !roles::is_isolated(&pr.context.intent) {
             dwelling_role(
-                &c,
+                c,
                 held,
                 land_areas[pi],
                 district.map(|x| (x.role.as_str(), x.wealth)),
@@ -2521,12 +2868,26 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             district_role: district.map_or_else(String::new, |x| x.role.clone()),
             wealth: district.map_or(0.5, |x| x.wealth),
         });
+        allocation_parcels.push(pi);
     }
     lap("gardens");
-    decay(&mut pr, parcels, &facts, &locked);
-    culture_ruins(&mut pr, parcels, &locked);
-    for a in &mut pr.allocations {
-        a.label = roles::label(&a.role, &a.culture);
+    decay(&mut pr, &allocation_parcels, &facts, &locked);
+    culture_ruins(&mut pr, &allocation_parcels, &locked);
+    // Labels depend on (role, culture) only: one lookup per pair.
+    let labels: Vec<String> = {
+        let mut known: HashMap<(&str, &str), String> = HashMap::new();
+        pr.allocations
+            .iter()
+            .map(|a| {
+                known
+                    .entry((a.role.as_str(), a.culture.as_str()))
+                    .or_insert_with(|| roles::label(&a.role, &a.culture))
+                    .clone()
+            })
+            .collect()
+    };
+    for (a, label) in pr.allocations.iter_mut().zip(labels) {
+        a.label = label;
     }
     for d in &mut pr.demands {
         // Deficit here is the actual unbuilt demand. A separate land deficit is
@@ -2638,6 +2999,11 @@ pub(super) fn finish_lots(layout: &Layout, partition: &mut Partition) {
 }
 /// Heap tier of a main-street lot for housing: above any cohesion bonus.
 const PRIME_TIER: f64 = 100.0;
+/// Land (m²) of the housing lots inside the circuits beyond what the
+/// programme may house (+30 %), from which that surplus is an outer belt the
+/// curtain gives back rather than empty lots spread over every block: the
+/// smallest empty piece that moves a curtain (`composition::fit_to_built`).
+const ENCLOSED_BELT: f64 = 10_000.0;
 /// Public frontage on a main street (rank 0 or 1): the street wall.
 /// Main-street lots, and the faubourg lean-tos at the gates: built first
 /// (shops ahead of houses) and never left as empty gardens while a house fits.
@@ -2656,7 +3022,7 @@ fn public_street(p: &Parcel) -> bool {
 /// rounded by largest remainders, with no rounding cliff. With more plots
 /// than households every plot holds one and the allocation order decides
 /// which ones become gardens. Plots already taken hold at most one.
-fn spread_households(caps: &[f64], pressure: &[f64], free: &[bool], wanted: f64) -> Vec<f64> {
+fn spread_households(caps: &[f64], pressure: &[f64], free: &[bool], wanted: f64, land: Option<&[f64]>) -> Vec<f64> {
     let open: Vec<usize> = (0..caps.len())
         .filter(|&i| free[i] && caps[i] > 0.0)
         .collect();
@@ -2675,8 +3041,15 @@ fn spread_households(caps: &[f64], pressure: &[f64], free: &[bool], wanted: f64)
         .collect();
     let extra = (wanted.round() - open.len() as f64).max(0.0);
     let spare = |i: usize| (caps[i] - 1.0).max(0.0);
-    // Squared so the busy core clearly outgrows the quiet edge.
-    let weight = |i: usize| spare(i) * (0.15 + pressure[i].clamp(0.0, 1.0)).powi(2);
+    // Squared so the busy core clearly outgrows the quiet edge. With
+    // `zoneDensity: gradient` the extra households follow the lot's land and
+    // its pressure (households per hectare along the access gradient), not
+    // the zone's capacity step; the capacity still bounds each lot.
+    // Fourth power there, so the centre stays clearly the densest.
+    let weight = |i: usize| match land {
+        Some(a) => a[i] / 100.0 * (0.15 + pressure[i].clamp(0.0, 1.0)).powi(4),
+        None => spare(i) * (0.15 + pressure[i].clamp(0.0, 1.0)).powi(2),
+    };
     let total: f64 = open.iter().map(|&i| spare(i)).sum();
     if extra <= 0.0 {
         return out;
@@ -2688,7 +3061,8 @@ fn spread_households(caps: &[f64], pressure: &[f64], free: &[bool], wanted: f64)
         return out;
     }
     let share = |i: usize, f: f64| spare(i).min(weight(i) * f);
-    let (mut lo, mut hi) = (0.0, 50.0);
+    // Land weights are small numbers: their fill factor needs a wider bracket.
+    let (mut lo, mut hi) = (0.0, if land.is_some() { 1.0e4 } else { 50.0 });
     for _ in 0..60 {
         let mid = 0.5 * (lo + hi);
         if open.iter().map(|&i| share(i, mid)).sum::<f64>() < extra {
@@ -2852,23 +3226,18 @@ fn override_demand(
 /// stands empty or ruined, peripheral and low-traffic lots first; a fully
 /// abandoned place leaves its gardens fallow. Empty buildings keep their lot,
 /// function and form so houses and the UI can draw them as such.
-fn decay(pr: &mut UrbanProgramme, parcels: &[Parcel], facts: &[SiteFacts], locked: &[bool]) {
+fn decay(pr: &mut UrbanProgramme, allocation_parcels: &[usize], facts: &[SiteFacts], locked: &[bool]) {
     let Some(rule) = roles::state(&pr.context.state).filter(|r| !r.suffix.is_empty()) else {
         return;
     };
     let ratio = pr.context.decay.unwrap_or(rule.decay).clamp(0.0, 1.0);
-    let index: HashMap<&str, usize> = parcels
-        .iter()
-        .enumerate()
-        .map(|(i, p)| (p.id.as_str(), i))
-        .collect();
     let all = ratio >= 0.999;
     let mut built: Vec<(usize, f64)> = pr
         .allocations
         .iter()
         .enumerate()
         .filter_map(|(ai, a)| {
-            let pi = *index.get(a.parcel_id.as_str())?;
+            let pi = *allocation_parcels.get(ai)?;
             let keep = a.role == "open.garden" || (!all && (a.landmark || locked[pi]));
             (!keep).then(|| (ai, facts[pi].core - facts[pi].pressure))
         })
@@ -2905,16 +3274,15 @@ fn decay(pr: &mut UrbanProgramme, parcels: &[Parcel], facts: &[SiteFacts], locke
 /// so ruins scatter among the inhabited houses; landmarks and locked lots
 /// stand, and a lone building never falls. Like the state's decay, it empties
 /// homes of the plan sized for the whole population.
-fn culture_ruins(pr: &mut UrbanProgramme, parcels: &[Parcel], locked: &[bool]) {
+fn culture_ruins(pr: &mut UrbanProgramme, allocation_parcels: &[usize], locked: &[bool]) {
     // An explicit vacancy of 0 asks for no empty building at all (capacity probes).
     if pr.context.decay == Some(0.0) {
         return;
     }
     let class = crate::settlements::demographics::class_of(pr.population);
-    let index: HashMap<&str, usize> = parcels.iter().enumerate().map(|(i, p)| (p.id.as_str(), i)).collect();
     let mut by_culture: BTreeMap<String, Vec<(f64, usize)>> = BTreeMap::new();
     for (ai, a) in pr.allocations.iter().enumerate() {
-        let Some(&pi) = index.get(a.parcel_id.as_str()) else { continue };
+        let Some(&pi) = allocation_parcels.get(ai) else { continue };
         if a.landmark || locked[pi] || a.role.ends_with(".ruin") || a.role.ends_with(".abandoned")
             || !matches!(a.function.as_str(), "domestic" | "mixed" | "workshop" | "warehouse") || roles::ruin_share(&a.culture, class) <= 0.0 {
             continue;
@@ -2949,21 +3317,20 @@ fn legacy_fill(
     neighbours: &[Vec<usize>],
     land_areas: &[f64],
     center_distances: &[f64],
-    reserved_for: &BTreeMap<usize, String>,
+    reserved_for: &ReservedFor,
     units: &[f64],
     locked: &[bool],
 ) {
+    // The admitted plots, in index order: an attempt visits these only.
+    let admitted: Vec<usize> = (0..parcels.len()).filter(|&pi| admission[di][pi]).collect();
     // Each successful attempt claims a previously unassigned/relocatable plot.
     for _ in 0..parcels.len() {
         if pr.demands[di].parcel_capacity + 0.01 >= pr.demands[di].requested { break; }
         let d = &pr.demands[di];
-        let options = parcels
+        let options = admitted
             .iter()
-            .enumerate()
-            .filter_map(|(pi, p)| {
-                if !admission[di][pi] {
-                    return None;
-                }
+            .filter_map(|&pi| {
+                let p = &parcels[pi];
                 let prior = assignments[pi];
                 if prior.is_some() && locked.get(pi) == Some(&true) {
                     return None;
@@ -4146,6 +4513,14 @@ mod tests {
         assert_eq!(programme.reservations.len(), 1);
         assert!(programme.reservations[0].demand_id.ends_with("/workshop"));
         assert_eq!(source.blocks[0].kind, "reserve:programme");
+        // Prepared again (the quarter stage does, after the spring sites), the
+        // block is reserved again: a mark left from the first preparation would
+        // bar it from every demand and leave it without institution or house.
+        prepare(&mut source, 600, &context, surface).unwrap();
+        let programme = source.programme.as_ref().unwrap();
+        assert_eq!(programme.reservations.len(), 1);
+        assert!(programme.reservations[0].demand_id.ends_with("/workshop"));
+        assert_eq!(source.blocks[0].kind, "reserve:programme");
         let parts = super::super::generate_parcels(
             "resource-workshop",
             &[source.clone()],
@@ -4372,7 +4747,7 @@ mod tests {
         }
         // Spread: exact total, busiest plots first, no rounding cliff.
         let caps = [6.0, 6.0, 6.0, 6.0, 1.0];
-        let spread = spread_households(&caps, &[0.9, 0.1, 0.1, 0.1, 0.5], &[true; 5], 11.0);
+        let spread = spread_households(&caps, &[0.9, 0.1, 0.1, 0.1, 0.5], &[true; 5], 11.0, None);
         assert_eq!(spread.iter().sum::<f64>(), 11.0);
         assert!(spread[0] > spread[1] && spread[4] == 1.0, "{spread:?}");
     }

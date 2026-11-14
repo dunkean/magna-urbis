@@ -326,6 +326,28 @@ impl Terrain {
             architecture_culture,
         )
     }
+    /// Display blob of the building sites of `urban_building_sites_with_culture`
+    /// (`urban::display::site_display_buffers`, same bytes), generated in chunks
+    /// without holding every request.
+    pub fn urban_building_site_display(
+        &self,
+        seed: &str,
+        layouts: &[crate::urban::Layout],
+        partitions: &[crate::urban::Partition],
+        architecture_culture: Option<&str>,
+        origin: crate::urban::Point,
+    ) -> Result<Vec<u8>, String> {
+        let r = &self.fields.r;
+        crate::urban::building_sites::display_buffers(
+            seed,
+            layouts,
+            partitions,
+            self.urban_surface(),
+            &r.water_level,
+            architecture_culture,
+            origin,
+        )
+    }
     /// Sites `start..end` of `urban_building_sites_with_culture` (same order and
     /// bytes): independent ranges can run on separate engines and be concatenated.
     #[allow(clippy::too_many_arguments)]

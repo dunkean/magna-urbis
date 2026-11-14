@@ -401,6 +401,7 @@ fn fronted(candidates: &[&Street], blocks: &[&Shape]) -> Vec<bool> {
         phases: vec![],
         archetype: String::new(),
         structure: None,
+        claim: Default::default(),
     };
     let index = FrontageIndex::new(&mini);
     for b in blocks {

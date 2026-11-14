@@ -3130,7 +3130,7 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
             lay.body(s0, s1, tf, end, anchor);
         }
         Kind::Detached | Kind::Farm | Kind::Long => {
-            let urban = if zone == "village" { 0.4 * pressure } else { super::pressure::local(zone, pressure) };
+            let urban = if zone == "village" { 0.4 * pressure } else { super::pressure::local(&o.morph, zone, pressure) };
             // Its own stream: the size class never shifts the lot's other draws.
             let mut sized = Rng::new(o.seed).fork("home-size");
             let large = if kind == Kind::Farm { 0.12 + 0.25 * ((total - 1500.0) / 3000.0).clamp(0.0, 1.0) } else { 0.06 + 0.14 * o.wealth };

@@ -15,6 +15,12 @@
 use super::{Layout, LayoutConfig, ParcelConfig, Point, Shape, Street, Surface, access, geometry as g, programme};
 use std::collections::{HashMap, HashSet};
 
+/// Metres of frontage streets, for the `URBAN_PROFILE` pass lines.
+fn frontage_length(layout: &Layout) -> f64 {
+    layout.streets.iter().filter(|s| frontage_road(&s.role)).flat_map(|s| s.path.windows(2)).map(|w| (w[1].x-w[0].x).hypot(w[1].y-w[0].y)).sum()
+}
+fn profiled() -> bool { std::env::var("URBAN_PROFILE").is_ok() }
+
 /// Streets whose segments may be removed when they serve no built block.
 fn prunable(role: &str) -> bool {
     matches!(role, "street" | "lane" | "radial" | "ring" | "market") || interior(role)
@@ -58,8 +64,8 @@ fn verges(layout: &mut Layout) {
 }
 
 /// Blocks of the layout (indices) that hold no building after the programme and the lots, and
-/// the blocks reserved for institutions.
-type Unbuilt = (Vec<bool>, HashSet<usize>, HashSet<usize>, Vec<Shape>);
+/// the blocks reserved for institutions; then the street-use lots and the built lots.
+type Unbuilt = (Vec<bool>, HashSet<usize>, HashSet<usize>, Vec<Shape>, Vec<Shape>);
 /// Enclosure outlines indexed once per pass: `urban` runs for every parcel,
 /// several times, and an unindexed circuit costs its whole ring per call.
 fn walls(layout: &Layout) -> Vec<g::ContainmentIndex> {
@@ -74,13 +80,17 @@ fn street_use(p: &super::Parcel, role: &str, layout: &Layout, walls: &[g::Contai
         || urban(p,layout,walls))
 }
 fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &LayoutConfig, population: u32, surface: Surface<'_>) -> Option<Unbuilt> {
+    let mut laps = super::network::Lap::new("tail.trim.unbuilt");
     let mut probe = layout.clone();
     // The published cadastre reads the user config restored by kinds::finish.
     probe.config = Some(original.clone());
     access::summarize(&mut probe, config);
+    laps.lap("clone+summarize");
     programme::prepare(&mut probe, population, &config.programme, surface).ok()?;
-    let parts = super::generate_parcels(seed, std::slice::from_ref(&probe), &ParcelConfig::default()).ok()?;
-    let part = parts.first()?;
+    laps.lap("programme.prepare");
+    let part = super::probe_parcels(seed, &probe).ok()?;
+    laps.lap("probe_parcels");
+    let part = &part;
     let walls = walls(layout);
     let reserved: HashSet<usize> = probe.programme.as_ref()?.reservations.iter().map(|r| r.block).collect();
     // Blocks held for open common land stay reserved, but no street needs to run along them.
@@ -127,7 +137,10 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
         if fronts.is_empty() { vec![p.envelope.as_ref().unwrap_or(&p.shape).clone()] }
         else { fronts.into_iter().map(|f| Shape { outer:f.to_vec(), holes:vec![] }).collect() }
     }).collect();
-    Some((empty, reserved, commons, lots))
+    // The lots that carry a building (any role but open land): what a town circuit must hold.
+    let built_lots = part.parcels.iter().filter(|p| used(p) && !empty.get(p.block).copied().unwrap_or(false)).map(|p| p.shape.clone()).collect();
+    laps.lap("blocks+lots");
+    Some((empty, reserved, commons, lots, built_lots))
 }
 
 /// Sample points along a block outline, a few metres apart.
@@ -178,6 +191,8 @@ struct Seg {
     /// Lined by an occupied lot (any side): enough to keep a loop link a street.
     lined: bool,
     alive: bool,
+    /// A village exit (`villageStreets`): pruned as a dead end only, never as a loop link.
+    exit: bool,
 }
 
 /// Remove the street segments that serve nothing. `open` flags the blocks that are open land.
@@ -204,6 +219,11 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
     let open_boxes: Vec<(usize, (f64, f64, f64, f64))> =
         (0..open.len()).filter(|&i| open[i]).map(|i| (i, g::bbox(&layout.blocks[i].shape))).collect();
     let strict = layout.config.as_ref().is_some_and(|c| c.street_frontage);
+    // `villageStreets`: a village exit that serves no lot and ends in nothing (no
+    // road, street or crossing at its far end) is a street leading nowhere: it goes
+    // back to its junction. An exit joined to a road keeps a linked end and stays.
+    let village_exits = layout.config.as_ref().is_some_and(|c| c.village_streets)
+        && layout.programme.as_ref().is_some_and(|p| p.population < 1000);
     // With doors, exits keep their rank whoever lives on them, and a link between
     // served stretches stays a street (no mid-street downgrade to a field path).
     let door_mode = doors.is_some();
@@ -276,8 +296,9 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
         first_seg.push(segs.len());
         // Strict: field paths, gate streets and processional ways must earn their place too.
         // Village exits (outbound, peripheral) never go.
+        let exit = village_exits && matches!(s.role.as_str(), "outbound" | "peripheral");
         let can = prunable(&s.role) || strict && matches!(s.role.as_str(), "track" | "gate-street" | "processional")
-            || bridgeheads && s.role == "approach" && at_bridgehead(s) && !road_ramp(s);
+            || bridgeheads && s.role == "approach" && at_bridgehead(s) && !road_ramp(s) || exit;
         for i in 1..s.path.len() {
             let (p, q) = (s.path[i - 1], s.path[i]);
             let w = s.widths.get(i - 1).or(s.widths.first()).copied().unwrap_or(4.0);
@@ -295,7 +316,7 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
                 (Some((d, sd)), Some((di, sdi))) => (near(d, di), near(sd, sdi)),
                 _ => { let t = touches(&hash, p, q, reach); (t, t) }
             };
-            segs.push(Seg { street: si, a: node(p), b: node(q), prunable: can, serves, lined, alive: true });
+            segs.push(Seg { street: si, a: node(p), b: node(q), prunable: can, serves, lined, alive: true, exit });
         }
         if s.path.len() >= 2 {
             ends.push((si, node(s.path[0]), node(s.path[s.path.len() - 1])));
@@ -393,7 +414,7 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
     };
     dead_ends(&mut segs);
     // A segment on a loop that serves nothing: the network stays connected without it.
-    let mut loops: Vec<usize> = (0..segs.len()).filter(|&k| segs[k].alive && segs[k].prunable && !segs[k].lined).collect();
+    let mut loops: Vec<usize> = (0..segs.len()).filter(|&k| segs[k].alive && segs[k].prunable && !segs[k].exit && !segs[k].lined).collect();
     let centre = layout.center;
     loops.sort_by(|&x, &y| {
         let far = |k: usize| {
@@ -542,20 +563,70 @@ fn emit(s: &Street, from: usize, to: usize, out: &mut Vec<Street>) {
     out.push(Street { path: s.path[from..=to].to_vec(), widths, rank: s.rank, role: s.role.clone() });
 }
 
+
+/// The lots a street still runs along. A lot the pruning left without any
+/// street is not built on: the next cadastre gives its land to the back of
+/// the block.
+fn served(layout: &Layout, lots: Vec<Shape>) -> Vec<Shape> {
+    let mut hash: HashMap<(i64, i64), Vec<(Point, usize)>> = HashMap::new();
+    let mut points = vec![];
+    for (i, lot) in lots.iter().enumerate() {
+        points.clear();
+        outline_points(lot, &mut points);
+        for &q in &points {
+            hash.entry(cell(q)).or_default().push((q, i));
+        }
+    }
+    let mut kept = vec![false; lots.len()];
+    for s in &layout.streets {
+        let reach = s.widths.iter().copied().fold(0., f64::max) * 0.5 + 3.5;
+        for w in s.path.windows(2) {
+            let (x0, y0) = cell(Point { x: w[0].x.min(w[1].x) - reach, y: w[0].y.min(w[1].y) - reach });
+            let (x1, y1) = cell(Point { x: w[0].x.max(w[1].x) + reach, y: w[0].y.max(w[1].y) + reach });
+            for cx in x0..=x1 {
+                for cy in y0..=y1 {
+                    for &(q, i) in hash.get(&(cx, cy)).map_or(&[][..], Vec::as_slice) {
+                        if !kept[i] && g::distance(q, w[0], w[1]).0 <= reach { kept[i] = true; }
+                    }
+                }
+            }
+        }
+    }
+    lots.into_iter().zip(kept).filter(|(_, k)| *k).map(|(lot, _)| lot).collect()
+}
+
+/// What a trim pass reads of the plan: the blocks (count, ordinary count, area)
+/// and the streets (count, length, widths). Equal signatures: nothing to trim again.
+pub(super) fn signature(layout: &Layout) -> (usize, usize, usize, u64, u64, u64) {
+    let area: f64 = layout.blocks.iter().map(|b| g::area(&b.shape)).sum();
+    let length: f64 = layout.streets.iter().flat_map(|s| s.path.windows(2)).map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y)).sum();
+    let widths: f64 = layout.streets.iter().flat_map(|s| &s.widths).sum();
+    (layout.blocks.len(), layout.blocks.iter().filter(|b| b.kind == "block").count(), layout.streets.len(),
+        area.to_bits(), length.to_bits(), widths.to_bits())
+}
+
 /// The unbuilt blocks become open land and the streets that served only them go. Returns the
-/// number of blocks released.
-pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, original: &LayoutConfig, population: u32, surface: Surface<'_>) -> usize {
+/// number of blocks released and the built lots of the last allocation probe
+/// (`composition::fit_enclosures` fits the town circuits to them).
+pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, original: &LayoutConfig, population: u32, surface: Surface<'_>) -> (usize, Vec<Shape>) {
     let mut released = 0;
+    let mut built_lots = vec![];
+    let mut laps = super::network::Lap::new("tail.trim.run");
     verges(layout);
+    laps.lap("verges");
     // Each pass rebuilds the cadastre. Retain the best partial town when a
     // clipped frontage keeps changing instead of requiring convergence.
-    for _ in 0..super::generation_limits::REFINEMENT_PASSES {
+    for pass in 0..super::generation_limits::REFINEMENT_PASSES {
         let before: f64 = layout.streets.iter().filter(|s| frontage_road(&s.role)).flat_map(|s| s.path.windows(2)).map(|w| (w[1].x-w[0].x).hypot(w[1].y-w[0].y)).sum();
-        let Some((empty, reserved, commons, occupied)) = unbuilt(seed, layout, config, original, population, surface) else { break };
+        let found = unbuilt(seed, layout, config, original, population, surface);
+        laps.lap("unbuilt");
+        let Some((empty, reserved, commons, occupied, built)) = found else { break };
+        built_lots = built;
         let count = empty.iter().filter(|&&e| e).count();
         let ordinary = layout.blocks.iter().filter(|b| b.kind == "block").count();
         // The place always keeps one built block.
         if count >= ordinary && ordinary > 0 {
+            if profiled() { eprintln!("  tail.trim.run.pass: n={} empty={count} of {ordinary} blocks, kept as they are, frontage {before:.0} m", pass + 1); }
             break;
         }
         for (b, &e) in layout.blocks.iter_mut().zip(&empty) {
@@ -564,37 +635,51 @@ pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, origin
             }
         }
         verges(layout);
+        laps.lap("verges");
         let open: Vec<bool> = layout.blocks.iter().enumerate().map(|(i, b)| (b.kind == "reserve" && !reserved.contains(&i)) || commons.contains(&i)).collect();
         prune(layout, &open, &occupied);
+        laps.lap("prune");
         released += count;
         let after: f64 = layout.streets.iter().filter(|s| frontage_road(&s.role)).flat_map(|s| s.path.windows(2)).map(|w| (w[1].x-w[0].x).hypot(w[1].y-w[0].y)).sum();
+        if profiled() { eprintln!("  tail.trim.run.pass: n={} released={count} of {ordinary} blocks, frontage {before:.0} -> {after:.0} m", pass + 1); }
         if count == 0 && after >= before - 1e-6 { break; }
     }
     if released > 0 {
         layout.warnings.push(format!("{released} îlot(s) sans construction rendu(s) aux champs, avec leurs rues."));
     }
-    released
+    (released, built_lots)
 }
 
 /// Bridge/stilt finishing can change the last allocation after the main trim.
-pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) { finish_with(seed, layout, surface, None) }
+/// Returns the lots that show a building on the final cadastre (a house the
+/// slope refuses is not one): the land a town circuit must hold
+/// (`composition::fit_built_circuits`).
+pub(super) fn finish(seed: &str, layout: &mut Layout, surface: Surface<'_>) -> Vec<Shape> { finish_with(seed, layout, surface, None) }
 
 /// `villageBridgeBudget`, after the bridge stage: the door-based pass again, now
 /// with the decks settled, and the bank ramps within 80 m of a crossing must
 /// earn their place too (dead-end and doubled ramps go). A crossing keeps its
 /// last link to the land; the ramps of the imported roads (`roads`) stay.
-pub(super) fn bridgeheads(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: &[Street]) { finish_with(seed, layout, surface, Some(roads)) }
+pub(super) fn bridgeheads(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: &[Street]) { finish_with(seed, layout, surface, Some(roads)); }
 
-fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Option<&[Street]>) {
+fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Option<&[Street]>) -> Vec<Shape> {
     let bridgeheads = roads.is_some();
     let dry = !surface.water.iter().any(|&w|w != 0);
-    if layout.programme.as_ref().is_none_or(|p| super::roles::is_isolated(&p.context.intent)) { return; }
-    for _ in 0..super::generation_limits::REFINEMENT_PASSES {
-        let Ok(parts) = super::generate_parcels(seed,std::slice::from_ref(layout),&ParcelConfig::default()) else { break };
+    if layout.programme.as_ref().is_none_or(|p| super::roles::is_isolated(&p.context.intent)) { return vec![]; }
+    // The lots of the last pass that show a building.
+    let mut built: Vec<Shape> = vec![];
+    let mut laps = super::network::Lap::new(if bridgeheads { "tail.trim.bridgeheads" } else { "tail.trim.finish" });
+    for pass in 0..super::generation_limits::REFINEMENT_PASSES {
+        let before = if profiled() { frontage_length(layout) } else { 0.0 };
+        let found = super::generate_parcels(seed,std::slice::from_ref(layout),&ParcelConfig::default());
+        laps.lap("generate_parcels");
+        let Ok(parts) = found else { break };
         let Some(part) = parts.first() else { break };
         let layouts = std::slice::from_ref(&*layout);
         let walls = walls(layout);
-        let Ok(index) = super::building_sites::BuildingSiteIndex::prepare(layouts,&parts,&[0]) else { break };
+        let prepared = super::building_sites::BuildingSiteIndex::prepare(layouts,&parts,&[0]);
+        laps.lap("site_index");
+        let Ok(index) = prepared else { break };
         if bridgeheads || layout.config.as_ref().is_some_and(|c| c.street_frontage) {
             // Every lot that would show a silhouette (or an explicit market or
             // common) protects its own frontage: all of them, in parallel, so
@@ -604,9 +689,12 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
                     && matches!(a.function.as_str(),"market"|"common")
                     && by_id.get(a.parcel_id.as_str()).is_some_and(|p| street_use(p,&a.role,layout,&walls)))
                     .map(|a|a.parcel_id.as_str()).collect();
-            let Ok(shown) = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None) else { return };
+            let previewed = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None);
+            laps.lap("previews");
+            let Ok(shown) = previewed else { return built };
             let shown: HashSet<&str> = shown.iter().map(String::as_str).collect();
             let active = |id: &str| explicit.contains(id) || shown.contains(id);
+            built = part.parcels.iter().filter(|p| active(p.id.as_str())).map(|p| p.shape.clone()).collect();
             // A lot justifies the street its door is on, not every street along its
             // sides; without a recorded door (a reserved compound), its main street.
             let mut doors: Vec<Vec<[Point; 2]>> = vec![vec![]; layout.streets.len()];
@@ -637,18 +725,23 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
                 let open: Vec<_> = layout.blocks.iter().map(|b| b.kind == "reserve").collect();
                 prune_with(layout,&open,&occupied,Some((&doors,&sides)),roads);
             }
-            return;
+            laps.lap("prune");
+            if profiled() { eprintln!("  tail.trim.finish.pass: n={} (doors) frontage {before:.0} -> {:.0} m", pass + 1, frontage_length(layout)); }
+            return served(layout, built);
         }
         // The lots whose building request would show a silhouette, without
         // generating the requests (a failing request leaves the streets as they are).
         // They are previewed lazily: a street needs one occupied lot in reach.
         // Every site is previewed up front, in parallel: the same answers as
         // the lazy per-lot `SitePreviews`, failing exactly when it would.
-        let Ok(shown) = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None) else { return };
+        let previewed = super::building_sites::previewed_parcels(&index,seed,layouts,&parts,None);
+        laps.lap("previews");
+        let Ok(shown) = previewed else { return built };
         let shown: HashSet<&str> = shown.iter().map(String::as_str).collect();
+        let by_id: HashMap<&str, &super::Parcel> = part.parcels.iter().map(|p| (p.id.as_str(), p)).collect();
         let explicit: HashSet<&str> = part.programme.iter().flat_map(|p|&p.allocations).filter(|a|a.role != "open.garden"
                 && matches!(a.function.as_str(),"market"|"common")
-                && part.parcels.iter().any(|p|p.id == a.parcel_id && street_use(p,&a.role,layout,&walls)))
+                && by_id.get(a.parcel_id.as_str()).is_some_and(|p| street_use(p,&a.role,layout,&walls)))
                 .map(|a|a.parcel_id.as_str()).collect();
         let active = |id: &str| explicit.contains(id) || shown.contains(id);
         let memo: Vec<std::cell::OnceCell<bool>> = part.parcels.iter().map(|_| std::cell::OnceCell::new()).collect();
@@ -668,8 +761,11 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
             let reserved = super::network::reserved_streets(layout);
             prune(layout, &open, &occupied);
             super::network::remap_reservations(layout, &reserved);
-            return;
+            laps.lap("prune");
+            if profiled() { eprintln!("  tail.trim.finish.pass: n={} (dry) frontage {before:.0} -> {:.0} m", pass + 1, frontage_length(layout)); }
+            return served(layout, occupied);
         }
+        built = part.parcels.iter().enumerate().filter(|(i, _)| lot(*i)).map(|(_, p)| p.shape.clone()).collect();
         // Outline points of every parcel; a point counts when its lot does.
         let mut hash: HashMap<(i64, i64), Vec<(Point, usize)>> = HashMap::new();
         let mut points = vec![];
@@ -691,11 +787,15 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
             !s.path.windows(2).any(|w|touches(w[0],w[1],reach))
         }).collect();
         let changed = empty.iter().any(|&e| e);
+        let downgraded = empty.iter().filter(|&&e| e).count();
         for (s, e) in layout.streets.iter_mut().zip(empty) {
             if e { super::network::downgrade_path(s); }
         }
+        laps.lap("downgrade");
+        if profiled() { eprintln!("  tail.trim.finish.pass: n={} downgraded={downgraded} streets, frontage {before:.0} -> {:.0} m", pass + 1, frontage_length(layout)); }
         if !changed { break; }
     }
+    built
 }
 
 /// The footprint outline follows the built land: the allocated land within reach of a block that
@@ -727,37 +827,62 @@ pub(super) fn footprint(layout: &mut Layout) {
     }
     let Some(s) = layout.structure.as_mut() else { return };
     use geo::Buffer;
+    let mut laps = super::network::Lap::new("tail.trim.footprint");
     let reach = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         g::shapes(geo::MultiPolygon(built.iter().map(g::polygon).collect::<Vec<_>>()).buffer(12.0))
     }))
     .unwrap_or_default();
+    laps.lap("buffer");
+    if profiled() {
+        eprintln!("  tail.trim.footprint.sizes: built={} reach={} ({} v) allocated={} ({} v) phases={} quarters={}", built.len(), reach.len(),
+            reach.iter().map(|r| r.outer.len() + r.holes.iter().map(Vec::len).sum::<usize>()).sum::<usize>(), s.allocated.len(),
+            s.allocated.iter().map(|r| r.outer.len() + r.holes.iter().map(Vec::len).sum::<usize>()).sum::<usize>(),
+            layout.phases.iter().map(|p| p.shapes.len()).sum::<usize>(), layout.quarters.len());
+    }
     if reach.is_empty() {
         return;
     }
-    let mut kept = vec![];
-    for a in &s.allocated {
-        for r in &reach {
-            kept.extend(g::intersection(a, r));
+    // Every allocated piece against every reach piece, in that order. A pair whose
+    // boxes do not meet has no common ground, so its overlay is skipped; the pieces
+    // are independent and run in parallel, joined in input order.
+    let reach_boxes: Vec<_> = reach.iter().map(g::bbox).collect();
+    let kept: Vec<Shape> = super::par::map(&s.allocated, |_, a| {
+        let ab = g::bbox(a);
+        let mut out = vec![];
+        for (r, &rb) in reach.iter().zip(&reach_boxes) {
+            if g::boxes_meet(ab, rb) {
+                out.extend(g::intersection(a, r));
+            }
         }
-    }
+        out
+    }).into_iter().flatten().collect();
+    laps.lap("allocated-x-reach");
     if kept.is_empty() {
         return;
     }
     s.allocated = g::union(&kept);
+    laps.lap("union");
     s.metrics.allocated_area = s.allocated.iter().map(g::area).sum();
     s.metrics.components = s.allocated.len();
     if layout.config.as_ref().is_some_and(|c| c.hide_unused_quarters) {
-        let kept = &s.allocated;
+        // Each phase shape and quarter is clipped against the allocated land: shapes
+        // wholly inside or outside it are decided against the one allocated piece that can hold them (`Region`),
+        // the others are independent and clipped in parallel, kept in input order.
+        let kept = g::Region::new(s.allocated.clone());
         for phase in &mut layout.phases {
-            phase.shapes = phase.shapes.iter().flat_map(|p| kept.iter().flat_map(move |k| g::intersection(p,k))).collect();
+            phase.shapes = super::par::map(&phase.shapes, |_, p| kept.clip_whole(p)).into_iter().flatten().collect();
         }
+        laps.lap("phases");
         // Unused quarters retain their indices for edits and parcel provenance.
         // Their outlines are display data after the final allocation.
-        for q in &mut layout.quarters {
-            let pieces: Vec<_> = kept.iter().flat_map(|k| g::intersection(&q.shape,k)).collect();
-            q.shape = pieces.into_iter().max_by(|a,b|g::area(a).total_cmp(&g::area(b)))
-                .unwrap_or(Shape {outer:vec![],holes:vec![]});
+        let outlines = super::par::map(&layout.quarters, |_, q| {
+            kept.clip_whole(&q.shape).into_iter().max_by(|a,b|g::area(a).total_cmp(&g::area(b)))
+                .unwrap_or(Shape {outer:vec![],holes:vec![]})
+        });
+        for (q, shape) in layout.quarters.iter_mut().zip(outlines) {
+            q.shape = shape;
         }
+        laps.lap("quarters");
     }
 }
 
@@ -780,7 +905,7 @@ mod tests {
         if river { for y in 0..n { for x in n/2..n/2+2 { water[y*n+x] = 3; } } }
         let level = vec![10.;n*n];
         let surface = Surface { geometry:None, width:6000., n, height:&height, water:&water, interpolation: Default::default(),};
-        let site = super::super::Site { key:"fill3".into(),name:String::new(),population,culture:culture.into(),center:Point{x:if river {2800.} else {3000.},y:3000.},radius:150. };
+        let site = super::super::Site { key:"fill3".into(),name:String::new(),population,culture:culture.into(),center:Point{x:if river {2800.} else {3000.},y:3000.},radius:150., neighbours: Vec::new() };
         let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         let roads = if river { vec![Street { path:vec![Point{x:0.,y:3000.},Point{x:6000.,y:3000.}],widths:vec![8.;2],rank:1,role:"regional".into() }] } else { vec![] };
         let l = super::super::generate_quarters("fill3", &[site], &cfg, surface, &roads).unwrap().remove(0);
@@ -809,7 +934,7 @@ mod tests {
         if river { for y in 0..n { for x in 136..138 { water[y*n+x] = 3; } } }
         let level = vec![10.;n*n];
         let surface = Surface { geometry:None, width:5000., n, height:&height, water:&water, interpolation: Default::default(),};
-        let site = super::super::Site { key:"town".into(),name:String::new(),population,culture:culture.into(),center:Point{x:2500.,y:2500.},radius:150. };
+        let site = super::super::Site { key:"town".into(),name:String::new(),population,culture:culture.into(),center:Point{x:2500.,y:2500.},radius:150., neighbours: Vec::new() };
         let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         cfg.hide_unused_quarters = hide;
         let road = |a: (f64,f64), b: (f64,f64)| Street { path:vec![Point{x:a.0,y:a.1},Point{x:b.0,y:b.1}],widths:vec![8.;2],rank:1,role:"regional".into() };
@@ -1199,6 +1324,33 @@ mod tests {
         assert!(has("track", &|p| p.y == -200.), "a path into the open country stays");
         assert!(has("outbound", &|p| p.x == 300.), "village exits never go");
         assert!(!has("street", &|p| p.y == 8.), "a stub served only by the crossing street's doors goes");
+    }
+
+    #[test]
+    fn village_streets_trim_an_exit_leading_nowhere_but_keep_one_joined_to_a_road() {
+        let streets = json!([
+            {"path":[{"x":0.,"y":0.},{"x":100.,"y":0.}],"widths":[4.],"rank":3,"role":"street"},
+            {"path":[{"x":100.,"y":0.},{"x":300.,"y":0.}],"widths":[3.],"rank":3,"role":"outbound"},
+            {"path":[{"x":0.,"y":0.},{"x":0.,"y":-150.}],"widths":[3.],"rank":3,"role":"outbound"},
+            {"path":[{"x":-100.,"y":-150.},{"x":100.,"y":-150.}],"widths":[6.],"rank":0,"role":"regional"}
+        ]);
+        let programme = json!({"version":1,"population":500,"context":{},"cultures":[],"demands":[],"reservations":[],
+            "allocations":[],"adjacency":[],"environment":[],"reconciliationPasses":0,"warnings":[]});
+        let mut doors = vec![vec![]; 4];
+        doors[0] = vec![[Point{x:5.,y:2.},Point{x:95.,y:2.}]];
+        for (on, population) in [(true, 500), (false, 500), (true, 5000)] {
+            let mut l = layout(streets.clone());
+            l.config = Some(LayoutConfig { street_frontage: true, village_streets: on, ..Default::default() });
+            let mut p = programme.clone();
+            p["population"] = json!(population);
+            l.programme = Some(serde_json::from_value(p).unwrap());
+            prune_with(&mut l, &[], &[], Some((&doors, &doors)), None);
+            let has = |role: &str, f: &dyn Fn(&Point)->bool| l.streets.iter().any(|s| s.role == role && s.path.iter().any(|p| f(p)));
+            assert!(has("street", &|p| p.x == 0.), "served street stays");
+            assert!(has("outbound", &|p| p.y == -150.), "an exit joined to the road stays: {:?}", l.streets);
+            assert!(has("regional", &|p| p.x == 100.));
+            assert_eq!(has("outbound", &|p| p.x > 150.), !(on && population < 1000), "exit leading nowhere, on={on} pop={population}: {:?}", l.streets);
+        }
     }
 
 }

@@ -195,6 +195,7 @@ fn run(
             y: width * 0.5,
         },
         radius: 250.0,
+        neighbours: Vec::new(),
     };
     let cfg = LayoutConfig {
         tissue: case.tissue.into(),

@@ -107,7 +107,8 @@ fn citadel_uses_cultural_model_and_gate_villages_keep_population_need() {
     assert!(!keeps_citadel("roman-core") && !keeps_citadel("hanseatic"));
     let water=vec![0;N*N];let height=vec![10.0;N*N];let s=surface(&height,&water);
     let site=Site {key:"walls-options".into(),name:"walls-options".into(),culture:"medina".into(),
-        population:10000,center:point(1000.0,1000.0),radius:320.0};
+        population:10000,center:point(1000.0,1000.0),radius:320.0,
+        neighbours: Vec::new(),};
     let roads=vec![street(point(300.0,1000.0),point(1700.0,1000.0)),street(point(1000.0,300.0),point(1000.0,1700.0))];
     let cfg=LayoutConfig {old_enclosure_citadel:true,gate_villages:true,fortification:"wall".into(),..Default::default()};
     let c=composition::generate("walls-options",&site,&cfg,s,&roads,site.radius).unwrap();

@@ -1,8 +1,7 @@
 //! An explicit allocation-model allowance, not a measured housing standard.
 //! This metadata never changes allocation, population, massing or admission.
-use super::{catalogue, family, occupancy};
+use super::{family, occupancy, occupancy_table};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HousingFloorModel {
@@ -32,26 +31,35 @@ pub(crate) fn indicative_housing_floor_need(culture: &str, households: f64, weal
     let requested = households * effective;
     if !requested.is_finite() || requested <= 0. { return None; }
     let family = family(culture);
-    let source = catalogue().occupancy.get(family);
-    let declared = source.and_then(|value| serde_json::from_value::<super::Occupancy>(value.clone()).ok()).is_some();
-    let text = |key: &str, fallback: &str| {
-        source.and_then(|value| value.get(key)).and_then(Value::as_str).unwrap_or(fallback).to_owned()
-    };
-    serde_json::from_value(json!({
-        "version":"indicative-housing-floor-1", "unit":"useful_floor_m2",
-        "scope":"housing_in_body_levels", "requested_m2":requested,
-        "allocated_households":households,
-        "basis":"allocation_households_times_wealth_scaled_floor_allowance",
-        "model":{
-            "family":family,
-            "profile_provenance":text("provenance", if declared {"catalogue-declared"} else {"generic-fallback"}),
-            "calibration":text("calibration", if declared {"not-assessed"} else {"not-culture-calibrated"}),
-            "floor_m2_per_household":profile.floor_per_household,
-            "wealth":wealth, "wealth_factor":factor,
-            "effective_floor_m2_per_household":effective,
-            "persons_per_household":profile.household_size
-        }
-    })).ok()
+    let source = occupancy_table().get(family);
+    let declared = source.is_some_and(|entry| entry.declared.is_some());
+    fn text<'a>(value: Option<&'a str>, fallback: &'a str) -> String {
+        value.unwrap_or(fallback).to_owned()
+    }
+    Some(HousingFloorNeed {
+        version: "indicative-housing-floor-1".into(),
+        unit: "useful_floor_m2".into(),
+        scope: "housing_in_body_levels".into(),
+        requested_m2: requested,
+        allocated_households: households,
+        basis: "allocation_households_times_wealth_scaled_floor_allowance".into(),
+        model: HousingFloorModel {
+            family: family.into(),
+            profile_provenance: text(
+                source.and_then(|entry| entry.provenance),
+                if declared { "catalogue-declared" } else { "generic-fallback" },
+            ),
+            calibration: text(
+                source.and_then(|entry| entry.calibration),
+                if declared { "not-assessed" } else { "not-culture-calibrated" },
+            ),
+            floor_m2_per_household: profile.floor_per_household,
+            wealth,
+            wealth_factor: factor,
+            effective_floor_m2_per_household: effective,
+            persons_per_household: profile.household_size,
+        },
+    })
 }
 
 #[cfg(test)]

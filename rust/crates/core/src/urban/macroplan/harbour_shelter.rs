@@ -207,7 +207,7 @@ mod tests {
         let water:Vec<u8>=(0..n*n).map(|i|if (100..104).contains(&(i%n)) {3} else {0}).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let quay=Street {path:vec![Point{x:990.0,y:980.0},Point{x:990.0,y:1018.0}],widths:vec![5.0;2],rank:1,role:"quay".into()};
-        let site=Site{key:"short".into(),name:String::new(),culture:"venetian-lagoon".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0};
+        let site=Site{key:"short".into(),name:String::new(),culture:"venetian-lagoon".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0, neighbours: Vec::new()};
         assert!(super::super::works(std::slice::from_ref(&quay),surface,&site,&site.culture).is_empty());
         let on=works(&[quay],surface,&site,&site.culture);
         assert_eq!(on.len(),1);assert_eq!(on[0].role,"landing");
@@ -223,7 +223,7 @@ mod tests {
         let (n,width)=(64,1600.0);let height=vec![5.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=40)).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
-        let site=Site{key:"off".into(),name:String::new(),culture:"hanseatic".into(),population:1000,center:Point{x:900.0,y:800.0},radius:180.0};
+        let site=Site{key:"off".into(),name:String::new(),culture:"hanseatic".into(),population:1000,center:Point{x:900.0,y:800.0},radius:180.0, neighbours: Vec::new()};
         let a=super::super::super::super::generate_quarters("off",std::slice::from_ref(&site),&cfg,surface,&[]).unwrap();
         let b=super::super::super::super::generate_quarters("off",std::slice::from_ref(&site),&disabled,surface,&[]).unwrap();
         assert_eq!(serde_json::to_vec(&a).unwrap(),serde_json::to_vec(&b).unwrap());
@@ -261,7 +261,7 @@ mod tests {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
-        let site=Site{key:"shore".into(),name:String::new(),culture:"swahili-stone-town".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0};
+        let site=Site{key:"shore".into(),name:String::new(),culture:"swahili-stone-town".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0, neighbours: Vec::new()};
         let front=|x|Street{path:vec![Point{x,y:800.0},Point{x,y:1200.0}],widths:vec![6.0;2],rank:1,role:"quay".into()};
         assert!(works(&[front(1010.0)],surface,&site,&site.culture).is_empty());
         let attached=works(&[front(990.0)],surface,&site,&site.culture);

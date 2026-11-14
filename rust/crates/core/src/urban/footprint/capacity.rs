@@ -522,6 +522,7 @@ fn probe_uncached(
             },
             ..UrbanStructure::default()
         }),
+        claim: Default::default(),
     };
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run(layout, environment, "capacity-probe", cfg, population)

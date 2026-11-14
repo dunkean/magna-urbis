@@ -49,6 +49,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
     if cfg.access_mode != "adaptive" || cfg.access_budget == 0 {
         return;
     }
+    let mut laps = network::Lap::new("access_refine");
     let mut added = 0;
     // Stair lanes only for cultures that build stairs (same rule as the plan).
     let stairs = super::profiles::stairs_allowed(cfg, &layout.culture);
@@ -81,6 +82,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
         .iter()
         .map(|b| (b.shape.clone(), g::bbox(&b.shape)))
         .collect::<Vec<_>>();
+    let neighbor_grid = g::BoxGrid::new(neighbors.iter().map(|n| n.1).collect());
     let mut index = parcels::FrontageIndex::new(layout);
     // The lane budget follows the city: one lane per two blocks at least (a
     // large town has thousands of deep blocks, never a fixed 96 for all).
@@ -248,7 +250,8 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                     let ribbons = g::ribbon(&path, &widths);
                     if ribbons.iter().any(|r| {
                         let bb = g::bbox(r);
-                        neighbors.iter().enumerate().any(|(id, (other, ob))| {
+                        // Only the blocks whose box meets the ribbon's can overlap it.
+                        neighbor_grid.query(bb, 1e-6).into_iter().map(|id| (id, &neighbors[id])).any(|(id, (other, ob))| {
                             id != block_id
                                 && bb.0 <= ob.2
                                 && bb.2 >= ob.0
@@ -348,6 +351,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
         );
     }
     layout.blocks = result;
+    laps.lap(&format!("lanes ({added} added)"));
     if added > 0 {
         let centers = layout
             .structure

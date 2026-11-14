@@ -130,7 +130,7 @@ struct TerrainRequest {
 }
 
 pub(crate) struct Reply {
-    kind: &'static str,
+    pub(crate) kind: &'static str,
     pub(crate) body: Vec<u8>,
 }
 fn json_reply(value: impl Serialize) -> ApiResult<Reply> {
@@ -531,9 +531,43 @@ fn settlement_reply(input: Value, state: &Session) -> ApiResult<Reply> {
     json_reply(result)
 }
 
-/// Serialize the original wire geometry once, then retain the exact decimal
-/// boundary seen by explicit callers. Drop generated geometry before reparsing;
-/// no whole-partition Value tree or duplicate JSON buffer is needed.
+/// Groups of a `builtCapacity` pack: reconciliation changes allocations, floor
+/// needs, adjacency and environment; the shells travel in the header.
+const BUILT_CAPACITY_GROUPS: &[&str] = &["allocations", "floorNeed", "adjacency", "environment"];
+
+/// Serialize the generated partitions once and parse the text back: that decimal
+/// boundary defines the values every later stage reads (and the WASM path reads
+/// the same). Generated geometry is dropped before reparsing and the text before
+/// the caller builds anything else; no whole-partition Value tree is made.
+fn normalise_and_retain(
+    layouts: Arc<Vec<urban::Layout>>,
+    partitions: Vec<urban::Partition>,
+    retained: &mut RetainedUrban,
+) -> ApiResult<Arc<Vec<urban::Partition>>> {
+    let text = serde_json::to_vec(&partitions).map_err(|e| e.to_string())?;
+    drop(partitions);
+    let partitions: Arc<Vec<urban::Partition>> = Arc::new(decode(&text)?);
+    drop(text);
+    retained.retain_partitions(layouts, Arc::clone(&partitions))?;
+    Ok(partitions)
+}
+
+/// A `magna-city-parcels` pack as an octet-stream reply. `envelope` members
+/// (`id`, `ms`, `urbanSource`) are copied into the pack header.
+fn parcel_pack_reply(
+    partitions: &[urban::Partition],
+    groups: Option<&[&str]>,
+    envelope: &Value,
+) -> ApiResult<Reply> {
+    Ok(Reply {
+        kind: "application/octet-stream",
+        body: urban::parcel_pack::pack(partitions, groups, envelope)?,
+    })
+}
+
+/// Normalise and retain the partitions, then reply with a pack of the retained
+/// snapshot; its header carries `id`, `urbanSource` and `ms`.
+#[allow(clippy::too_many_arguments)]
 fn retained_parcels_reply(
     id: &Value,
     session: &str,
@@ -541,25 +575,26 @@ fn retained_parcels_reply(
     partitions: Vec<urban::Partition>,
     retained: &mut RetainedUrban,
     started: Instant,
+    groups: Option<&[&str]>,
 ) -> ApiResult<Reply> {
-    let mut body = b"{\"id\":".to_vec();
-    serde_json::to_writer(&mut body, id).map_err(|e| e.to_string())?;
-    body.extend_from_slice(b",\"partitions\":");
-    let begin = body.len();
-    serde_json::to_writer(&mut body, &partitions).map_err(|e| e.to_string())?;
-    let end = body.len();
-    drop(partitions);
-    let partitions = Arc::new(decode(&body[begin..end])?);
-    retained.retain_partitions(layouts, partitions)?;
+    let partitions = normalise_and_retain(layouts, partitions, retained)?;
     let source = retained.source(session)?;
-    body.extend_from_slice(b",\"urbanSource\":");
-    serde_json::to_writer(&mut body, &source).map_err(|e| e.to_string())?;
-    body.extend_from_slice(b",\"ms\":");
-    serde_json::to_writer(&mut body, &millis(started)).map_err(|e| e.to_string())?;
-    body.push(b'}');
-    Ok(Reply {
-        kind: "application/json",
-        body,
+    let envelope = json!({"id": id, "urbanSource": source, "ms": millis(started)});
+    parcel_pack_reply(&partitions, groups, &envelope)
+}
+
+/// The retained partitions named by `keys` (retained order), or all of them.
+fn selected_partitions<'a>(
+    layouts: &[urban::Layout],
+    partitions: &'a [urban::Partition],
+    keys: Option<&[String]>,
+) -> ApiResult<Vec<&'a urban::Partition>> {
+    Ok(match keys {
+        Some(keys) => selected_partition_indices(layouts, partitions, keys)?
+            .into_iter()
+            .map(|index| &partitions[index])
+            .collect(),
+        None => partitions.iter().collect(),
     })
 }
 
@@ -733,19 +768,22 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             .as_ref()
             .ok_or("Missing retained terrain for buildings")?;
         let snapshot = state.urban.validate_source(session, &source)?;
-        let output = terrain.urban_building_sites_with_culture(
-            seed,
-            snapshot.layouts,
-            snapshot.partitions,
-            culture,
-        )?;
         let origin = snapshot
             .layouts
             .first()
             .map_or(urban::Point { x: 0.0, y: 0.0 }, |layout| layout.center);
+        // Requests are reduced to display rows as they are generated: the whole
+        // town's request trees are never held at once.
+        let body = terrain.urban_building_site_display(
+            seed,
+            snapshot.layouts,
+            snapshot.partitions,
+            culture,
+            origin,
+        )?;
         return Ok(Reply {
             kind: "application/octet-stream",
-            body: urban::display::site_display_buffers(&output, origin),
+            body,
         });
     }
     if input["kind"] == "displayBuffers" {
@@ -784,12 +822,59 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             body: urban::display::display_buffers_refs(&layouts, &partitions, ids),
         });
     }
+    if input["kind"] == "parcelPack" {
+        // The retained partitions as a pack, optionally a few cities and groups.
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        let keys: Option<Vec<String>> = input.get("keys").map(value).transpose()?;
+        let groups: Option<Vec<String>> = input.get("groups").map(value).transpose()?;
+        let groups: Option<Vec<&str>> =
+            groups.as_ref().map(|groups| groups.iter().map(String::as_str).collect());
+        let envelope = json!({"id": input["id"], "urbanSource": source});
+        return match keys {
+            Some(keys) => {
+                let selected: Vec<urban::Partition> =
+                    selected_partitions(snapshot.layouts, snapshot.partitions, Some(keys.as_slice()))?
+                        .into_iter()
+                        .cloned()
+                        .collect();
+                parcel_pack_reply(&selected, groups.as_deref(), &envelope)
+            }
+            None => parcel_pack_reply(snapshot.partitions, groups.as_deref(), &envelope),
+        };
+    }
+    if input["kind"] == "parcelRecord" {
+        // One parcel with its allocations, adjacency and environment, exact serde
+        // of the retained records.
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        let key: String = value(&input["key"])?;
+        let index: usize = value(&input["index"])?;
+        let partition = selected_partitions(
+            snapshot.layouts,
+            snapshot.partitions,
+            Some(std::slice::from_ref(&key)),
+        )?
+        .into_iter()
+        .next()
+        .ok_or("[urban_source_keys] Selected layout has no retained partition.")?;
+        if index >= partition.parcels.len() {
+            return Err("[urban_parcel_index] Parcel index is outside the selected partition.".into());
+        }
+        return json_reply(urban::parcel_pack::record(partition, index)?);
+    }
     // `retained: true` continues the session's chain: the programme reads the
     // parcels' layouts and partitions kept here instead of a JSON upload.
+    // `builtCapacity` with a `source` reconciles the snapshot that handle names;
+    // it is read before the invalidation below.
     let continued = if input["kind"] == "programme" && input["retained"] == true {
         Some(state.urban.current().ok_or(
             "[urban_source_invalid] No retained parcels for the programme: regenerate the parcels.",
         )?)
+    } else if input["kind"] == "builtCapacity" && input.get("source").is_some() {
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        Some((Arc::clone(snapshot.layouts), Arc::clone(snapshot.partitions)))
     } else {
         None
     };
@@ -863,21 +948,22 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         };
         let config: urban::ParcelConfig = value(&input["parcelConfig"])?;
         let partitions = urban::generate_parcels(seed, &layouts, &config)?;
-        let reply = retained_parcels_reply(
+        // `reply: "handle"`: the programme follows on the retained parcels, so
+        // the caller needs only the source handle, not the whole cadastre.
+        if input["reply"] == "handle" {
+            drop(normalise_and_retain(layouts, partitions, &mut state.urban)?);
+            let source = state.urban.source(session)?;
+            return json_reply(json!({"id": input["id"], "urbanSource": source, "ms": millis(started)}));
+        }
+        retained_parcels_reply(
             &input["id"],
             session,
             layouts,
             partitions,
             &mut state.urban,
             started,
-        )?;
-        // `reply: "handle"`: the programme follows on the retained parcels, so
-        // the caller needs only the source handle, not the whole cadastre.
-        if input["reply"] == "handle" {
-            let source = state.urban.source(session)?;
-            return json_reply(json!({"id": input["id"], "urbanSource": source, "ms": millis(started)}));
-        }
-        Ok(reply)
+            None,
+        )
     } else if input["kind"] == "buildingSites" {
         let terrain = state
             .settlements
@@ -930,10 +1016,33 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         };
         product_reply(&input["id"], "placementRequests", &output, started)
     } else if input["kind"] == "builtCapacity" {
-        let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
         let scene: urban::programme::BuiltScene = value(&input["scene"])?;
-        let output = urban::programme::reconcile_built(&partitions, &scene)?;
-        product_reply(&input["id"], "partitions", &output, started)
+        let groups = Some(BUILT_CAPACITY_GROUPS);
+        match continued {
+            // Reconciled from the retained snapshot and retained in its place
+            // (same layouts), like the programme: later reads use the new handle.
+            Some((layouts, partitions)) => {
+                let output = urban::programme::reconcile_built(&partitions, &scene)?;
+                drop(partitions);
+                retained_parcels_reply(
+                    &input["id"],
+                    session,
+                    layouts,
+                    output,
+                    &mut state.urban,
+                    started,
+                    groups,
+                )
+            }
+            // Uploaded partitions: nothing is retained, the header has no `urbanSource`.
+            None => {
+                let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
+                let output = urban::programme::reconcile_built(&partitions, &scene)?;
+                drop(partitions);
+                let envelope = json!({"id": input["id"], "ms": millis(started)});
+                parcel_pack_reply(&output, groups, &envelope)
+            }
+        }
     } else if input["kind"] == "programme" {
         let (layouts, partitions) = match continued {
             Some(pair) => pair,
@@ -943,8 +1052,9 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             ),
         };
         let output = urban::programme::reallocate(&layouts, &partitions)?;
+        drop(partitions);
         // Retained like the parcels: building sites then read them through the source handle.
-        retained_parcels_reply(&input["id"], session, layouts, output, &mut state.urban, started)
+        retained_parcels_reply(&input["id"], session, layouts, output, &mut state.urban, started, None)
     } else {
         Err("ÃƒÆ’Ã¢â‚¬Â°tape urbaine inconnue.".into())
     }
@@ -1097,7 +1207,7 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["landuse.stage-v1", "terrain.water-v1", "terrain.relief-session-v1","site.choose-v1", "terrain.forest-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers",
+                "capabilities": ["landuse.stage-v1", "terrain.water-v1", "terrain.relief-session-v1","site.choose-v1", "terrain.forest-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers", "urban.parcel-pack-v1",
                     "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
     }
@@ -1130,7 +1240,10 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
     if path == "/urban"
         && matches!(
             input["kind"].as_str(),
-            Some("displayBuffers" | "buildingSitesBegin" | "buildingSitesPage" | "buildingSite" | "buildingSiteVisuals")
+            Some(
+                "displayBuffers" | "buildingSitesBegin" | "buildingSitesPage" | "buildingSite"
+                    | "buildingSiteVisuals" | "parcelPack" | "parcelRecord"
+            )
         )
         && source.is_none()
     {
@@ -1148,6 +1261,9 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
                         | "buildingSitesBegin"
                         | "buildingSitesPage"
                         | "buildingSite"
+                        | "builtCapacity"
+                        | "parcelPack"
+                        | "parcelRecord"
                 )
             )
         {
@@ -1414,6 +1530,11 @@ fn handle_one(stream: &mut TcpStream, sessions: &Mutex<Sessions>, bytes: &mut Ve
         CLIENT_PROBE.with(|probe| *probe.borrow_mut() = None);
         result
     };
+    // One stderr line per urban request, per refused request and per reply the client did not take:
+    // the pages drop the text of a refusal, and a reply lost on the wire shows nowhere else.
+    let outcome = match &result { Ok(reply) => format!("ok, {} bytes", reply.body.len()), Err(error) => format!("refused: {error}") };
+    let logged = path == "/urban" || result.is_err();
+    let path_text = path.to_owned();
     // Keep only what follows this request (nothing, unless the client pipelines).
     bytes.drain(..head_end + length);
     let written = if method == "OPTIONS" {
@@ -1421,6 +1542,9 @@ fn handle_one(stream: &mut TcpStream, sessions: &Mutex<Sessions>, bytes: &mut Ve
     } else {
         respond_result_with(stream, origin, result, keep_alive)
     };
+    if logged || !written {
+        eprintln!("[request] {path_text} {outcome}{}", if written { "" } else { ", reply not written (client gone)" });
+    }
     written && keep_alive
 }
 

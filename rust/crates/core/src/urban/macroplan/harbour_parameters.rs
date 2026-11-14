@@ -291,7 +291,8 @@ mod tests {
     #[test]
     fn detached_quarter_is_outside_the_main_fabric() {
         let site=Site{key:"port".into(),name:String::new(),culture:"hanseatic".into(),population:10000,
-            center:Point{x:800.0,y:900.0},radius:500.0};
+            center:Point{x:800.0,y:900.0},radius:500.0,
+            neighbours: Vec::new(),};
         let regions=vec![g::rectangle(700.0,800.0,990.0,1100.0),g::rectangle(700.0,1120.0,990.0,1300.0),g::rectangle(700.0,1500.0,990.0,1600.0)];
         assert_eq!(fabric(&regions,&site).len(),2);
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
@@ -310,7 +311,8 @@ mod tests {
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=140 || (i%n>=100 && (80..=120).contains(&(i/n))))).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"blend".into(),name:String::new(),culture:"hanseatic".into(),population:10000,
-            center:Point{x:1300.0,y:300.0},radius:500.0};
+            center:Point{x:1300.0,y:300.0},radius:500.0,
+            neighbours: Vec::new(),};
         let main=vec![g::rectangle(1100.0,200.0,1390.0,400.0)];
         let attached=vec![Point{x:1390.0,y:250.0},Point{x:1390.0,y:350.0}];
         let detached=vec![Point{x:990.0,y:900.0},Point{x:990.0,y:1100.0}];
@@ -332,7 +334,8 @@ mod tests {
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=140 || (i%n>=100 && (80..=120).contains(&(i/n))))).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"coast".into(),name:String::new(),culture:"hanseatic".into(),population:10000,
-            center:Point{x:1300.0,y:300.0},radius:500.0};
+            center:Point{x:1300.0,y:300.0},radius:500.0,
+            neighbours: Vec::new(),};
         let regions=vec![g::rectangle(1100.0,200.0,1398.0,400.0)];
         let road=Street{path:vec![Point{x:1200.0,y:220.0},Point{x:1300.0,y:380.0}],widths:vec![5.0;2],rank:1,role:"street".into()};
         for d in [0.0,1.0] {

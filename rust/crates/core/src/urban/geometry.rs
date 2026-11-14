@@ -284,7 +284,69 @@ pub(super) fn area(s: &Shape) -> f64 {
     s.holes.iter().fold(ring_area(&s.outer).abs(),
         |area, hole| area - ring_area(hole).abs()).abs()
 }
+/// Area-weighted moment of one closed ring, with the exact operations (and
+/// their order) of geo 0.33.1's `CentroidOperation::add_ring` on the ring
+/// that `polygon` builds (first point repeated at the end): weight, then the
+/// centroid times that weight. `None` for the cases geo treats apart (fewer
+/// than three points, non-finite coordinates, zero area).
+fn ring_moment(ring: &[Point]) -> Option<(f64, f64, f64)> {
+    if ring.len() < 3 || ring.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+        return None;
+    }
+    let first = ring[0];
+    let n = ring.len() + 1;
+    let at = |i: usize| if i < ring.len() { ring[i] } else { first };
+    let mut previous = (at(1).x - first.x, at(1).y - first.y);
+    let mut sum = 0.0;
+    for i in 2..n {
+        let p = at(i);
+        let next = (p.x - first.x, p.y - first.y);
+        sum += previous.0 * next.1 - previous.1 * next.0;
+        previous = next;
+    }
+    let area = sum / 2.0;
+    if area == 0.0 {
+        return None;
+    }
+    let (mut ax, mut ay) = (0.0, 0.0);
+    for i in 0..n - 1 {
+        let (s, e) = (at(i), at(i + 1));
+        let (sx, sy, ex, ey) = (s.x - first.x, s.y - first.y, e.x - first.x, e.y - first.y);
+        let tmp = sx * ey - sy * ex;
+        ax += (ex + sx) * tmp;
+        ay += (ey + sy) * tmp;
+    }
+    let six_area = 6.0 * area;
+    let (cx, cy) = (ax / six_area + first.x, ay / six_area + first.y);
+    let weight = area.abs();
+    Some((weight, cx * weight, cy * weight))
+}
+/// geo's polygon centroid (outer ring minus holes) without building the geo
+/// polygon; `None` when a ring is degenerate, which `centroid` leaves to geo.
+fn centroid_fast(s: &Shape) -> Option<Point> {
+    let (weight, x, y) = ring_moment(&s.outer)?;
+    if s.holes.is_empty() {
+        return Some(Point { x: x / weight, y: y / weight });
+    }
+    let mut holes: Option<(f64, f64, f64)> = None;
+    for hole in &s.holes {
+        let (w, hx, hy) = ring_moment(hole)?;
+        holes = Some(match holes {
+            None => (w, hx, hy),
+            Some((w0, x0, y0)) => (w0 + w, x0 + hx, y0 + hy),
+        });
+    }
+    let (hole_weight, hole_x, hole_y) = holes?;
+    let (weight, x, y) = (weight - hole_weight, x - hole_x, y - hole_y);
+    if weight == 0.0 {
+        return None;
+    }
+    Some(Point { x: x / weight, y: y / weight })
+}
 pub(super) fn centroid(s: &Shape) -> Point {
+    if let Some(c) = centroid_fast(s) {
+        return c;
+    }
     polygon(s)
         .centroid()
         .map(|p| Point { x: p.x(), y: p.y() })
@@ -990,6 +1052,149 @@ pub(super) fn dry_clip(surface: &Surface<'_>, s: &Shape) -> Vec<Shape> {
             )
         })
         .collect()
+}
+
+type Box4 = (f64, f64, f64, f64);
+
+fn box_finite(b: Box4) -> bool {
+    b.0.is_finite() && b.1.is_finite() && b.2.is_finite() && b.3.is_finite()
+}
+/// Closed boxes meet (touching counts).
+pub(super) fn boxes_meet(a: Box4, b: Box4) -> bool {
+    a.0 <= b.2 && a.2 >= b.0 && a.1 <= b.3 && a.3 >= b.1
+}
+
+/// Uniform grid over bounding boxes: which boxes meet a query box, without
+/// scanning every box. The cell is twice the median box extent; a box spanning
+/// too many cells is kept in a short list tested by every query. Answers are
+/// exact (the final test is on the boxes themselves) and in ascending index order.
+pub(super) struct BoxGrid {
+    cell: f64,
+    cells: std::collections::HashMap<(i64, i64), Vec<u32>>,
+    wide: Vec<u32>,
+    boxes: Vec<Box4>,
+}
+impl BoxGrid {
+    /// Cells a box may cover before it goes to the `wide` list, and cells a query may visit before it scans linearly.
+    const MAX_CELLS: f64 = 1024.0;
+    /// Boxes that are not finite (empty shapes) are never returned.
+    pub(super) fn new(boxes: Vec<Box4>) -> Self {
+        let mut spans: Vec<f64> = boxes.iter().filter(|b| box_finite(**b)).map(|b| (b.2 - b.0).max(b.3 - b.1)).collect();
+        let cell = if spans.is_empty() {
+            1.0
+        } else {
+            let mid = spans.len() / 2;
+            (*spans.select_nth_unstable_by(mid, f64::total_cmp).1 * 2.0).max(1.0)
+        };
+        let mut grid = Self { cell, cells: Default::default(), wide: vec![], boxes };
+        for i in 0..grid.boxes.len() {
+            let b = grid.boxes[i];
+            if !box_finite(b) {
+                continue;
+            }
+            let (cx0, cy0, cx1, cy1) = grid.range(b);
+            if ((cx1 - cx0 + 1) as f64) * ((cy1 - cy0 + 1) as f64) > Self::MAX_CELLS {
+                grid.wide.push(i as u32);
+                continue;
+            }
+            for cx in cx0..=cx1 {
+                for cy in cy0..=cy1 {
+                    grid.cells.entry((cx, cy)).or_default().push(i as u32);
+                }
+            }
+        }
+        grid
+    }
+    fn range(&self, b: Box4) -> (i64, i64, i64, i64) {
+        let at = |v: f64| (v / self.cell).floor() as i64;
+        (at(b.0), at(b.1), at(b.2), at(b.3))
+    }
+    /// Indices of the boxes that meet `b` grown by `pad`, ascending.
+    pub(super) fn query(&self, b: Box4, pad: f64) -> Vec<usize> {
+        let q = (b.0 - pad, b.1 - pad, b.2 + pad, b.3 + pad);
+        if !box_finite(q) {
+            return vec![];
+        }
+        let (cx0, cy0, cx1, cy1) = self.range(q);
+        let mut out: Vec<usize> = Vec::new();
+        if ((cx1 - cx0 + 1) as f64) * ((cy1 - cy0 + 1) as f64) > 4.0 * Self::MAX_CELLS {
+            out.extend((0..self.boxes.len()).filter(|&i| box_finite(self.boxes[i]) && boxes_meet(self.boxes[i], q)));
+            return out;
+        }
+        for cx in cx0..=cx1 {
+            for cy in cy0..=cy1 {
+                if let Some(v) = self.cells.get(&(cx, cy)) {
+                    out.extend(v.iter().map(|&i| i as usize));
+                }
+            }
+        }
+        out.extend(self.wide.iter().map(|&i| i as usize));
+        out.sort_unstable();
+        out.dedup();
+        out.retain(|&i| boxes_meet(self.boxes[i], q));
+        out
+    }
+}
+
+/// A region (shapes plus the grid of their boundary edges and outlines) that
+/// shapes are clipped against without a boolean operation against the whole of it.
+pub(super) struct Region {
+    shapes: Vec<Shape>,
+    outlines: BoxGrid,
+    edges: BoxGrid,
+}
+impl Region {
+    pub(super) fn new(shapes: Vec<Shape>) -> Self {
+        let outlines = BoxGrid::new(shapes.iter().map(bbox).collect());
+        let mut edges = vec![];
+        for r in shapes.iter().flat_map(|s| std::iter::once(&s.outer).chain(s.holes.iter())) {
+            for (a, b) in r.iter().zip(r.iter().cycle().skip(1)).take(r.len()) {
+                edges.push((a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y)));
+            }
+        }
+        Self { shapes, outlines, edges: BoxGrid::new(edges) }
+    }
+    /// `shape ∩ region`, pieces in region order. Where no boundary edge of the
+    /// region meets the box of `shape`, the shape lies wholly inside or wholly
+    /// outside: nothing when outside; when inside, the overlay runs against the
+    /// bounding rectangle of the region shape that holds it instead of the shape
+    /// itself. The overlay grid depends only on the bounds of its operands, so the
+    /// result is the very ring (reduced, snapped, same start) that the overlay
+    /// against the whole region gives, at the cost of a 4-vertex operand.
+    /// Elsewhere the overlay runs against the region shapes whose box meets it.
+    pub(super) fn clip(&self, shape: &Shape) -> Vec<Shape> {
+        let bb = bbox(shape);
+        if !box_finite(bb) {
+            return vec![];
+        }
+        if self.edges.query(bb, 0.0).is_empty() {
+            let p = shape.outer[0];
+            let Some(i) = self.outlines.query((p.x, p.y, p.x, p.y), 0.0).into_iter().find(|&i| contains(&self.shapes[i], p)) else {
+                return vec![];
+            };
+            let b = self.outlines.boxes[i];
+            return intersection(shape, &rectangle(b.0, b.1, b.2, b.3));
+        }
+        self.outlines.query(bb, 0.0).into_iter().flat_map(|i| intersection(shape, &self.shapes[i])).collect()
+    }
+    /// `clip`, with the overlay always run against the region shape itself (never its
+    /// bounding rectangle): the very ring `region.iter().flat_map(|k| intersection(shape, k))`
+    /// gives, vertex order included. Region shapes whose boxes do not meet the shape, and
+    /// those that cannot hold a shape no region edge crosses, are skipped.
+    pub(super) fn clip_whole(&self, shape: &Shape) -> Vec<Shape> {
+        let bb = bbox(shape);
+        if !box_finite(bb) {
+            return vec![];
+        }
+        if self.edges.query(bb, 0.0).is_empty() {
+            let p = shape.outer[0];
+            let Some(i) = self.outlines.query((p.x, p.y, p.x, p.y), 0.0).into_iter().find(|&i| contains(&self.shapes[i], p)) else {
+                return vec![];
+            };
+            return intersection(shape, &self.shapes[i]);
+        }
+        self.outlines.query(bb, 0.0).into_iter().flat_map(|i| intersection(shape, &self.shapes[i])).collect()
+    }
 }
 
 #[cfg(test)]

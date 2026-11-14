@@ -18,6 +18,7 @@ use std::f64::consts::{PI, TAU};
 pub(in crate::urban) mod capacity;
 pub(super) mod crossings;
 mod sparse;
+mod terrain;
 
 pub(super) struct Footprint {
     pub structure: UrbanStructure,
@@ -29,6 +30,9 @@ pub(super) struct Footprint {
     pub guides: Vec<Street>,
     /// Validated access through open land; never counted as an occupied ribbon.
     pub links: Vec<Street>,
+    /// Housable shares of the land the accessible growth first took, before
+    /// any terrain correction (`terrain`); None for other mechanisms.
+    pub land: Option<terrain::Survey>,
 }
 
 fn distance(a: Point, b: Point) -> f64 {
@@ -279,24 +283,13 @@ pub(super) fn epoch_fractions(densities: &[f64]) -> Vec<f64> {
         })
         .collect()
 }
-/// Zone, recipe and land share of each growth epoch, for the capacity plan.
-fn capacity_epochs(
-    site: &Site,
-    cfg: &LayoutConfig,
-    morph: &Morph,
-    area: f64,
-    surface: Surface<'_>,
-) -> Vec<capacity::Epoch> {
-    let culture = if cfg.culture == "site" {
-        &site.culture
-    } else {
-        &cfg.culture
-    };
-    let fractions = epoch_fractions(&epoch_densities(site, cfg, morph));
-    // The land the footprint will take: growth (`grow`) never enters ground
-    // steeper than the buildable grade and prices a cell by its distance times
-    // its terrain cost, so of the dry, buildable samples within reach the
-    // cheapest ones, as many as the footprint area holds, stand for it.
+/// The land a footprint of `area` m² takes, as samples on a lattice of a
+/// sixth of its radius: growth (`grow`) never enters ground steeper than the
+/// buildable grade and prices a cell by its distance times its terrain cost,
+/// so of the dry, buildable samples within reach the cheapest ones, as many as
+/// the footprint area holds, stand for it. Returns (cost, grade, centre) of
+/// each sample, cheapest first, and the lattice step.
+fn nominal_cells(site: &Site, cfg: &LayoutConfig, area: f64, surface: Surface<'_>) -> (Vec<(f64, f64, Point)>, f64) {
     let radius = (area / PI).sqrt();
     let step = radius / 6.0;
     let grade_limit = buildable_grade(site, cfg);
@@ -305,7 +298,7 @@ fn capacity_epochs(
         .flat_map(|y| (-6..=6_i32).map(move |x| x * x + y * y))
         .filter(|&r| r <= 36)
         .count();
-    let mut cells: Vec<(f64, f64)> = (-11..=11_i32)
+    let mut cells: Vec<(f64, f64, Point)> = (-11..=11_i32)
         .flat_map(|y| (-11..=11_i32).map(move |x| (x, y)))
         .filter(|(x, y)| x * x + y * y <= 121)
         .filter_map(|(x, y)| {
@@ -320,12 +313,108 @@ fn capacity_epochs(
             let grade = gx.hypot(gy);
             (grade <= grade_limit).then(|| {
                 let terrain = 1.0 + relief * (grade * 2.5 + (grade / grade_limit).powi(2) * 4.0);
-                (f64::from(x).hypot(f64::from(y)) * terrain, grade)
+                (f64::from(x).hypot(f64::from(y)) * terrain, grade, p)
             })
         })
         .collect();
     cells.sort_by(|a, b| a.0.total_cmp(&b.0));
     cells.truncate(wanted);
+    (cells, step)
+}
+/// Housable shares of the nominal land of a town, measured with the house
+/// slope gate at block scale (`terrain`). None without a gate or land.
+fn terrain_survey(
+    site: &Site,
+    cfg: &LayoutConfig,
+    morph: &Morph,
+    cells: &[(f64, f64, Point)],
+    step: f64,
+    surface: Surface<'_>,
+) -> Option<terrain::Survey> {
+    let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+    let (zone, _) = epoch_zone(cfg, culture, site.population, 0);
+    let [lo, hi] = morph.block_size(zone);
+    let gate = terrain::Gate::new(site, cfg, 0.5 * (lo + hi))?;
+    let centres: Vec<Point> = cells.iter().map(|c| c.2).collect();
+    terrain::survey(surface, &centres, step * 0.5, gate)
+}
+/// Coarse strict housable share above which a site is ordinary ground and its
+/// footprint is not drawn ahead (`slope_relax_ahead`).
+const AHEAD_SURVEY: f64 = 0.95;
+/// Relaxation of the house slope gates a town needs, read from the terrain
+/// before the first pass (`terrain::Survey::relaxation`). A coarse survey of
+/// its nominal land first: where the strict gates admit nearly all of it (all
+/// ordinary ground) the answer is 0 at once. Otherwise the strict footprint is
+/// drawn, as the first pass will draw it (the land a flank town reaches is
+/// set by street access, not by distance), and its land is measured: 0 when
+/// the strict gates admit most of it, else the lowest level at which its
+/// houses may use `profiles::SLOPE_RELAX_GOAL` of it.
+pub(super) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> f64 {
+    let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+    let small = crate::settlements::demographics::below(site.population, "town");
+    // The morph the footprint is sized with (`composition`): the founding recipe.
+    let recipe = super::composition::recipe(culture, site.population, if small { "village" } else { "core" });
+    let zone = if cfg.zone != "auto" {
+        cfg.zone.as_str()
+    } else if small && enclosed(cfg, culture, site.population) {
+        "core"
+    } else if small {
+        "village"
+    } else {
+        "core"
+    };
+    let Ok(morph) = super::composition::phase_morph(
+        culture, &recipe, zone, &cfg.preset, &cfg.recipe, cfg.density, &cfg.params, "quarters",
+    ) else {
+        return 0.0;
+    };
+    let morph = super::with_tissue(morph, &cfg.tissue);
+    let radius = if cfg.radius > 0.0 { cfg.radius } else { site.radius * cfg.radius_scale };
+    let (nominal, _) = budget(site, cfg, &morph, radius);
+    let (cells, step) = nominal_cells(site, cfg, nominal, surface);
+    let Some(coarse) = terrain_survey(site, cfg, &morph, &cells, step, surface) else { return 0.0 };
+    if coarse.levels[0] >= AHEAD_SURVEY || cfg.footprint.mechanism == "legacy" {
+        return 0.0;
+    }
+    // The first pass's inputs (`quarters::generate_once`): stairs as the
+    // culture allows them, water at its raster shoreline.
+    let first = LayoutConfig { allow_stairs: profiles::stairs_allowed(cfg, culture), ..cfg.clone() };
+    let shoreline = super::geography::raster_shoreline(&surface);
+    let surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
+    let footprint = generate(seed, site, &first, &morph, surface, roads, radius);
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var("URBAN_PROFILE").is_ok() {
+        eprintln!("  terrain.ahead: coarse {:?} land {:?}", coarse.levels, footprint.land.map(|l| l.levels));
+    }
+    footprint.land.map_or(0.0, |l| l.relaxation())
+}
+/// Zone, recipe and land share of each growth epoch, for the capacity plan.
+#[cfg(test)]
+fn capacity_epochs(
+    site: &Site,
+    cfg: &LayoutConfig,
+    morph: &Morph,
+    area: f64,
+    surface: Surface<'_>,
+) -> Vec<capacity::Epoch> {
+    capacity_epochs_surveyed(site, cfg, morph, area, surface).0
+}
+/// `capacity_epochs` and the coarse terrain survey of the same land (its gate
+/// measures the land the growth really takes, `generate`).
+fn capacity_epochs_surveyed(
+    site: &Site,
+    cfg: &LayoutConfig,
+    morph: &Morph,
+    area: f64,
+    surface: Surface<'_>,
+) -> (Vec<capacity::Epoch>, Option<terrain::Survey>) {
+    let culture = if cfg.culture == "site" {
+        &site.culture
+    } else {
+        &cfg.culture
+    };
+    let fractions = epoch_fractions(&epoch_densities(site, cfg, morph));
+    let (cells, step) = nominal_cells(site, cfg, area, surface);
     // A block's slope is its steepest rim over its centroid: about 1.3 times
     // the ground gradient. Blocks steeper than the houses admit hold none.
     let slopes: Vec<f64> = {
@@ -338,6 +427,7 @@ fn capacity_epochs(
     let median = slopes.get(slopes.len() / 2).copied().unwrap_or(0.0);
     let max_slope = super::culture::mapping_for(culture, &cfg.programme.period)
         .map_or(0.15, |m| super::profiles::house_slope(culture, m.admissibility.max_slope, cfg.programme.slope_relax));
+    let survey = terrain_survey(site, cfg, morph, &cells, step, surface);
     let steep =
         slopes.iter().filter(|&&s| s > max_slope).count() as f64 / slopes.len().max(1) as f64;
     let access: Vec<(f64, f64)> = capacity::epoch_access(&fractions, area)
@@ -345,7 +435,7 @@ fn capacity_epochs(
         .map(|(p, r)| (p / (1.0 + 3.0 * median), r))
         .collect();
     let mut previous = 0.0;
-    fractions
+    let epochs = fractions
         .iter()
         .zip(access)
         .enumerate()
@@ -367,7 +457,8 @@ fn capacity_epochs(
                 },
             }
         })
-        .collect()
+        .collect();
+    (epochs, survey)
 }
 /// An enceinte encloses at least a handful of the culture's own blocks (a few
 /// blocks, within 2.5x the density budget) and, for a planned grid, enough land
@@ -1588,6 +1679,15 @@ fn smooth_step(v: f64, lo: f64, hi: f64) -> f64 {
     let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
+/// Accessible growth: reserve window, epoch land, built crossings, whether
+/// the growth stopped on its housable-land goal (`terrain::Flood`), and the
+/// housable shares of the cells it took under `gate`.
+type Growth = (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>, bool, Option<terrain::Survey>);
+/// `flood` (a site the strict house gate refuses, `terrain`): cells are priced
+/// up by their block-scale slope class, so flat land is taken first, and the
+/// growth stops as soon as its housable land reaches the goal; the area
+/// target stays the upper bound. Without it the growth is area-bounded only.
+#[allow(clippy::too_many_arguments)]
 fn accessible(
     site_population: u32,
     target: f64,
@@ -1604,7 +1704,10 @@ fn accessible(
     water_affinity: f64,
     service: Service,
     capacity_seed: bool,
-) -> (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>) {
+    gate: Option<terrain::Gate>,
+    flood: Option<terrain::Flood>,
+    neighbours: Option<&super::neighbours::Mask>,
+) -> Growth {
     // A small settlement is a compact cluster: its growth window and its far-field cost shrink
     // with its population, so a thin buildable strip (a road bench, a contour) is not stretched
     // into a corridor much longer than the village is wide.
@@ -1659,6 +1762,8 @@ fn accessible(
     let open_space = crate::noise::Noise::new(rng.fork("growth-open-space"));
     let mut occupied = vec![true; n];
     let mut road_distance = vec![0.0; n];
+    // Cells whose block-scale slope the town's house gate admits (`flood` only).
+    let mut housable = vec![false; n];
     for i in 0..n {
         let p = grid.point(i);
         let mut grade: f64 = 0.0;
@@ -1678,7 +1783,7 @@ fn accessible(
             );
             grade = grade.max(gx.hypot(gy));
         }
-        dry_mask[i] = !surface.wet(p) && grade <= grade_limit;
+        dry_mask[i] = !surface.wet(p) && grade <= grade_limit && neighbours.is_none_or(|m| !m.blocked(p));
         heights[i] = surface.height_at(p);
         let rd = field.distance(p);
         road_distance[i] = rd;
@@ -1743,6 +1848,13 @@ fn accessible(
             if q.x < -radius * 0.12 || q.y.abs() > q.x.max(radius * 0.15) * 1.2 {
                 dry_mask[i] = false;
             }
+        }
+        if let Some(f) = flood
+            && dry_mask[i]
+        {
+            let s = terrain::block_slope(surface, p, f.gate.reach);
+            housable[i] = s <= f.gate.limit;
+            costs[i] *= f.gate.premium(s);
         }
     }
     if porous {
@@ -1916,6 +2028,9 @@ fn accessible(
         _ => usize::MAX,
     };
     let mut suburban = false;
+    // Housable land gathered (m²) and whether it reached the flood's goal.
+    let mut gathered = 0.0;
+    let mut housed = false;
     while let Some(Arrival { cost, cell }) = heap.pop() {
         if cost > arrivals[cell] + 1e-9 || finalized[cell] {
             continue;
@@ -1930,7 +2045,16 @@ fn accessible(
             if !selected[i] && occupied[i] {
                 selected[i] = true;
                 order.push(i);
+                if housable[i] {
+                    gathered += step * step;
+                }
             }
+        }
+        if let Some(f) = flood
+            && gathered >= f.goal
+        {
+            housed = true;
+            break;
         }
         if order.len() >= budget {
             break;
@@ -2111,7 +2235,9 @@ fn accessible(
         .into_iter()
         .flat_map(|id| urban[id].streets(&grid, &service.crossing))
         .collect();
-    (reserve, phases, streets)
+    // Measured on the cells taken: the land the town's blocks will stand on.
+    let land = gate.and_then(|g| terrain::tally(surface, &order.iter().map(|&i| grid.point(i)).collect::<Vec<_>>(), g));
+    (reserve, phases, streets, housed, land)
 }
 
 /// Retain only the existing ribbon foundation's own internal axis. This is
@@ -2300,10 +2426,13 @@ pub(super) fn generate(
     radius: f64,
 ) -> Footprint {
     let rng = Rng::new(seed).fork("urban-footprint-v1");
+    let neighbour_land = super::neighbours::Mask::of(site);
     let (nominal, density) = budget(site, cfg, morph, radius);
     // Adaptive capacity: the footprint is sized for the households its own
     // tissue can hold (densified first, then extended within a bound).
-    let plan_epochs = capacity_epochs(site, cfg, morph, nominal, surface);
+    let (mut plan_epochs, survey) = capacity_epochs_surveyed(site, cfg, morph, nominal, surface);
+    // The house slope gate the accessible growth measures its land with.
+    let gate = survey.map(|s| s.gate);
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut plan = capacity::plan(site, cfg, &plan_epochs, nominal, None);
@@ -2439,8 +2568,11 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     }
     if let Some(k) = fitted_aspect { foundation_cfg.footprint.aspect = k; }
     let mut ribbon_axes = vec![];
-    let (reserve, mut phases, mut crossings) = if centers.is_empty() {
-        (vec![], vec![vec![]; epochs], vec![])
+    // Land target after the terrain correction, and the land first measured.
+    let mut land_target = target;
+    let mut land = None;
+    let (reserve, mut phases, mut crossings, housed, _) = if centers.is_empty() {
+        (vec![], vec![vec![]; epochs], vec![], false, None)
     } else if mechanism == "planned" {
         // `alignEnclosedGrid`: a secondary core of a cardinal culture takes the
         // cardinal frame its own walls are drawn in, not the first core's turn.
@@ -2457,7 +2589,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             surface,
             &rng,
         );
-        (r, p, vec![])
+        (r, p, vec![], false, None)
     } else if ribbon_foundation {
         let (r, p, axes) = ribbon(
             target,
@@ -2471,7 +2603,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             water_affinity,
         );
         ribbon_axes = axes;
-        (r, p, vec![])
+        (r, p, vec![], false, None)
     } else {
         let profile = profiles::settlement_profile(culture, site.population, epochs);
         let walled = matches!(
@@ -2509,35 +2641,68 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         let service = if slope_growth {
             Service { grade: service.grade.max(grade), ..service }
         } else { service };
-        let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service, capacity_seed: bool| {
-            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service, capacity_seed)
+        let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service, capacity_seed: bool, target: f64, flood: Option<terrain::Flood>| {
+            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service, capacity_seed, gate, flood, neighbour_land.as_ref())
         };
         let before = centers.clone();
         // Component seeding belongs to slope-adapted growth only: an ordinary
         // (flat, island or spit) town keeps its exact nearest-dry seed.
-        let first = grow(&mut centers, grade, service, slope_growth);
+        let first = grow(&mut centers, grade, service, slope_growth, target, None);
+        let mut taken = (grade, service);
         // A site whose streets cannot climb out of the core would leave the place almost
         // without land (under a quarter of its budget): it then grows by stairs and
         // terraces, on steeper ground step by step, and says so. The ladder runs up to
         // a 56° flank (grade 1.5), so a town placed on a volcano's cone still takes land.
-        let got = |r: &(Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>)| area(&union(&r.1.iter().flatten().cloned().collect::<Vec<_>>()));
+        let got = |r: &Growth| area(&union(&r.1.iter().flatten().cloned().collect::<Vec<_>>()));
         let first_area = got(&first);
         let mut best = first;
         // The emergency land ladder stays the last resort of every place; the
         // household ladder (`slopes`) runs after it, on the finished layout.
+        // A growth that already holds its housable goal needs no steeper land.
         for steep_grade in [grade.max(0.5), 0.75, 1.0, 1.5] {
             if got(&best) >= (if slope_growth { 0.95 } else { 0.25 }) * target {
                 break;
             }
             let mut again = before.clone();
             let steep = Service { grade: service.grade.max(cfg.max_stair_grade).max(steep_grade), ..service };
-            let second = grow(&mut again, steep_grade, steep, slope_growth);
+            let second = grow(&mut again, steep_grade, steep, slope_growth, target, None);
             if got(&second) > (if slope_growth { 1.01 } else { 2.0 }) * got(&best) {
+                centers = again;
+                best = second;
+                taken = (steep_grade, steep);
+            }
+        }
+        land = best.4;
+        let laddered = got(&best);
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::env::var("URBAN_PROFILE").is_ok() {
+            eprintln!("  terrain.land: {land:?}");
+        }
+        // Terrain correction, on a site whose strict house gate refuses the
+        // land the growth took (all ordinary ground skips it): the capacity
+        // forecast counts only the share of that land the town's gate admits,
+        // and the growth is drawn again by housable land, flat land first,
+        // until it holds the forecast households.
+        if let Some(measured) = land.filter(terrain::Survey::refused)
+            && plan.is_some()
+        {
+            for e in &mut plan_epochs {
+                e.steep = 1.0 - measured.level;
+            }
+            if let Some(corrected) = capacity::plan(site, cfg, &plan_epochs, nominal, None) {
+                land_target = nominal * corrected.extension;
+                plan = Some(corrected);
+            }
+            let flood = terrain::Flood { gate: measured.gate, goal: land_target * measured.level };
+            let mut again = before.clone();
+            let (grade, service) = taken;
+            let second = grow(&mut again, grade, service, slope_growth, land_target, Some(flood));
+            if got(&second) > 0.0 {
                 centers = again;
                 best = second;
             }
         }
-        if got(&best) > first_area {
+        if laddered > first_area {
             warnings.push("Pente trop forte pour des rues : la ville gagne son terrain par escaliers et terrasses.".into());
         }
         best
@@ -2550,6 +2715,12 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     };
     if let Some(access)=port_access {links.push(access);}
     if let Some(access)=summit_access {links.push(access);}
+    // The neighbours' land and its margin stay out of every phase (`neighbours`).
+    if let Some(mask) = &neighbour_land {
+        for phase in &mut phases {
+            *phase = phase.iter().flat_map(|s| mask.cut_free(s)).collect();
+        }
+    }
     let allocated = union(&phases.iter().flatten().cloned().collect::<Vec<_>>());
     // An urban crossing survives only between two retained banks: its
     // approaches start and end on allocated land.
@@ -2610,7 +2781,10 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     for c in &mut centers {
         c.weight /= center_weight.max(1.0e-9);
     }
-    let shortfall = (target - allocated_area).max(0.0);
+    // A growth that gathered its housable goal holds the forecast households
+    // on less, flatter land than the area target: no shortfall.
+    let target = land_target;
+    let shortfall = if housed { 0.0 } else { (target - allocated_area).max(0.0) };
     // Terrain-bounded growth: plan again on the land actually attributed.
     if let Some(p) = plan.as_mut()
         && shortfall > target * 0.02
@@ -2703,6 +2877,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         warnings,
         guides,
         links,
+        land,
     }
 }
 
@@ -2735,7 +2910,7 @@ mod tests {
         let mut cfg=LayoutConfig{fortification:"none".into(),regular_grid_outline:true,..Default::default()};
         cfg.footprint.budget="radius".into();
         cfg.footprint.epochs=1;
-        let mut site=Site{key:"grid".into(),name:String::new(),culture:"bastide".into(),population:500,center:Point{x:1500.,y:1500.},radius:250.};
+        let mut site=Site{key:"grid".into(),name:String::new(),culture:"bastide".into(),population:500,center:Point{x:1500.,y:1500.},radius:250., neighbours: Vec::new()};
         let morph=resolve("bastide","culture","auto","village",1.,&serde_json::json!({}),"quarters").unwrap();
         for (pop,radius) in [(500,150.),(10000,450.)] {
             site.population=pop;
@@ -2784,7 +2959,7 @@ mod tests {
         }).collect();
         let water=vec![0; height.len()];
         let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water, interpolation: Default::default(),};
-        let site=Site{key:"hill".into(),name:String::new(),culture:"european-organic".into(),population:3000,center:Point{x:480.,y:500.},radius:300.};
+        let site=Site{key:"hill".into(),name:String::new(),culture:"european-organic".into(),population:3000,center:Point{x:480.,y:500.},radius:300., neighbours: Vec::new()};
         let cfg=LayoutConfig{power_high_ground:true,site_archetype:"hilltop".into(),..Default::default()};
         let roads=vec![Street{path:vec![Point{x:350.,y:250.},Point{x:350.,y:750.}],widths:vec![5.;2],rank:1,role:"regional".into()}];
         assert!(summit_access(&site,&LayoutConfig{power_high_ground:false,..cfg.clone()},surface,&roads,300.).is_none());
@@ -2827,6 +3002,7 @@ mod tests {
                 y: 3000.0,
             },
             radius: 600.0,
+            neighbours: Vec::new(),
         };
         let cfg = LayoutConfig {
             culture: "site".into(),
@@ -2862,7 +3038,8 @@ mod tests {
         let w = vec![0; h.len()];
         let surface = Surface { geometry: None, width: 8000.0, n: 128, height: &h, water: &w, interpolation: Default::default(),};
         let site = Site { key: "capacity".into(), name: String::new(), population: 10_000, culture: "giant-hold".into(),
-            center: Point { x: 4000.0, y: 4000.0 }, radius: 735.0 };
+            center: Point { x: 4000.0, y: 4000.0 }, radius: 735.0,
+            neighbours: Vec::new(), };
         let cfg = LayoutConfig { culture: "site".into(), ..LayoutConfig::default() };
         let morph = resolve("giant-hold", "culture", "auto", "core", 1.0, &serde_json::json!({}), "quarters").unwrap();
         let (nominal, _) = budget(&site, &cfg, &morph, 735.0);
@@ -2887,6 +3064,7 @@ mod tests {
                     y: 1500.0,
                 },
                 radius: 250.0,
+                neighbours: Vec::new(),
             },
             resolve(
                 "european-organic",

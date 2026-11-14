@@ -538,6 +538,25 @@ struct LayoutIndex {
     layout: usize,
     frontages: super::parcels::FrontageIndex,
     districts: BTreeMap<usize, (String, Option<f64>)>,
+    // Town-wide values every site reads: computed once per layout on first use
+    // (a per-site sum over all quarters or copy of all enclosure rings would
+    // make the stage quadratic in the number of sites).
+    radius: std::sync::OnceLock<f64>,
+    enclosures: std::sync::OnceLock<Vec<super::Shape>>,
+}
+impl LayoutIndex {
+    fn radius(&self, layout: &Layout) -> f64 {
+        *self.radius.get_or_init(|| super::shanty::formal_radius(layout))
+    }
+    fn enclosure_shapes(&self, layout: &Layout) -> &[super::Shape] {
+        self.enclosures.get_or_init(|| {
+            layout
+                .enclosures
+                .iter()
+                .map(|e| super::Shape { outer: e.path.clone(), holes: vec![] })
+                .collect()
+        })
+    }
 }
 struct PartitionIndex {
     partition: usize,
@@ -579,6 +598,11 @@ impl BuildingSiteIndex {
             generated: std::sync::atomic::AtomicUsize::new(0),
         };
         let mut layout_indices = BTreeMap::new();
+        // First layout of each key, as `position` finds it.
+        let mut first_layout: HashMap<&str, usize> = HashMap::with_capacity(layouts.len());
+        for (i, l) in layouts.iter().enumerate() {
+            first_layout.entry(l.key.as_str()).or_insert(i);
+        }
         let mut selected = std::collections::BTreeSet::new();
         for &partition_id in selected_partition_indices {
             if !selected.insert(partition_id) {
@@ -588,9 +612,8 @@ impl BuildingSiteIndex {
                 .get(partition_id)
                 .ok_or("Selected architecture partition missing")?;
             // Match the first layout just like the original collect path.
-            let layout_id = layouts
-                .iter()
-                .position(|l| l.key == partition.key)
+            let layout_id = *first_layout
+                .get(partition.key.as_str())
                 .ok_or("Missing layout for architecture sites")?;
             let Some(pr) = &partition.programme else {
                 continue;
@@ -602,6 +625,8 @@ impl BuildingSiteIndex {
                     layout: layout_id,
                     frontages: super::parcels::FrontageIndex::new(&super::shanty::formal_layout(layout)),
                     districts: district_programmes(layout),
+                    radius: std::sync::OnceLock::new(),
+                    enclosures: std::sync::OnceLock::new(),
                 });
                 slot
             });
@@ -760,6 +785,23 @@ impl BuildingSiteIndex {
         water_level: &[f32],
         architecture_culture: Option<&str>,
     ) -> Result<Value, String> {
+        self.request_site(i, seed, layouts, partitions, surface, water_level, architecture_culture, true)
+    }
+
+    /// `request_one`; `with_grid: false` leaves out the terrain elevation grid
+    /// (`terrain.grid`), which the display projection never reads.
+    #[allow(clippy::too_many_arguments)]
+    fn request_site(
+        &self,
+        i: usize,
+        seed: &str,
+        layouts: &[Layout],
+        partitions: &[Partition],
+        surface: Surface<'_>,
+        water_level: &[f32],
+        architecture_culture: Option<&str>,
+        with_grid: bool,
+    ) -> Result<Value, String> {
         #[cfg(test)]
         self.generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let site = &self.sites[i];
@@ -786,13 +828,17 @@ impl BuildingSiteIndex {
         if parcel.family == "shanty" {
             let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
             let mut request = super::shanty::request(layout, parcel, surface, &site_seed)?;
-            request["terrain"]["grid"] = ground_patch(surface, &parcel.shape);
+            if with_grid {
+                request["terrain"]["grid"] = ground_patch(surface, &parcel.shape);
+            }
             return Ok(request);
         }
         if let Some(water) = super::springs::site(layout, &parcel.id) {
             let site_seed = super::edits::building_seed(seed, &parcel.id, partition);
             let mut request = super::springs::request(water, layout, surface, &site_seed);
-            request["terrain"]["grid"] = ground_patch(surface, &water.shape);
+            if with_grid {
+                request["terrain"]["grid"] = ground_patch(surface, &water.shape);
+            }
             return Ok(request);
         }
         // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
@@ -893,7 +939,7 @@ impl BuildingSiteIndex {
             "market" | "common" => "open_space",
             f => f,
         };
-        let grid = ground_patch(surface, &parcel.shape);
+        let grid = if with_grid { ground_patch(surface, &parcel.shape) } else { Value::Null };
         let party_boundaries = if culture.admissibility.party_walls {
             partition_index.adjacent[site.parcel]
                 .iter()
@@ -912,7 +958,12 @@ impl BuildingSiteIndex {
         let sheet_tissue;
         let tissue = if from_sheet {
             // A culture drawn in the style sheet builds in its own tissue.
-            sheet_tissue = super::culture::parcel_morph(layout, partition, building_culture, parcel.block)
+            sheet_tissue = super::culture::lot_morph(layout, partition, building_culture, parcel)
+                .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)));
+            &sheet_tissue
+        } else if super::zone_blend::lot_zone(layout, parcel).is_some() {
+            // A lot dithered to the neighbouring zone (`zoneDensity: gradient`).
+            sheet_tissue = super::culture::lot_morph(layout, partition, &allocation.culture, parcel)
                 .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)));
             &sheet_tissue
         } else {
@@ -931,7 +982,9 @@ impl BuildingSiteIndex {
             let levels = &morph.value["arch"]["storeys"];
             let lo = levels[0].as_u64().unwrap_or(u64::from(floors)) as u32;
             let hi = levels[1].as_u64().unwrap_or(u64::from(floors)) as u32;
-            (lo + ((hi.saturating_sub(lo)) as f64 * parcel.pressure).round() as u32).clamp(
+            super::zone_blend::floors_at(&morph.value["arch"], lo, hi, parcel.pressure)
+                .unwrap_or_else(|| lo + ((hi.saturating_sub(lo)) as f64 * parcel.pressure).round() as u32)
+                .clamp(
                 culture.admissibility.floors[0],
                 culture.admissibility.floors[1],
             )
@@ -1087,9 +1140,9 @@ impl BuildingSiteIndex {
             && !programme["landmark"].as_bool().unwrap_or(false)
             && !role.contains("tower") && parts.iter().all(|(_,l)| matches!(*l, "barn" | "byre" | "annex") || super::forms::plan::is_house_part(l))
             && super::house_mix::ordinary_home(building_culture, arch, &site_seed) {
-            let radius = super::shanty::formal_radius(layout);
-            let outside = !layout.enclosures.is_empty() && !layout.enclosures.iter().any(|e|
-                super::geometry::contains(&super::Shape { outer:e.path.clone(), holes:vec![] }, center));
+            let radius = layout_index.radius(layout);
+            let enclosures = layout_index.enclosure_shapes(layout);
+            let outside = !enclosures.is_empty() && !enclosures.iter().any(|e| super::geometry::contains(e, center));
             super::house_mix::HomeContext {
                 zone:tissue.as_ref().map_or("", |(zone,_)| zone.as_str()),
                 district:programme["district_role"].as_str().unwrap_or(""), wealth, pressure:parcel.pressure,
@@ -1462,7 +1515,7 @@ impl BuildingSiteIndex {
             seed: &site_seed,
             low_rural: layout.config.as_ref().is_none_or(|c| c.low_rural_houses),
             distance: {
-                let radius = super::shanty::formal_radius(layout);
+                let radius = layout_index.radius(layout);
                 (center.x - layout.center.x).hypot(center.y - layout.center.y) / radius
             },
             complex: super::forms::complex_houses(layout), user_core: super::massing::user_core(layout, parcel.block),
@@ -1544,6 +1597,49 @@ pub fn requests(
 pub fn request_count(layouts: &[Layout], partitions: &[Partition]) -> Result<usize, String> {
     let selected: Vec<_> = (0..partitions.len()).collect();
     Ok(BuildingSiteIndex::prepare(layouts, partitions, &selected)?.total())
+}
+
+/// `display::site_display_buffers(&requests(..), origin)` byte for byte, without
+/// ever holding the requests of the whole town: sites are generated in parallel
+/// by chunks, each reduced to a flat display row on its worker (the request tree
+/// is dropped there) and appended in site order. The terrain grid, which the
+/// display never reads, is not computed.
+#[allow(clippy::too_many_arguments)]
+pub fn display_buffers(
+    seed: &str,
+    layouts: &[Layout],
+    partitions: &[Partition],
+    surface: Surface<'_>,
+    water_level: &[f32],
+    architecture_culture: Option<&str>,
+    origin: Point,
+) -> Result<Vec<u8>, String> {
+    const CHUNK: usize = 8192;
+    #[cfg(not(target_arch = "wasm32"))]
+    let tick = std::time::Instant::now();
+    let selected: Vec<_> = (0..partitions.len()).collect();
+    let index = BuildingSiteIndex::prepare(layouts, partitions, &selected)?;
+    let total = index.total();
+    let mut display = super::display::SiteDisplay::new(origin, total);
+    let mut start = 0;
+    while start < total {
+        let end = (start + CHUNK).min(total);
+        let rows = super::par::range(end - start, |k| {
+            index
+                .request_site(start + k, seed, layouts, partitions, surface, water_level, architecture_culture, false)
+                .map(|request| super::display::SiteRow::new(&request, origin))
+        });
+        // The first error in site order wins, as in a serial loop.
+        for row in rows {
+            display.push(row?);
+        }
+        start = end;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var("URBAN_PROFILE").is_ok() {
+        eprintln!("  building_sites display: {:.0} ms, {total} sites", tick.elapsed().as_secs_f64() * 1000.0);
+    }
+    Ok(display.finish())
 }
 
 /// Sites `start..end` (clamped) of `requests`: pure per site, generated in
@@ -2649,7 +2745,12 @@ fn preview_site(
         let sheet_tissue;
         let tissue = if from_sheet {
             // A culture drawn in the style sheet builds in its own tissue.
-            sheet_tissue = super::culture::parcel_morph(layout, partition, building_culture, parcel.block)
+            sheet_tissue = super::culture::lot_morph(layout, partition, building_culture, parcel)
+                .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)));
+            &sheet_tissue
+        } else if super::zone_blend::lot_zone(layout, parcel).is_some() {
+            // A lot dithered to the neighbouring zone (`zoneDensity: gradient`).
+            sheet_tissue = super::culture::lot_morph(layout, partition, &allocation.culture, parcel)
                 .map(|(zone, morph)| (zone.to_owned(), super::forms::flagged(morph, layout)));
             &sheet_tissue
         } else {
@@ -2670,7 +2771,8 @@ fn preview_site(
             let levels = &morph.value["arch"]["storeys"];
             let lo = levels[0].as_u64().unwrap_or(u64::from(floors)) as u32;
             let hi = levels[1].as_u64().unwrap_or(u64::from(floors)) as u32;
-            (lo + ((hi.saturating_sub(lo)) as f64 * parcel.pressure).round() as u32)
+            super::zone_blend::floors_at(&morph.value["arch"], lo, hi, parcel.pressure)
+                .unwrap_or_else(|| lo + ((hi.saturating_sub(lo)) as f64 * parcel.pressure).round() as u32)
                 .clamp(culture.admissibility.floors[0], culture.admissibility.floors[1])
         };
         let wealth = programme["wealth"].as_f64().unwrap_or(0.5);

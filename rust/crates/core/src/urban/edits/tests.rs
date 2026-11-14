@@ -33,6 +33,7 @@ fn town(cfg: &LayoutConfig) -> Layout {
             y: 1000.0,
         },
         radius: 220.0,
+        neighbours: Vec::new(),
     };
     // Edits are measured against the smooth curtain; a culture's straight-run
     // default (wallStiffness) is the wall tests' business.

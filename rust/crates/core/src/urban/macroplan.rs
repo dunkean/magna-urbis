@@ -2039,6 +2039,7 @@ mod tests {
             culture: "european-organic".into(),
             center: Point { x: 170.0, y: 120.0 },
             radius: 200.0,
+            neighbours: Vec::new(),
         }
     }
 
@@ -2050,6 +2051,7 @@ mod tests {
             culture: culture.into(),
             center: Point { x: 256.0, y: 256.0 },
             radius: 120.0,
+            neighbours: Vec::new(),
         }
     }
     fn morph(culture: &str) -> Morph {
@@ -2313,7 +2315,7 @@ mod v7_grid_tests {
         let a = 0.37f64;
         let domain = Shape {outer:[(-180.,-110.),(180.,-110.),(180.,110.),(-180.,110.)].into_iter()
             .map(|(x,y)|Point{x:500.+x*a.cos()-y*a.sin(),y:500.+x*a.sin()+y*a.cos()}).collect(),holes:vec![]};
-        let site = Site {key:"grid".into(),name:"Grid".into(),population:500,culture:"indus-planned".into(),center:Point{x:500.,y:500.},radius:200.};
+        let site = Site {key:"grid".into(),name:"Grid".into(),population:500,culture:"indus-planned".into(),center:Point{x:500.,y:500.},radius:200., neighbours: Vec::new()};
         let cfg = LayoutConfig {align_enclosed_grid:true,fortification:"wall".into(),tissue:"grid".into(),count:4,..Default::default()};
         let m = super::super::resolve("indus-planned","culture","core","core",1.,&serde_json::json!({"minWidth":10,"gridSpacing":[80,80]}),"quarters").unwrap();
         let height=vec![10.;32*32];let water=vec![0;32*32];

@@ -371,7 +371,9 @@ pub(super) fn extend(
         if let Some(p) = ring.first().copied() {
             ring.push(p);
         }
-        g::ribbon(&ring, &[40.])
+        // A 40 m band needs no metre detail: an outline clipped to the built
+        // land carries hundreds of short edges, and the band of each costs.
+        g::ribbon(&g::simplify(&ring, 4.0, |_| false), &[40.])
     });
     forbidden.extend(breathing.into_iter().flatten());
     forbidden.extend(
@@ -392,6 +394,8 @@ pub(super) fn extend(
             .iter()
             .flat_map(|s| s.spring_sites.iter().map(|q| q.shape.clone())),
     );
+    // Neighbouring towns' land and its margin (none without neighbours).
+    forbidden.extend(super::neighbours::forbidden(site));
     let streets = layout
         .streets
         .iter()
@@ -1339,6 +1343,7 @@ mod tests {
             culture: "medina".into(),
             center: Point { x: 2000., y: 2000. },
             radius: 260.,
+            neighbours: Vec::new(),
         };
         let road = Street {
             path: vec![Point { x: 200., y: 2000. }, Point { x: 3800., y: 2000. }],
@@ -1374,8 +1379,11 @@ mod tests {
         let ext = extension(town).expect("a 10k medina should have peripheral informal pockets");
         assert!(!ext.pockets.is_empty());
         let mut recovered = formal_layout(town).into_owned();
-        // Applied configuration is the sole intentional difference.
+        // The applied configuration and the claim (which holds the informal
+        // quarters too, so a neighbouring town keeps off them) are the only
+        // intentional differences.
         recovered.config = bare[0].config.clone();
+        recovered.claim = bare[0].claim.clone();
         assert_eq!(
             serde_json::to_value(&recovered).unwrap(),
             serde_json::to_value(&bare[0]).unwrap()

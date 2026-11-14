@@ -602,6 +602,8 @@ struct Field<'a> {
     /// castrum, a ward city or a bastide keeps continuous streets and 4-way
     /// crossings across its quarters instead of re-aiming each block.
     frame: Option<f64>,
+    /// `zoneDensity: gradient`: block sizes lean toward a neighbouring phase.
+    blend: Option<&'a super::zone_blend::Field>,
 }
 impl Field<'_> {
     /// Distance to the nearest street of rank <= `max_rank` within `reach`,
@@ -1504,7 +1506,15 @@ fn split_quarter(
         } else {
             &q.zone
         };
-        let bs = m.block_size(zone);
+        let mut bs = m.block_size(zone);
+        // `zoneDensity: gradient`: near another phase the block size leans toward its own.
+        if let (Some(blend), Some(own)) = (field.blend, field.phase_at(point))
+            && field.phase_morphs.len() == field.phases.len()
+            && let Some(b) = blend.at(point, own)
+        {
+            let other = &field.phases[b.phase].zone;
+            bs = super::zone_blend::lerp2(bs, field.phase_morphs[b.phase].block_size(other), b.weight);
+        }
         let target = bs[0].max(1.0)
             * (bs[1].max(bs[0].max(1.0)) / bs[0].max(1.0)).powf(rng.float())
             * (0.85
@@ -2121,6 +2131,16 @@ fn squares(
             .is_some()
     };
     let free = |b: &Block| b.kind == "block";
+    // Interior point and area of every block, once (in parallel); the
+    // squares only change kinds.
+    let sites: Vec<(Point, f64)> = super::par::map(blocks, |_, b| (g::interior_point(&b.shape), g::area(&b.shape)));
+    // Blocks by interior point on a 50 m grid (the small-square reaches are below it).
+    const SITE_CELL: f64 = 50.0;
+    let site_cell = |p: Point| ((p.x / SITE_CELL).floor() as i64, (p.y / SITE_CELL).floor() as i64);
+    let mut site_grid: std::collections::HashMap<(i64, i64), Vec<usize>> = Default::default();
+    for (i, &(c, _)) in sites.iter().enumerate() {
+        site_grid.entry(site_cell(c)).or_default().push(i);
+    }
     // Market area grows with the town, from a village green to a 1.2 ha square.
     let market = (300.0 + 0.2 * population as f64).clamp(500.0, 12_000.0);
     for (k, &(centre, weight)) in centres.iter().enumerate() {
@@ -2135,8 +2155,7 @@ fn squares(
             .enumerate()
             .filter(|(_, b)| free(b))
             .filter_map(|(i, b)| {
-                let area = g::area(&b.shape);
-                let c = g::interior_point(&b.shape);
+                let (c, area) = sites[i];
                 let d = (c.x - centre.x).hypot(c.y - centre.y);
                 (d < reach && (0.35..=2.5).contains(&(area / target)) && fronts_major(b))
                     .then(|| (i, (area / target).ln().abs() + d / reach))
@@ -2146,14 +2165,16 @@ fn squares(
             blocks[i].kind = "place".into();
         }
     }
-    let small = |b: &Block, lo: f64, hi: f64| (lo..=hi).contains(&g::area(&b.shape));
+    // Nearest free small block within `reach` (< `SITE_CELL`), lowest index
+    // on a tie: only the blocks in the 3 x 3 cells round `p` can be.
     let nearest_small = |blocks: &[Block], p: Point, reach: f64, hi: f64| {
-        blocks
-            .iter()
-            .enumerate()
-            .filter(|(_, b)| free(b) && small(b, 120.0, hi))
-            .map(|(i, b)| {
-                let c = g::interior_point(&b.shape);
+        let (cx, cy) = site_cell(p);
+        (cx - 1..=cx + 1)
+            .flat_map(|x| (cy - 1..=cy + 1).map(move |y| (x, y)))
+            .flat_map(|c| site_grid.get(&c).into_iter().flatten().copied())
+            .filter(|&i| free(&blocks[i]) && (120.0..=hi).contains(&sites[i].1))
+            .map(|i| {
+                let c = sites[i].0;
                 (i, (c.x - p.x).hypot(c.y - p.y))
             })
             .filter(|(_, d)| *d < reach)
@@ -2746,26 +2767,33 @@ pub(super) fn peel_vacant_edges(layout: &mut Layout) -> usize {
     if peeled == 0 {
         return 0;
     }
-    let removed: Vec<Shape> = (0..n).filter(|&i| gone[i]).map(|i| layout.blocks[i].shape.clone()).collect();
     let mut k = 0;
     layout.blocks.retain(|_| {
         k += 1;
         !gone[k - 1]
     });
-    // Streets serving no kept block (every sample far from all of them).
-    let kept_boxes: Vec<_> = layout.blocks.iter().map(|b| g::bbox(&b.shape)).collect();
+    // Streets serving no kept block (every sample far from all of them), with
+    // the grown boxes of the kept blocks in the same grid cells.
+    let kept_boxes: Vec<_> = layout.blocks.iter().map(|b| { let b = g::bbox(&b.shape); (b.0 - 15.0, b.1 - 15.0, b.2 + 15.0, b.3 + 15.0) }).collect();
+    let mut kept_grid: std::collections::HashMap<(i64, i64), Vec<usize>> = std::collections::HashMap::new();
+    for (i, b) in kept_boxes.iter().enumerate() {
+        for x in (b.0 / cell).floor() as i64..=(b.2 / cell).floor() as i64 {
+            for y in (b.1 / cell).floor() as i64..=(b.3 / cell).floor() as i64 {
+                kept_grid.entry((x, y)).or_default().push(i);
+            }
+        }
+    }
     let near_kept = |p: Point| {
-        kept_boxes.iter().any(|b| p.x >= b.0 - 15.0 && p.x <= b.2 + 15.0 && p.y >= b.1 - 15.0 && p.y <= b.3 + 15.0)
+        kept_grid.get(&((p.x / cell).floor() as i64, (p.y / cell).floor() as i64)).is_some_and(|ids| {
+            ids.iter().any(|&j| { let b = kept_boxes[j]; p.x >= b.0 && p.x <= b.2 && p.y >= b.1 && p.y <= b.3 })
+        })
     };
     layout.streets.retain(|s| {
         matches!(s.role.as_str(), "regional" | "outbound" | "bridge" | "crossing" | "quay")
             || s.path.iter().any(|&p| near_kept(p))
     });
-    if let Some(st) = layout.structure.as_mut() {
-        for shape in &removed {
-            st.allocated = st.allocated.iter().flat_map(|a| g::difference(a, shape)).filter(|a| g::area(a) > 1.0).collect();
-        }
-    }
+    // `structure.allocated` keeps the footprint until `access::summarize`
+    // rebuilds it from the kept quarters; nothing reads it in between.
     peeled
 }
 
@@ -2793,8 +2821,11 @@ pub(super) fn drop_vacant_quarters(layout: &mut Layout) -> usize {
     if dropped == 0 || dropped == q {
         return 0;
     }
-    let gone: Vec<Shape> = (0..q).filter(|&i| drop[i]).map(|i| layout.quarters[i].shape.clone()).collect();
-    let inside = |p: Point| gone.iter().any(|s| g::contains(s, p));
+    let index: Vec<((f64, f64, f64, f64), g::ContainmentIndex)> = (0..q)
+        .filter(|&i| drop[i])
+        .map(|i| (g::bbox(&layout.quarters[i].shape), g::ContainmentIndex::new(&layout.quarters[i].shape)))
+        .collect();
+    let inside = |p: Point| index.iter().any(|(b, c)| p.x >= b.0 && p.x <= b.2 && p.y >= b.1 && p.y <= b.3 && c.contains(p));
     layout.streets.retain(|s| {
         matches!(s.role.as_str(), "regional" | "outbound" | "bridge" | "crossing")
             || !s.path.iter().all(|&p| inside(p))
@@ -2818,10 +2849,8 @@ pub(super) fn drop_vacant_quarters(layout: &mut Layout) -> usize {
         k += 1;
         !drop[k - 1]
     });
+    // `structure.allocated` is rebuilt from the kept quarters by `access::summarize`.
     if let Some(st) = layout.structure.as_mut() {
-        for shape in &gone {
-            st.allocated = st.allocated.iter().flat_map(|a| g::difference(a, shape)).filter(|a| g::area(a) > 1.0).collect();
-        }
         if let Some(c) = st.metrics.capacity.as_mut() {
             c.borrowed_quarters = c.borrowed_quarters.iter().filter(|&&i| i < q && !drop[i]).map(|&i| remap[i]).collect();
         }
@@ -2844,14 +2873,19 @@ pub(super) fn generate(
     roads: &[Street],
     stilt_grounded: bool,
 ) -> Result<Layout, String> {
+    let mut laps = super::network::Lap::new("quarters");
     let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded)?;
+    laps.lap("planned");
     // A minimum of one household per enclosed block must fit the +30 %
     // programme. Replan the land budget; wall tracing remains unchanged.
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
     let limit = (1.3 * site.population as f64 / super::roles::occupancy(culture).household_size).floor().max(1.0);
+    // Rings indexed once, blocks tested in parallel (same arithmetic as `g::contains`).
     let enclosed_blocks = |l: &Layout| {
-        let rings: Vec<Shape> = l.enclosures.iter().map(|e| Shape { outer: e.path.clone(), holes: vec![] }).collect();
-        l.blocks.iter().filter(|b| b.kind == "block" && rings.iter().any(|r| g::contains(r, g::interior_point(&b.shape)))).count()
+        let rings: Vec<g::ContainmentIndex> = l.enclosures.iter().map(|e| g::ContainmentIndex::new(&Shape { outer: e.path.clone(), holes: vec![] })).collect();
+        if rings.is_empty() { return 0; }
+        super::par::map(&l.blocks, |_, b| b.kind == "block" && { let p = g::interior_point(&b.shape); rings.iter().any(|r| r.contains(p)) })
+            .into_iter().filter(|&inside| inside).count()
     };
     let mut count = enclosed_blocks(&layout);
     for _ in 0..3 {
@@ -2869,10 +2903,12 @@ pub(super) fn generate(
         layout = next;
         count = next_count;
     }
+    laps.lap("enclosed");
     let mut dropped = drop_vacant_quarters(&mut layout);
     let peeled = peel_vacant_edges(&mut layout);
     // Growth quarters the peeling emptied go too.
     dropped += drop_vacant_quarters(&mut layout);
+    laps.lap("vacant");
     if dropped + peeled > 0 {
         layout.warnings.push(format!(
             "Terre vacante rendue à la campagne : {dropped} quartier(s), {peeled} îlot(s) de bordure."
@@ -3256,6 +3292,7 @@ fn generate_once(
             phases,
             archetype,
             structure,
+            claim: Default::default(),
         });
     }
     // Adaptive capacity (`footprint::capacity`): the plan sized with the
@@ -3355,7 +3392,10 @@ fn generate_once(
         reads: None,
         major: &major,
         frame: None,
+        blend: None,
     };
+    let blend = (cfg.zone_density == "gradient" && phases.len() > 1)
+        .then(|| super::zone_blend::field(&phases, &enclosures));
     let culture = if cfg.culture == "site" {
         &site.culture
     } else {
@@ -3488,6 +3528,7 @@ fn generate_once(
             },
             phase_index: &phase_index,
             frame: None,
+            blend: blend.as_deref(),
             ..field
         };
         // A planned grid is one lattice for the whole town: the same frame and
@@ -3561,6 +3602,7 @@ fn generate_once(
         c.0.as_ref().map_or_else(|_| vec![], |r| r.1.clone())
     };
     let mut results: Vec<Option<_>> = super::par::range(quarters.len(), |i| Some(run(i, &[])));
+    lap("split.first_cut");
     let width = super::par::threads();
     let mut added_bins = Bins::new(20.0, usize::MAX);
     let (mut recut, mut rounds) = (0, 0);
@@ -3576,7 +3618,7 @@ fn generate_once(
             let mut members = vec![(i, vec![])];
             let mut guess = streets_of(current);
             let mut guess_bins = Bins::new(20.0, usize::MAX);
-            for k in i + 1..quarters.len().min(i + 8 * width) {
+            for k in i + 1..quarters.len().min(i + 32 * width) {
                 if members.len() >= width {
                     break;
                 }
@@ -3668,6 +3710,7 @@ fn generate_once(
         cfg.max_street_grade,
         nucleus_radius.clamp(60.0, 200.0),
     );
+    lap("clean.join_crossings");
     network::enclosure_lanes(
         &mut streets,
         &enclosures,
@@ -3680,9 +3723,11 @@ fn generate_once(
         .map_or_else(Vec::new, |s| s.centers.iter().map(|c| c.point).collect());
     warnings.extend(network::clean_options(&mut streets, center, radius,
         !enclosures.is_empty() || cfg.exit_treatment != "legacy", &centers, cfg, surface));
+    lap("clean.clean_1");
     // `roadNetworkPrune`: no diagonal shortcut triangles or doubled runs.
     if cfg.road_network_prune { network::junction_triangles(&mut streets, m.text("streetOp") == "grid"); }
     network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
+    lap("clean.triangles+narrow");
     // Camp entrances hand over to their native paths, never urban bypass feeders.
     let path_camp = cfg.settlement_form == "camp" || !m.text("campLayout").is_empty();
     if open_edge && cfg.exit_treatment != "legacy" && !path_camp {
@@ -3695,6 +3740,7 @@ fn generate_once(
             cfg,
             &mut rng.fork("exit-destinations"),
         );
+        lap("clean.resolve_exits");
         warnings.extend(network::clean_options(&mut streets, center, radius, true, &centers, cfg, surface));
     }
     lap("clean+exits");
@@ -3737,7 +3783,9 @@ fn generate_once(
     }
     lap("hierarchy");
     super::widths::harmonize(&mut streets);
+    lap("fringe.harmonize");
     network::cap_gate_passages(&mut streets, &enclosures);
+    lap("fringe.gate_passages");
     // Invariant (the network that cuts the blocks is final): the width-bound
     // clean rules run again on the final widths, before the ribbons cut the
     // blocks. A main street widened by the hierarchy can now overlap a near
@@ -3745,7 +3793,9 @@ fn generate_once(
     // after the cut, leaving their ribbons as land with neither block nor
     // street and lots shaped by a street that is gone.
     network::narrow_options(&mut streets, &enclosures, radius, cfg, surface);
+    lap("fringe.narrow");
     warnings.extend(network::clean_options(&mut streets, center, radius, true, &centers, cfg, surface));
+    lap("fringe.clean");
     if open_edge
         && cfg.scope == "settlement"
         && cfg.exit_treatment != "legacy"
@@ -3759,6 +3809,7 @@ fn generate_once(
             cfg.max_lane_grade,
             &mut rng.fork("peripheral-frontage"),
         );
+        lap("fringe.frontages");
         let frontage = off_reserve(frontage, &enclosures, &streets);
         let first_outer = quarters.len();
         // Peripheral frontage inherits the density of its epoch, so the dense
@@ -3829,6 +3880,7 @@ fn generate_once(
     } else {
         cfg.culture.as_str()
     };
+    lap("fringe.extensions");
     let port = macroplan::harbour::port_town(cfg);
     let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
     // Dock access obeys the user's stair setting, including in non-terraced towns.
@@ -3854,6 +3906,7 @@ fn generate_once(
         let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
         macroplan::harbour::quays(&shapes, &mut streets, surface, cfg, site, culture, port);
     }
+    lap("fringe.harbour");
     if cfg.road_end_joins {
         network::weld_ends(&mut streets, surface);
     }
@@ -3899,6 +3952,7 @@ fn generate_once(
     .collect();
     drop(ribbon_sources);
     let ribbon_bins = RibbonBins::new(&ribbons);
+    lap("blocks.ribbons");
     let mut blocks = vec![];
     let fringe = rng.fork("open-fringe");
     // After the hierarchy, main streets (rank <= 1) play the former role of
@@ -4000,6 +4054,7 @@ fn generate_once(
     // the vacancy chances are scaled so the expected land left open stays
     // within it, and each block draws from its own stream keyed by its
     // geometry, so a change elsewhere in the network never reshuffles it.
+    lap("blocks.cut");
     let mut measured: Option<Vec<f64>> = None;
     // A tissue predicted to hold `capacity::AMPLE` times its households, as
     // drawn, is not measured: even the largest over-prediction of the sweep
@@ -4029,6 +4084,7 @@ fn generate_once(
             phases: phases.clone(),
             archetype: archetype.clone(),
             structure: structure.clone(),
+            claim: Default::default(),
         };
 
         let required = p.required * capacity::MEASURE_MARGIN / (1.0 - capacity::BLOCK_LOSS);
@@ -4097,11 +4153,16 @@ fn generate_once(
     // a street village) a single draw can leave the whole place open ground:
     // the last built block always stays.
     let mut built = blocks.iter().filter(|b| b.kind == "block").count();
+    // Enclosure rings indexed once (same arithmetic as `g::contains`).
+    let rings: Vec<g::ContainmentIndex> = enclosures
+        .iter()
+        .map(|e| g::ContainmentIndex::new(&Shape { outer: e.path.clone(), holes: vec![] }))
+        .collect();
     for (b, vacancy) in blocks.iter_mut().zip(&vacancies) {
         if let Some(vacancy) = vacancy
             && b.kind == "block"
             && b.zone != "core"
-            && !enclosures.iter().any(|e| g::contains(&Shape { outer: e.path.clone(), holes: vec![] }, g::interior_point(&b.shape)))
+            && !rings.iter().any(|r| r.contains(g::interior_point(&b.shape)))
         {
             let c = g::interior_point(&b.shape);
             // The block's interior point on a 2 m grid: its identity, blind
@@ -4158,6 +4219,7 @@ fn generate_once(
             warnings.push(format!("{dropped} îlot(s) au-delà du besoin en logements laissé(s) en espace ouvert."));
         }
     }
+    lap("blocks.fringe_fields");
     let predicted: f64 = measured.as_ref().map_or_else(
         || {
             plan.as_ref()
@@ -4264,6 +4326,7 @@ fn generate_once(
             &mut rng.fork("squares"),
         );
     }
+    lap("squares");
     if cfg.monument != "none"
         && let Some(b) = blocks
             .iter_mut()
@@ -4291,7 +4354,9 @@ fn generate_once(
         cfg,
     );
     streets.extend(works);
+    lap("harbour_works");
     network::join_waterfront(&mut streets, radius);
+    lap("join_waterfront");
     let mut layout = Layout {
         config: Some(applied.clone()),
         programme: None,
@@ -4310,6 +4375,7 @@ fn generate_once(
         phases,
         archetype,
         structure,
+        claim: Default::default(),
     };
     if let Some(mut p) = plan {
         let culture = layout.culture.clone();
@@ -4459,6 +4525,7 @@ pub(super) fn probe_quarter(
         reads: None,
         major: &major,
         frame: (morph.text("streetOp") == "grid").then_some(0.0),
+        blend: None,
     };
     let quarter = Quarter {
         shape: Shape {
@@ -4733,6 +4800,7 @@ mod tests {
             culture: culture.into(),
             center: Point { x: c, y: c },
             radius: 300.0,
+            neighbours: Vec::new(),
         };
         let cfg = LayoutConfig {
             fortification: fortification.into(),
@@ -4957,6 +5025,7 @@ mod tests {
             culture: "european".into(),
             center: Point { x: 240.0, y: 256.0 },
             radius: 24.0,
+            neighbours: Vec::new(),
         };
         let cfg = LayoutConfig {
             footprint: super::super::legacy_footprint(),
@@ -5095,6 +5164,7 @@ mod tests {
             culture: "roman-core".into(),
             center: Point { x: c + 150.0, y: c },
             radius: 300.0,
+            neighbours: Vec::new(),
         };
         super::super::generate_quarters("bay", &[site], cfg, surface, &[road])
             .unwrap()
@@ -5305,6 +5375,7 @@ mod tests {
             culture: culture.into(),
             center: Point { x: c, y: c },
             radius: 300.0,
+            neighbours: Vec::new(),
         };
         super::super::generate_quarters(
             "probe-town",

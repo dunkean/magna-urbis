@@ -13,6 +13,7 @@ fn site(culture: &str) -> Site {
         culture: culture.into(),
         center: Point { x: 256.0, y: 256.0 },
         radius: 140.0,
+        neighbours: Vec::new(),
     }
 }
 

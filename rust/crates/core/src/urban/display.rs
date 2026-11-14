@@ -9,7 +9,8 @@
 //! named in `header.sections` with its byte offset, element type and length.
 //! Polygon layers use `polys` (n+1 ring starts), `rings` (r+1 coordinate starts,
 //! in points) and `coords` (x, y pairs); polylines use `lines` (n+1 point starts).
-use super::{Layout, Partition, Point, Shape};
+use super::pack::{Polygons, Strings, Table, Writer};
+use super::{Layout, Partition, Point};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -56,113 +57,6 @@ pub fn quay_water_levels(layouts: &mut [Layout], width: f64, n: usize, water: &[
             }
         }
         structure.quays = quays;
-    }
-}
-
-/// String table: stable small codes, index 0 = "".
-#[derive(Default)]
-struct Table {
-    codes: BTreeMap<String, u16>,
-    names: Vec<String>,
-}
-impl Table {
-    fn code(&mut self, name: &str) -> u16 {
-        if self.names.is_empty() {
-            self.names.push(String::new());
-            self.codes.insert(String::new(), 0);
-        }
-        if let Some(&c) = self.codes.get(name) {
-            return c;
-        }
-        let c = self.names.len().min(u16::MAX as usize) as u16;
-        self.codes.insert(name.to_string(), c);
-        self.names.push(name.to_string());
-        c
-    }
-}
-
-#[derive(Default)]
-struct Polygons {
-    polys: Vec<u32>,
-    rings: Vec<u32>,
-    coords: Vec<f32>,
-}
-impl Polygons {
-    fn push(&mut self, shape: &Shape, origin: Point) {
-        if self.polys.is_empty() {
-            self.polys.push(0);
-            self.rings.push(0);
-        }
-        for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
-            for p in ring {
-                self.coords.push((p.x - origin.x) as f32);
-                self.coords.push((p.y - origin.y) as f32);
-            }
-            self.rings.push((self.coords.len() / 2) as u32);
-        }
-        self.polys.push((self.rings.len() - 1) as u32);
-    }
-}
-
-#[derive(Default)]
-struct Writer {
-    sections: Vec<(String, &'static str, Vec<u8>, usize)>,
-}
-impl Writer {
-    fn u32s(&mut self, name: &str, v: &[u32]) {
-        self.sections.push((
-            name.into(),
-            "u32",
-            v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            v.len(),
-        ));
-    }
-    fn u16s(&mut self, name: &str, v: &[u16]) {
-        self.sections.push((
-            name.into(),
-            "u16",
-            v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            v.len(),
-        ));
-    }
-    fn u8s(&mut self, name: &str, v: &[u8]) {
-        self.sections.push((name.into(), "u8", v.to_vec(), v.len()));
-    }
-    fn f32s(&mut self, name: &str, v: &[f32]) {
-        self.sections.push((
-            name.into(),
-            "f32",
-            v.iter().flat_map(|x| x.to_le_bytes()).collect(),
-            v.len(),
-        ));
-    }
-    fn polygons(&mut self, layer: &str, p: &Polygons) {
-        self.u32s(&format!("{layer}.polys"), &p.polys);
-        self.u32s(&format!("{layer}.rings"), &p.rings);
-        self.f32s(&format!("{layer}.coords"), &p.coords);
-    }
-    fn finish(self, mut header: Value) -> Vec<u8> {
-        let mut offset = 0usize;
-        let mut sections = serde_json::Map::new();
-        for (name, kind, bytes, len) in &self.sections {
-            sections.insert(
-                name.clone(),
-                json!({"offset": offset, "type": kind, "length": len}),
-            );
-            offset += bytes.len().div_ceil(4) * 4;
-        }
-        header["sections"] = Value::Object(sections);
-        let mut head = serde_json::to_vec(&header).unwrap_or_default();
-        head.resize(head.len().div_ceil(4) * 4, b' ');
-        let mut out = Vec::with_capacity(4 + head.len() + offset);
-        out.extend_from_slice(&(head.len() as u32).to_le_bytes());
-        out.extend_from_slice(&head);
-        for (_, _, bytes, _) in self.sections {
-            let padded = bytes.len().div_ceil(4) * 4;
-            out.extend_from_slice(&bytes);
-            out.resize(out.len() + padded - bytes.len(), 0);
-        }
-        out
     }
 }
 
@@ -321,74 +215,29 @@ pub fn display_buffers_refs(layouts: &[&Layout], partitions: &[&Partition], ids:
     }))
 }
 
-/// Surfaces (`[{outer, holes}]`) of building sites: `sites` (n+1 piece
-/// starts), `pieces` (p+1 ring starts, outer ring first), `rings` (r+1 point
-/// starts) and `coords` (x, y relative to the origin).
-#[derive(Default)]
-struct Surfaces {
-    sites: Vec<u32>,
-    pieces: Vec<u32>,
-    rings: Vec<u32>,
+/// One building-site request reduced to what the display blob keeps. Built
+/// where the request is generated (any thread), so the request tree is dropped
+/// at once and only this flat record travels to the accumulator.
+pub struct SiteRow {
+    function: String,
+    culture: String,
+    preview: bool,
+    ground: f32,
+    entrance: [f32; 2],
+    id: String,
+    parcel_id: String,
+    access_id: String,
+    /// Surface points (x, y relative to the origin) of all rings in order.
     coords: Vec<f32>,
+    /// Point count of each ring, outer ring of a piece first.
+    ring_lens: Vec<u32>,
+    /// Ring count of each piece.
+    piece_rings: Vec<u32>,
+    /// Lot programme as JSON (`null` when the request has none).
+    programme: Vec<u8>,
 }
-impl Surfaces {
-    fn push(&mut self, surface: &Value, origin: Point) {
-        if self.sites.is_empty() {
-            self.sites.push(0);
-            self.pieces.push(0);
-            self.rings.push(0);
-        }
-        let ring = |s: &mut Surfaces, ring: &Value| {
-            for q in ring.as_array().map(Vec::as_slice).unwrap_or(&[]) {
-                s.coords.push((q["x"].as_f64().unwrap_or(0.0) - origin.x) as f32);
-                s.coords.push((q["y"].as_f64().unwrap_or(0.0) - origin.y) as f32);
-            }
-            s.rings.push((s.coords.len() / 2) as u32);
-        };
-        for piece in surface.as_array().map(Vec::as_slice).unwrap_or(&[]) {
-            ring(self, &piece["outer"]);
-            for hole in piece["holes"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
-                ring(self, hole);
-            }
-            self.pieces.push((self.rings.len() - 1) as u32);
-        }
-        self.sites.push((self.pieces.len() - 1) as u32);
-    }
-}
-
-/// Strings as one UTF-8 text plus n+1 UTF-16 offsets: the reader decodes the
-/// text once and slices it, without one decoder call per string.
-#[derive(Default)]
-struct Strings {
-    offsets: Vec<u32>,
-    text: String,
-    units: u32,
-}
-impl Strings {
-    fn push(&mut self, s: &str) {
-        if self.offsets.is_empty() {
-            self.offsets.push(0);
-        }
-        self.text.push_str(s);
-        self.units += s.encode_utf16().count() as u32;
-        self.offsets.push(self.units);
-    }
-}
-
-/// Display projection of native building-site requests (the city volumes the
-/// V2 draws): per site the drawn surface (city preview, else the oriented
-/// admission hint, else the buildable land), function, culture, preview flag,
-/// ground height, entrance, identities and lot programme. Cadastral, reserve,
-/// neighbour and access geometry stay in the engine and are read by id.
-pub fn site_display_buffers(requests: &[Value], origin: Point) -> Vec<u8> {
-    let mut tables: BTreeMap<&str, Table> = BTreeMap::new();
-    let mut surfaces = Surfaces::default();
-    let (mut function, mut culture, mut preview, mut ground, mut entrance) =
-        (vec![], vec![], vec![], vec![], vec![]);
-    let (mut ids, mut parcel_ids, mut access_ids) =
-        (Strings::default(), Strings::default(), Strings::default());
-    let mut programmes = Vec::with_capacity(requests.len());
-    for r in requests {
+impl SiteRow {
+    pub fn new(r: &Value, origin: Point) -> Self {
         let has = |v: &Value| v.as_array().is_some_and(|a| !a.is_empty());
         let fun = r["function"].as_str().unwrap_or("");
         let is_preview = has(&r["preview"]);
@@ -399,11 +248,24 @@ pub fn site_display_buffers(requests: &[Value], origin: Point) -> Vec<u8> {
         } else {
             &r["buildable"]
         };
-        surfaces.push(surface, origin);
-        function.push(tables.entry("function").or_default().code(fun));
-        culture.push(tables.entry("culture").or_default().code(&r["culture"].to_string()));
-        preview.push(u8::from(is_preview));
-        ground.push(r["terrain"]["ground_z_m"].as_f64().unwrap_or(0.0) as f32);
+        let (mut coords, mut ring_lens, mut piece_rings) = (Vec::new(), Vec::new(), Vec::new());
+        fn ring(coords: &mut Vec<f32>, ring_lens: &mut Vec<u32>, ring: &Value, origin: Point) {
+            let mut points = 0u32;
+            for q in ring.as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                coords.push((q["x"].as_f64().unwrap_or(0.0) - origin.x) as f32);
+                coords.push((q["y"].as_f64().unwrap_or(0.0) - origin.y) as f32);
+                points += 1;
+            }
+            ring_lens.push(points);
+        }
+        for piece in surface.as_array().map(Vec::as_slice).unwrap_or(&[]) {
+            let before = ring_lens.len();
+            ring(&mut coords, &mut ring_lens, &piece["outer"], origin);
+            for hole in piece["holes"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                ring(&mut coords, &mut ring_lens, hole, origin);
+            }
+            piece_rings.push((ring_lens.len() - before) as u32);
+        }
         let access = &r["accesses"][0];
         let (ex, ey) = if access.is_object() {
             let s = &access["segment"];
@@ -413,42 +275,155 @@ pub fn site_display_buffers(requests: &[Value], origin: Point) -> Vec<u8> {
             let first = &surface[0]["outer"][0];
             (first["x"].as_f64().unwrap_or(0.0), first["y"].as_f64().unwrap_or(0.0))
         };
-        entrance.push((ex - origin.x) as f32);
-        entrance.push((ey - origin.y) as f32);
-        ids.push(r["id"].as_str().unwrap_or(""));
-        parcel_ids.push(r["parcel_id"].as_str().unwrap_or(""));
-        access_ids.push(access["id"].as_str().unwrap_or(""));
-        programmes.push(match &r["programme"] { Value::Object(_) => r["programme"].clone(), _ => Value::Null });
+        let mut programme = Vec::new();
+        match &r["programme"] {
+            Value::Object(_) => {
+                let _ = serde_json::to_writer(&mut programme, &r["programme"]);
+            }
+            _ => programme.extend_from_slice(b"null"),
+        }
+        Self {
+            function: fun.to_owned(),
+            culture: r["culture"].to_string(),
+            preview: is_preview,
+            ground: r["terrain"]["ground_z_m"].as_f64().unwrap_or(0.0) as f32,
+            entrance: [(ex - origin.x) as f32, (ey - origin.y) as f32],
+            id: r["id"].as_str().unwrap_or("").to_owned(),
+            parcel_id: r["parcel_id"].as_str().unwrap_or("").to_owned(),
+            access_id: access["id"].as_str().unwrap_or("").to_owned(),
+            coords,
+            ring_lens,
+            piece_rings,
+            programme,
+        }
     }
-    let mut w = Writer::default();
-    let first = |v: &Vec<u32>| if v.is_empty() { vec![0] } else { v.clone() };
-    w.u32s("sites.polys", &first(&surfaces.sites));
-    w.u32s("sites.pieces", &first(&surfaces.pieces));
-    w.u32s("sites.rings", &first(&surfaces.rings));
-    w.f32s("sites.coords", &surfaces.coords);
-    w.u16s("sites.function", &function);
-    w.u16s("sites.culture", &culture);
-    w.u8s("sites.preview", &preview);
-    w.f32s("sites.groundZ", &ground);
-    w.f32s("sites.entrance", &entrance);
-    for (name, s) in [("sites.id", &ids), ("sites.parcelId", &parcel_ids), ("sites.accessId", &access_ids)] {
-        let offsets = if s.offsets.is_empty() { vec![0] } else { s.offsets.clone() };
-        w.u32s(&format!("{name}.offsets"), &offsets);
-        w.u8s(&format!("{name}.text"), s.text.as_bytes());
+}
+
+/// Accumulates `SiteRow`s in site order into the columns of the display blob.
+/// Surfaces: `sites` (n+1 piece starts), `pieces` (p+1 ring starts, outer ring
+/// first), `rings` (r+1 point starts) and `coords` (x, y relative to the origin).
+pub struct SiteDisplay {
+    origin: Point,
+    count: usize,
+    tables: BTreeMap<&'static str, Table>,
+    sites: Vec<u32>,
+    pieces: Vec<u32>,
+    rings: Vec<u32>,
+    coords: Vec<f32>,
+    function: Vec<u16>,
+    culture: Vec<u16>,
+    preview: Vec<u8>,
+    ground: Vec<f32>,
+    entrance: Vec<f32>,
+    ids: Strings,
+    parcel_ids: Strings,
+    access_ids: Strings,
+    /// `[p0,p1,…` JSON array under construction (one record per site).
+    programmes: Vec<u8>,
+}
+impl SiteDisplay {
+    pub fn new(origin: Point, expected_sites: usize) -> Self {
+        let mut programmes = Vec::with_capacity(expected_sites.saturating_mul(1024).min(1 << 30));
+        programmes.push(b'[');
+        Self {
+            origin,
+            count: 0,
+            tables: BTreeMap::new(),
+            sites: Vec::with_capacity(expected_sites + 1),
+            pieces: Vec::with_capacity(expected_sites + 1),
+            rings: Vec::with_capacity(expected_sites * 2 + 1),
+            coords: Vec::with_capacity(expected_sites * 24),
+            function: Vec::with_capacity(expected_sites),
+            culture: Vec::with_capacity(expected_sites),
+            preview: Vec::with_capacity(expected_sites),
+            ground: Vec::with_capacity(expected_sites),
+            entrance: Vec::with_capacity(expected_sites * 2),
+            ids: Strings::default(),
+            parcel_ids: Strings::default(),
+            access_ids: Strings::default(),
+            programmes,
+        }
     }
-    // Lot programmes (role, wealth, massing…) stay nested records: one JSON
-    // array for the whole town, parsed once by the reader.
-    w.u8s("sites.programme", &serde_json::to_vec(&programmes).unwrap_or_default());
-    let tables: serde_json::Map<String, Value> = tables
-        .into_iter()
-        .map(|(k, t)| (k.to_string(), json!(t.names)))
-        .collect();
-    w.finish(json!({
-        "format": "magna-city-sites", "version": 1,
-        "origin": {"x": origin.x, "y": origin.y},
-        "count": requests.len(),
-        "tables": tables,
-    }))
+
+    pub fn push(&mut self, row: SiteRow) {
+        if self.sites.is_empty() {
+            self.sites.push(0);
+            self.pieces.push(0);
+            self.rings.push(0);
+        }
+        let (mut ring_at, mut point_at) = (0usize, 0usize);
+        for &rings in &row.piece_rings {
+            for _ in 0..rings {
+                let points = row.ring_lens[ring_at] as usize;
+                ring_at += 1;
+                self.coords.extend_from_slice(&row.coords[2 * point_at..2 * (point_at + points)]);
+                point_at += points;
+                self.rings.push((self.coords.len() / 2) as u32);
+            }
+            self.pieces.push((self.rings.len() - 1) as u32);
+        }
+        self.sites.push((self.pieces.len() - 1) as u32);
+        self.function.push(self.tables.entry("function").or_default().code(&row.function));
+        self.culture.push(self.tables.entry("culture").or_default().code(&row.culture));
+        self.preview.push(u8::from(row.preview));
+        self.ground.push(row.ground);
+        self.entrance.extend_from_slice(&row.entrance);
+        self.ids.push(&row.id);
+        self.parcel_ids.push(&row.parcel_id);
+        self.access_ids.push(&row.access_id);
+        if self.count > 0 {
+            self.programmes.push(b',');
+        }
+        self.programmes.extend_from_slice(&row.programme);
+        self.count += 1;
+    }
+
+    pub fn finish(mut self) -> Vec<u8> {
+        let mut w = Writer::default();
+        let first = |v: &[u32]| if v.is_empty() { vec![0] } else { v.to_vec() };
+        w.u32s("sites.polys", &first(&self.sites));
+        w.u32s("sites.pieces", &first(&self.pieces));
+        w.u32s("sites.rings", &first(&self.rings));
+        w.f32s("sites.coords", &self.coords);
+        w.u16s("sites.function", &self.function);
+        w.u16s("sites.culture", &self.culture);
+        w.u8s("sites.preview", &self.preview);
+        w.f32s("sites.groundZ", &self.ground);
+        w.f32s("sites.entrance", &self.entrance);
+        for (name, s) in [("sites.id", self.ids), ("sites.parcelId", self.parcel_ids), ("sites.accessId", self.access_ids)] {
+            let offsets = if s.offsets.is_empty() { vec![0] } else { s.offsets };
+            w.u32s(&format!("{name}.offsets"), &offsets);
+            w.u8_owned(&format!("{name}.text"), s.text.into_bytes());
+        }
+        // Lot programmes (role, wealth, massing…) stay nested records: one JSON
+        // array for the whole town, parsed once by the reader.
+        self.programmes.push(b']');
+        w.u8_owned("sites.programme", self.programmes);
+        let tables: serde_json::Map<String, Value> = self
+            .tables
+            .into_iter()
+            .map(|(k, t)| (k.to_string(), json!(t.names)))
+            .collect();
+        w.finish(json!({
+            "format": "magna-city-sites", "version": 1,
+            "origin": {"x": self.origin.x, "y": self.origin.y},
+            "count": self.count,
+            "tables": tables,
+        }))
+    }
+}
+
+/// Display projection of native building-site requests (the city volumes the
+/// V2 draws): per site the drawn surface (city preview, else the oriented
+/// admission hint, else the buildable land), function, culture, preview flag,
+/// ground height, entrance, identities and lot programme. Cadastral, reserve,
+/// neighbour and access geometry stay in the engine and are read by id.
+pub fn site_display_buffers(requests: &[Value], origin: Point) -> Vec<u8> {
+    let mut display = SiteDisplay::new(origin, requests.len());
+    for r in requests {
+        display.push(SiteRow::new(r, origin));
+    }
+    display.finish()
 }
 
 #[cfg(test)]

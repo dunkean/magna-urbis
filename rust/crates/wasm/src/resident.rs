@@ -4,10 +4,17 @@
 //! the JSON boundary applies (and the native server applies, `urban_session.rs`),
 //! so a resident stage sees exactly the numbers an uploaded one would.
 //! JSON still leaves Rust once per stage, for the UI that edits and inspects plans.
+//! The `_pack` twins and pack reads return partitions as a `magna-city-parcels`
+//! pack (`urban::parcel_pack`, the same bytes the native engine replies with);
+//! every pack header carries `partitionsId`: the id under which exactly those
+//! partitions are resident here, 0 when they are not retained.
 use crate::settlements::SettlementTerrain;
-use magna_urbis_core::urban::{Layout, Partition};
+use magna_urbis_core::urban::{parcel_pack, Layout, Partition};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+
+/// Groups of a built-capacity reply: what `reconcile_built` changes.
+const BUILT_CAPACITY_GROUPS: [&str; 4] = ["allocations", "floorNeed", "adjacency", "environment"];
 
 /// Ids are never reused within an instance; 0 means "none".
 #[derive(Default)]
@@ -59,6 +66,27 @@ fn stale(what: &str) -> JsValue {
 
 fn js_err(e: impl ToString) -> JsValue {
     JsValue::from_str(&e.to_string())
+}
+
+/// Pack groups from a comma-separated list; empty: every group. Unknown names
+/// are refused by `parcel_pack::pack`.
+fn pack_groups(groups: &str) -> Option<Vec<&str>> {
+    let list: Vec<&str> = groups
+        .split(',')
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+        .collect();
+    (!list.is_empty()).then_some(list)
+}
+
+/// A pack of `partitions` whose header envelope is `{ "partitionsId": id }`.
+fn pack_reply(
+    partitions: &[Partition],
+    groups: Option<&[&str]>,
+    partitions_id: u32,
+) -> Result<Vec<u8>, JsValue> {
+    let envelope = serde_json::json!({ "partitionsId": partitions_id });
+    parcel_pack::pack(partitions, groups, &envelope).map_err(js_err)
 }
 
 /// The JSON boundary's decimal normalisation, in Rust: serialise once (that text
@@ -174,6 +202,54 @@ struct Image {
     partitions: Option<Vec<Partition>>,
 }
 
+/// Work shared by the text exports and their pack twins.
+impl SettlementTerrain {
+    /// Parcels of resident layouts `start..end` (clamped) and whether the range
+    /// covers every layout; a full range drops the resident partitions first.
+    fn resident_parcels(
+        &mut self,
+        seed: &str,
+        layouts_id: u32,
+        config: &str,
+        start: u32,
+        end: u32,
+    ) -> Result<(Vec<Partition>, bool), JsValue> {
+        let layouts = self.resident.layouts(layouts_id)?;
+        let end = (end as usize).min(layouts.len());
+        let start = (start as usize).min(end);
+        let full = start == 0 && end == layouts.len();
+        if full {
+            self.resident.partitions = None;
+        }
+        let cfg = serde_json::from_str(config).map_err(js_err)?;
+        let output = magna_urbis_core::urban::generate_parcels(seed, &layouts[start..end], &cfg)
+            .map_err(|e| JsValue::from_str(&e))?;
+        Ok((output, full))
+    }
+    /// Programme reallocation of resident products; the resident partitions
+    /// are dropped (the caller retains the result).
+    fn resident_programme(
+        &mut self,
+        layouts_id: u32,
+        partitions_id: u32,
+    ) -> Result<Vec<Partition>, JsValue> {
+        let layouts = self.resident.layouts(layouts_id)?;
+        let partitions = self.resident.partitions(partitions_id)?;
+        self.resident.partitions = None;
+        magna_urbis_core::urban::programme::reallocate(&layouts, &partitions)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+    /// Normalise `output` (`normalised()`, the values every later stage reads),
+    /// retain it and return the pack of the retained partitions.
+    fn retain_and_pack(&mut self, output: Vec<Partition>) -> Result<Vec<u8>, JsValue> {
+        let (_, partitions) = normalised(&output)?;
+        drop(output);
+        let id = self.resident.set_partitions(partitions);
+        let partitions = self.resident.partitions(id)?;
+        pack_reply(&partitions, None, id)
+    }
+}
+
 #[wasm_bindgen]
 impl SettlementTerrain {
     /// Quarters as `urban_quarters`, retained under `resident_layouts_id()`.
@@ -239,16 +315,7 @@ impl SettlementTerrain {
         start: u32,
         end: u32,
     ) -> Result<String, JsValue> {
-        let layouts = self.resident.layouts(layouts_id)?;
-        let end = (end as usize).min(layouts.len());
-        let start = (start as usize).min(end);
-        let full = start == 0 && end == layouts.len();
-        if full {
-            self.resident.partitions = None;
-        }
-        let cfg = serde_json::from_str(config).map_err(js_err)?;
-        let output = magna_urbis_core::urban::generate_parcels(seed, &layouts[start..end], &cfg)
-            .map_err(|e| JsValue::from_str(&e))?;
+        let (output, full) = self.resident_parcels(seed, layouts_id, config, start, end)?;
         if !full {
             return serde_json::to_string(&output).map_err(js_err);
         }
@@ -256,20 +323,95 @@ impl SettlementTerrain {
         self.resident.set_partitions(partitions);
         Ok(json)
     }
+    /// `urban_parcels_resident` returning a full pack instead of the JSON text.
+    /// The full range is normalised, retained and packed from the retained
+    /// values (`partitionsId` in the header); a slice is packed as computed,
+    /// not retained (`partitionsId` 0).
+    pub fn urban_parcels_resident_pack(
+        &mut self,
+        seed: &str,
+        layouts_id: u32,
+        config: &str,
+        start: u32,
+        end: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        let (output, full) = self.resident_parcels(seed, layouts_id, config, start, end)?;
+        if !full {
+            return pack_reply(&output, None, 0);
+        }
+        self.retain_and_pack(output)
+    }
     /// Programme reallocation of resident products; the result replaces them.
     pub fn urban_programme_resident(
         &mut self,
         layouts_id: u32,
         partitions_id: u32,
     ) -> Result<String, JsValue> {
-        let layouts = self.resident.layouts(layouts_id)?;
-        let partitions = self.resident.partitions(partitions_id)?;
-        self.resident.partitions = None;
-        let result = magna_urbis_core::urban::programme::reallocate(&layouts, &partitions)
-            .map_err(|e| JsValue::from_str(&e))?;
+        let result = self.resident_programme(layouts_id, partitions_id)?;
         let (json, partitions) = normalised(&result)?;
         self.resident.set_partitions(partitions);
         Ok(json)
+    }
+    /// `urban_programme_resident` returning a full pack of the retained
+    /// result (`partitionsId` in the header) instead of the JSON text.
+    pub fn urban_programme_resident_pack(
+        &mut self,
+        layouts_id: u32,
+        partitions_id: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        let result = self.resident_programme(layouts_id, partitions_id)?;
+        self.retain_and_pack(result)
+    }
+    /// Pack of the resident partitions `partitions_id`; `groups` is a
+    /// comma-separated list of `parcel_pack::GROUPS` (empty: all).
+    pub fn urban_parcel_pack_resident(
+        &self,
+        partitions_id: u32,
+        groups: &str,
+    ) -> Result<Vec<u8>, JsValue> {
+        let partitions = self.resident.partitions(partitions_id)?;
+        let groups = pack_groups(groups);
+        pack_reply(&partitions, groups.as_deref(), partitions_id)
+    }
+    /// Retain the partitions of a full pack (`urban_parcel_pack_resident` with
+    /// every group, or a native pack reply) next to the current resident
+    /// layouts. Returns their new id.
+    pub fn retain_partitions_pack(&mut self, bytes: &[u8]) -> Result<u32, JsValue> {
+        self.resident.partitions = None;
+        let partitions = parcel_pack::unpack(bytes).map_err(js_err)?;
+        Ok(self.resident.set_partitions(partitions))
+    }
+    /// `urban_built_capacity` on resident partitions (`scene`: the same JSON).
+    /// The result is not retained; it is packed as computed with the groups
+    /// `reconcile_built` changes (`partitionsId` 0).
+    pub fn urban_built_capacity_resident(
+        &self,
+        partitions_id: u32,
+        scene: &str,
+    ) -> Result<Vec<u8>, JsValue> {
+        let partitions = self.resident.partitions(partitions_id)?;
+        let scene =
+            serde_json::from_str::<magna_urbis_core::urban::programme::BuiltScene>(scene)
+                .map_err(js_err)?;
+        let result = magna_urbis_core::urban::programme::reconcile_built(&partitions, &scene)
+            .map_err(|e| JsValue::from_str(&e))?;
+        pack_reply(&result, Some(&BUILT_CAPACITY_GROUPS[..]), 0)
+    }
+    /// JSON text of `parcel_pack::record`: parcel `index` of the resident
+    /// partition `key` with its allocations, adjacency and environment.
+    pub fn urban_parcel_record_resident(
+        &self,
+        partitions_id: u32,
+        key: &str,
+        index: u32,
+    ) -> Result<String, JsValue> {
+        let partitions = self.resident.partitions(partitions_id)?;
+        let partition = partitions
+            .iter()
+            .find(|p| p.key == key)
+            .ok_or_else(|| JsValue::from_str(&format!("No resident partition {key:?}")))?;
+        let record = parcel_pack::record(partition, index as usize).map_err(js_err)?;
+        serde_json::to_string(&record).map_err(js_err)
     }
     pub fn urban_building_sites_total_resident(
         &self,

@@ -29,6 +29,7 @@
     "maori-pa": {"inset": 1},
     "elven": {"plot": 0, "field": 0},
     "goblin-warren": {"plot": 0, "field": 0},
+    "myconid-colony": {"plot": 0, "field": 0},
     "native-iroquoian": {"plot": 0},
     "european-organic": {"field": 0.8, "material": "hedge"},
     "flemish-cloth-town": {"field": 0.6, "material": "hedge"},

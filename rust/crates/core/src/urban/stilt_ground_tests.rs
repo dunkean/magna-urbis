@@ -11,6 +11,7 @@ fn site(population: u32) -> Site {
     Site {
         key: "shared-stilt-ground".into(), name: String::new(), population,
         culture: "stilt-town".into(), center: Point { x: 400.0, y: 500.0 }, radius: 120.0,
+        neighbours: Vec::new(),
     }
 }
 fn at_bank(layout: &Layout, ground: &geography::StiltGround) {
@@ -180,7 +181,8 @@ fn tidal_settlements_build_a_real_share_of_their_occupied_lots_over_water() {
     for population in [500, 10000] {
         let site = Site { key:"tidal-share".into(), name:String::new(), population,
             culture:"merfolk-tidal".into(), center:Point { x:1900., y:2000. },
-            radius:if population == 500 { 150. } else { 650. } };
+            radius:if population == 500 { 150. } else { 650. },
+            neighbours: Vec::new(), };
         let cfg = LayoutConfig { fortification:"none".into(), ..Default::default() };
         let layouts = generate_quarters("tidal-share", &[site], &cfg, surface, &[]).unwrap();
         let parts = generate_parcels("tidal-share", &layouts, &ParcelConfig::default()).unwrap();

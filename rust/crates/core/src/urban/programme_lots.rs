@@ -137,6 +137,15 @@ pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
             if p.reason != "attached-rear-land" { p.reason = "public-garden".into(); }
         }
     }
+    // The open land a circuit keeps as a common reads as one.
+    let commons: BTreeSet<_> = pr.allocations.iter()
+        .filter(|a| a.role == "open.common" && a.demand_id.ends_with("/demand/enclosed-open")).map(|a| a.parcel_id.as_str()).collect();
+    for p in &mut part.parcels {
+        if commons.contains(p.id.as_str()) {
+            p.use_kind = "common".into();
+            p.reason = "enclosed-common".into();
+        }
+    }
     for d in pr.demands.iter_mut().filter(|d| d.role == "open.garden") {
         d.requested = pr.allocations.iter().filter(|a| a.demand_id == d.id).map(|a| a.capacity).sum();
         d.target_area = d.requested;

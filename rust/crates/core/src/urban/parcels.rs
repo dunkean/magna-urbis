@@ -3598,11 +3598,14 @@ fn morph_faces(morph: &Morph) -> Vec<(Point, Point)> {
 /// road beside it, stays decor; nothing is ever drawn in the ditch or glacis,
 /// which the fortification never offers.
 fn lean_to_lots(layout: &Layout) -> Vec<Parcel> {
-    let mut out = Vec::new();
-    for (ei, e) in layout.enclosures.iter().enumerate() {
-        for (ai, a) in e.attached.iter().enumerate() {
+    // Each attached piece reads the whole network on its own: they are checked
+    // in parallel and kept in enclosure order.
+    let pieces: Vec<_> = layout.enclosures.iter().enumerate()
+        .flat_map(|(ei, e)| e.attached.iter().enumerate().map(move |(ai, a)| (ei, ai, e, a)))
+        .collect();
+    super::par::map(&pieces, |_, &(ei, ai, e, a)| -> Option<Parcel> {
             if a.side != "out" || a.shape.outer.len() < 3 {
-                continue;
+                return None;
             }
             let own = area(&a.shape);
             let reserved: f64 = e
@@ -3612,7 +3615,7 @@ fn lean_to_lots(layout: &Layout) -> Vec<Parcel> {
                 .map(|x| area(&x))
                 .sum();
             if own < 4.0 || reserved > 0.5 * own {
-                continue;
+                return None;
             }
             let ring = &a.shape.outer;
             // The edge facing a road: nearest street ribbon within 2 m.
@@ -3634,7 +3637,7 @@ fn lean_to_lots(layout: &Layout) -> Vec<Parcel> {
                 }
             }
             let Some((_, fa, fb, street)) = best else {
-                continue;
+                return None;
             };
             let c = super::geometry::centroid(&a.shape);
             let Some(block) = layout
@@ -3652,7 +3655,7 @@ fn lean_to_lots(layout: &Layout) -> Vec<Parcel> {
                 .min_by(|x, y| x.1.total_cmp(&y.1))
                 .map(|(i, _)| i)
             else {
-                continue;
+                return None;
             };
             let st = &layout.streets[street];
             let front = Front {
@@ -3681,10 +3684,11 @@ fn lean_to_lots(layout: &Layout) -> Vec<Parcel> {
                 block,
                 &block_identity(layout, &layout.blocks[block].shape),
             );
-            out.push(lot);
-        }
-    }
-    out
+            Some(lot)
+    })
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Share of a culture's own open land that an adapted tissue keeps in every
@@ -3816,6 +3820,15 @@ struct BlockCut {
 /// Memoised cuts of ordinary blocks across the probes of one quarters run.
 static BLOCK_CUTS: super::probe_cache::Memo<std::sync::Arc<StoredCut>> =
     super::probe_cache::Memo::new();
+/// Block cuts served by the memo and block cuts computed since the last
+/// `URBAN_PROFILE` line.
+static MEMO_HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static MEMO_MISSES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// `URBAN_VERIFY_MEMO=1`: every memo hit is also recomputed and compared.
+fn verify_memo() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("URBAN_VERIFY_MEMO").is_ok())
+}
 pub(super) fn clear_probe_cache() {
     BLOCK_CUTS.clear();
     camp::clear_probe_cache();
@@ -3857,7 +3870,11 @@ impl ProbeInputs<'_> {
     fn key(&self) -> (super::probe_cache::Key, Vec<usize>) {
         let (layout, block) = (self.layout, self.block);
         let mut k = super::probe_cache::Key::new("parcels.block/v1");
-        k.str(self.seed).str(&layout.key).json(self.cfg).f64(self.cfg.density).usize(self.bi);
+        // Of the parcel options the cut reads directly, only this one; every other
+        // option reaches it through the resolved values keyed below (culture,
+        // period, operator, zone, morphology), so the probe options and the
+        // request's equivalent spelling share their cuts.
+        k.str(self.seed).str(&layout.key).bool(self.cfg.street_aligned_homes);
         k.shape(&block.shape).str(&block.kind).str(&block.zone).point(block.axis).usize(block.quarter);
         match block.phase {
             Some(p) => k.bool(true).usize(p),
@@ -3903,10 +3920,18 @@ impl ProbeInputs<'_> {
     }
 }
 
-/// A memoised cut with the street numbering it was computed under.
+/// A memoised cut with the block and street numbering it was computed under.
 struct StoredCut {
+    bi: usize,
     streets: Vec<usize>,
     cut: BlockCut,
+}
+/// The two warnings a cut may name its block in (see `generate`).
+fn block_warning_tail<'a>(w: &'a str, bi: usize) -> Option<(&'static str, &'a str)> {
+    let a = format!("Îlot {bi} :");
+    let b = format!("Block {bi}:");
+    if let Some(rest) = w.strip_prefix(a.as_str()) { return Some(("Îlot", rest)); }
+    w.strip_prefix(b.as_str()).map(|rest| ("Block", rest))
 }
 impl StoredCut {
     fn indices(cut: &mut BlockCut) -> impl Iterator<Item = &mut usize> {
@@ -3915,16 +3940,24 @@ impl StoredCut {
                 .chain(p.access.as_mut().and_then(|a| a.street.as_mut()))
         })
     }
-    fn store(key: super::probe_cache::Key, streets: Vec<usize>, cut: &BlockCut) {
+    fn store(key: super::probe_cache::Key, streets: Vec<usize>, cut: &BlockCut, bi: usize) {
+        // The block number is not part of the key: it must be recoverable from
+        // the cut (every lot's `block`, the warnings' prefix) to be renumbered.
+        if cut.parcels.iter().any(|p| p.block != bi)
+            || cut.warnings.iter().any(|w| block_warning_tail(w, bi).is_none())
+        {
+            return;
+        }
         let mut cut = cut.clone();
         // Only streets of the key (or the literal fallback 0) may be named.
         if !Self::indices(&mut cut).all(|s| *s == 0 || streets.binary_search(s).is_ok()) {
             return;
         }
-        BLOCK_CUTS.put(key, std::sync::Arc::new(StoredCut { streets, cut }));
+        BLOCK_CUTS.put(key, std::sync::Arc::new(StoredCut { bi, streets, cut }));
     }
-    /// The cut renumbered onto the current streets (same key, so same count).
-    fn replay(&self, streets: &[usize]) -> Option<BlockCut> {
+    /// The cut renumbered onto the current block and streets (same key, so same
+    /// street count).
+    fn replay(&self, streets: &[usize], bi: usize) -> Option<BlockCut> {
         if streets.len() != self.streets.len() {
             return None;
         }
@@ -3934,6 +3967,15 @@ impl StoredCut {
                 *s = streets[r];
             } else if *s != 0 {
                 return None;
+            }
+        }
+        if bi != self.bi {
+            for p in &mut cut.parcels {
+                p.block = bi;
+            }
+            for w in &mut cut.warnings {
+                let (head, rest) = block_warning_tail(w, self.bi)?;
+                *w = if head == "Îlot" { format!("Îlot {bi} :{rest}") } else { format!("Block {bi}:{rest}") };
             }
         }
         Some(cut)
@@ -3957,7 +3999,9 @@ pub(super) fn generate(
     };
     let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));
+    let mut laps = super::network::Lap::new("parcels.cut");
     let index = FrontageIndex::new(layout);
+    laps.lap("frontage-index");
     let road_pressures = super::composition::gate_pressures(layout, occupation_pressures(layout).into_iter()
         .enumerate().map(|(bi,p)|layout.programme.as_ref()
             .and_then(|pr|pr.environment.iter().find(|e|e.block==bi)).map_or(p,|e|e.pressure)).collect());
@@ -4085,6 +4129,8 @@ pub(super) fn generate(
     // Blocks are cut independently (each forks its own random stream from its
     // geometric identity) and merged in block order: identical output on any
     // number of threads.
+    let zone_blends = super::zone_blend::blocks(layout);
+    laps.lap("prepare");
     let blocks = super::par::map(&layout.blocks, |bi, block| {
         let mut out = BlockCut::default();
         let block_id = block_identity(layout, &block.shape);
@@ -4129,6 +4175,14 @@ pub(super) fn generate(
         let mut local_morph = super::with_tissue(morph.clone(), tissue);
         if layout.config.as_ref().is_some_and(|c| c.old_enclosure_citadel) {
             local_morph.value["_innerWalls"] = serde_json::json!(true);
+        }
+        // `zoneDensity: gradient`: near another phase the lot tables lean toward it.
+        if edited.is_none() {
+            let zone = if cfg.zone == "auto" { block.zone.as_str() } else { cfg.zone.as_str() };
+            super::zone_blend::blend_block(layout, zone_blends[bi], bi, zone, &mut local_morph, |pi, _, _| {
+                let m = if borrowed { borrowed_morphs.get(pi) } else { phase_morphs.get(pi) }?;
+                Some(super::with_tissue(m.clone(), tissue))
+            });
         }
         let operator = cfg.zone_operators.get(&block.zone).unwrap_or(&cfg.operator);
         if operator != "culture" {
@@ -4274,11 +4328,15 @@ pub(super) fn generate(
                 };
                 p.key()
             });
-        if let Some((key, streets)) = &probe
-            && let Some(hit) = BLOCK_CUTS.get(key)
-            && let Some(cut) = hit.replay(streets)
-        {
-            return cut;
+        let mut replayed = None;
+        if let Some((key, streets)) = &probe {
+            if let Some(hit) = BLOCK_CUTS.get(key) && let Some(cut) = hit.replay(streets, bi) {
+                MEMO_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if !verify_memo() { return cut; }
+                replayed = Some(cut);
+            } else {
+                MEMO_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
         }
         let cut = (|| -> BlockCut {
         let mut out = BlockCut::default();
@@ -4815,11 +4873,19 @@ pub(super) fn generate(
         out.parcels.extend(parcels);
         out
         })();
+        if let Some(r) = replayed {
+            let text = |c: &BlockCut| serde_json::to_string(&(&c.parcels, &c.warnings, &c.diagnostics)).unwrap();
+            if text(&r) != text(&cut) { eprintln!("MEMO MISMATCH block {bi}"); }
+        }
         if let Some((key, streets)) = probe {
-            StoredCut::store(key, streets, &cut);
+            StoredCut::store(key, streets, &cut, bi);
         }
         cut
     });
+    laps.lap("blocks");
+    if std::env::var("URBAN_PROFILE").is_ok() {
+        eprintln!("  parcels.cut.memo: hits={} misses={}", MEMO_HITS.swap(0, std::sync::atomic::Ordering::Relaxed), MEMO_MISSES.swap(0, std::sync::atomic::Ordering::Relaxed));
+    }
     for cut in blocks {
         result.parcels.extend(cut.parcels);
         result.warnings.extend(cut.warnings);
@@ -4828,7 +4894,9 @@ pub(super) fn generate(
         diagnostics.overlap_area += cut.diagnostics.overlap_area;
         diagnostics.unserved_area += cut.diagnostics.unserved_area;
     }
+    laps.lap("merge");
     result.parcels.extend(lean_to_lots(layout));
+    laps.lap("lean-to");
     result.diagnostics = Some(diagnostics);
     Ok(result)
 }
@@ -4957,6 +5025,7 @@ mod tests {
                 rank: 1,
                 role: "street".into(),
             }],
+            claim: Default::default(),
         };
         let fronts = frontages(&shape, &layout, &FrontageIndex::new(&layout));
         for op in ["burgage", "machiya", "courtyard", "siheyuan"] {
@@ -5089,6 +5158,7 @@ mod tests {
                 rank: 1,
                 role: "lane".into(),
             }],
+            claim: Default::default(),
         };
         let cfg = ParcelConfig::default();
         for op in [
@@ -5369,6 +5439,7 @@ mod tests {
                 rank: 1,
                 role: "street".into(),
             }],
+            claim: Default::default(),
         };
         let lots = |layout: &Layout, b: usize| {
             super::super::generate_parcels(
@@ -5426,6 +5497,7 @@ mod tests {
             warnings: vec![],
             blocks,
             streets,
+            claim: Default::default(),
         }
     }
     fn road(a: (f64, f64), b: (f64, f64), rank: usize) -> Street {
@@ -5576,6 +5648,7 @@ mod tests {
             culture: "european-organic".into(),
             center: Point { x: c, y: c },
             radius: 300.0,
+            neighbours: Vec::new(),
         };
         let layout = super::super::generate_quarters(
             "probe-city",

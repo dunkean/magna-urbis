@@ -529,17 +529,14 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         let mut forced = false;
         if let Some(p) = s.position {
             let i = f.index(p);
-            // Keep an explicitly chosen dry point exactly; never silently move a user's marker.
-            if f.r.water[i] == 0
-                && out
-                    .settlements
-                    .iter()
-                    .all(|o| p.distance(o.center) >= extent_gap(pop, o.spec.population))
-            {
+            // Keep an explicitly chosen dry point exactly, wherever it is (also
+            // against another settlement: the urban stage keeps their land apart);
+            // never silently move a user's marker.
+            if f.r.water[i] == 0 {
                 chosen = Some((i, p, 1.0));
             } else {
                 out.warnings.push(format!(
-                    "{}: manual position is wet, solid rock or overlaps another settlement",
+                    "{}: manual position is wet or solid rock",
                     s.key
                 ));
             }
