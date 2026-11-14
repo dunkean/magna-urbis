@@ -1,69 +1,75 @@
-// Progressive enhancement only: all scientific content remains readable offline without JS.
-const languageKey = 'magna-urbis-v2-language';
-const pageLanguage = document.documentElement.lang === 'fr' ? 'fr' : 'en';
-const queryLanguage = new URLSearchParams(location.search).get('lang');
-let savedLanguage;
-try { savedLanguage = localStorage.getItem(languageKey); } catch { /* Direct offline files can restrict storage. */ }
-const selectedLanguage = queryLanguage === 'en' || queryLanguage === 'fr' ? queryLanguage
-  : location.pathname.endsWith('/fr.html') ? 'fr' : savedLanguage === 'fr' ? 'fr' : 'en';
-if (selectedLanguage !== pageLanguage) {
-  const destination = new URL(selectedLanguage === 'fr' ? 'fr.html' : 'index.html', location.href);
-  destination.searchParams.set('lang', selectedLanguage); destination.hash = location.hash;
-  location.replace(destination.href);
-}
-try { localStorage.setItem(languageKey, selectedLanguage); } catch { /* Language links still work without persistence. */ }
-const languageLinks = [...document.querySelectorAll('.atlas-language a')];
-function syncLanguageLinks() {
-  for (const link of languageLinks) {
-    const destination = new URL(link.getAttribute('href'), location.href);
-    destination.hash = location.hash; link.href = destination.href;
+// Progressive enhancement for the documentation pages. Everything stays readable without it.
+(() => {
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+  // Language switch keeps the current chapter or stage.
+  for (const a of $$('a[data-lang-switch]')) a.addEventListener('click', () => { if (location.hash) a.href = a.href.split('#')[0] + location.hash; });
+
+  // Phone menu.
+  const rail = document.getElementById('rail'), toggle = document.querySelector('.menu-toggle');
+  toggle?.addEventListener('click', () => { const open = rail.classList.toggle('open'); toggle.setAttribute('aria-expanded', String(open)); });
+  rail?.addEventListener('click', e => { if (e.target.closest('nav a')) { rail.classList.remove('open'); toggle?.setAttribute('aria-expanded', 'false'); } });
+
+  // Open the stage card (or any details) that a link targets, e.g. the V2 "?" buttons.
+  function openTarget() {
+    const id = decodeURIComponent(location.hash.slice(1)); if (!id) return;
+    const el = document.getElementById(id); if (!el) return;
+    for (let d = el.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
+    $$('.is-target').forEach(x => x.classList.remove('is-target')); el.classList.add('is-target');
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }));
   }
-}
-languageLinks.forEach(link => link.addEventListener('click', () => {
-  try { localStorage.setItem(languageKey, link.dataset.language); } catch { /* Optional persistence. */ }
-}));
-syncLanguageLinks(); window.addEventListener('hashchange', syncLanguageLinks);
-const sections = [...document.querySelectorAll('main > section.chapter')];
-const links = [...document.querySelectorAll('.sidebar nav a')];
-const input = document.querySelector('#search');
-const status = document.querySelector('#search-status');
-const reset = document.querySelector('#show-all');
-const toc = document.querySelector('.toc');
-const narrow = matchMedia('(max-width:760px)');
-const syncToc = () => { toc.open = !narrow.matches; };
-syncToc(); narrow.addEventListener('change', syncToc);
-const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-function applySearch() {
-  const terms = normalize(input.value.trim()).split(/\s+/).filter(Boolean);
-  let count = 0;
-  for (const section of sections) {
-    const haystack = normalize(section.textContent);
-    section.hidden = !terms.every(term => haystack.includes(term));
-    if (!section.hidden) count++;
+  addEventListener('hashchange', openTarget); openTarget();
+
+  // Route: highlight the chapter being read.
+  const links = new Map($$('.route a[href^="#"]').map(a => [a.getAttribute('href').slice(1), a]));
+  if (links.size && 'IntersectionObserver' in window) {
+    const seen = new Map();
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null);
+      const visible = [...seen].filter(([, top]) => top !== null).sort((a, b) => a[1] - b[1]);
+      const id = visible.length ? visible[0][0] : null; if (!id) return;
+      links.forEach((a, key) => a.setAttribute('aria-current', String(key === id)));
+    }, { rootMargin: '-10% 0px -70% 0px' });
+    for (const id of links.keys()) { const s = document.getElementById(id); if (s) io.observe(s); }
   }
-  reset.hidden = terms.length === 0;
-  status.textContent = !terms.length ? '' : pageLanguage === 'fr'
-    ? `${count} chapitre${count > 1 ? 's' : ''} sur ${sections.length}. Recherche par mots, accents ignorés.`
-    : `${count} chapter${count === 1 ? '' : 's'} out of ${sections.length}. Word search ignores accents.`;
-}
-input.addEventListener('input', applySearch);
-reset.addEventListener('click', () => { input.value = ''; applySearch(); input.focus(); });
-links.forEach(link => link.addEventListener('click', () => { input.value = ''; applySearch(); if (narrow.matches) toc.open = false; }));
-document.querySelector('#print').addEventListener('click', () => window.print());
-// Citations and incoming deep links can reveal a chapter hidden by a previous search.
-function revealHash() {
-  const id = decodeURIComponent(location.hash.slice(1));
-  const target = document.getElementById(id);
-  const section = target?.closest('section.chapter');
-  if (section?.hidden) { input.value = ''; applySearch(); target.scrollIntoView(); }
-}
-window.addEventListener('hashchange', revealHash);
-if ('IntersectionObserver' in window) {
-  const observer = new IntersectionObserver(entries => {
-    for (const entry of entries) if (entry.isIntersecting) {
-      links.forEach(link => link.hash === `#${entry.target.id}` ? link.setAttribute('aria-current', 'location') : link.removeAttribute('aria-current'));
-    }
-  }, { rootMargin: '-8% 0px -70% 0px', threshold: 0 });
-  sections.forEach(section => observer.observe(section));
-}
-revealHash();
+
+  // Filter: hides chapters, stage cards or culture cards whose text does not match.
+  const input = document.querySelector('[data-filter]');
+  if (input) {
+    const items = $$(input.dataset.filter), status = document.getElementById('filter-status');
+    const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const text = new Map(items.map(el => [el, norm(el.dataset.search || el.textContent)]));
+    const run = () => {
+      const q = norm(input.value.trim()); let n = 0;
+      for (const el of items) { const hit = !q || q.split(/\s+/).every(w => text.get(el).includes(w)); el.classList.toggle('is-filtered-out', !hit); if (hit) n++; }
+      for (const g of $$('[data-group]')) g.classList.toggle('is-filtered-out', !g.querySelector(input.dataset.filter + ':not(.is-filtered-out)'));
+      if (status) status.textContent = q ? (status.dataset.template || '{n}').replace('{n}', n) : '';
+    };
+    input.addEventListener('input', run);
+  }
+
+  // Catalogue: era chips.
+  const chips = $$('[data-era-chip]');
+  for (const chip of chips) chip.addEventListener('click', () => {
+    const era = chip.dataset.eraChip; chips.forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
+    for (const card of $$('[data-era]')) card.classList.toggle('is-hidden-era', era !== 'all' && card.dataset.era !== era);
+    for (const g of $$('[data-group]')) g.classList.toggle('is-hidden-era', !g.querySelector('[data-era]:not(.is-hidden-era)'));
+  });
+
+  // Catalogue: 2D / 3D view toggles on a card.
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-view]'); if (!b) return;
+    const card = b.closest('.culture'); card.dataset.show = b.dataset.view;
+    $$('[data-view]', card).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  });
+
+  // Theme override (follows the system by default).
+  document.querySelector('[data-theme-toggle]')?.addEventListener('click', () => {
+    const root = document.documentElement, dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+  });
+
+  // Printing shows every stage card.
+  addEventListener('beforeprint', () => $$('details').forEach(d => { d.dataset.wasOpen = d.open; d.open = true; }));
+  addEventListener('afterprint', () => $$('details').forEach(d => { d.open = d.dataset.wasOpen === 'true'; }));
+})();
