@@ -1,0 +1,462 @@
+{
+ "european-organic": {
+  "label": "Ville médiévale organique (Europe)",
+  "description": "Une ville médiévale née par accrétion : rues sinueuses rayonnant depuis un marché, parcelles étroites de bourgeois sous des maisons à pans de bois et pignons, une église paroissiale dans chaque quartier."
+ },
+ "bastide": {
+  "label": "Bastide (ville neuve en damier)",
+  "description": "Une ville neuve du Moyen Âge : un damier régulier d’îlots rectangulaires autour d’une place à arcades, une enceinte et des maisons de pierre en rangées à arcades."
+ },
+ "medina": {
+  "label": "Médina (Afrique du Nord)",
+  "description": "Une ville maghrébine fortifiée : labyrinthe dense de ruelles couvertes et d’impasses autour de la grande mosquée et du souk, maisons à patio à toit plat en terre et plâtre."
+ },
+ "chinese": {
+  "label": "Ville chinoise fortifiée",
+  "description": "Une ville murée sur une grille carrée stricte avec une tour du tambour au centre ; maisons à cour (siheyuan) sous des toits de tuiles à croupes."
+ },
+ "japanese-jokamachi": {
+  "label": "Ville-château japonaise (jōkamachi)",
+  "description": "Une ville de château : le château du seigneur domine un réseau de rues organiques, avec les yashiki de samouraïs et les quartiers marchands serrés en dessous, sous des toits de tuiles à croupes."
+ },
+ "indian-temple": {
+  "label": "Ville-temple indienne",
+  "description": "Une ville-temple sur grille carrée : l’enceinte du temple occupe le centre, avec de longues rangées de maisons de brique étroites autour de cours (mutram)."
+ },
+ "roman-core": {
+  "label": "Cœur de castrum romain",
+  "description": "Le cœur d’une colonie romaine : une grille de castrum avec un forum au croisement du cardo et du decumanus, une enceinte à portes, domus et insulae de brique."
+ },
+ "elven": {
+  "label": "Ville elfique de forêt",
+  "description": "Une ville de forêt en bois vivant : sentiers organiques entre maisons-arbres et pavillons à dôme, un bois sacré au centre, une haie au lieu d’un mur."
+ },
+ "dwarven": {
+  "label": "Forteresse naine",
+  "description": "Une forteresse de montagne : salles en terrasses taillées dans la roche derrière un mur de pierre rectiligne, toits plats, pièces de pierre massive."
+ },
+ "necropolis": {
+  "label": "Nécropole (cité des morts)",
+  "description": "Une cité des morts sur grille régulière : mausolées de pierre à toit en croupe, une enceinte et un temple funéraire au centre."
+ },
+ "russian-kremlin": {
+  "label": "Kremlin et posad russes",
+  "description": "Un kremlin sur sa colline avec le posad (quartier marchand) autour : rues organiques, palissade et maisons izba en rondins sous des toits à pignon."
+ },
+ "aztec": {
+  "label": "Cité aztèque (Tenochtitlan)",
+  "description": "Une cité cérémonielle sur grille carrée : enceinte sacrée au centre, maisons calli en adobe à toit plat groupées en enclos."
+ },
+ "inca": {
+  "label": "Cité inca (Cusco)",
+  "description": "Une cité de pierre en terrasses : enclos trapézoïdaux (kancha) sur un plan rectiligne autour de la plate-forme ushnu, maisons de pierre à pignon."
+ },
+ "byzantine-greek": {
+  "label": "Bourg byzantin de colline (Mystras)",
+  "description": "Un bourg de colline en terrasses sur la pente : rues en gradins, maisons de pierre d’un à trois niveaux sous des toits de tuiles, une enceinte organique."
+ },
+ "venetian-lagoon": {
+  "label": "Ville de lagune vénitienne",
+  "description": "Une ville de lagune aux hautes maisons de brique (trois à quatre niveaux) sur des parcelles étroites, un marché au centre, sans mur : l’eau est la défense."
+ },
+ "persian": {
+  "label": "Ville persane (Ispahan)",
+  "description": "Une ville persane autour d’un grand maïdan (place), avec boutiques de bazar sous des dômes de brique et passages voûtés, protégée par une enceinte."
+ },
+ "ottoman": {
+  "label": "Ville ottomane (Bursa)",
+  "description": "Une ville ottomane : rues organiques autour du marché (çarşı), boutiques dukkan et maisons de bois sous des toits de tuiles à croupes, sans enceinte."
+ },
+ "sahel": {
+  "label": "Ville sahélienne de terre (Djenné)",
+  "description": "Une ville sahélienne de terre (Djenné) : grande mosquée en brique crue au centre, maisons soudano-sahéliennes à toit plat d’un ou deux niveaux, ruelles irrégulières."
+ },
+ "hanseatic": {
+  "label": "Port hanséatique (Lübeck)",
+  "description": "Un port hanséatique (Lübeck) : grille de rues bornée par une enceinte, hautes maisons de brique à pignon de trois à cinq niveaux (Giebelhäuser) sur de profondes parcelles de marchands."
+ },
+ "korean": {
+  "label": "Ville coréenne fortifiée (Hanyang)",
+  "description": "Une ville coréenne fortifiée (Hanyang) : maisons hanok en bois sous des toits de tuiles à croupes, marché au centre, rues organiques dans l’enceinte."
+ },
+ "wizard-city": {
+  "label": "Cité de mages",
+  "description": "Une cité de mages sur plan radial : une tour au centre, une enceinte circulaire, maisons de pierre de deux à quatre niveaux sous des toits en croupe."
+ },
+ "gnomish": {
+  "label": "Ville gnome de canaux",
+  "description": "Une ville gnome de canaux : maisons de brique très hautes et étroites (cinq à sept niveaux) sous des toits pyramidaux, une tour d’horloge au centre."
+ },
+ "stilt-town": {
+  "label": "Village sur pilotis (peuple des marais)",
+  "description": "Un village dispersé du peuple des marais sur pilotis : maisons rondes de chaume dressées au-dessus de l’eau, sans centre ni enceinte."
+ },
+ "barbarian": {
+  "label": "Barbares : village germanique",
+  "description": "Un village germanique : maisons-étables à toit de chaume à pignon, dispersées en cercle au milieu des champs, sans mur."
+ },
+ "barbarian-celtic": {
+  "label": "Barbares : fort circulaire celte",
+  "description": "Un fort circulaire celte : maisons rondes de clayonnage et de chaume en anneaux concentriques derrière une palissade."
+ },
+ "barbarian-norse": {
+  "label": "Barbares : groupe de fermes nordiques",
+  "description": "Un groupe de fermes nordiques : maisons longues à toit de tourbe dispersées autour d’un espace commun, sans mur."
+ },
+ "norse-ringfort": {
+  "label": "Forteresse annulaire nordique (Trelleborg)",
+  "description": "Une forteresse annulaire nordique (Trelleborg) : palissade circulaire, rues radiales et longues maisons de bois à toit à pignon."
+ },
+ "maya": {
+  "label": "Cité maya (cœur cérémoniel, sacbeob)",
+  "description": "Une cité maya : un cœur cérémoniel relié par des chaussées (sacbeob), maisons rondes de clayonnage à toit de chaume dispersées en enclos autour."
+ },
+ "khmer": {
+  "label": "Cité khmère (Angkor)",
+  "description": "Une cité khmère (Angkor) : îlots rectangulaires bordés par des douves, maisons de bois sur pilotis sous des toits à pignon, sans enceinte intérieure."
+ },
+ "celtic-oppidum": {
+  "label": "Oppidum celte",
+  "description": "Un oppidum celte : un plan organique derrière une longue enceinte défensive, maisons rondes de clayonnage à toit de chaume."
+ },
+ "orcish": {
+  "label": "Camp de guerre orque",
+  "description": "Un camp de guerre orque : huttes de peau sur armature conique dispersées en cercle, sans ordre ni mur."
+ },
+ "halfling": {
+  "label": "Comté des halfelins",
+  "description": "Un comté de halfelins : des smials (maisons creusées dans les collines) sous des dômes de tourbe, dispersés en cercle, avec de petits jardins."
+ },
+ "kraal": {
+  "label": "Kraal (enclos africain)",
+  "description": "Un kraal africain : huttes de chaume en forme de ruche disposées en rayons autour d’un enclos central à bétail."
+ },
+ "native-iroquoian": {
+  "label": "Amérindiens : village iroquoien de maisons longues",
+  "description": "Un village iroquoien de maisons longues : maisons d’écorce à toit en berceau, alignées en rangées, dans une palissade ovale."
+ },
+ "native-pueblo": {
+  "label": "Amérindiens : pueblo",
+  "description": "Un pueblo : pièces d’adobe empilées en terrasses jusqu’à cinq niveaux, autour d’une place ouverte."
+ },
+ "native-plains": {
+  "label": "Amérindiens : camp de tipis des Plaines",
+  "description": "Un camp de tipis des Plaines : tipis de peau en cercle radial autour d’un espace central ouvert ; pas de murs."
+ },
+ "nomad-camp": {
+  "label": "Camp nomade (ordu des steppes)",
+  "description": "Un camp nomade des steppes (ordu) : gers (yourtes) de feutre en cercle radial autour d’une tente centrale."
+ },
+ "swahili-stone-town": {
+  "label": "Ville de pierre swahilie (Lamu / Zanzibar)",
+  "description": "Une ville de pierre swahilie (Lamu, Zanzibar) : maisons de pierre de corail à toit plat de deux à trois niveaux sur des ruelles organiques, une mosquée au centre."
+ },
+ "drow-enclave": {
+  "label": "Enclave drow",
+  "description": "Une enclave drow : maisons à cour de pierre sombre de deux à trois niveaux à toit plat, sur des ruelles organiques autour d’une enceinte centrale."
+ },
+ "duergar-hold": {
+  "label": "Forteresse industrielle duergar",
+  "description": "Une forteresse industrielle duergar : salles de pierre sombre en terrasses à toit plat, derrière un mur rectiligne, autour d’une enceinte centrale."
+ },
+ "myconid-colony": {
+  "label": "Colonie myconide",
+  "description": "Une colonie myconide : habitations fongiques à dôme sur un plan radial autour d’une enceinte centrale, sans mur."
+ },
+ "egyptian-planned": {
+  "label": "Égypte · ville planifiée du Nil",
+  "description": "Quartiers rectilignes compacts orientés sur la vallée ; les complexes sacrés restent des réserves, sans génération de temples."
+ },
+ "nubian-fortified": {
+  "label": "Nubie · ville fortifiée",
+  "description": "Blocs de brique dans une enceinte compacte, liés aux rives du Nil."
+ },
+ "mesopotamian": {
+  "label": "Mésopotamie · quartiers de cours",
+  "description": "Îlots massifs à patios, voies marchandes et venelles ; les canaux et temples ne sont pas synthétisés par cette recette."
+ },
+ "levantine-tell": {
+  "label": "Levant · ville fortifiée sur tell",
+  "description": "Rues de pente et enceintes adaptées au relief ; le tell existant appartient au décor."
+ },
+ "oasis-caravan": {
+  "label": "Asie centrale · cité caravanière d’oasis",
+  "description": "Axes caravaniers entre portes, noyau de marché et grands enclos ; irrigation et citadelle restent des réserves futures."
+ },
+ "ksar-oasis": {
+  "label": "Maghreb · ksar d’oasis",
+  "description": "Noyau très compact, accès défensifs et venelles ; distinct de la kasbah et de la médina urbaine."
+ },
+ "yoruba": {
+  "label": "Yoruba · ville de concessions",
+  "description": "Grands enclos lignagers, quartiers et axes de marché ; aucune copie des palais tardifs d’Abomey."
+ },
+ "himalayan-terraces": {
+  "label": "Tibet et Ladakh · habitat en terrasses",
+  "description": "Venelles en courbes de niveau, blocs compacts et escaliers ; pas de dzong tardif automatique."
+ },
+ "newar": {
+  "label": "Népal newar · ville à places rituelles",
+  "description": "Îlots denses autour de cours et places rituelles ; les pavillons du palais ne sont pas générés ici."
+ },
+ "indus-planned": {
+  "label": "Indus · cité harappéenne",
+  "description": "Grille hiérarchisée, blocs de maisons à cour et ruelles ; les réseaux de drains ne sont pas encore produits."
+ },
+ "javanese-courts": {
+  "label": "Java · ville de cours et enclos",
+  "description": "Grands enclos, places publiques et cours séparées ; cette recette ne confond pas Java avec les temples de l’Inde."
+ },
+ "mississippian": {
+  "label": "Mississippien · centre à place palissadée",
+  "description": "Place ouverte, chemins et grands îlots de maisons/jardins ; les tertres artificiels restent à intégrer au relief."
+ },
+ "al-andalus": {
+  "label": "Al-Andalus · médina ibérique à patios",
+  "description": "Souk et grande mosquée au centre, maisons à patio desservies par des adarves en impasse, arrabales hors les murs et cármenes jardinés en bordure."
+ },
+ "italian-comune": {
+  "label": "Italie · commune à piazza et tours",
+  "description": "Piazza civique au cœur, cerchie successives, îlots massifs de maisons étroites à portiques ; borghi le long des routes hors les portes."
+ },
+ "flemish-cloth-town": {
+  "label": "Flandre · ville drapière à beffroi",
+  "description": "Grand-Place et beffroi de la halle aux draps, canaux (reien) et enceintes successives ; maisons à pignon sur rue, parcelles profondes de teinturiers et foulons."
+ },
+ "rynek-town": {
+  "label": "Europe centrale · ville à rynek",
+  "description": "Ville de fondation (droit de Magdebourg) : grande place carrée du marché avec halle et hôtel de ville, damier de rues, lots profonds de bourgeois ; faubourgs le long des routes."
+ },
+ "slavic-gord": {
+  "label": "Slaves · gród palissadé et podgrodzie",
+  "description": "Gród de bois et de terre sur la hauteur, podgrodzie artisanal à ses pieds, rues pavées de rondins et grandes cours de maisons en rondins."
+ },
+ "caucasian-highland": {
+  "label": "Caucase · bourg fortifié géorgien et arménien",
+  "description": "Église en enceinte fortifiée au sommet, maisons de pierre serrées en terrasses, ruelles et escaliers suivant les courbes de niveau."
+ },
+ "ethiopian-highland": {
+  "label": "Éthiopie · cité d’altitude (Aksum, Lalibela)",
+  "description": "Enclos circulaire d’église sur la hauteur, concessions familiales de maisons rondes entourées de haies, sentiers courbes ; stèles et églises rupestres restent des réserves."
+ },
+ "great-zimbabwe": {
+  "label": "Zimbabwe · enclos de pierre sèche",
+  "description": "Grand enclos royal de pierre sèche au centre, concessions de cases daga entourées de murets courbes, habitat qui se desserre vers la vallée."
+ },
+ "hausa-kano": {
+  "label": "Hausa · cité-État à enceinte de terre (Kano)",
+  "description": "Grande mosquée, palais de l’émir et marché Kurmi au centre ; concessions à cour derrière un vestibule (zaure), ruelles en impasse, vaste enceinte de terre englobant champs et mares."
+ },
+ "hadhrami-tower": {
+  "label": "Hadramaout · cité verticale de maisons-tours (Shibam)",
+  "description": "Enceinte rectangulaire compacte sur une butte de la vallée, maisons-tours de 5 à 8 niveaux presque jointives, petites places et ruelles ; palmeraies hors les murs."
+ },
+ "rajput-fort": {
+  "label": "Rajputana · ville au pied du fort (Jaisalmer, Amber)",
+  "description": "Fort royal sur l’éperon, bazar entre les portes, havelis à cour dans des ruelles étroites, bassin (talab) et stepwells comme réserves de services."
+ },
+ "dravidian-temple": {
+  "label": "Inde du Sud · ville-temple à rues concentriques (Madurai)",
+  "description": "Enceinte du temple et ses gopurams au centre, rues processionnelles carrées concentriques (masi, avani, chitrai), rangées de maisons étroites et profondes ; bassin sacré."
+ },
+ "bagan": {
+  "label": "Birmanie · cité royale de Pagan",
+  "description": "Cité murée carrée du palais au bord du fleuve, maisons sur pilotis dans de grands enclos plantés, monastères et stupas épars dans la plaine."
+ },
+ "vietnamese-citadel": {
+  "label": "Viêt · citadelle et quartier marchand (Thăng Long)",
+  "description": "Citadelle carrée à douves et portes cardinales, maisons à cour en enclos ; hors les murs, quartier marchand des « 36 rues » aux maisons-tubes étroites et profondes."
+ },
+ "tibetan-monastery": {
+  "label": "Tibet · bourg monastique de pente",
+  "description": "Monastère et salle d’assemblée en haut de pente, cellules et maisons à toit-terrasse en gradins, circuit de pèlerinage (kora) autour ; pas de dzong automatique."
+ },
+ "mongol-ordu": {
+  "label": "Mongols · ordu, camp princier de yourtes",
+  "description": "Tente du khan au centre, ouverte au sud, anneaux et rangées de yourtes des clans, larges allées pour les chariots ; au-delà d’un seuil, capitale fixe murée à damier (Karakorum)."
+ },
+ "maori-pa": {
+  "label": "Māori · pā fortifié en terrasses",
+  "description": "Colline ou éperon taillé en terrasses défendues par fossés et palissades, marae et maison de réunion sur la plate-forme haute, whare et pataka serrés sur les gradins."
+ },
+ "pnw-plank-village": {
+  "label": "Côte Nord-Ouest · village de maisons de planches",
+  "description": "Rangée de grandes maisons de clan en planches de cèdre, façades peintes et mâts tournés vers la plage, canots et séchoirs au rivage."
+ },
+ "inuit-camp": {
+  "label": "Arctique · camp inuit d’hiver",
+  "description": "Groupe d’igloos et de tentes de peaux près du rivage ou de la banquise, maison commune (qaggiq) au centre, caches et séchoirs autour."
+ },
+ "siberian-camp": {
+  "label": "Sibérie · campement de chums des éleveurs de rennes",
+  "description": "Tentes coniques en arc ouvert, traîneaux et caches sur poteaux derrière, enclos à rennes en périphérie ; village de rondins à partir de quelques centaines d’habitants."
+ },
+ "guarani-village": {
+  "label": "Guaraní · village de grandes maisons (tekoha)",
+  "description": "Quelques grandes maisons communes (óga guasu) autour d’une place de danse, palissade et essarts de manioc et de maïs en couronne."
+ },
+ "budj-bim": {
+  "label": "Australie · village de pierre du Budj Bim",
+  "description": "Cabanes de pierre sèche groupées sur les coulées de lave près des chenaux à anguilles et des pièges ; les barrages restent du décor."
+ },
+ "lizardfolk-swamp": {
+  "label": "Hommes-lézards · cité lacustre sur pilotis",
+  "description": "Morphologie des villages palafittes : plates-formes sur pilotis reliées par des passerelles sinueuses autour d’un bassin sacré ; pas de rues larges."
+ },
+ "merfolk-tidal": {
+  "label": "Ondins · village de grève et de grottes marines",
+  "description": "Morphologie de lagune et d’îlots (Nan Madol, villages palafittes) : maisons sur plates-formes au ras de l’eau, ruelles-escaliers vers les grottes, sanctuaire de marée au centre."
+ },
+ "giant-hold": {
+  "label": "Géants · bourg mégalithique",
+  "description": "Morphologie de fort annulaire à l’échelle ×2–3 : grande salle du jarl au centre, rues et enclos démesurés, enceinte cyclopéenne ; les maisons restent des recettes humaines (lacune)."
+ },
+ "goblin-warren": {
+  "label": "Gobelins · terrier à flanc de colline",
+  "description": "Morphologie des villages de maisons semi-souterraines : buttes creusées en grappes, boyaux en impasse très ramifiés suivant la pente, palissade de pieux ; aucune place ordonnée."
+ },
+ "american-grid": {
+  "label": "Ville américaine en damier (Chicago, Manhattan)",
+  "description": "Grille orthogonale de longs îlots rectangulaires entre avenues et rues transversales ; maisons en rangée de brique et de pierre et immeubles de rapport sur des parcelles étroites et profondes ; un centre d’affaires vertical de blocs commerciaux et de tours en retrait ; gare, usines, entrepôts et silos près de l’eau. Pas d’enceinte."
+ },
+ "industrial-victorian": {
+  "label": "Ville victorienne industrielle (Manchester, Liverpool)",
+  "description": "Rangées de maisons de brique et maisons adossées sur une grille serrée de rues étroites ; filatures et leurs cheminées, entrepôts, canaux et faisceaux ferroviaires ; un centre civique avec hôtel de ville, bourse et marché couvert. Pas d’enceinte."
+ },
+ "haussmannian": {
+  "label": "Ville haussmannienne de boulevards (Paris)",
+  "description": "Boulevards rectilignes et avenues rayonnantes percés dans des îlots fermés ; façades continues d’immeubles de pierre de hauteur égale sous des mansardes de zinc ; places aux carrefours, une gare, un opéra et un grand magasin."
+ },
+ "belle-epoque": {
+  "label": "Capitale Belle Époque (Vienne, Budapest)",
+  "description": "Un boulevard-ring autour du vieux cœur, bordé d’édifices publics monumentaux ; grands îlots à cour d’immeubles bourgeois à toits en croupe ; avenues de tramway, parcs et une grande gare."
+ },
+ "mediterranean-modern": {
+  "label": "Ville méditerranéenne moderne (Barcelone, Naples)",
+  "description": "Une grille régulière d’îlots carrés à pans coupés avec patios intérieurs ; immeubles mitoyens à balcons et toits-terrasses ; une promenade en front de mer, un port et une halle."
+ },
+ "garden-city": {
+  "label": "Cité-jardin (Letchworth, Welwyn)",
+  "description": "Rues courbes bordées d’arbres autour de pelouses communes ; pavillons jumelés et courtes rangées dans de profonds jardins ; un centre civique, une promenade et une zone industrielle séparée."
+ },
+ "art-deco-metropolis": {
+  "label": "Métropole Art déco (New York, Miami)",
+  "description": "Une grille dense d’avenues et de rues sous des tours à retraits couronnées de flèches étagées ; immeubles de pierre et de brique géométriques, hôtels et théâtres le long des grands axes."
+ },
+ "modernist-functionalist": {
+  "label": "Ville moderniste fonctionnelle (Brasília, Chandigarh)",
+  "description": "Superîlots entre de larges artères sans carrefours ; barres isolées sur pilotis dans des pelouses ouvertes ; zones séparées pour le logement, le gouvernement, le commerce et l’industrie ; un axe monumental avec le stade et les tours de l’administration."
+ },
+ "soviet-socialist": {
+  "label": "Ville socialiste soviétique (Moscou, Minsk)",
+  "description": "Larges avenues de parade et une place centrale avec son monument ; microquartiers de barres préfabriquées autour d’écoles et de cours ; tours staliniennes, une tour de télévision, centrales électriques et ceintures d’usines."
+ },
+ "american-suburbia": {
+  "label": "Banlieue américaine (Los Angeles, Phoenix)",
+  "description": "Boucles résidentielles courbes et impasses greffées sur une hiérarchie d’artères ; maisons individuelles avec garage sur de profondes pelouses de façade ; centres commerciaux, galeries en bande et parcs de bureaux aux échangeurs."
+ },
+ "european-contemporary": {
+  "label": "Ville européenne contemporaine (Copenhague, Amsterdam)",
+  "description": "Îlots périmétriques mixtes autour de cours vertes ; immeubles de brique et de bois au-dessus de commerces ; canaux, rues de tramway et de vélos, une gare centrale et un front de port d’équipements culturels."
+ },
+ "global-high-rise": {
+  "label": "Ville mondiale de tours (Hong Kong, Shenzhen)",
+  "description": "Tours résidentielles sur socles commerciaux serrées entre pentes raides et port ; passerelles surélevées, stations de métro et centres commerciaux ; un horizon de tours de bureaux en verre."
+ },
+ "gulf-contemporary": {
+  "label": "Ville du Golfe (Dubaï, Doha)",
+  "description": "Croissance discontinue le long de larges autoroutes ; superîlots de villas fermés par un mur ; une file de tours emblématiques le long de la côte ; centres commerciaux climatisés, une grande mosquée et des marinas."
+ },
+ "informal-urban-expansion": {
+  "label": "Expansion urbaine informelle (Lagos, Lima)",
+  "description": "Maisons autoconstruites sur des parcelles irrégulières le long de ruelles étroites, surélevées niveau après niveau ; toits de tôle, marchés ouverts, églises et mosquées, ateliers dans chaque rue."
+ },
+ "eco-city": {
+  "label": "Écocité (quartier durable)",
+  "description": "Îlots de bois bas carbone aux toits végétalisés autour de corridors verts ; rues sans voiture, lignes de vélo et de tramway, jardins partagés, serres et une bordure d’énergie éolienne."
+ },
+ "japanese-contemporary": {
+  "label": "Ville japonaise contemporaine (Tokyo, Osaka)",
+  "description": "Minuscules parcelles sur de petites rues locales derrière de larges artères ; immeubles-crayons, maisons individuelles séparées par de faibles interstices, commerces à chaque coin ; voies ferrées surélevées, gares avec leurs grands magasins et enceintes de temples et de sanctuaires."
+ },
+ "chinese-megacity": {
+  "label": "Mégapole chinoise (Shanghai, Canton)",
+  "description": "Superîlots clos de tours résidentielles identiques entre avenues à huit voies ; un quartier d’affaires de gratte-ciel de verre, centres commerciaux et rocades surélevées ; anciens quartiers de ruelles et villages absorbés par la grille."
+ },
+ "korean-high-rise": {
+  "label": "Ville coréenne de tours (Séoul, Busan)",
+  "description": "Ensembles d’immeubles numérotés (danji) de barres parallèles escaladant les collines ; quartiers denses de villas basses et marchés entre eux ; églises aux croix lumineuses et fond de montagne."
+ },
+ "southeast-asian-tropical": {
+  "label": "Ville tropicale d’Asie du Sud-Est (Bangkok, Hô Chi Minh-Ville)",
+  "description": "Rangées de maisons-boutiques étroites le long des axes, avec de profondes ruelles (soi) derrière ; marchés, canaux et temples ; quelques tours et centres commerciaux sur les artères."
+ },
+ "south-asian-metropolis": {
+  "label": "Métropole sud-asiatique (Mumbai, Delhi)",
+  "description": "Densité extrême d’îlots mixtes : chawls, immeubles et quartiers autoconstruits côte à côte ; bazars, temples, un terminus ferroviaire colonial et des colonies planifiées en périphérie."
+ },
+ "latin-american-grid": {
+  "label": "Ville latino-américaine en damier (Buenos Aires, Mexico)",
+  "description": "La grille coloniale d’îlots carrés autour de la plaza mayor ; maisons à patio et immeubles sur des parcelles compactes ; larges avenues et diagonales du XIXe siècle, une cathédrale, un cabildo et une gare."
+ },
+ "latin-american-hillside": {
+  "label": "Ville latino-américaine de colline (Rio, Medellín)",
+  "description": "Maisons de brique accrochées aux pentes raides, empilées le long d’escaliers et de ruelles sinueuses ; un réseau dense et irrégulier montant depuis la route de la vallée, stations de téléphérique, chapelles et terrains de football."
+ },
+ "north-african-contemporary": {
+  "label": "Ville nord-africaine contemporaine (Casablanca, Tunis)",
+  "description": "Une ville nouvelle coloniale d’immeubles Art déco blancs sur des boulevards à côté de l’ancienne médina ; cités modernes et périphéries autoconstruites ; une grande mosquée, des souks et un port."
+ },
+ "sub-saharan-african-metropolis": {
+  "label": "Métropole d’Afrique subsaharienne (Dakar, Accra)",
+  "description": "Un plateau colonial de bureaux et d’avenues au-dessus de quartiers hétérogènes de concessions familiales closes, qui se densifient d’année en année ; grands marchés, mosquées et églises, gares routières."
+ },
+ "middle-eastern-contemporary": {
+  "label": "Ville contemporaine du Moyen-Orient (Amman, Beyrouth)",
+  "description": "Immeubles isolés revêtus de pierre à toits-terrasses sur des rues de colline en gradins ; un centre ancien dense de souks, mosquées et églises ; ronds-points et boulevards sur les crêtes."
+ },
+ "australian-suburban": {
+  "label": "Ville de banlieues australiennes (Perth, Brisbane)",
+  "description": "Banlieues peu denses de maisons de plain-pied sous des toits de tôle sur des parcelles d’un quart d’acre ; routes larges, centres commerciaux et un petit quartier d’affaires de tours sur le fleuve."
+ },
+ "post-socialist-european": {
+  "label": "Ville européenne postsocialiste (Varsovie, Bucarest)",
+  "description": "Un cœur historique reconstruit ceint de vastes ensembles de barres préfabriquées ; un palais stalinien de la culture, de nouvelles tours de bureaux en verre, centres commerciaux et concessionnaires le long des routes de sortie."
+ },
+ "cyberpunk": {
+  "label": "Mégapole cyberpunk",
+  "description": "Densité verticale extrême : mégatours d’entreprises et arcologies au-dessus de barres de logements empilées, plateformes surélevées et rues à plusieurs niveaux ; marchés dans les bas-fonds, centrales électriques et tours de données."
+ },
+ "solarpunk": {
+  "label": "Cité-jardin solarpunk",
+  "description": "Terrasses plantées et toits verts sur des îlots de bois le long de rues courbes sans voiture ; fermes verticales, serres, champs solaires et mâts éoliens ; parcs et jardins d’eau partout."
+ },
+ "dieselpunk": {
+  "label": "Métropole industrielle dieselpunk",
+  "description": "Tours Art déco monumentales, cheminées et aciéries sur des avenues héroïques ; immeubles ouvriers de brique, centrales électriques, mâts d’amarrage de dirigeables et gares de triage."
+ },
+ "dystopian-brutalism": {
+  "label": "Ville brutaliste dystopique",
+  "description": "Blocs massifs de béton brut répétés le long d’un axe autoritaire ; mégastructures, ministères et monuments ; vastes places vides, tours de refroidissement et zones industrielles murées."
+ },
+ "atompunk-retrofuturist": {
+  "label": "Ville rétrofuturiste atompunk",
+  "description": "Le futur tel qu’on l’imaginait vers 1960 : rocades et maisons de l’ère spatiale sous des toits plats et en dôme ; tours profilées, pavillons-soucoupes sous des dômes, mâts de diffusion et une centrale atomique."
+ },
+ "post-apocalyptic-ruins": {
+  "label": "Ruines postapocalyptiques",
+  "description": "Une grille moderne abandonnée : îlots en ruine et tours mortes reconquis par la végétation, parmi lesquels des maisons de récupération reconstruites, des marchés de ferraille et des enclos fortifiés."
+ },
+ "corporate-arcology": {
+  "label": "Arcologie d’entreprise",
+  "description": "Une mégastructure unique contient la ville : une arcologie en gradins au centre, rocades et îlots en terrasses autour, places privées, transports et énergie dans l’anneau extérieur."
+ },
+ "futuristic-space-colony": {
+  "label": "Colonie spatiale",
+  "description": "Dômes pressurisés et habitats modulaires sur un plan radial de couloirs ; un grand dôme central, aires d’atterrissage, centrales et serres hydroponiques."
+ },
+ "biopunk-organic-city": {
+  "label": "Cité organique biopunk",
+  "description": "Des structures vivantes cultivées plutôt que construites : nacelles et tours biomorphes le long de chemins courbes et ramifiés ; une ruche centrale, flèches organiques et jardins de ponte."
+ }
+}

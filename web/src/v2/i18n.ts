@@ -114,8 +114,11 @@ export function numberHTML(value:number):string{return `<span data-i18n-number="
 export function setDynamicText(element:Element,source:()=>string):void{
   element.removeAttribute('data-i18n');dynamicBindings.set(element,source);element.textContent=translate(source());
 }
+/** The documentation is published on GitHub Pages; the app never serves it (local pages would open the V1). */
+export const ATLAS_BASE='https://dunkean.github.io/magna-urbis/scientific/';
 export function atlasUrl(href='./scientific/index.html'):string{
-  const url=new URL(href,document.baseURI);url.pathname=url.pathname.replace(/\/(?:index|fr)\.html$/,language==='fr'?'/fr.html':'/index.html');url.searchParams.set('lang',language);return url.href;
+  const local=new URL(href,document.baseURI),page=local.pathname.slice(local.pathname.lastIndexOf('/scientific/')+'/scientific/'.length)||'index.html';
+  const url=new URL(page+local.hash,ATLAS_BASE);url.pathname=url.pathname.replace(/\/(?:index|fr)\.html$/,language==='fr'?'/fr.html':'/index.html');url.searchParams.set('lang',language);return url.href;
 }
 function applyDocumentLanguage():void{
   document.documentElement.lang=language;

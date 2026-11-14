@@ -4,7 +4,7 @@ import sys
 
 LINKS = '''<div class="gallery-doc-links" role="navigation" aria-label="Documentation" style="display:flex;flex-wrap:wrap;gap:12px;margin:0 0 20px;font:14px system-ui,sans-serif">
 <a href="../../scientific/fr.html">Atlas des méthodes</a>
-<a href="../../scientific/catalogue-architecture.html">Catalogue architectural · 79 cultures</a>
+<a href="../../scientific/catalogue-architecture.html">Styles architecturaux · 115 cultures</a>
 </div>'''
 
 

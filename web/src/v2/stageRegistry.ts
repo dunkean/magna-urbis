@@ -284,7 +284,7 @@ export function stagesOf(family: StageFamily, coastAfter = 'initialize'): StageD
 }
 export const stageAnchor = (id: string): string => `stage-${id}`;
 /** Atlas section for a stage, following the app language (EN index.html, FR fr.html). */
-export function stageDocUrl(id: string, language: 'en' | 'fr', base = './scientific/'): string {
+export function stageDocUrl(id: string, language: 'en' | 'fr', base = 'https://dunkean.github.io/magna-urbis/scientific/'): string {
   return `${base}${language === 'fr' ? 'fr.html' : 'index.html'}#${stageAnchor(id)}`;
 }
 

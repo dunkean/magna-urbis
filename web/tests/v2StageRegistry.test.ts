@@ -75,8 +75,8 @@ describe('V2 generation stage registry', () => {
     expect(visible('procedural')).not.toContain('relief-heightmap-fit');
   });
   it('links each row to its atlas section in the app language and maps run actions', () => {
-    expect(stageDocUrl('relief-regional', 'en')).toBe('./scientific/index.html#stage-relief-regional');
-    expect(stageDocUrl('relief-regional', 'fr')).toBe('./scientific/fr.html#stage-relief-regional');
+    expect(stageDocUrl('relief-regional', 'en')).toBe('https://dunkean.github.io/magna-urbis/scientific/index.html#stage-relief-regional');
+    expect(stageDocUrl('relief-regional', 'fr')).toBe('https://dunkean.github.io/magna-urbis/scientific/fr.html#stage-relief-regional');
     expect(stageForProgress('terrain-water')).toBe('water-hydrology');
     expect(stageForProgress('pipeline:regional')).toBe('relief-regional');
     expect(stagesForAction('town', 'parcels')).toEqual(['city-composition', 'city-roads', 'city-quarters', 'city-trim', 'city-parcels']);

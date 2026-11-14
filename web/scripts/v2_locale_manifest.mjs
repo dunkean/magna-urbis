@@ -22,7 +22,7 @@ for(const file of ['web/out/v2-locales/results.json','web/out/v2-locales-product
 const sources=[];
 for(const file of [...await walk(resolve(web,'src/v2')),'web/src/ui/v2.html','web/src/ui/exportCrop.ts','web/vite.v2.config.ts','rust/desktop-v2/Cargo.toml','rust/desktop-v2/Cargo.lock','rust/desktop-v2/src/main.rs','rust/desktop-v2/tauri.conf.json',
   'web/scripts/v2_locale_check.mjs','web/scripts/v2_static_check.mjs','web/scripts/v2_locale_manifest.mjs',
-  'docs/scientific/index.html','docs/scientific/fr.html','docs/scientific/reader.js','docs/scientific/styles.css','docs/scientific/evidence.json'])sources.push(await record(file));
+  'docs/scientific/index.html','docs/scientific/fr.html','docs/scientific/reader.js','docs/scientific/styles.css'])sources.push(await record(file));
 const manifest={format:'magna-urbis-v2-bilingual-build-manifest',version:1,applicationVersion:version,generatedUtc:new Date().toISOString(),published:false,
   language:{default:'en',available:['en','fr'],preferenceKey:'magna-urbis-v2-language',liveSwitchRetainsWorldAndView:true},
   build:{command:'npm run app:v2:build',platform:process.platform,architecture:process.arch,node:process.version},

@@ -24,7 +24,7 @@ There are two implementations: **TypeScript**, currently the most complete, and 
 
 Read the [technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, research sources, implementation boundaries and Rust/WASM stack.
 
-The [illustrated methods atlas](docs/scientific/index.html) is available in English (default) and [French](docs/scientific/fr.html). It follows the full process from terrain to accepted buildings in 19 chapters, with primary references, explicit assumptions and limitations, real screenshots, diagrams and source provenance. The V2 application also defaults to English and provides a live language selector; both remember an explicit language choice. The atlas works offline.
+The illustrated documentation is published at [dunkean.github.io/magna-urbis/scientific](https://dunkean.github.io/magna-urbis/scientific/index.html): the [atlas of methods](docs/scientific/index.html) follows a world from the height field to the last roof, stage by stage, and the [architectural styles catalogue](docs/scientific/catalogue-architecture.html) shows the 115 cultures. Both exist in English and French and are built from `docs/scientific/src/`. The V2 application also defaults to English and provides a live language selector; both remember an explicit language choice. The atlas works offline.
 
 The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
 

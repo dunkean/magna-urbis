@@ -1,8 +1,25 @@
-import { check, browserCheck } from './check-bilingual.mjs';
-import { resolve } from 'node:path';
+// Checks the built documentation: every stage of the V2 registry has a card in both atlas pages
+// (the V2 "?" links target them), pages are fresh, and every referenced local file exists.
+// Usage: node docs/scientific/check.mjs
+import { readFile, access } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-export { check, browserCheck };
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await check();
-  if (process.argv.includes('--browser')) await browserCheck();
+
+const dir = dirname(fileURLToPath(import.meta.url)), root = resolve(dir, '../..');
+const registry = await readFile(resolve(root, 'web/src/v2/stageRegistry.ts'), 'utf8');
+const ids = [...registry.matchAll(/\bid: '([a-z0-9-]+)', family: '/g)].map(m => m[1]);
+const pages = ['index.html', 'fr.html', 'catalogue-architecture.html', 'catalogue-architecture-fr.html'];
+const before = Object.fromEntries(await Promise.all(pages.map(async p => [p, await readFile(resolve(dir, p), 'utf8')])));
+execFileSync(process.execPath, [resolve(dir, 'src/build.mjs')], { stdio: 'ignore' });
+const problems = [];
+for (const p of pages) {
+  const html = await readFile(resolve(dir, p), 'utf8');
+  if (html !== before[p]) problems.push(`${p} was stale (rebuilt now, commit it)`);
+  if (p === 'index.html' || p === 'fr.html') for (const id of ids) if (!html.includes(`id="stage-${id}"`)) problems.push(`${p}: no card for stage ${id}`);
+  for (const [, ref] of html.matchAll(/(?:src|href)="((?:assets\/|[\w-]+\.(?:html|css|js))[^"#?]*)/g)) {
+    try { await access(resolve(dir, ref)); } catch { problems.push(`${p}: missing ${ref}`); }
+  }
 }
+if (problems.length) { console.error([...new Set(problems)].join('\n')); process.exit(1); }
+console.log(`Documentation OK: ${ids.length} stages, ${pages.length} pages.`);

@@ -1,77 +1,30 @@
-# Magna Urbis Atlas of Methods
+# Magna Urbis documentation
 
-Open [index.html](index.html?lang=en) for the English edition (the default),
-or [fr.html](fr.html?lang=fr) for the French edition. Both contain all 20
-chapters, from terrain to houses, with an annotated bibliography, contracts,
-limitations, original SVG diagrams and attributed screenshots.
-The visible EN/FR links preserve the current chapter. They share the app's
-explicit language preference through `magna-urbis-v2-language`; the browser
-locale never overrides the default English choice. A `?lang=en|fr` URL wins.
+Published at <https://dunkean.github.io/magna-urbis/scientific/index.html>; the V2 "How it works?" link
+and every stage "?" button open it there.
 
-Content and images work offline without remote dependencies. Search filters
-chapters; both complete static pages remain readable without JavaScript.
-Browser printing includes every chapter even after filtering.
+| Page | English | French |
+|---|---|---|
+| Atlas of methods: how a world is generated, stage by stage | `index.html` | `fr.html` |
+| Architectural styles: the 115 cultures | `catalogue-architecture.html` | `catalogue-architecture-fr.html` |
 
-From the repository root:
+The pages are generated; edit the sources in `src/`, never the HTML.
+
+- `src/atlas.en.mjs`: atlas chapters, English source. `src/atlas.fr.mjs` is its complete French translation.
+- `src/stages.mjs`: one card per stage id of `web/src/v2/stageRegistry.ts` (EN and FR). The card's HTML id is
+  `stage-<id>`, the anchor the V2 links to.
+- `src/diagrams.mjs`: the inline SVG diagrams, with bilingual labels; colours follow the page theme.
+- `src/catalogue-data.mjs` reads the Rust culture catalogue (`rust/crates/core/src/urban/catalogue.json`,
+  `culture.rs`, `forms/styles*.json`); `src/catalogue.mjs` renders it; `src/catalogue.{en,fr}.json` hold names
+  and descriptions. `src/catalogue-images.py` converts the per-culture captures of
+  `web/out/planches-styles-v7/` into `assets/cultures/`.
+- `src/shell.mjs`, `styles.css`, `reader.js`: page shell, theme (light and dark) and progressive enhancement.
+- `src/FACTS-2026-11-14.md`: the facts gathered from the code for the 14 November 2026 refresh.
 
 ```sh
-node docs/scientific/check.mjs
-node docs/scientific/check.mjs --browser
-node docs/scientific/localize.mjs --check
-node docs/scientific/build.mjs
-node docs/scientific/build.mjs --out web/dist-v2/scientific
+node docs/scientific/src/build.mjs     # writes the four pages
+node docs/scientific/check.mjs         # rebuilds, then checks stage cards and local files
 ```
 
-Browser verification uses Playwright installed in `web/` and the local
-Chrome channel. It checks English and French, a French browser locale with
-English as the fresh default, chapter-preserving switching, search and
-navigation, mobile layout, local images, PDF printing and reading without
-JavaScript. Evidence is written to `web/out/scientific-docs-bilingual/`.
-The static build exports both pages and all assets to
-`web/out/scientific-site/` by default. It does not delete its destination.
-
-`fr-source.html` is the editorial source; `fr.html` and `index.html` are generated static pages. The generator places stage explanations beside the corresponding chapters, including without JavaScript. `translation-source.json` records its
-ordered content fragments; `translations-en.tsv` contains the corresponding
-curated English text. Separate JSON catalogues cover attributes, explanatory
-code/formulas and diagrams. Run `node docs/scientific/localize.mjs` to generate
-`index.html`, both language controls and the English SVG variants.
-The verification mode fails when French source content changes without an
-explicit translation review, or when a generated page/diagram is stale.
-It also verifies matching chapter IDs, source links, bibliography URLs and
-unchanged diagram geometry across languages.
-
-`styles.css` and `reader.js` provide local progressive enhancement.
-`data-repo` links refer to checkout files but open GitHub.
-`evidence.json` records source fingerprints, local state beyond HEAD,
-available recipes, provenance limitations, figure hashes and translation
-fingerprints. Screenshots retain their original capture language and pixels.
-
-`record-evidence.mjs` regenerates the manifest and exact copies of all eight
-screenshots. It also requires the ignored historical artifacts in
-`web/out/city-visual-bench/03-validated/` and `web/out/v2-browser/`; do not run
-it when either folder is missing. Ordinary reading, checking and exporting
-do not depend on them. It updates documentation fingerprints: review claims
-and captions before treating a new inventory as a renewed scientific review.
-`record-localization.mjs` updates translation and translated-diagram provenance
-without recollecting or relabelling historical screenshots and reports.
-
-Historical screenshots are not presented as current V2 captures.
-Diagrams are explanatory, not to scale, and are not measured outputs.
-The documentation does not claim scientific certification of the generator.
-
-The five V2 reports in `evidence/` are exact copies of project integration
-checks, with their scopes and limitations. They distinguish WASM/native urban
-generation, project composition, terrain platforms and Windows desktop startup.
-`collect-reports.mjs` collects those reports and SHA-256 hashes without
-refreshing code fingerprints; `record-evidence.mjs` performs both inventories.
-A successful house regeneration case does not prove exact replay of every
-possible edited recipe.
-
-Chapter 19 (`#etapes`) has one section per generation stage, id `stage-<id>`,
-for every id of `docs/stage-registry-contract.md` (the V2 "?" links target them).
-Its text and inline SVG diagrams are authored in `stages-data.mjs` and `stage-additions.json` (EN and FR)
-and rendered by `node docs/scientific/stages.mjs` into `stages-en.html` /
-`stages-fr.html`, which `localize.mjs` injects from the source and distributes across `fr.html` and `index.html`. `check.mjs` fails if a contract id is missing from
-either page or if the generated files are stale.
-
-The architectural catalogue is generated from all 79 cultures in the current Rust catalogue with `python docs/scientific/catalogue.py`. It writes the HTML, Markdown and 79 local SVG plates. `editorial.mjs` applies the shared reading layout and editorial treatment after localization. The two pages link to each other in their top navigation.
+Publishing: copy `index.html`, `fr.html`, both catalogue pages, `styles.css`, `reader.js` and `assets/` into
+`scientific/` on the `gh-pages` branch.
