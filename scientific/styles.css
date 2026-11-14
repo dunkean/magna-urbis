@@ -103,7 +103,8 @@ main { padding: 0 clamp(1rem, 4vw, 4rem) 6rem; min-width: 0; }
 .hero h1 {
   font: 600 clamp(2.3rem, 4.6vw, 3.9rem)/1.04 var(--sans); letter-spacing: -.02em; margin: 0 0 1rem; max-width: 18ch;
 }
-.hero .lead { font-size: 1.22rem; line-height: 1.55; color: var(--ink-2); max-width: 38rem; margin: 0 0 1.8rem; }
+.hero .lead { font-size: 1.22rem; line-height: 1.55; color: var(--ink-2); max-width: 38rem; margin: 0 0 .8rem; }
+.hero .credit { font: .9rem/1.45 var(--sans); color: var(--ink-3); max-width: 38rem; margin: 0 0 1.8rem; }
 .hero .section-figure { margin: 0; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; margin: 2rem 0 0; font-family: var(--sans); }
 .facts div { background: var(--paper); padding: .9rem 1rem; }
