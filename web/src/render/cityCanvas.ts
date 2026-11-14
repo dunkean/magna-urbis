@@ -33,6 +33,7 @@ import { roadSurface } from './roadSurface';
 import { differenceS, unionS } from '../gen/geo/bool';
 import { drawNightBuildings, drawNightTown, nightRoof } from './cityNight';
 import { drawRuinPlan, ruinFootprint } from './cityRuins';
+import { drawFarTown, farTownAlpha, farTownBuildingsShown } from './cityFarRaster';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
@@ -418,6 +419,10 @@ export interface CityDrawOptions {
   deferNightTown?: boolean;
   /** Painted above the streets, walls and waterways and below the buildings, in the same world-coordinate context (semantic district usage). */
   beforeBuildings?: (ctx: CanvasRenderingContext2D) => void;
+  /** Satellite grounds: below the scale of single roofs the town is its far raster (cityFarRaster.ts), cross-faded with the buildings. */
+  farTown?: boolean;
+  /** The whole town for that raster when `buildings` holds only the visible detail of a very large town (default: `buildings`). */
+  farBuildings?: CityBuildings;
 }
 export interface CityFrameStats { lod: CityLod; blocks: number; parcels: number; streets: number; buildings: number; ms: number; pending: boolean }
 
@@ -1003,8 +1008,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
 
   o.beforeBuildings?.(ctx);
 
-  // Buildings: native renderer (compact / detailed) or batched silhouettes.
-  if (o.buildingsVisible && o.buildings && (o.appearance.style === 'silhouette' || atLeast(lod, 'near')) && (o.appearance.style === 'silhouette' || view === 'buildings' || view === 'roles')) {
+  // Buildings: native renderer (compact / detailed) or batched silhouettes. On satellite grounds the far raster stands
+  // for them above the fade band, whatever the level's hysteresis, so zooming either way crosses the same blend.
+  const farTown = !!o.farTown && o.buildingsVisible && !!o.buildings && view === 'buildings' && o.appearance.style !== 'silhouette' && o.appearance.diagnostic === 'none' && !o.renderer && !CITY_LOD_OFF;
+  if (o.buildingsVisible && o.buildings && (o.appearance.style === 'silhouette' || (farTown ? farTownBuildingsShown(mpp) : atLeast(lod, 'near'))) && (o.appearance.style === 'silhouette' || view === 'buildings' || view === 'roles')) {
     const footprint = o.appearance.style === 'silhouette', colors = buildingColors(o.appearance.colors, o.appearance.ambience);
     if (o.renderer && view === 'buildings' && !footprint) {
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
@@ -1045,6 +1052,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       if (selectedPath) { ctx.strokeStyle = '#197ea4'; ctx.lineWidth = px(2); ctx.stroke(selectedPath); }
     }
   }
+  if (farTown) drawFarTown(ctx, scene, o.farBuildings ?? o.buildings!, { viewport, mpp, dpr: o.dpr, palette, night, custom: o.colors?.building, alpha: farTownAlpha(mpp), onReady: o.onTexturesReady });
 
   if (night && o.appearance.diagnostic === 'none') {
     if (!o.deferNightTown) drawNightTown(ctx, scene, viewport, mpp, parchment, layers.streets);

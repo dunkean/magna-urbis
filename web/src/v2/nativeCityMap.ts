@@ -271,7 +271,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
         for (const entry of entries) {
           const frame = drawCity(ctx, entry.plan, cityDrawOptions({ appearance, city, frame: { viewport, mpp, dpr }, lod, layers, glFrame,
             labelsAllowed: visibility.labels !== false, buildingAppearance,
-            page: { buildings: entry.buildings, buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses), onTexturesReady: invalidate,
+            page: { buildings: entry.buildings, farBuildings: entry.large?.base, buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses), onTexturesReady: invalidate,
             refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
             beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? (hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp })) : undefined,
             renderer: entry.houses && { draw(houseCtx, options) {

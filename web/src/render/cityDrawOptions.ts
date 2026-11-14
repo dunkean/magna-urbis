@@ -42,7 +42,7 @@ export interface CityDrawInput {
   /** Page switch for names and glyphs (V2 export layer); the appearance still has to enable them. */
   labelsAllowed: boolean;
   buildingAppearance: UrbanBuildingAppearance;
-  page: Pick<CityDrawOptions, 'buildings' | 'buildingsVisible' | 'renderer' | 'refusedParcels' | 'beforeBuildings' | 'selectedBuilding' | 'selectedParcel' | 'readableGardens' | 'onTexturesReady' | 'deferNightTown'>;
+  page: Pick<CityDrawOptions, 'buildings' | 'farBuildings' | 'buildingsVisible' | 'renderer' | 'refusedParcels' | 'beforeBuildings' | 'selectedBuilding' | 'selectedParcel' | 'readableGardens' | 'onTexturesReady' | 'deferNightTown'>;
 }
 
 export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
@@ -54,7 +54,7 @@ export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
     layers: cityCanvasLayers(i.layers, i.glFrame), width: finite(i.city.width, .6, 0, 5),
     labels: i.labelsAllowed && a.cartography.labels, text: c.text, textPalette: terrainStyle(c.variant, colors).palette,
     appearance: i.buildingAppearance, textured: i.city.textured, roadLook: c.networks.roads.look, groundBlend: i.city.groundBlend === 'blended',
-    deferNightTown: true, ...i.page,
+    deferNightTown: true, farTown: !!a.traits?.satelliteVariant, ...i.page,
     beforeBuildings: ctx => {
       if (c.vegetation.procedural) clearCityGroundUnderCanopy(ctx, i.frame.viewport, i.frame.mpp);
       i.page.beforeBuildings?.(ctx);
