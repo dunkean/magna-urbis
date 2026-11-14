@@ -3,6 +3,7 @@ import type { RoadOutput, SettlementOutput, SettlementRequest, SettlementRespons
 import type { ResourcePayload } from './resources';
 import { nativeRasterClient } from './nativeEngine';
 import { validatePhysicalTerrain } from './settlements';
+import { roadSitesOf } from './roadSites';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
 export interface SettlementEngine { run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse>; dispose?(): void }
@@ -47,9 +48,7 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
           const start = performance.now();
           settlements = JSON.parse(terrain.place(request.seed, JSON.stringify(request.place))) as SettlementOutput;
           settlements.ms = performance.now() - start;
-          // Same as settlements.ts roadSitesOf (not imported: settlements.ts imports this module).
-          sites = [...settlements.settlements.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })),
-            ...(settlements.activities ?? []).map(a => ({ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent }))];
+          sites = roadSitesOf(settlements);
         }
         let roads: RoadOutput | null = null;
         if (request.roads) {

@@ -1,5 +1,6 @@
 import type { World, Settlement, Options, SiteArchetype, SiteLayer } from '../gen/types';
-import type { SettlementOutput, RoadOutput, SettlementRaster, RoadSite, ActivitySite } from '../../../rust/bridge/settlements';
+import type { SettlementOutput, RoadOutput, SettlementRaster, RoadSite } from '../../../rust/bridge/settlements';
+import { roadSitesOf } from '../../../rust/bridge/roadSites';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { Rng } from '../gen/core/rng';
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
@@ -15,11 +16,6 @@ import { effectiveTerrainSettings } from './terrainSettings';
 import type { ResourcePayload } from '../../../rust/bridge/resources';
 
 export interface RustRegionSnapshot {placement:SettlementOutput;roads:RoadOutput|null}
-/** Road endpoints: settlements, then activity access points (settlements.ts roadSitesOf; not imported to keep that bundle lazy). */
-const roadSitesOf=(o:SettlementOutput):RoadSite[]=>[...o.settlements.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius})),
-  ...(o.activities??[]).flatMap(a=>a.accessClass==='none'?[]:[{key:a.id,population:0,culture:a.culture,center:a.access,radius:0,access:a.accessClass,parent:a.parent,...accessLine(a)}])];
-/** A remote place's access line (stair, tunnel, causeway; settlements.ts accessLineOf): the router cuts it at the first road it meets. */
-const accessLine=(a:ActivitySite):{approach?:RoadSite['center'][]}=>{const g=a.kind==='remote'?a.installations?.find(g=>!g.closed&&g.points.length>=2&&g.points[g.points.length-1].x===a.access.x&&g.points[g.points.length-1].y===a.access.y):undefined;return g?{approach:g.points}:{};};
 let retainedEngine: { runtimeKey: string; terrainKey: string; engine: SettlementEngine } | undefined;
 /** Routing resolution controls sampling, not the information content of an imported coarse heightmap. */
 export function resampleRegionalRaster(source: SettlementRaster, n: number): SettlementRaster {
