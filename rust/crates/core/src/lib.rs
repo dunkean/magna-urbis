@@ -7,6 +7,8 @@ pub mod render_geometry;
 pub mod resources;
 pub mod settlements;
 pub mod site;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod threads;
 pub mod urban;
 
 pub use magna_urbis_terrain::*;

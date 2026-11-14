@@ -11,6 +11,8 @@ use std::{path::PathBuf, sync::Mutex, time::{Duration, Instant}};
 #[derive(Deserialize)]
 struct Call { path: String, request: String, stage: String, city: String }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Same thread policy as the engine start-up.
+    eprintln!("{}", magna_urbis_core::threads::configure(2));
     let a: Vec<_> = std::env::args().collect();
     let manifest=PathBuf::from(a.get(1).ok_or("MANIFEST OUTPUT [REPEATS] [START_DELAY_SECONDS]")?);
     let root=manifest.parent().unwrap();

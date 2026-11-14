@@ -9,8 +9,9 @@ pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
         return;
     }
     let allocations: HashMap<_, _> = pr.allocations.iter().map(|a| (a.parcel_id.as_str(), a)).collect();
-    let rings: Vec<_> = layout.into_iter().flat_map(|l| &l.enclosures).map(|e|Shape { outer:e.path.clone(),holes:vec![] }).collect();
-    let inside = |p: &Parcel| rings.iter().any(|r|g::contains(r,g::interior_point(&p.shape)));
+    // Circuits indexed by ordinate (same even/odd arithmetic as `contains`): a town wall has thousands of vertices.
+    let rings: Vec<_> = layout.into_iter().flat_map(|l| &l.enclosures).map(|e|g::ContainmentIndex::new(&Shape { outer:e.path.clone(),holes:vec![] })).collect();
+    let inside = |p: &Parcel| rings.iter().any(|r|r.contains(g::interior_point(&p.shape)));
     let wall_land: Vec<_> = part.parcels.iter().map(|p|p.use_kind == "reserve" && p.reason == "reserve" && inside(p)).collect();
     let ids: HashMap<_, _> = part.parcels.iter().enumerate().map(|(i,p)| (p.id.as_str(), i)).collect();
     let mut neighbours = vec![vec![]; part.parcels.len()];

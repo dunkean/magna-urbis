@@ -1549,12 +1549,8 @@ fn handle_one(stream: &mut TcpStream, sessions: &Mutex<Sessions>, bytes: &mut Ve
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Leave two cores to the desktop: rayon's global pool reads this on first use.
-    if std::env::var_os("RAYON_NUM_THREADS").is_none() {
-        let n = std::thread::available_parallelism().map_or(2, |n| n.get());
-        // SAFETY: single-threaded here, before any thread or pool is spawned.
-        unsafe { std::env::set_var("RAYON_NUM_THREADS", n.saturating_sub(2).max(1).to_string()) };
-    }
+    // No background throttling, two logical processors left to the desktop; before any pool use.
+    eprintln!("{}", magna_urbis_core::threads::configure(2));
     let mut addr: SocketAddr = std::env::var("MAGNA_LOCAL_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:8791".into())
         .parse()?;

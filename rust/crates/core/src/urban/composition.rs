@@ -1486,6 +1486,160 @@ fn buffered(shapes: &[Shape], margin: f64) -> Option<geo::MultiPolygon<f64>> {
     parts.pop()
 }
 
+/// Reach (m) that `buffered(_, VOID_MARGIN)` is sure to cover round each of
+/// its shapes: its round joins are polygons inscribed in the arc (0.2 rad
+/// steps, so radius × cos 0.1), less a metre for the overlay's snapping grid.
+const VOID_HELD: f64 = VOID_MARGIN * 0.995 - 1.0;
+/// Most cells of the raster that bounds the empty land of one circuit.
+const VOID_CELLS: f64 = 16.0e6;
+
+/// Whether the land of the circuit `old` farther than `VOID_MARGIN` from
+/// every shape of `held` may hold one piece of `floor` m² or more. A raster
+/// bound that errs only towards `true`, so that `fit_to_built` runs its
+/// overlays of the whole town (`buffered`, then the difference) only for a
+/// circuit that may give land back: a dense town proves in a fraction of a
+/// second that its wall stays where it is.
+///
+/// A grid cell is held when every point of it lies within `VOID_HELD` of a
+/// point of a held shape (a seed cell holds a point of the shape; a cell is
+/// held by a seed cell whose centre lies within `VOID_HELD / cell - √2`
+/// cells of its own). Every other cell that meets the circuit counts whole,
+/// water included; one empty piece is connected, so it lies within one
+/// 8-connected group of such cells, whose area bounds it. `held` must be
+/// shapes that the overlay grows (a subset is fine: fewer seeds only weaken
+/// the bound); a shape that is not a simple polygon of positive area seeds
+/// nothing.
+fn may_hold_void(old: &Shape, held: &[&Shape], floor: f64) -> bool {
+    let (x0, y0, x1, y1) = g::bbox(old);
+    let (w, h) = (x1 - x0, y1 - y0);
+    if !(w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0 && old.outer.len() >= 3) { return true; }
+    let c = (w * h / VOID_CELLS).sqrt().max(2.0);
+    // Holding radius in cells, centre to centre.
+    let r = VOID_HELD / c - std::f64::consts::SQRT_2;
+    if r < 2.0 { return true; }
+    let cap = r.floor() as usize + 1;
+    let m = cap + 1;
+    let (ox, oy) = (x0 - m as f64 * c, y0 - m as f64 * c);
+    let nx = (w / c).ceil() as usize + 2 * m + 1;
+    let ny = (h / c).ceil() as usize + 2 * m + 1;
+    let at = |p: Point| -> Option<usize> {
+        let (i, j) = (((p.x - ox) / c).floor(), ((p.y - oy) / c).floor());
+        (i >= 0.0 && j >= 0.0 && (i as usize) < nx && (j as usize) < ny).then(|| j as usize * nx + i as usize)
+    };
+    // Seed cells: points of the outlines every half cell, and the cells whose centre lies inside.
+    let seeds: Vec<Vec<usize>> = super::par::map(held, |_, s| {
+        let mut cells = vec![];
+        if !(g::area(s) > 1.0 && g::simple(s)) { return cells; }
+        for ring in std::iter::once(&s.outer).chain(&s.holes) {
+            for k in 0..ring.len() {
+                let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+                let n = ((b.x - a.x).hypot(b.y - a.y) / (0.5 * c)).ceil().max(1.0) as usize;
+                for t in 0..n {
+                    let t = t as f64 / n as f64;
+                    cells.extend(at(Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }));
+                }
+            }
+        }
+        let (sx0, sy0, sx1, sy1) = g::bbox(s);
+        let span = |lo: f64, hi: f64, o: f64, n: usize| {
+            let a = ((lo - o) / c - 0.5).ceil().max(0.0) as usize;
+            let b = ((hi - o) / c - 0.5).floor();
+            (a, if b < 0.0 { None } else { Some((b as usize).min(n - 1)) })
+        };
+        let ((i0, i1), (j0, j1)) = (span(sx0, sx1, ox, nx), span(sy0, sy1, oy, ny));
+        if let (Some(i1), Some(j1)) = (i1, j1) {
+            for j in j0..=j1 {
+                for i in i0..=i1 {
+                    if g::contains(s, Point { x: ox + (i as f64 + 0.5) * c, y: oy + (j as f64 + 0.5) * c }) { cells.push(j * nx + i); }
+                }
+            }
+        }
+        cells
+    });
+    let mut seed = vec![false; nx * ny];
+    for i in seeds.into_iter().flatten() { seed[i] = true; }
+    // Per row, the distance (cells, capped) to the nearest seed of that row.
+    let rows: Vec<Vec<u8>> = super::par::range(ny, |j| {
+        let row = &seed[j * nx..(j + 1) * nx];
+        let mut d = vec![cap as u8; nx];
+        let mut last: Option<usize> = None;
+        for i in 0..nx {
+            if row[i] { last = Some(i); }
+            if let Some(l) = last { d[i] = (i - l).min(cap) as u8; }
+        }
+        last = None;
+        for i in (0..nx).rev() {
+            if row[i] { last = Some(i); }
+            if let Some(l) = last { d[i] = d[i].min((l - i).min(cap) as u8); }
+        }
+        d
+    });
+    drop(seed);
+    // The circuit's boundary cells and their neighbours: a cell that meets the
+    // circuit has its centre inside or is crossed by the outline.
+    let mut edge = vec![false; nx * ny];
+    for k in 0..old.outer.len() {
+        let (a, b) = (old.outer[k], old.outer[(k + 1) % old.outer.len()]);
+        let n = ((b.x - a.x).hypot(b.y - a.y) / (0.5 * c)).ceil().max(1.0) as usize;
+        for t in 0..=n {
+            let t = t as f64 / n as f64;
+            let p = Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+            let (i, j) = (((p.x - ox) / c).floor() as i64, ((p.y - oy) / c).floor() as i64);
+            for (di, dj) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (0, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
+                let (i, j) = (i + di, j + dj);
+                if i >= 0 && j >= 0 && (i as usize) < nx && (j as usize) < ny { edge[j as usize * nx + i as usize] = true; }
+            }
+        }
+    }
+    let r2 = r * r;
+    let open: Vec<Vec<bool>> = super::par::range(ny, |j| {
+        let y = oy + (j as f64 + 0.5) * c;
+        let mut xs: Vec<f64> = old.outer.iter().zip(old.outer.iter().cycle().skip(1)).take(old.outer.len())
+            .filter(|(a, b)| (a.y > y) != (b.y > y))
+            .map(|(a, b)| (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x).collect();
+        xs.sort_by(f64::total_cmp);
+        let mut inside = vec![false; nx];
+        for pair in xs.chunks_exact(2) {
+            let a = ((pair[0] - ox) / c - 0.5).ceil().max(0.0) as usize;
+            let b = ((pair[1] - ox) / c - 0.5).floor();
+            if b < 0.0 { continue; }
+            for v in inside.iter_mut().take((b as usize).min(nx - 1) + 1).skip(a) { *v = true; }
+        }
+        (0..nx).map(|i| {
+            if !(inside[i] || edge[j * nx + i]) { return false; }
+            let covered = (j.saturating_sub(cap)..(j + cap + 1).min(ny)).any(|k| {
+                let (dx, dy) = (f64::from(rows[k][i]), j.abs_diff(k) as f64);
+                rows[k][i] < cap as u8 && dx * dx + dy * dy <= r2
+            });
+            !covered
+        }).collect()
+    });
+    drop(rows);
+    drop(edge);
+    // 8-connected groups of open cells, by area.
+    let mut open: Vec<bool> = open.into_iter().flatten().collect();
+    let most = (floor / (c * c)).ceil() as usize;
+    let mut stack = vec![];
+    for start in 0..open.len() {
+        if !open[start] { continue; }
+        open[start] = false;
+        stack.push(start);
+        let mut count = 0usize;
+        while let Some(k) = stack.pop() {
+            count += 1;
+            if count >= most { return true; }
+            let (i, j) = ((k % nx) as i64, (k / nx) as i64);
+            for (di, dj) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
+                let (i, j) = (i + di, j + dj);
+                if i < 0 || j < 0 || i as usize >= nx || j as usize >= ny { continue; }
+                let q = j as usize * nx + i as usize;
+                if open[q] { open[q] = false; stack.push(q); }
+            }
+        }
+    }
+    false
+}
+
 /// A town circuit holds its town: dry land more than `VOID_MARGIN` from any
 /// built lot, place or programme reservation (open spaces included) is
 /// empty; empty pieces of at least `max(share × circuit, VOID_MIN)` are
@@ -1507,11 +1661,30 @@ fn fit_to_built(layout: &mut super::Layout, population: u32, surface: Surface<'_
     let share = enclosed_open(&layout.culture, population).1;
     let reserved: std::collections::HashSet<_> = layout.programme.iter().flat_map(|p| p.reservations.iter().map(|r| r.block)).collect();
     let mut laps = super::network::Lap::new("fit");
-    let reach = street_reach(layout);
-    laps.lap("street_reach");
     let kept: Vec<(bool, &super::Block)> = layout.blocks.iter().enumerate()
         .filter(|(i, b)| matches!(b.kind.as_str(), "block" | "place") || reserved.contains(i))
         .map(|(i, b)| (reserved.contains(&i), b)).collect();
+    // First the circuits that may give land back (`may_hold_void`), from the
+    // shapes the overlay below grows whole whatever the streets: places,
+    // reservations, and the blocks or lots under `BIG_BLOCK` (`built_part`
+    // keeps those whole). A circuit proven full keeps its trace, exactly as
+    // the overlay would decide, without the street reach or the overlay.
+    let whole: Vec<(&Shape, (f64, f64, f64, f64))> = kept.iter()
+        .filter(|(held, b)| b.kind != "block" || *held || built_lots.is_none() && g::area(&b.shape) < BIG_BLOCK)
+        .map(|(_, b)| &b.shape)
+        .chain(built_lots.unwrap_or_default().iter().filter(|lot| g::area(lot) < BIG_BLOCK))
+        .map(|s| (s, g::bbox(s))).collect();
+    let open: Vec<bool> = layout.enclosures.iter().map(|e| e.purpose.is_empty() && e.path.len() >= 4 && {
+        let old = g::normalized(Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] });
+        let (x0, y0, x1, y1) = g::bbox(&old);
+        let held: Vec<&Shape> = whole.iter().filter(|(_, b)| b.0 <= x1 && b.2 >= x0 && b.1 <= y1 && b.3 >= y0).map(|(s, _)| *s).collect();
+        may_hold_void(&old, &held, (share * g::area(&old)).max(VOID_MIN))
+    }).collect();
+    drop(whole);
+    laps.lap("void_bound");
+    if !open.contains(&true) { return; }
+    let reach = street_reach(layout);
+    laps.lap("street_reach");
     // Per-block and per-lot clips are independent: in parallel, flattened in input order.
     let occupied: Vec<(Shape, (f64, f64, f64, f64))> = super::par::map(&kept, |_, &(held, b)|
             if b.kind != "block" || held { vec![b.shape.clone()] }
@@ -1525,8 +1698,8 @@ fn fit_to_built(layout: &mut super::Layout, population: u32, surface: Surface<'_
     let mut result = Vec::with_capacity(layout.enclosures.len());
     let mut refitted = false;
     laps.lap("occupied");
-    for e in std::mem::take(&mut layout.enclosures) {
-        if !e.purpose.is_empty() || e.path.len() < 4 { result.push(e); continue; }
+    for (e, open) in std::mem::take(&mut layout.enclosures).into_iter().zip(open) {
+        if !open { result.push(e); continue; }
         let old = g::normalized(Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] });
         let (area, (x0, y0, x1, y1)) = (g::area(&old), g::bbox(&old));
         let near: Vec<Shape> = occupied.iter().filter(|(_, b)| b.0 <= x1 && b.2 >= x0 && b.1 <= y1 && b.3 >= y0)
@@ -1673,6 +1846,27 @@ mod built_fit_tests {
         let before = l.enclosures[0].path.clone();
         fit_enclosures(&mut l, 10000, surface, None);
         assert_eq!(l.enclosures[0].path, before);
+    }
+
+    /// The raster bound of the empty land: a circuit built lot by lot holds
+    /// no empty piece; a square of lots taken out leaves a piece of about
+    /// 2.7 ha beyond the margin, which the bound may not deny, but which is
+    /// smaller than the floor of a large circuit.
+    #[test]
+    fn void_bound_proves_full_circuits_and_never_denies_a_void() {
+        let old = g::rectangle(0., 0., 600., 400.);
+        let lots: Vec<Shape> = (0..30).flat_map(|i| (0..20).map(move |j| {
+            let (x, y) = (2. + 20. * f64::from(i), 2. + 20. * f64::from(j));
+            g::rectangle(x, y, x + 16., y + 16.)
+        })).collect();
+        let all: Vec<&Shape> = lots.iter().collect();
+        assert!(!may_hold_void(&old, &all, VOID_MIN));
+        let gap = |s: &&Shape| { let (x0, y0, ..) = g::bbox(s); !(160.0..380.0).contains(&x0) || !(100.0..320.0).contains(&y0) };
+        let holed: Vec<&Shape> = lots.iter().filter(gap).collect();
+        assert!(may_hold_void(&old, &holed, VOID_MIN));
+        assert!(!may_hold_void(&old, &holed, 60_000.0));
+        // Nothing built: the whole circuit is one empty piece.
+        assert!(may_hold_void(&old, &[], VOID_MIN));
     }
 
     /// The open land of a circuit comes from the culture data: gardens and a
