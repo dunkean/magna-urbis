@@ -1,7 +1,7 @@
 import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zones';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
-import { STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
+import { COAST_WAVES_DEFAULT, STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
 import { TEXT_GROUPS, NAME_LEVELS, nameLevelValue, DEFAULT_TEXT, type TextGroup, type NameLevel } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
 import { writeSettingPath, type ParameterField } from './parameterForm';
@@ -85,6 +85,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   flag('composition.networks.roads.visible', 'Show roads', 'Afficher les routes'), choice('composition.networks.roads.look', 'Road look', 'Aspect des routes', [...networkEntries, ['wash', 'Wash', 'Lavis']]),
   number('composition.networks.roads.emphasis', 'Road emphasis', 'Présence des routes', .5, 1.5, .05),
   flag('composition.networks.water.visible', 'Show rivers and water', 'Afficher les rivières et l’eau'), choice('composition.networks.water.look', 'Water look', 'Aspect de l’eau', networkEntries),
+  { ...flag('composition.networks.water.waves', 'Coastal swell and surf (satellite)', 'Houle et écume côtières (satellite)'), defaultValue: COAST_WAVES_DEFAULT },
   flag('composition.buildings.visible', 'Show buildings', 'Afficher les bâtiments'),
   choice('composition.buildings.look', 'Building look', 'Aspect des bâtiments', [['footprints', 'Footprints', 'Emprises'], ['cartographic-roofs', 'Cartographic roofs', 'Toits cartographiques'], ['simple-volumes', 'Simple volumes', 'Volumes simples'], ['detailed-volumes', 'Detailed volumes', 'Volumes détaillés']]),
   flag('composition.buildings.parcels', 'Parcels', 'Parcelles'), flag('composition.buildings.blocks', 'Blocks', 'Îlots'), flag('composition.buildings.districts', 'Districts', 'Quartiers'),
@@ -106,7 +107,7 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   landuse: [],
   ambience: ['composition.effects.ambience', 'composition.effects.season', ...SEASON_CALENDAR_FIELDS.map(f => `composition.effects.calendar.${f.key}`), 'composition.effects.relief', 'composition.effects.lighting.enabled', 'composition.effects.lighting.azimuth', 'composition.effects.lighting.elevation', 'composition.effects.lighting.strength', 'composition.effects.lighting.exaggeration'],
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
-  water: ['composition.networks.water.visible', 'composition.networks.water.look'],
+  water: ['composition.networks.water.visible', 'composition.networks.water.look', 'composition.networks.water.waves'],
   buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
   text: ['composition.text.visible', ...NAME_LEVELS.map(g=>`composition.text.levels.${g}`), 'composition.text.look', 'composition.text.size', 'composition.text.density', 'composition.text.halo', ...TEXT_GROUPS.map(g => `composition.text.groups.${g}`)],
   diagnostics: [],
@@ -194,7 +195,7 @@ const potentialLabels: Record<string, readonly [string, string]> = {
 };
 export const diagnosticFields = [choice('diagnostic', 'Diagnostic overlay', 'Couche de diagnostic', DIAGNOSTICS.map(({ id }) => [id, ...diagnosticLabels[id]] as const)),
   choice('resourcePotential', 'Resource shown', 'Ressource affichée', POTENTIAL_IDS.map(id => [id, ...potentialLabels[id]] as const))];
-const perspectiveFields = [flag('city.plan', 'City plan in 3D', 'Plan de ville en 3D'),
+const perspectiveFields = [flag('city.plan', 'Urban plan', 'Plan urbain'),
   choice('city.colors', 'Building colours in 3D', 'Couleurs des bâtiments en 3D', [['materials', 'Materials', 'Matériaux'], ['uses', 'Uses', 'Usages']]),
   number('city.exaggeration', 'Vertical exaggeration in 3D', 'Exagération verticale en 3D', 1, 5, .1),
   choice('city.refinement', 'Surface refinement in 3D', 'Raffinement de surface en 3D', [['source', 'Source heights', 'Altitudes source'], ['noise', 'Multiscale detail', 'Détail multi-échelle']])];

@@ -72,6 +72,8 @@ export interface CitySiteVisual {
   programme?: Record<string, unknown>; surface: { outer: { x: number; y: number }[]; holes: { x: number; y: number }[][] }[];
   preview: boolean; ground_z_m: number; entrance: { x: number; y: number }; access_id: string;
 }
+/** Site count above which the decoded programmes drop their housing-need evidence (towns of several hundred thousand people). */
+const LARGE_SITE_SET = 50000;
 /** The buffer each decoded site array came from: worker/page hops transfer it instead of cloning the objects (v2/urbanPack.ts). */
 const siteVisualPacks = new WeakMap<object, ArrayBuffer>();
 export const siteVisualsPackOf = (sites: object): ArrayBuffer | undefined => siteVisualPacks.get(sites);
@@ -114,6 +116,8 @@ function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
       surface.push({ outer, holes });
     }
     const programme = programmes[i];
+    // Very large towns: the housing-need evidence (about a third of each programme) is dropped; no map or 3D view reads it.
+    if (programme && n > LARGE_SITE_SET) programme.housing_floor_need = undefined;
     sites.push({ id: ids[i], parcel_id: parcels[i], offset: i, function: functions[fn[i]], culture: cultures[culture[i]]!,
       ...(programme ? { programme } : {}), surface, preview: preview[i] === 1, ground_z_m: ground[i],
       entrance: { x: entrance[2 * i] + ox, y: entrance[2 * i + 1] + oy }, access_id: accesses[i] });

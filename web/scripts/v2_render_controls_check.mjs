@@ -1,93 +1,117 @@
-import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
-/** Configure every retained-map render family without invoking generation. */
-import { chromium } from 'playwright';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+/** Real-browser display regression. It never replaces a worker or a rendering backend. */
 import assert from 'node:assert/strict';
-
-const url = process.env.V2_CHECK_URL ?? 'http://127.0.0.1:5175/v2.html';
-const output = resolve('out/v2-render-controls'); await mkdir(output, { recursive: true });
-const report = { time: new Date().toISOString(), url, errors: [], checks: {} };
-const browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true,
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-page.setDefaultTimeout(20000); await page.emulateMedia({ reducedMotion: 'reduce' });
-page.on('pageerror', error => report.errors.push(error.message));
-await page.addInitScript(() => {
-  window.__renderGenerationActions = [];
-  const post = Worker.prototype.postMessage;
-  Worker.prototype.postMessage = function (...args) {
-    if (args[0]?.action && ['all', 'terrain', 'region', 'roads', 'town', 'towns'].includes(args[0].action))
-      window.__renderGenerationActions.push(args[0].action);
-    return post.apply(this, args);
-  };
-});
-const field = path => `#render-settings [data-setting-path="appearance.${path}"]`;
-async function reveal(selector) {
-  await page.locator(selector).evaluate(element => {
-    for (let parent = element.parentElement; parent; parent = parent.parentElement)
-      if (parent instanceof HTMLDetailsElement) parent.open = true;
-  });
-}
-async function input(path, value) { const selector = field(path); await reveal(selector); await page.locator(selector).fill(String(value)); await page.locator(selector).blur(); }
-async function select(path, value) { const selector = field(path); await reveal(selector); await page.locator(selector).selectOption(value); }
-async function flag(path, value) { const selector = field(path); await reveal(selector); await page.locator(selector).setChecked(value); }
-async function recipe() {
-  await page.locator('#expert-open').evaluate(element => { for (let p = element.parentElement; p; p = p.parentElement) if (p instanceof HTMLDetailsElement) p.open = true; });
-  await page.locator('#expert-open').click(); const value = JSON.parse(await page.locator('#expert-json').inputValue());
-  await page.locator('#expert-dialog [data-close]').first().click(); return value;
-}
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+const out = new URL('../out/workbench-layout/', import.meta.url);
+await mkdir(out, { recursive: true });
+const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const errors = [];
+let page;
 try {
-  console.log(`Render controls acceptance: ${url}`);
-  await page.goto(url); await page.locator('#render-settings').waitFor(); await page.evaluate(() => document.fonts.ready);
-  assert.equal(await page.locator('html').getAttribute('lang'), 'en');
-  const original = await recipe();
-  await page.locator('#render-settings>summary').click();
-  assert.equal(await page.locator(field('renderer')).isVisible(), true);
-  await select('renderer', 'bench');
-  await flag('contours', false); await flag('landuse', false); await flag('labels', false); await flag('legend', true); await flag('cartouche', true);
-  await flag('painted', true); await select('vegetation', 'canopy');
-  await input('composition.effects.lighting.azimuth', 123); await input('composition.effects.lighting.strength', 2.2);
-  await flag('terrainLayers.hypsometry', false); await flag('lakes', false); await flag('oxbows', false);
-  await select('city.view', 'roles'); await select('city.palette', 'parchment');
-  await select('city.buildingStyle', 'geometric'); await select('city.diagnostic', 'height');
-  await flag('textured', false); await flag('city.painted', true); await select('city.groundBlend', 'blended');
-  await input('city.opacity', .4); await input('city.width', 1.1); await flag('city.layers.fronts', true);
-  await page.locator('#map-style').selectOption('render-v2');
-  await input('composition.effects.season', .8);
-  await page.locator('#map-style').selectOption('fantasy-color');
-  await input('fantasy.density', 1.4); await input('fantasy.size', .65); await input('fantasy.spacing', .8); await flag('fantasy.followLanduse', true);
-  await select('diagnostic', 'v-basins');
-  const selected = await recipe();
-  assert.deepEqual(selected.options, original.options); assert.equal(selected.extent, original.extent);
-  assert.deepEqual(selected.terrain, original.terrain); assert.equal(selected.settlementCount, original.settlementCount);
-  assert.equal(selected.appearance.terrainStyle, 'fantasy-color'); assert.equal(selected.appearance.composition.effects.season, .8);
-  assert.equal(selected.appearance.composition.effects.lighting.azimuth, 123); assert.equal(selected.appearance.composition.effects.lighting.strength, 2.2);
-  assert.equal(selected.appearance.city.view, 'roles'); assert.equal(selected.appearance.city.width, 1.1);
-  assert.equal(selected.appearance.city.layers.fronts, true); assert.equal(selected.appearance.fantasy.density, 1.4);
-  assert.equal(selected.appearance.diagnostic, 'v-basins');
-  assert.equal(await page.locator(`${field('diagnostic')} option[value="basins"]`).evaluate(option => option.disabled), true);
-  report.checks.recipe = selected.appearance;
-  await page.locator('#render-settings').evaluate(element => { element.open = true; });
-  await page.locator('#render-settings .v2-render-popup').evaluate(element => { element.scrollTop = 0; });
-  await page.screenshot({ path: resolve(output, 'desktop-render-panel-en.png') });
-  await chooseWorkshopPreference(page, 'language', 'fr');
-  assert.match(await page.locator('#render-settings>summary').textContent(), /Apparence/);
-  assert.deepEqual(await recipe(), selected);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('#render-settings').evaluate(element => { element.open = true; });
-  await page.locator('#render-settings .v2-render-popup').evaluate(element => { element.scrollTop = 0; });
-  const bounds = await page.locator('#render-settings .v2-render-popup').boundingBox();
-  assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391 && bounds.y >= 0 && bounds.y + bounds.height <= 845, JSON.stringify(bounds));
-  await page.screenshot({ path: resolve(output, 'mobile-render-panel-fr.png') });
-  await chooseWorkshopPreference(page, 'language', 'en'); await page.setViewportSize({ width: 1440, height: 1000 });
-  assert.deepEqual(await recipe(), selected);
-  assert.deepEqual(await page.evaluate(() => window.__renderGenerationActions), []);
-  assert.deepEqual(report.errors, []);
-  report.checks = { ...report.checks, enFrRetained: true, responsivePopup: bounds, generationActions: [],
-    fields: await page.locator('#render-settings [data-setting-path]').count() };
-  report.ok = true; console.log(`Render controls acceptance passed. Artifacts: ${output}`);
+  page = await browser.newPage({ viewport: { width: 1500, height: 1000 }, acceptDownloads: true });
+  page.setDefaultTimeout(60000);
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    window.generationRequests = [];
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function(message, ...args) {
+      if (message?.action && message.action !== 'serialize' && message?.settings) window.generationRequests.push({ action: message.action, keys: message.keys });
+      return send.call(this, message, ...args);
+    };
+  });
+  await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr`);
+  await page.locator('#boot-splash').waitFor({ state: 'hidden' });
+  const fixture = JSON.parse(await readFile(new URL('fixture.json', out), 'utf8'));
+  const engineUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/engine.ts', import.meta.url)).replaceAll('\\', '/');
+  const fixtureText = await page.evaluate(async ({ fixture, engineUrl }) => {
+    const { terrainCacheKey } = await import(engineUrl);
+    fixture.world.stats['v2.terrainKey'] = terrainCacheKey(fixture.settings);
+    return JSON.stringify(fixture);
+  }, { fixture, engineUrl });
+  await page.locator('#import-open').click();
+  await page.locator('#project-file').setInputFiles({ name: 'render-controls.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText) });
+  await page.locator('#import-dialog').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
+  const exportProject = async () => {
+    await page.locator('#export-open').click(); await page.locator('#export-format').selectOption('project');
+    const download = page.waitForEvent('download'); await page.locator('#export-go').click();
+    return JSON.parse(await readFile(await (await download).path(), 'utf8'));
+  };
+  const original = await exportProject();
+  assert.equal(!!original.settings.appearance.textured, false);
+  const advanced = page.locator('.view-strip > .workbench-advanced');
+  const flags = ['appearance.composition.ground.contours', 'appearance.composition.networks.water.visible', 'appearance.composition.text.visible', 'appearance.city.plan', 'appearance.composition.buildings.visible'];
+  await page.evaluate(paths => {
+    window.sharedFlags = paths.map(path => document.querySelector(`[data-setting-path="${path}"]`));
+  }, flags);
+  await page.locator('#map-advanced-open').click();
+  await advanced.locator('[data-render-pass=ground]').waitFor();
+  assert.equal(await advanced.locator('.render-pass-card').count(), 11);
+  await page.screenshot({ path: fileURLToPath(new URL('render-advanced-overview.png', out)) });
+  await advanced.locator('[data-render-pass=ground] > details > summary').click();
+  await advanced.locator('[data-render-pass=buildings] > details > summary').click();
+  assert(await advanced.locator('[data-setting-path="appearance.composition.ground.look"]').isVisible());
+  assert(await advanced.locator('[data-setting-path="appearance.textured"]').isVisible());
+  assert.equal(await page.locator('.toolbar-row [data-city-display]').count(), 0);
+  await page.screenshot({ path: fileURLToPath(new URL('render-advanced-2d.png', out)) });
+  await page.keyboard.press('Escape');
+  assert.deepEqual((await exportProject()).settings, original.settings, 'opening Advanced is read-only');
+  for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
+  assert(await page.evaluate(paths => paths.every((path, i) => window.sharedFlags[i] === document.querySelector(`[data-setting-path="${path}"]`)), flags));
+  await page.locator('#view3d').click();
+  const nav = page.locator('.toolbar-row [data-navigation]'); await nav.waitFor();
+  await page.locator('#map-style').selectOption('satellite');
+  for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
+  assert.equal(await page.locator('.toolbar-row [data-ground]').count(), 0);
+  assert.equal(await page.locator('.toolbar-row [data-textured]:visible,.toolbar-row [data-plan]:visible').count(), 0);
+  assert(await page.locator('.toolbar-row #road-display').isVisible());
+  await page.locator('#map-advanced-open').click();
+  assert(await advanced.locator('[data-render-pass=ground] > details').evaluate(el => el.open));
+  assert(await advanced.locator('[data-ground]').isVisible());
+  await advanced.locator('[data-ground]').selectOption('map');
+  await page.keyboard.press('Escape');
+  await page.locator('#map-style').selectOption('parchment');
+  await page.locator('#map-style').selectOption('satellite');
+  await page.locator('#map-advanced-open').click();
+  assert.equal(await advanced.locator('[data-ground]').inputValue(), 'render-v2', 'a new preset clears the old ground override');
+  await advanced.locator('[data-render-pass=water] .render-pass-source select').selectOption('cadastre');
+  await advanced.locator('[data-render-pass=vegetation] .render-pass-source select').selectOption('parchment');
+  const vegetation = advanced.locator('[data-pass-switch="appearance.composition.vegetation.look"]');
+  await vegetation.uncheck(); await vegetation.check();
+  await page.screenshot({ path: fileURLToPath(new URL('render-advanced-3d.png', out)) });
+  await page.keyboard.press('Escape');
+  const mixed = await exportProject();
+  assert.equal(mixed.settings.appearance.composition.ground.look, 'satellite');
+  assert.equal(mixed.settings.appearance.composition.networks.water.look, 'ink');
+  assert.equal(mixed.settings.appearance.composition.vegetation.look, 'symbols');
+  assert.equal(mixed.settings.appearance.city?.ground, undefined);
+  assert.deepEqual(mixed.world, original.world, 'style composition leaves every generated product untouched');
+  await nav.selectOption('fly');
+  const canvas = page.locator('.map-area > .city3d canvas').first(); await canvas.focus();
+  const initial = await page.evaluate(() => window.__v2Test.camera3d());
+  assert.equal(initial.navigation, 'fly');
+  await page.keyboard.down('Space');
+  await page.waitForFunction(z => window.__v2Test.camera3d().flightAltitude > z + 3, initial.flightAltitude);
+  await page.keyboard.up('Space');
+  const raised = await page.evaluate(() => window.__v2Test.camera3d());
+  await page.evaluate(() => { const camera = window.__v2Test.camera3d(); window.__v2Test.setCamera3d({ ...camera, pitch: 0 }); });
+  await page.keyboard.down('KeyW');
+  await page.waitForFunction(({ x, y }) => { const camera = window.__v2Test.camera3d(); return Math.hypot(camera.x - x, camera.y - y) > 3; }, raised);
+  await page.keyboard.up('KeyW');
+  const flown = await page.evaluate(() => window.__v2Test.camera3d());
+  assert.equal(flown.flightAltitude, raised.flightAltitude, 'horizontal flight keeps absolute altitude');
+  await page.keyboard.press('Escape'); assert.equal(await nav.inputValue(), 'orbit');
+  await nav.selectOption('walk'); await canvas.focus();
+  assert.equal((await page.evaluate(() => window.__v2Test.camera3d())).navigation, 'walk');
+  await nav.selectOption('orbit');
+  await page.screenshot({ path: fileURLToPath(new URL('shared-toolbar-3d.png', out)) });
+  assert.deepEqual(await page.evaluate(() => window.generationRequests), [], 'display and flight never invoke generation');
+  assert.deepEqual(errors, []);
+  await writeFile(new URL('render-report.json', out), JSON.stringify({ checks: 'passed', generationRequests: [], errors }, null, 2));
+  console.log('Shared rendering, shader mix, ground and free-flight browser checks passed.');
 } catch (error) {
-  report.ok = false; report.failure = String(error.stack ?? error); process.exitCode = 1;
-  await page.screenshot({ path: resolve(output, 'failure.png') }).catch(() => {}); console.error(report.failure);
-} finally { await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2)); await browser.close(); }
+  console.error('Display diagnostics:', errors, await page?.locator('#toast').textContent());
+  await page?.screenshot({ path: fileURLToPath(new URL('render-failure.png', out)) });
+  throw error;
+} finally { await browser.close(); }

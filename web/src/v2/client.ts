@@ -39,6 +39,14 @@ function packedWorldInput(action: Action, world: World | undefined, retained?: {
   return { input: { ...input, world: packed.world }, transfer: packed.transfer };
 }
 
+/** Delay between replacing the engine worker after a heavy result and unpacking it: the terminated worker's heap is released. */
+const HEAVY_RELEASE_MS = 1000;
+/** The world without its towns (urban layers, native town snapshots): what a terrain-only request needs. */
+function townlessWorld(world: World): World {
+  const { v2RustCities: _cities, ...debug } = world.debug ?? {};
+  return { ...world, urban: undefined, settlements: world.settlements?.map(({ urban: _urban, ...place }) => place), ...(world.debug ? { debug } : {}) } as World;
+}
+
 /** Generation and drawing stay on separate workers; a failed job keeps the previous map. */
 export class StudioClient {
   onEngineReset?: () => void;
@@ -123,10 +131,21 @@ export class StudioClient {
       if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
       if (m.id !== this.pending?.id) return;
       if (m.type === 'progress') (this.pending!.progress ?? this.onProgress)(m.progress);
+      else if (m.type === 'result' && m.heavy) {
+        // A heavy town: free the worker's copy (its whole heap) before materialising the page's, then unpack.
+        const p = this.pending!; this.pending = null; this.replaceEngine();
+        setTimeout(() => { try { p.resolve(internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world)))); } catch (error) { p.reject(error instanceof Error ? error : new Error(String(error))); } }, HEAVY_RELEASE_MS);
+      }
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldPartitions(unpackWorldLanduse(m.world))); this.retained={id:m.id,world};p.resolve(world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
     this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
+  }
+  /** A fresh engine worker in place of the current one (its retained world and native session caches are dropped). */
+  private replaceEngine(): void {
+    this.failResources(new Error('The generation worker was replaced.'));
+    this.retained = undefined; this.engine.terminate();
+    this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
   }
   async init(): Promise<void> {
     let render:Worker;
@@ -196,7 +215,8 @@ export class StudioClient {
     const id = ++this.id;
     const payload = new Promise<ResourcePayload | undefined>((resolve, reject) => {
       this.resourceRequests.set(id, { resolve, reject });
-      try { const sent = packedWorldInput('region', world, this.retained); this.engine.postMessage({ type: 'resources', id, settings, ...sent.input }, sent.transfer); }
+      // Resources read the terrain only: a world the worker does not hold goes without its towns.
+      try { const sent = packedWorldInput('region', world === this.retained?.world ? world : townlessWorld(world), this.retained); this.engine.postMessage({ type: 'resources', id, settings, ...sent.input }, sent.transfer); }
       catch (error) { this.resourceRequests.delete(id); reject(error instanceof Error ? error : new Error(String(error))); }
     });
     this.resourceCache = { key, payload };

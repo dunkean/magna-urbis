@@ -101,7 +101,10 @@ function displayForestRequest(world: World, settings: V2Settings, resolved: Reso
   const configuration = effectiveTerrainSettings(settings, world.mapSize), overrides = resolved.vegetation.forest;
   const { enabled: _enabled, ...parameters } = overrides, forest = { ...configuration.forest, ...parameters, enabled: true };
   const decor = retainedDecorOf(world.terrain);
-  if (!decor && !Object.keys(parameters).length) return nativeTerrainLayer(world)?.v2ForestField;
+  const retained = !decor && !Object.keys(parameters).length ? nativeTerrainLayer(world)?.v2ForestField : undefined;
+  if (retained) return retained;
+  // Imported and older projects may have retained heights without a forest field.
+  // Build the display product over those heights instead of silently losing all trees.
   const climate = configuration.climateValues!, clearingProfile = resolved.traits.forestClearingProfile;
   // A town's own seed variations never move the woods of the whole map.
   const seed = seedSubset(world.seed, step => !step.startsWith('city/'));

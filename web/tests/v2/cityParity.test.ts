@@ -322,6 +322,28 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/ui/urbanSceneWorker.ts')).toContain("from './urbanSilhouettes'");
   });
 
+  it('resolves the road display (plan, none, rendered) once for 2D, 3D and both pages', () => {
+    for (const style of PRESET_IDS) {
+      const c = presetComposition(style), satellite = style.startsWith('satellite');
+      expect(c.networks.roads.surface, style).toBe(satellite ? 'rendered' : 'plan');
+      for (const target of ['view2d', 'view3d'] as const) {
+        const r = resolveAppearance({ style: 'parchment', composition: c }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(r.composition.networks.roads.look === 'rendered', `${style} ${target}`).toBe(satellite);
+        const frame = { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 };
+        expect(cityDrawOptions({ appearance: r, city: r.city, frame, lod: 'near', layers: r.city.layers, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r), page: { buildingsVisible: true } }).roadLook).toBe(r.composition.networks.roads.look);
+        expect(city3dPlanOptions(r).roadLook).toBe(r.composition.networks.roads.look);
+      }
+    }
+    // A vector style keeps its plan roads when the recipe asks for the painted surface.
+    const parchment = presetComposition('parchment'); parchment.networks.roads.surface = 'rendered';
+    expect(resolveAppearance({ style: 'parchment', composition: parchment }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').composition.networks.roads.look).toBe('wash');
+    const satellite = presetComposition('satellite'); satellite.networks.roads.surface = 'plan';
+    expect(resolveAppearance({ style: 'parchment', composition: satellite }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').composition.networks.roads.look).toBe('natural');
+    expect(() => validateComposition({ ...satellite, networks: { ...satellite.networks, roads: { ...satellite.networks.roads, surface: 'paint' } } })).toThrow(/surface/);
+    // Both pages set the biome soil of the rendered surface through the same ground tones.
+    for (const page of ['../../src/v2/benchRenderer.ts', '../../src/v2/urban3d.ts']) expect(read(page)).toContain('roadSoilOf(');
+  });
+
   it('gives the same drawCity options to both pages for one resolved appearance', () => {
     for (const style of ['parchment', 'parchment-light', 'satellite', 'satellite-light'] as const) {
       const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
@@ -359,6 +381,11 @@ describe('V2 and City Bench stay in sync', () => {
     // The 3D ground tile (drawGround) is a separate, footprint-only call.
     expect(bench).toContain('drawCity(ctx, cityPlan, cityDrawOptions(');
     expect(v2).toContain('drawCity(ctx, entry.plan, cityDrawOptions(');
+  });
+
+  it('passes the coastal swell option of the resolved water to the ground renderer on both pages', () => {
+    expect(read('../../src/v2/benchRenderer.ts')).toContain('coastWaves:r.composition.networks.water.waves');
+    expect(read('../../src/ui/citybench.ts')).toContain('coastWaves:c.networks.water.waves');
   });
 
   it('uses the one raster side rule in both pages', () => {

@@ -48,6 +48,13 @@ export function roadWidth(rank: RoadRank, metres: number, scale: number): number
   const s = ROAD_RANK_STYLE[rank];
   return Math.max(s.floor / scale, scale < .3 ? Math.min(metres, s.ceil / scale) : metres);
 }
+/** Width of the rendered surface: the true width, never below one screen pixel. Below a pixel the stroke keeps one
+ * pixel and the painter fades it by its true share of that pixel (`metres / width`), as a photograph averages a narrow
+ * road into its pixels: no cartographic floor, so roads do not read as a plan from afar. */
+export const renderedRoadWidth = (metres: number, scale: number): number => Math.max(metres, 1 / scale);
+/** Width a road look draws: the rendered surface takes the true width, the plan looks their floors and ceilings. */
+export const lookRoadWidth = (look: RoadStyle['look'], rank: RoadRank, metres: number, scale: number): number =>
+  look === 'rendered' ? renderedRoadWidth(metres, scale) : roadWidth(rank, metres, scale);
 
 export interface RoadStyle { look: import('./composition').RoadLook; /** 0.5–1.5, contrast against the ground. */ emphasis: number; night: boolean; colors?: RenderColors; /** Surface of the place (roadPavement.ts); absent = earth and gravel. */ pavement?: RoadPavement }
 /** Ink strokes of the current palette, so every backend draws the same map. */
@@ -64,15 +71,40 @@ const clamp = (v: number, lo: number, hi: number): number => v < lo ? lo : v > h
 export const emphasisAlpha = (emphasis: number): number => clamp(.5 + .5 * emphasis, .5, 1.25);
 
 // ---------------------------------------------------------------- the ground
-/** Colours of the ground under the roads: a base and each land cover, as drawn by the current ground. */
-export interface RoadGroundTones { key: string; base: Rgb; kinds: Partial<Record<LandKind, Rgb>> }
+/** Colours of the ground under the roads: a base and each land cover, as drawn by the current ground. `soil`: the open
+ * ground and the bare trodden earth of the map's biome, read by the rendered surface only (the plan looks ignore it). */
+export interface RoadGroundTones { key: string; base: Rgb; kinds: Partial<Record<LandKind, Rgb>>; soil?: BiomeSoil }
+/** Open ground of a biome seen from above (what the satellite ground paints between the land-use classes), and its bare
+ * soil, worn by traffic: a dirt road is that soil, never a foreign colour band. */
+export interface BiomeSoil { ground: Rgb; earth: Rgb }
+const BIOME_SOIL: Readonly<Record<string, BiomeSoil>> = {
+  temperate: { ground: [112, 132, 74], earth: [134, 116, 90] },
+  forest: { ground: [100, 122, 70], earth: [120, 104, 82] },
+  desert: { ground: [198, 172, 130], earth: [212, 190, 150] },
+  steppe: { ground: [166, 156, 106], earth: [182, 160, 120] },
+  tropical: { ground: [94, 124, 64], earth: [164, 102, 70] },
+  tundra: { ground: [138, 140, 116], earth: [132, 124, 108] },
+  underdark: { ground: [92, 88, 98], earth: [112, 106, 114] },
+  // Climate zones of the terrain (terrainClimate CLIMATE_ZONES): they win over the map biome where the region has one.
+  mediterranean: { ground: [148, 140, 96], earth: [180, 152, 114] },
+  continental: { ground: [110, 128, 72], earth: [128, 112, 90] },
+  nordic: { ground: [96, 112, 72], earth: [112, 102, 88] },
+  alpine: { ground: [110, 124, 80], earth: [142, 136, 126] },
+  arctic: { ground: [150, 150, 140], earth: [128, 122, 112] },
+  savanna: { ground: [168, 150, 96], earth: [178, 122, 82] },
+  wetland: { ground: [92, 112, 72], earth: [98, 88, 72] },
+};
+/** The soil of a climate zone or biome name; unknown names take the temperate soil. */
+/** The soil name of a map: its terrain climate zone, unless that is the default temperate zone and the map biome says more. */
+export const roadSoilOf = (zone: string | undefined, biome: string | undefined): string => zone && zone !== 'temperate' ? zone : biome ?? zone ?? 'temperate';
+export const biomeSoil = (biome: string | undefined): BiomeSoil => BIOME_SOIL[biome ?? ''] ?? (biome?.startsWith('underdark') ? BIOME_SOIL.underdark : BIOME_SOIL.temperate);
 const rgbOf = (hex: string): Rgb => { const v = parseInt(hex.replace('#', '').slice(0, 6), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
 const over = (top: Rgb, under: Rgb, alpha: number): Rgb => [under[0] + (top[0] - under[0]) * alpha, under[1] + (top[1] - under[1]) * alpha, under[2] + (top[2] - under[2]) * alpha];
 /** The material grounds paint their own cover: what they look like from above. */
 const MATERIAL_TONES: RoadGroundTones = { key: 'material', base: [112, 132, 74], kinds: {
   field: [196, 170, 96], meadow: [164, 174, 104], pasture: [138, 156, 88], forest: [58, 80, 44], orchard: [116, 140, 76], garden: [148, 164, 92], marsh: [104, 122, 88], commons: [152, 160, 100] } };
-export function roadGroundTones(material: boolean, pal: Pick<Palette, 'name' | 'paper' | 'land' | 'landOpacity'>): RoadGroundTones {
-  if (material) return MATERIAL_TONES;
+export function roadGroundTones(material: boolean, pal: Pick<Palette, 'name' | 'paper' | 'land' | 'landOpacity'>, biome?: string): RoadGroundTones {
+  if (material) return biome === undefined ? MATERIAL_TONES : { ...MATERIAL_TONES, key: `material:${biome}`, soil: biomeSoil(biome) };
   const base = rgbOf(pal.paper), kinds = Object.fromEntries(Object.entries(pal.land).map(([kind, color]) => [kind, over(rgbOf(color), base, pal.landOpacity)]));
   return { key: pal.name, base, kinds };
 }
@@ -91,6 +123,27 @@ export function roadTone(ground: Rgb, rank: RoadRank, emphasis: number, night: b
   // Trodden snow is cooler and darker than the untouched mantle, even on a path.
   const compact = (rank === 'path' || rank === 'track' ? 7 : 0) - 12 * (clamp(emphasis, .5, 1.5) - 1);
   return over([180 + compact, 192 + compact, 202 + compact], dry, snow);
+}
+
+/** Rendered surface (look `rendered`): the bare soil of the biome, worn and compacted. Made roads are a gravel of that
+ * soil, streets and lanes its packed earth, tracks and paths the soil itself; a little of the local cover stays mixed in
+ * (dust on the verges, grass between the wheels), more on the quiet ways. Snow as on the natural look. */
+const RENDERED_EARTH: Readonly<Record<RoadRank, { gravel: number; light: number; ground: number }>> = {
+  major: { gravel: .5, light: 1.06, ground: .1 }, minor: { gravel: .38, light: 1.04, ground: .14 },
+  street: { gravel: .18, light: 1.05, ground: .1 }, lane: { gravel: .1, light: 1.02, ground: .18 },
+  track: { gravel: 0, light: 1, ground: .28 }, path: { gravel: 0, light: .98, ground: .4 },
+};
+const ROAD_GRAVEL: Rgb = [172, 166, 154];
+export function renderedTone(ground: Rgb, soil: BiomeSoil, rank: RoadRank, emphasis: number, night: boolean, snow = mapGroundSnow()): Rgb {
+  if (night) return over(NIGHT_EARTH, ground, .7 + .08 * clamp(emphasis, .5, 1.5));
+  const r = RENDERED_EARTH[rank], e = clamp(emphasis, .5, 1.5);
+  const earth = over(ROAD_GRAVEL, soil.earth, r.gravel), k = r.light * (1 + .06 * (e - 1));
+  const bare = over([earth[0] * k, earth[1] * k, earth[2] * k], ground, 1 - r.ground);
+  // Pale soils (desert, steppe) would vanish into a pale ground: the worn bed is a touch darker or lighter there.
+  const l = lum(bare), g = lum(ground);
+  const out: Rgb = Math.abs(l - g) < .035 * e ? (l >= g ? [bare[0] * 1.05, bare[1] * 1.05, bare[2] * 1.04] : [bare[0] * .93, bare[1] * .93, bare[2] * .94]) : bare;
+  const compact = (rank === 'path' || rank === 'track' ? 7 : 0) - 12 * (e - 1);
+  return over([180 + compact, 192 + compact, 202 + compact], out, snow);
 }
 
 /** Asphalt from above: a dark, slightly warm grey, never black. Trunk roads and streets are rolled asphalt, minor roads a
@@ -112,7 +165,7 @@ export function pavedTone(ground: Rgb, rank: RoadRank, emphasis: number, night: 
 }
 
 const GRID = 256;
-interface RoadGround { key: string; size: number; data: Uint8ClampedArray; base: Rgb; night: boolean }
+interface RoadGround { key: string; size: number; data: Uint8ClampedArray; base: Rgb; night: boolean; soil?: BiomeSoil }
 let ground: RoadGround | undefined, groundId = 0;
 const grounds = new WeakMap<LandUseLayer, Map<string, RoadGround>>(), emptyGrounds = new Map<string, RoadGround>();
 const makeSurface = (w: number, h: number): OffscreenCanvas | HTMLCanvasElement | undefined => {
@@ -129,7 +182,7 @@ export function setRoadGround(landuse: LandUseLayer | undefined, size: number, t
   const cached = cache.get(key); if (cached) { ground = cached; return; }
   const surface = makeSurface(GRID, GRID);
   const ctx = surface?.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | null | undefined;
-  const shade = (c: Rgb): Rgb => night && tones === MATERIAL_TONES ? moonlit(c) : c;
+  const shade = (c: Rgb): Rgb => night && tones.key.startsWith('material') ? moonlit(c) : c;
   const base = shade(tones.base);
   let data = new Uint8ClampedArray(0);
   if (ctx) {
@@ -147,7 +200,7 @@ export function setRoadGround(landuse: LandUseLayer | undefined, size: number, t
     }
     data = ctx.getImageData(0, 0, GRID, GRID).data;
   }
-  ground = { key: `${key}|${++groundId}`, size, data, base, night };
+  ground = { key: `${key}|${++groundId}`, size, data, base, night, soil: tones.soil };
   cache.set(key, ground);
 }
 const groundAt = (x: number, y: number): Rgb | undefined => {
@@ -161,9 +214,10 @@ const stain = (i: number, j: number): number => { let h = Math.imul(i, 374761393
 type Surface = OffscreenCanvas | HTMLCanvasElement;
 const texturesOf = new Map<string, Surface>();
 /** One rank's texture (`bare`: the ground itself, for the grass between wheel ruts). */
-function texture(rank: RoadRank | 'bare', emphasis: number, paved = false): Surface | undefined {
+function texture(rank: RoadRank | 'bare', emphasis: number, paved = false, rendered = false): Surface | undefined {
   if (!ground?.data.length) return undefined;
-  const key = `${ground.key}|${rank}${paved ? '|paved' : ''}|${emphasis}|${roofSeasonKey()}`; let out = texturesOf.get(key);
+  const soil = rendered ? ground.soil ?? BIOME_SOIL.temperate : undefined;
+  const key = `${ground.key}|${rank}${paved ? '|paved' : ''}${soil ? '|r' : ''}|${emphasis}|${roofSeasonKey()}`; let out = texturesOf.get(key);
   if (out) return out;
   const surface = makeSurface(GRID, GRID), ctx = surface?.getContext('2d') as CanvasRenderingContext2D | null | undefined;
   if (!surface || !ctx) return undefined;
@@ -172,9 +226,11 @@ function texture(rank: RoadRank | 'bare', emphasis: number, paved = false): Surf
   for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
     const k = (j * GRID + i) * 4;
     let c: Rgb = [d[k], d[k + 1], d[k + 2]];
-    if (rank !== 'bare') { const id = d[k] << 16 | d[k + 1] << 8 | d[k + 2]; let t = lut.get(id); if (!t) lut.set(id, t = paved ? pavedTone(c, rank, emphasis, night) : roadTone(c, rank, emphasis, night)); c = t; }
+    // The rendered surface reads the biome's open ground where no land-use class is drawn (the grid base).
+    if (soil && !night && c[0] === ground.base[0] && c[1] === ground.base[1] && c[2] === ground.base[2]) c = soil.ground;
+    if (rank !== 'bare') { const id = c[0] << 16 | c[1] << 8 | c[2]; let t = lut.get(id); if (!t) lut.set(id, t = paved ? pavedTone(c, rank, emphasis, night) : soil ? renderedTone(c, soil, rank, emphasis, night) : roadTone(c, rank, emphasis, night)); c = t; }
     // A rolled surface is more even than trodden earth: resurfaced lengths, under half the mottling.
-    const m = paved ? 1 + .03 * stain(i >> 1, j >> 1) + .012 * stain(i, j) : 1 + .05 * stain(i >> 1, j >> 1) + .03 * stain(i, j);
+    const m = paved ? 1 + .03 * stain(i >> 1, j >> 1) + .012 * stain(i, j) : soil ? 1 + .045 * stain(i >> 3, j >> 3) + .035 * stain(i >> 1, j >> 1) + .02 * stain(i, j) : 1 + .05 * stain(i >> 1, j >> 1) + .03 * stain(i, j);
     o[k] = c[0] * m; o[k + 1] = c[1] * m; o[k + 2] = c[2] * m; o[k + 3] = 255;
   }
   ctx.putImageData(image, 0, 0);
@@ -232,14 +288,29 @@ export function roadGrain(ctx: CanvasRenderingContext2D): CanvasPattern | undefi
 export function roadPaint(ctx: CanvasRenderingContext2D, rank: RoadRank, style: RoadStyle): string | CanvasPattern {
   const custom = rank === 'track' || rank === 'path' ? style.colors?.track : style.colors?.road;
   if (custom) return custom;
-  const paved = pavedRank(rank, style.pavement), surface = texture(rank, style.emphasis, paved), made = surface && pattern(ctx, surface);
-  return made ?? rgbCss((paved ? pavedTone : roadTone)(ground?.base ?? MATERIAL_TONES.base, rank, style.emphasis, style.night));
+  const paved = pavedRank(rank, style.pavement), rendered = style.look === 'rendered', surface = texture(rank, style.emphasis, paved, rendered), made = surface && pattern(ctx, surface);
+  if (made) return made;
+  const base = ground?.base ?? MATERIAL_TONES.base;
+  return rgbCss(paved ? pavedTone(base, rank, style.emphasis, style.night) : rendered ? renderedTone(ground?.soil?.ground ?? base, ground?.soil ?? BIOME_SOIL.temperate, rank, style.emphasis, style.night) : roadTone(base, rank, style.emphasis, style.night));
 }
 /** Road colour at one point, for backends without patterns (SVG). */
 export const roadToneAt = (x: number, y: number, rank: RoadRank, style: RoadStyle): string => style.colors?.[rank === 'track' || rank === 'path' ? 'track' : 'road'] ?? rgbCss(roadTone(groundAt(x, y) ?? ground?.base ?? MATERIAL_TONES.base, rank, style.emphasis, style.night));
 
 // ---------------------------------------------------------------- the painter
 const SHADOW = 'rgb(34,27,14)', WEAR = 'rgb(58,44,26)', LIGHT_WEAR = 'rgb(214,204,180)';
+/** Rendered surface: opacity of the worn bed (its colour already follows the ground) and of the dusty verge. */
+const RENDERED_BED: Readonly<Record<RoadRank, number>> = { major: .92, minor: .9, street: .9, lane: .84, track: .8, path: .62 };
+const RENDERED_APRON: Readonly<Record<RoadRank, number>> = { major: .16, minor: .14, street: .06, lane: .05, track: .12, path: 0 };
+/** The verge: the biome soil, dry and a little paler (trampled dust, thin grass). */
+const apronTone = (): Rgb => { const s = ground?.soil ?? BIOME_SOIL.temperate, g = s.ground; return over([s.earth[0] * 1.08, s.earth[1] * 1.08, s.earth[2] * 1.06], g, .55); };
+/** Irregular fraying of a rendered edge, metres: prime-ish runs that never line up with EDGE_DASH. */
+const FRAY_DASH = [37, 23, 53, 11, 19, 31, 7, 43];
+/** Cobbled streets of a town centre (rendered surface, earth-road cultures): weathered setts, grey with the local soil. */
+export function cobbleTone(style: RoadStyle): string {
+  const s = ground?.soil ?? BIOME_SOIL.temperate, snow = style.night ? 0 : mapGroundSnow();
+  if (style.night) return rgbCss(over(NIGHT_EARTH, [120, 116, 110], .7));
+  return rgbCss(over([200, 206, 212], over([146, 140, 130], s.earth, .7), snow * .8));
+}
 /** Irregular runs, metres: nothing repeats along a sight line, and they do not depend on the zoom. */
 const EDGE_DASH = [61, 17, 29, 41, 13, 23, 47, 11], WEAR_DASH = [23, 9, 41, 15, 17, 7, 31, 19], RUT_DASH = [19, 5, 33, 9, 13, 4];
 export interface NaturalMarks { shadow: { color: string; alpha: number; extra: number } | undefined; bed: { alpha: number }; wear: { color: string; alpha: number; share: number; dash: readonly number[] } | undefined; /** Opacity of the grain, 0 until a road is wide enough to show it. */ grain: number }
@@ -250,6 +321,14 @@ export function naturalMarks(rank: RoadRank, width: number, scale: number, style
   // share of the stroke they really cover (about 3 m and 1.6 m wide), as a photograph averages a narrow pale line
   // into its pixel. A track stays a thin pale line at 2 to 8 m per pixel; a path fades out first.
   const cover = rank === 'track' || rank === 'path' ? clamp((rank === 'track' ? 3 : 1.6) * scale / s.floor, rank === 'track' ? .3 : .2, 1) : 1;
+  if (style.look === 'rendered' && !snow && !style.night) {
+    // Rendered: no drawn shoulder. A worn, dusty verge of the same soil, wide and faint, only once it covers a pixel.
+    const apron = px >= 1.6 ? RENDERED_APRON[rank] : 0;
+    return { shadow: apron > 0 ? { color: rgbCss(apronTone()), alpha: clamp(apron * e, 0, .3), extra: Math.max(1.6 / scale, width * (rank === 'track' || rank === 'path' ? .7 : .5)) } : undefined,
+      bed: { alpha: clamp(RENDERED_BED[rank] * e, .2, 1) },
+      wear: px >= 2.6 && px < 9 ? { color: WEAR, alpha: .1 * e, share: .5, dash: WEAR_DASH } : undefined,
+      grain: px >= 7 ? .45 * Math.min(1, e) * grainVisibility(scale) : 0 };
+  }
   return { shadow: s.shoulder > 0 || snow ? { color: snow ? 'rgb(116,139,158)' : SHADOW, alpha: clamp((snow ? .2 : s.shoulder) * e, 0, .4), extra: Math.max(1.4 / scale, width * .34) } : undefined,
     bed: { alpha: clamp((snow ? Math.max(.8, s.alpha) : s.alpha) * e, .2, 1) * (snow ? 1 : cover) },
     wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? .07 : .13) * e, share: .56, dash: WEAR_DASH } : undefined,
@@ -360,10 +439,12 @@ export function canopyRuns(pts: readonly Pt[]): { level: number; pts: Pt[] }[] {
   return out;
 }
 /** One paved regional road class: verge, clean-edged bed, then markings and wear once they resolve. */
-function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0): void {
+function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {
   const paint = roadPaint(ctx, rank, style), marks = pavedMarks(rank, width, scale, style), snow = !style.night && mapGroundSnow();
   // A paved road clears its corridor (forestRoom.ts): the crowns only take a little off its edges.
   marks.bed *= 1 - .25 * canopy;
+  // Rendered: below a pixel, the road's true share of it.
+  if (style.look === 'rendered') { const cover = clamp(metres / Math.max(width, 1e-6), .15, 1); marks.bed *= cover; if (marks.verge) marks.verge.alpha *= cover; if (cover < 1) marks.strokes.length = 0; }
   // Asphalt stops square: a round cap as wide as the road reads as a drawn lollipop at a loose end or a change of surface.
   const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'square'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);
@@ -381,11 +462,13 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
 /** One natural road class: shoulder, bed with an uneven edge, wear, and wheel ruts on earth tracks up close. `canopy`
  * (0 open … 1 closed, canopyRuns): under closed woods the way is a fainter continuous trace, the gap in the crowns.
  * Earth beds end butt: the runs of one way meet end to end, and round caps would bead at every change of level. */
-export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0): void {
-  if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style, canopy); return; }
+export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {
+  if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style, canopy, metres); return; }
   const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path', snow = !style.night && mapGroundSnow();
-  const open = 1 - canopy, under = roadCanopyOpacity(rank, canopy);
+  const rendered = style.look === 'rendered', cover = rendered ? clamp(metres / Math.max(width, 1e-6), .12, 1) : 1;
+  const open = 1 - canopy, under = roadCanopyOpacity(rank, canopy) * cover;
   marks.bed.alpha *= under;
+  if (rendered && marks.shadow) marks.shadow.alpha *= cover;
   const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'butt'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);
   };
@@ -396,7 +479,13 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
   }
   // A footpath is a continuous worn line, as is every way held at its screen floor.
   if (rank === 'path' || px < 2.4) stroke(paint, width, marks.bed.alpha);
-  else {
+  else if (rendered) {
+    // A continuous worn core, full-width irregular runs and a frayed outer edge: the edge wanders and softens into the
+    // verge without any new geometry, never a crisp band.
+    stroke(paint, width * (earthen ? .6 : .82), marks.bed.alpha);
+    stroke(paint, width, marks.bed.alpha * (earthen ? .68 : .9), EDGE_DASH);
+    if (px >= 3) stroke(paint, width * 1.14, marks.bed.alpha * .3, FRAY_DASH);
+  } else {
     // A narrower continuous bed and full-width irregular runs: the edge wanders without any new geometry; on earth the grass eats further in.
     stroke(paint, width * (earthen ? .66 : .88), marks.bed.alpha);
     stroke(paint, width, marks.bed.alpha * (earthen ? .72 : 1), EDGE_DASH);

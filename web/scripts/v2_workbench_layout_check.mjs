@@ -10,6 +10,7 @@ const browser = await chromium.launch({ channel: 'msedge', headless: true });
 const errors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 }, acceptDownloads: true });
+  page.setDefaultTimeout(60000);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr`);
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
@@ -53,6 +54,8 @@ try {
   assert.equal(await page.locator('#inspect-target option[value=settlement]').count(), 1);
   await page.screenshot({ path: new URL('cities.png', out).pathname.replace(/^\/(\w:)/, '$1') });
   await page.locator('#family-tab-map').click();
+  assert.equal(await page.locator('#family-map .family-run').count(),0);
+  assert.equal(await page.locator('#run-chain').isVisible(),false);
   assert(await page.locator('#family-map #header-menu').isVisible());
   assert.equal(await page.locator('#family-tab-map .chain-family-label').innerText(), 'Éditeur');
   await page.locator('#map-advanced-open').click();
@@ -67,7 +70,11 @@ try {
   await page.locator('#project-file').setInputFiles({name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(fixtureText)});
   await page.locator('#import-dialog').waitFor({ state: 'hidden' });
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
+  assert.equal(await page.locator('.toolbar-row .city-display-options').count(),0);
+  await page.locator('#map-advanced-open').click();
+  await page.locator('[data-render-pass=buildings] > .render-pass-options > summary').click();
   for(const mode of ['footprints','simple-volumes','detailed-volumes','ink','color','texture']){await page.locator(`[data-city-display="${mode}"]`).click();assert.equal(await page.locator(`[data-city-display="${mode}"]`).getAttribute('aria-pressed'),'true');}
+  await page.keyboard.press('Escape');
   await page.locator('#family-tab-cities').click();
   assert.equal(await page.locator('[data-town]').count(), 2);
   assert.equal(await page.locator('[data-activity]').count(), 1);
@@ -124,7 +131,8 @@ try {
   assert.equal(await page.locator('#move-towns').getAttribute('aria-pressed'), 'false');
   assert.equal(await page.locator('[data-setting-path="placement.counts.village"]').inputValue(), '3', 'explicit counts survive import and cancelled edits');
   await page.locator('#view3d').click();
-  await page.locator('.city3d:not([hidden]) .city3d-bar').waitFor();
+  await page.locator('.toolbar-row > .city3d-bar').waitFor();
+  assert.equal(await page.locator('.toolbar-row [data-ground]').count(),0,'Ground lives in Advanced');
   await page.locator('.city3d-bar [data-north]').click();
   const bar = await page.locator('.city3d-bar').boundingBox();
   assert(bar.y >= 38 && bar.y + bar.height <= toolbar.y+toolbar.height, '3D options live in the second header level');

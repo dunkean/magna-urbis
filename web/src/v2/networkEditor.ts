@@ -20,6 +20,7 @@ import { roadControlIndices, roadControlMidpoint, deformRoadControl, removeRoadC
 import RoadRouteWorker from './roadRoute.worker?worker';
 import { namePresentation } from './mapPresentation';
 import { presentName } from '../gen/names/displayNames';
+import { editorButtonIcon, networkToolIcon } from './editorIcons';
 
 export type NetworkTool = 'off' | 'roads' | 'draw' | 'rivers';
 export interface NetworkEditorHost {
@@ -132,6 +133,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   setText(eyebrow, T.title); tools.setAttribute('role', 'toolbar');
   const toolButtons = (host.tools??['roads', 'draw', 'rivers'] as const).map(tool => {
     const button = el('button'); button.type = 'button'; button.dataset.networkTool = tool; setText(button, T[tool]);
+    networkToolIcon(button, tool);
     button.onclick = () => current === tool ? stop() : start(tool);
     tools.append(button); return button;
   });
@@ -148,6 +150,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     shortcuts.setAttribute('role', 'toolbar');
     for (const tool of ['roads', 'draw'] as const) if (host.tools?.includes(tool)) {
       const b = el('button'); b.type = 'button'; b.dataset.networkQuick = tool; setText(b, T[tool]);
+      networkToolIcon(b, tool);
       b.onclick = () => current === tool ? stop() : start(tool); shortcuts.append(b); quickButtons.push(b);
     }
     host.map.parentElement?.append(shortcuts);
@@ -439,6 +442,11 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   // ---- panel
   function button(text: string, action: () => void, options: { primary?: boolean; danger?: boolean; disabled?: boolean } = {}): HTMLButtonElement {
     const b = el('button'); b.type = 'button'; setText(b, text); b.onclick = action;
+    if (text === T.deleteRiver) editorButtonIcon(b, 'family-water', '×');
+    else if (text === T.deleteRoad) editorButtonIcon(b, 'display-roads', '×');
+    else if (text === T.removePoint) editorButtonIcon(b, 'display-roads', '−');
+    else if (text === T.deselect) editorButtonIcon(b, 'display-layers', '×');
+    else editorButtonIcon(b, text === T.finish ? 'display-roads' : 'display-2d', text === T.finish ? '✓' : '×');
     if (options.primary) b.classList.add('primary');
     if (options.danger) b.classList.add('danger');
     b.disabled = !!options.disabled || working; return b;

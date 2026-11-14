@@ -23,7 +23,7 @@ import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
-import { roadGroundTones, setRoadCanopy, setRoadGround } from '../render/roadStyle';
+import { roadSoilOf, roadGroundTones, setRoadCanopy, setRoadGround } from '../render/roadStyle';
 import { setWhiteWater, WHITE_WATER_ENABLED } from '../render/whiteWater';
 import { vectorWhiteWater } from '../render/whiteWaterCourses';
 import { displayWorld } from '../render/displayWorld';
@@ -283,7 +283,7 @@ export class BenchRenderer {
     const effective = effectiveTerrainSettings(settings, world.mapSize);
     setMapSeason(r.ground.season, effective.climateZone, r.ground.calendar);
     setMapClimateZone(effective.climateZone, effective.climateValues);
-    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
+    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome), roadSoilOf(effective.climateZone, world.options.biome)), r.composition.ambience === 'night');
     const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
     const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
     const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome, getLanguage(), getDistanceUnit(), settings.naming?.mode,settings.naming?.mapLanguage,settings.naming?.script]);
@@ -400,7 +400,7 @@ export class BenchRenderer {
     if (this.gpuActive) {
       const source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
       this.terrainSvg = ''; this.base = undefined; this.fantasy = undefined; this.fantasyImages = undefined;
-      this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, underdark: world.options.biome === 'underdark', townGlow: world.options.biome === 'underdark' ? Float32Array.from((world.settlements ?? []).slice(0, 16).flatMap(s => [s.center.x, s.center.y, Math.max(120, (s.radius ?? 200) * 1.6)])) : undefined, farmBeds: world.options.biome === 'underdark' ? underdarkFarmBeds(world.landuse?.farmsteads, world.settlements) : undefined, v2Season: r.ground.season, v2Calendar: r.ground.calendar,
+      this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,coastWaves:r.composition.networks.water.waves,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, underdark: world.options.biome === 'underdark', townGlow: world.options.biome === 'underdark' ? Float32Array.from((world.settlements ?? []).slice(0, 16).flatMap(s => [s.center.x, s.center.y, Math.max(120, (s.radius ?? 200) * 1.6)])) : undefined, farmBeds: world.options.biome === 'underdark' ? underdarkFarmBeds(world.landuse?.farmsteads, world.settlements) : undefined, v2Season: r.ground.season, v2Calendar: r.ground.calendar,
         globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: false, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
         flatRelief: effective.relief === 'flat', refine: effective.refine??true, sourceCell: t.width / source.n, seed: seedHash(world.seed), detail: effective.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
         floor: source.floor ?? 0, frame: layers.frame, background: terrainStyle(style,colors).palette.paper });

@@ -2,6 +2,7 @@ import { DEFAULT_TEXT, cityTextLabels, drawMapLabels, textFamily, textPlacement,
 import { placeMapLabels } from './mapLabels';
 import { PALETTES, type Palette } from './styles';
 import { drawCityWaterways } from './cityWaterways';
+import { groundRoadLook } from './composition';
 /** City Bench map layer: one viewport-sized Canvas 2D in world coordinates.
  * The plan is indexed once in spatial bins; every camera change repaints only
  * the visible items, batched by style, with a level of detail chosen from the
@@ -20,7 +21,7 @@ import { tintedWallColor } from './buildingPalette';
 import { drawLotEnclosures, updateYardEnclosures } from './cityLotEnclosures'; // enclosures hook (cityLotEnclosures.ts)
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 import { streetToneAt, toneStamp, washAt } from './groundTone';
-import { STREET_MIN_PX, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, roadGrain, roadPaint, sidewalkTone, streetRank, type RoadStyle } from './roadStyle';
+import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, roadGrain, roadPaint, sidewalkTone, streetRank, type RoadStyle } from './roadStyle';
 import { layoutStreetPavements } from './roadPavement';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
 import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
@@ -304,8 +305,11 @@ function idUnit(id: string, salt: number): number {
   let h = 2166136261 ^ salt; for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
   return ((h >>> 8) & 0xffff) / 0xffff;
 }
-/** Buildings of a scene, linked to their parcel allocation for roles. */
-export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
+/** Buildings of a scene, linked to their parcel allocation for roles. `roofs: false` keeps the items (footprints, roles,
+ * materials) without the roof pans, snow patches and cast shadows: the far view of a very large town, whose detail is
+ * built later for the visible area only (v2/nativeCityMap.ts). */
+export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene, options: { roofs?: boolean } = {}): CityBuildings {
+  const withRoofs = options.roofs !== false;
   const items: CityBuilding[] = [], byId = new Map<string, number>();
   const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], roofPatch: number[] = [], roofGrainOf: number[] = [], roofRim: number[] = [], roofTint: (string | undefined)[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
@@ -326,7 +330,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building, ruins: ruinFootprint(building.footprint, programme, massing),
       stilts: volumes?.some(v => (v.detail?.stilts_m ?? 0) > 0), age: idUnit(building.id, 0x51ed), marks: millMarks(volumes),
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5, tint: first?.tint } });
-    if (!massing) { shadows.push([]); continue; }
+    if (!massing || !withRoofs) { shadows.push([]); continue; }
     const owner = items.length - 1, heat = buildingHeat(building.function);
     let terraced = false;
     // Explicit pans come out of `planRoof` unchanged (no polygon boolean). A face of a small decorative volume is one
@@ -734,7 +738,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
   const growthColor = (zone: string): string => ZONE_COLORS[zone] ?? ZONE_COLORS.core;
 
   // Far: the urban footprint as one tint, main roads and walls.
-  const material=!!o.materialGround,naturalGround=material||palette==='terrain'||o.roadLook==='natural';
+  const material=!!o.materialGround,naturalGround=material||palette==='terrain'||groundRoadLook(o.roadLook);
   const blend = material||(o.groundBlend ?? isBlended()) && (naturalGround?view!=='uses'&&view!=='roles':blendsGround(view,palette)), tone = material?'earth':blendTone(palette), softLine = blendLine(tone);
   const wash=(kind: WashKind,shape: Shape) => {
     if(material){const w=groundWash(kind,'earth');return {color:w.color,alpha:Math.min(.8,w.alpha*1.8)};}
@@ -861,7 +865,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     const surfaceOk = (s: CityStreet, dash?: boolean): boolean => layers.roadSurface !== false && atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
     const emphasis = o.roadEmphasis ?? 1, inkEmphasis = emphasisAlpha(emphasis);
     // The user's own colours; the night defaults of `colors` belong to the ink look.
-    const roadStyle: RoadStyle = { look: 'natural', emphasis, night: o.appearance.ambience === 'night', colors: o.appearance.colors }, natural = o.roadLook === 'natural';
+    const roadStyle: RoadStyle = { look: o.roadLook === 'rendered' ? 'rendered' : 'natural', emphasis, night: o.appearance.ambience === 'night', colors: o.appearance.colors }, natural = groundRoadLook(o.roadLook);
     const pavedStyle: RoadStyle = { ...roadStyle, pavement: 'asphalt' }, carriageways = new Batches();
     for (const s of visible) {
       stats.streets++;
@@ -904,6 +908,9 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         const marks = naturalMarks(rank, w, 1 / mpp, roadStyle), bed = { alpha: marks.bed.alpha * thin }, edge = Math.max(px(lod === 'mid' ? 0.9 : 1.4), w * .09), shoulder = marks.shadow && { ...marks.shadow, alpha: marks.shadow.alpha * .8 };
         const paintRoad = roadPaint(ctx, rank, roadStyle);
         const snow = !roadStyle.night && mapGroundSnow();
+        // Rendered surface: the main streets of a town centre are cobbled (weathered setts), lanes stay packed earth.
+        if (roadStyle.look === 'rendered' && s.role !== 'track' && s.rank <= 1 && (scene.layouts[s.layout]?.programme?.population ?? 0) >= 2000)
+          marks2.add({ stroke: cobbleTone(roadStyle), width: w2 * .92, alpha: bed.alpha * .78, cap: 'round' }, path);
         if (snow && rank !== 'path' && w2 / mpp >= 4) {
           // Main streets are trodden to a grey-brown slush over most of their width; back lanes and tracks keep
           // their snow, with a cool shade and one narrow beaten line.

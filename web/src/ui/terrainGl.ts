@@ -27,6 +27,7 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
+import { RENDER_V2_COAST_GLSL } from '../../../rust/bridge/terrainRenderV2Coast';
 import { UNDERDARK_GLSL } from '../../../rust/bridge/terrainRenderUnderdark';
 import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
@@ -60,6 +61,8 @@ export interface HeightLayer {
 
 export interface TerrainLook {
   ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural';
+  /** Satellite looks: swell crests and surf along exposed sea coasts (terrainRenderV2Coast). */
+  coastWaves?: boolean;
   groundCover?: boolean;
   colors?: RenderColors;
   /** V2 composes the retained canopy over every ground; standalone benches keep their material-only canopy. */
@@ -309,6 +312,7 @@ ${WATER_REGIME_GLSL}
 
 ${WATER_STYLE_GLSL}
 ${MATERIAL_WATER_GLSL}
+${RENDER_V2_COAST_GLSL}
 ${MOONLIGHT_GLSL}
 ${UNDERDARK_GLSL}
 // Variant constants (terrainFragment): NATURAL compiles the material path, uRenderV2/uForest
@@ -697,6 +701,9 @@ void main() {
       }
       color=mix(wBase,paper,wCover);
     }
+    // Coastal swell and surf on the open sea (terrainRenderV2Coast), fainter in silt plumes. The estuary share is not
+    // read: the water layer gives it to every shallow sea fragment it covers, not only to river mouths.
+    if(uRenderV2>0)if(v2w&&wKind<1.5&&uV2WaterVisible==1&&!underdark)color=v2CoastSwell(color,world,s,uPx,wCover*(1.-.6*wTint.z));
 #endif
 #ifndef AUX_PASS
     if(underdark && uGroundCapture==0){
@@ -1344,7 +1351,7 @@ export class TerrainGl {
     enhancedAlpha = refined ? Math.min(1, (performance.now() - refined.fadeStart) / 240) : 1;
     gl.uniform1f(u('uRefinedAlpha'), enhancedAlpha);
     gl.uniform3fv(u('uPaper'), hex(pal.paper)); gl.uniform3fv(u('uSea'), hex(pal.seaFill));
-    gl.uniform3fv(u('uShore'), hex(water.stops[0][1])); gl.uniform1i(u('uCoastalSea'), this.coastDistance ? 1 : 0);
+    gl.uniform3fv(u('uShore'), hex(water.stops[0][1])); gl.uniform1i(u('uCoastalSea'), this.coastDistance ? 1 : 0); gl.uniform1f(u('uCoastWaves'), look.coastWaves ? 1 : 0);
     const waterPalette = waterUniforms(water);
     gl.uniform3fv(u('uWaterStops'), waterPalette.colors); gl.uniform1fv(u('uWaterStopT'), waterPalette.positions);
     gl.uniform1i(u('uWaterStopCount'), water.stops.length);

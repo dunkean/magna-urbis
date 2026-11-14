@@ -33,7 +33,7 @@ import { activityScene, activitySitesOf, drawInstallations } from './activitySit
 import { placeholderPlacedBuildings } from '../render/farmRoofs';
 import { provideFurniture3d, refreshFurniture3d } from '../ui/legendOverlay3d';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
-import { roadGroundTones, setRoadGround } from '../render/roadStyle';
+import { roadGroundTones, roadSoilOf, setRoadGround } from '../render/roadStyle';
 import { biomePalette } from '../render/biomes';
 import { ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { buildCityScene, type CityScene } from '../render/cityCanvas';
@@ -44,6 +44,8 @@ import { isFantasyStyle, registerFantasyBrushes } from '../../../rust/bridge/fan
 
 export interface V2Urban3dOptions {
   host: HTMLElement;
+  toolbarHost?: HTMLElement;
+  advancedControls?: HTMLElement;
   getWorld(): World | undefined;
   getSettings(): V2Settings;
   getSelected?(): string | undefined;
@@ -160,8 +162,15 @@ export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSu
     water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel } : undefined, waterVisible: r.ground.layers.water };
 }
 export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
-  const city = v2Resolved3d(settings).city;
-  return { ground: city.ground as City3dGround, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement, trees3d: city.trees3d, treeDistance: city.treeDistance };
+  const resolved = v2Resolved3d(settings), city = resolved.city;
+  const ground = settings.appearance?.city?.ground ?? (resolved.traits.ground3d ? resolved.styleId as City3dGround : 'map');
+  return { ground, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement, trees3d: city.trees3d, treeDistance: city.treeDistance };
+}
+/** Toolbar changes must not pin the ground or other controls to stale values from the previous style. */
+export function v2CityViewPatch(previous: City3dViewSettings, value: City3dViewSettings): AppearancePatch | undefined {
+  const controls = value;
+  const changed = Object.entries(controls).filter(([key, next]) => next !== previous[key as keyof City3dViewSettings]);
+  return changed.length ? { city: Object.fromEntries(changed) } : undefined;
 }
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {
@@ -248,7 +257,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     const world = options.getWorld(), settings = options.getSettings();
     if (!world) { if (worldOf) { worldOf = undefined; terrainOf = undefined; decor = undefined; nativeOf = []; scene = undefined; layouts = []; partitions = []; roads = []; details?.dispose(); details = undefined; renderer = undefined; activitiesOf = undefined; } return; }
     const r = v2Resolved3d(settings, world);
-    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome)), r.composition.ambience === 'night');
+    setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome), roadSoilOf(effectiveTerrainSettings(settings, world.mapSize).climateZone, world.options.biome)), r.composition.ambience === 'night');
     const climate = JSON.stringify([settings.terrain?.climate, settings.terrain?.climateValues, settings.terrain?.motifSize, settings.terrain?.refine, settings.terrain?.relief]);
     if (world.terrain !== terrainOf) { terrainOf = world.terrain; decor = v2WorldDecor(world, settings); }
     else if (climate !== climateOf && decor) decor.meta = v2WorldDecor(world, settings).meta;
@@ -309,7 +318,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     return { world: textWorld()!, palette: terrainStyle(r.composition.variant, r.palette.colors).palette, legend: r.cartography.legend, cartouche: r.cartography.cartouche,
       semantic: [...ruralSemanticLegend(world.landuse, lu.classes, lu.rural), ...(plan ? urbanSemanticLegend([plan], lu.urban) : [])] };
   });
-  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => cityRegionalStreets(v2Resolved3d(options.getSettings(), options.getWorld()), roads),
+  const view = mountCity3d({ host: options.host, navigation: true, fastTerrain: true, materialGrounds: true, toolbarHost:options.toolbarHost,advancedControls:options.advancedControls,sharedVisibilityControls:true, softwareMaterialFallback: !!options.getBackground, getDecor: () => decor, getLayouts: () => layouts, getPartitions: () => partitions, getRegionalStreets: () => cityRegionalStreets(v2Resolved3d(options.getSettings(), options.getWorld()), roads),
     getSiteGround: (box, mpp) => {
       const sites = activitySitesOf(options.getWorld());
       const hit = sites.some(s => s.installations?.some(g => typeof g === 'object' && g.points.some(p => p.x >= box.minX - 20 && p.x <= box.maxX + 20 && p.y >= box.minY - 20 && p.y <= box.maxY + 20)));
@@ -317,6 +326,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     },
     getPlaceholderBuildings: () => placeholderPlacedBuildings(options.getWorld()),
     getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground, getBackgroundImage: options.getBackgroundImage,
+    getBackgroundKey: () => { const r=v2Resolved3d(options.getSettings(),options.getWorld());return JSON.stringify([r.keys.terrainLook,r.keys.water,r.keys.forest,r.keys.cartography,r.keys.semantic]); },
     getIllustrated: illustrated,
     getGroundSettings: ground => { const world = options.getWorld(); return world && v2Terrain3dGround(world, options.getSettings(), ground); },
     getLook: () => cityGroundLook(v2Resolved3d(options.getSettings())),
@@ -346,10 +356,8 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getViewSettings: () => v2Terrain3dView(options.getSettings()),
     // The view never writes the shared settings: it emits a patch, the orchestration applies it.
     onViewSettingsChange: value => {
-      const previous = v2Terrain3dView(options.getSettings());
-      const patch: AppearancePatch = { city: value };
-      if (value.ground !== 'map' && value.ground !== previous.ground) { patch.terrainStyle = value.ground === 'render' ? 'render3d' : value.ground; patch.renderer = 'bench'; }
-      options.onAppearancePatch(patch);
+      const patch = v2CityViewPatch(v2Terrain3dView(options.getSettings()), value);
+      if (patch) options.onAppearancePatch(patch);
     },
     getPlanOptions: () => city3dPlanOptions(v2Resolved3d(options.getSettings(), options.getWorld())),
     getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
@@ -357,6 +365,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
     prepare: async () => { update(); const world = options.getWorld(), settings = options.getSettings(); if (world) await v2DisplayForestAsync(world, settings, v2Resolved3d(settings, world)); await view.prepare(); },
     show: () => { update(); view.show(); refreshFurniture3d(options.host); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); refreshFurniture3d(options.host); },
+    syncControls: () => view.syncControls(),
     focus: (point, radius) => view.focus(point, radius), getCamera: () => view.getCamera(), setCamera: camera => view.setCamera(camera),
     toMapView: () => view.toMapView(), fromMapView: mapView => view.fromMapView(mapView),
     capture: () => view.capture(), captureIllustration: () => view.captureIllustration(), stats: () => view.stats(),

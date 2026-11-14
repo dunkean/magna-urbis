@@ -9,6 +9,7 @@
 import type { UrbanSceneMode } from '../ui/urbanSceneProtocol';
 import { DEFAULT_CITY, DEFAULT_CITY_LAYERS, type ResolvedAppearance } from './appearanceRecipe';
 import { cityGlBlocker, type RenderMode } from './renderMode';
+import { groundRoadLook } from './composition';
 
 /** Building architecture: city volumes raised by `urban/massing.rs` (silhouettes),
  * or native house plans from the houses crate (compact plans, detailed houses). */
@@ -41,7 +42,7 @@ export function cityGlBlockReason(o: {
   if (base) return base;
   const r = o.appearance, c = r.composition;
   if (c.landuse.urban !== 'off') return 'urban-landuse';
-  if (c.networks.roads.look === 'natural') return 'natural-roads';
+  if (groundRoadLook(c.networks.roads.look)) return 'natural-roads';
   if (r.city.buildingStyle !== 'cartographic') return 'building-style';
   if (r.city.painted) return 'painted';
   if (c.ambience === 'night') return 'night';

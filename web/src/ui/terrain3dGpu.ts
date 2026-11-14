@@ -485,7 +485,7 @@ class Terrain3dGpu extends Terrain3d {
     const p = this.treeParams, c = this.camera;
     p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
     p.setArray('treeFade', this.forestTreesUniform(frame)); p.setArray('eye', frame.eye); p.setArray('treeLight', this.treeLight());
-    p.set('fogDistance', Math.max(c.distance * 2, 100)); p.set('uNight', this.lookSettings.ambience === 'night' ? 1 : 0);
+    p.set('fogDistance', this.fogDistance()); p.set('uNight', this.lookSettings.ambience === 'night' ? 1 : 0);
     const slot = this.params.alloc(p.bytes);
     pass.setPipeline(pipeline); pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [
       { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
@@ -497,7 +497,7 @@ class Terrain3dGpu extends Terrain3d {
     const pipeline=this.pipeline('billboard'); if (!pipeline) return true;
     const p=this.billboardParams,c=this.camera;
     p.setArray('matrix',frame.matrix); p.set('cameraOrigin',c.x,frame.targetHeight,c.y); p.set('cameraRight',Math.cos(c.yaw),-Math.sin(c.yaw));
-    p.set('exaggeration',c.exaggeration); p.set('raisedBlend',blend); p.setArray('eye',frame.eye); p.set('fogDistance',Math.max(c.distance*2,100)); p.set('uNight',this.lookSettings.ambience==='night'?1:0);
+    p.set('exaggeration',c.exaggeration); p.set('raisedBlend',blend); p.setArray('eye',frame.eye); p.set('fogDistance',this.fogDistance()); p.set('uNight',this.lookSettings.ambience==='night'?1:0);
     const slot=this.params.alloc(p.bytes);
     pass.setPipeline(pipeline); pass.setBindGroup(0,this.device.createBindGroup({ layout:this.gpu.layouts.billboard,entries:[
       { binding:0,resource:{buffer:slot.buffer,offset:slot.offset,size:p.bytes.byteLength} },{ binding:2,resource:this.gpu.billboardSampler },{ binding:T.billboardAtlas,resource:image(this.gpuBillboardAtlas.texture).view },
@@ -566,7 +566,7 @@ class Terrain3dGpu extends Terrain3d {
     p.set('uQuality', this.frameQuality);
     p.setArray('matrix', frame.matrix); p.set('exaggeration', c.exaggeration); p.setArray('eye', frame.eye);
     p.set('raisedBlend',raisedBlend);
-    p.set('fogDistance', Math.max(c.distance * 2, 100)); p.set('showTileBounds', this.tileBounds ? 1 : 0);
+    p.set('fogDistance', this.fogDistance()); p.set('showTileBounds', this.tileBounds ? 1 : 0);
     p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('uNaturalWater',this.lookSettings.waterLook==='natural'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
     p.set('displayWaterBand',layer.width*.016);
     p.setArray('uWaterSeason', waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));

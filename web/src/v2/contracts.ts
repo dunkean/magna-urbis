@@ -131,7 +131,9 @@ export interface V2ResourceRequest { type: 'resources'; id: number; settings: V2
 export type V2WorkerResponse =
   | { id: number; type: 'progress'; progress: V2Progress }
   | { id: number; type: 'resources'; payload?: import('../../../rust/bridge/resources').ResourcePayload }
-  | { id: number; type: 'result'; world: World; wasm?: WasmThreadsInfo }
+  /** `heavy`: the town packs moved with the result exceed HEAVY_RESULT_BYTES (urbanPack.ts); the page replaces this worker
+   * before unpacking, so the tab's shared JS heap never holds the worker's copy of the town and the page's at once. */
+  | { id: number; type: 'result'; world: World; wasm?: WasmThreadsInfo; heavy?: boolean }
   | { id: number; type: 'error'; error: string; wasm?: WasmThreadsInfo };
 
 export interface V2Project {

@@ -6,6 +6,7 @@ import { mapPresentation } from './mapPresentation';
 import { labelCandidates, type LabelCandidate, type LabelEdit } from './mapLabels';
 import { TOPONYM_PROFILES } from '../gen/names/profiles';
 import { varyNames } from '../gen/names/policy';
+import { editorButtonIcon } from './editorIcons';
 
 /** Host performs the redraw and forwards map clicks while active. */
 export function mountMapLabelEditor(host: HTMLElement, api: { getWorld(): World | undefined; getSettings(): V2Settings; onChange(): void; onNames?():void }): {
@@ -22,6 +23,11 @@ export function mountMapLabelEditor(host: HTMLElement, api: { getWorld(): World 
   const create = document.createElement('button'), locate = document.createElement('button'), choose = document.createElement('button'), remove = document.createElement('button'), hint = document.createElement('small'), count = document.createElement('small');
   search.type = 'search'; input.maxLength = 200; x.type = y.type = 'number'; x.step = y.step = 'any'; color.type = 'color'; size.type = 'number'; size.min = '.25'; size.max = '4'; size.step = '.1'; bold.type = italic.type = 'checkbox';
   for (const button of [create, locate, choose, remove]) button.type = 'button';
+  editorButtonIcon(create, 'display-labels', '+');
+  editorButtonIcon(locate, 'display-2d', '+');
+  editorButtonIcon(choose, 'display-layers');
+  editorButtonIcon(remove, 'display-labels', '↶');
+  editorButtonIcon(regenerate, 'source-procedural');
   const row = (...nodes: HTMLElement[]) => { const div = document.createElement('div'); div.style.cssText = 'display:flex;gap:.4rem;align-items:center;flex-wrap:wrap'; div.append(...nodes); return div; };
   const label = (control: HTMLElement) => { const l = document.createElement('label'); l.style.cssText = 'display:flex;gap:.3rem;align-items:center'; l.append(control); return l; };
   const lx = label(x), ly = label(y), lc = label(color), ls = label(size), lb = label(bold), li = label(italic);

@@ -33,6 +33,7 @@ import type { Measure } from './mapLabels';
 import type { ExportLayers } from './exportLayers';
 import type { VegetationStyle } from './canopy';
 import { roadGroundTones, setRoadGround, type RoadGroundTones } from './roadStyle';
+import { groundRoadLook } from './composition';
 
 export interface RenderOptions {
   text?: Readonly<TextSettings>;
@@ -77,7 +78,7 @@ function decor(world: World, pal: Palette, u: number): string {
 }
 
 export function renderSvg(world0: World, opts: RenderOptions = {}): string {
-  if (opts.roadLook === 'natural') setRoadGround(world0.landuse, world0.mapSize, opts.roadGround ?? roadGroundTones(false, applyRenderColors(biomePalette(opts.style ?? world0.options.style, world0.options.biome), opts.colors)), !!opts.roadNight);
+  if (groundRoadLook(opts.roadLook)) setRoadGround(world0.landuse, world0.mapSize, opts.roadGround ?? roadGroundTones(false, applyRenderColors(biomePalette(opts.style ?? world0.options.style, world0.options.biome), opts.colors)), !!opts.roadNight);
   if (opts.landuseKinds && world0.landuse) world0 = { ...world0, landuse: { ...world0.landuse, areas: world0.landuse.areas.filter(area => opts.landuseKinds!(area.kind)) } };
   world0 = cavernDisplayWorld(displayWorld(world0, undefined, opts.buildings));
   const world = renderView(world0);

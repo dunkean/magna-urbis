@@ -21,6 +21,7 @@ import { insideArea } from './scene';
 import { forestLandPaint, FOREST_EDGE_WIDTH, FOREST_EDGE_BLUR } from './landuseForestTone';
 import { ruralDetailsSvg } from './ruralDetails';
 import { ForestRoom, farmClearings, forestCorridors } from './forestRoom';
+import { groundRoadLook } from './composition';
 
 /** Land-use tints multiply over the hillshaded terrain so relief stays readable under them (browsers; resvg falls back to plain alpha). Dark styles blend normally. */
 const mul = (pal: Palette): string => (pal.landBlend === 'multiply' ? ' style="mix-blend-mode:multiply"' : '');
@@ -306,7 +307,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     const d = by(k);
     if (!d) continue;
     // hierarchy: cased major roads, thinner minor roads, tracks as thin dashed earth lines
-    if (roadLook === 'natural') {
+    if (groundRoadLook(roadLook)) {
       // Same marks as the canvas painter, flat: SVG has no ground texture, so each road takes the tone of its midpoint.
       const style: RoadStyle = { look: 'natural', emphasis: roadEmphasis, night: roadNight, colors };
       for (const road of roads.filter(r => r.kind === k)) {

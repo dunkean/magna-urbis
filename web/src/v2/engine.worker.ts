@@ -6,7 +6,7 @@ import { renameMap } from './mapNaming';
 import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import { showCityStageOutput } from './cityStageOutput';
 import { packWorldLanduse } from './landusePack';
-import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
+import { HEAVY_RESULT_BYTES, packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 // Serialize actions; the procedural cores retain per-thread scratch buffers.
@@ -50,7 +50,10 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       // The WASM mode this worker actually runs (window.magnaWasmThreads on the page).
       // Land-use areas and town partitions travel packed (landusePack.ts, urbanPack.ts); the retained world keeps its own objects.
       const landuse = packWorldLanduse(world), packed = packWorldPartitions(landuse.world);
-      scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo() } satisfies V2WorkerResponse, [...landuse.transfer, ...packed.transfer]);
+      const heavy = packed.transfer.reduce((sum, buffer) => sum + buffer.byteLength, 0) > HEAVY_RESULT_BYTES;
+      // A heavy result (a town of about a million people): the page replaces this worker, so nothing is retained here.
+      if (heavy) retained.clear();
+      scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo(), ...(heavy ? { heavy } : {}) } satisfies V2WorkerResponse, [...landuse.transfer, ...packed.transfer]);
     } catch (error) { send({ id, type: 'error', error: error instanceof Error ? error.message : String(error), wasm: wasmThreadsInfo() }); }
   });
 };

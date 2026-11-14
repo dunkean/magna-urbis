@@ -8,6 +8,7 @@ import { drawRuralDetails } from './ruralDetails';
 import { cavernWallFill, cavernRockPixels, CAVERN_RIM } from './caverns';
 import { isUnderdarkBiome, biomeName } from '../gen/biomes';
 import { ParchmentSymbols, SYMBOL_CELLS } from './parchmentSymbols';
+import { groundRoadLook } from './composition';
 /**
  * Interactive Canvas 2D renderer with level of detail (SVG stays for export).
  *
@@ -43,7 +44,7 @@ import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './c
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_PX } from './groundBlend';
-import { CANOPY_LEVELS, canopyRuns, emphasisAlpha, regionalRank, roadCanopyOpacity, roadCanopyRevision, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
+import { CANOPY_LEVELS, canopyRuns, emphasisAlpha, lookRoadWidth, regionalRank, roadCanopyOpacity, roadCanopyRevision, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
 import { drawWhiteWater, whiteWaterRevision } from './whiteWater';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
@@ -1362,7 +1363,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     };
 
     const roadStyle: RoadStyle = deps.roadStyle?.() ?? { look: deps.roadLook ?? 'ink', emphasis: 1, night: false, colors: deps.colors };
-    const natural = roadStyle.look === 'natural', inkAlpha = emphasisAlpha(roadStyle.emphasis);
+    const natural = groundRoadLook(roadStyle.look), inkAlpha = emphasisAlpha(roadStyle.emphasis);
     /** All the visible pieces of some layers as one path: a translucent stroke never doubles at chunk ends. */
     const merged = (ls: LineLayer[]): Path2D => { const out = new P(); for (const l of ls) for (const p of linePaths(l)) out.addPath(p); return out; };
     /** The same pieces split by the canopy over them (roadStyle.ts canopyRuns), one path per level, cached per tile and
@@ -1386,22 +1387,24 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       }
       return out;
     };
-    const strokeEarthRoads = (ls: LineLayer[], rank: Parameters<typeof strokeNaturalRoad>[2], width: number): void =>
-      canopyMerged(ls).forEach((p, k) => { if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1)); });
+    const strokeEarthRoads = (ls: LineLayer[], rank: Parameters<typeof strokeNaturalRoad>[2], metres: number): void => {
+      const width = lookRoadWidth(roadStyle.look, rank, metres, sc);
+      canopyMerged(ls).forEach((p, k) => { if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1), metres); });
+    };
     const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
       if (natural) {
         // Each retained width has its own layer, as on the 3D road surface.
         for (const l of tracks) {
           const rank = l.width < 2 ? 'path' : 'track';
-          strokeEarthRoads([l], rank, roadWidth(rank, l.width, sc));
+          strokeEarthRoads([l], rank, l.width);
         }
         // Earth and gravel first, then the paved lengths of the same rank (roadPavement.ts).
         for (const kind of ['minor', 'major'] as const) for (const pavement of ['earth', 'asphalt'] as const) {
           const ls = roads.filter((l) => l.kind === kind && (l.pavement ?? 'earth') === pavement);
           if (!ls.length) continue;
           for (const l of ls) {
-            if (pavement === 'earth') strokeEarthRoads([l], regionalRank(kind), roadWidth(regionalRank(kind), l.width, sc));
-            else strokeNaturalRoad(ctx, merged([l]), regionalRank(kind), roadWidth(regionalRank(kind), l.width, sc), sc, { ...roadStyle, pavement });
+            if (pavement === 'earth') strokeEarthRoads([l], regionalRank(kind), l.width);
+            else strokeNaturalRoad(ctx, merged([l]), regionalRank(kind), lookRoadWidth(roadStyle.look, regionalRank(kind), l.width, sc), sc, { ...roadStyle, pavement }, 0, l.width);
           }
         }
         return;

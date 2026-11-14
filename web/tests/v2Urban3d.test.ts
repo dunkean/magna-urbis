@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2WorldDecor, v2Terrain3dSurface, v2Terrain3dGround, v2Terrain3dView, createV2Terrain3dSampler } from '../src/v2/urban3d';
+import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2WorldDecor, v2Terrain3dSurface, v2Terrain3dGround, v2Terrain3dView, v2CityViewPatch, createV2Terrain3dSampler } from '../src/v2/urban3d';
 import { makeOptions } from '../src/gen/options';
 import type { World } from '../src/gen/types';
 import type { RustTownSnapshot } from '../src/v2/rustUrban';
 import type { V2Settings } from '../src/v2/contracts';
 import { presetComposition } from '../src/render/composition';
+import { writeAppearanceControl } from '../src/v2/renderControls';
 
 const snowComposition = () => { const c = presetComposition('satellite'); c.ground.variant = 'render-v2-snow'; c.networks.water.visible = false; c.effects.season = .125; c.effects.lighting = { enabled: true, azimuth: 90, elevation: 15, strength: 2, exaggeration: 1 }; return c; };
 
@@ -77,9 +78,22 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
     expect(v2Terrain3dView(settings).ground).toBe('render-v2-snow');
     expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: .125, lighting: settings.appearance!.composition!.effects.lighting, waterVisible: false, displacement: false, climate: { temperature: 24, precipitation: 70 } });
     expect(v2Terrain3dGround(world, settings, 'render3d-brush')?.forestBrushes).toBe(true);
-    // A legacy per-view override applies when no shared composition owns the ground.
+    // A deliberate Advanced override lasts until the user selects another style.
     settings.appearance!.composition = undefined;
     settings.appearance!.city = { ground: 'map', refinement: 'noise' };
     expect(v2Terrain3dView(settings).ground).toBe('map'); expect(v2Terrain3dGround(world, settings, 'map')).toBeUndefined();
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
+    expect(settings.appearance!.city!.ground).toBeUndefined();
+    expect(v2Terrain3dView(settings).ground).toBe('render-v2');
   });
+  it('does not pin a ground or unrelated defaults when a 3D toolbar option changes', () => {
+    const settings:V2Settings={options:makeOptions({seed:'view-patch'}),extent:1000,settlementCount:1,local:{},generation:'procedural',appearance:{style:'parchment',composition:presetComposition('satellite')}};
+    const previous=v2Terrain3dView(settings);
+    expect(v2CityViewPatch(previous,{...previous,plan:!previous.plan})).toEqual({city:{plan:!previous.plan}});
+    expect(v2CityViewPatch(previous,{...previous})).toBeUndefined();
+    expect(v2CityViewPatch(previous,{...previous,ground:'map'})).toEqual({city:{ground:'map'}});
+    expect(v2CityViewPatch(previous,{...previous,trees3d:true})).toEqual({city:{trees3d:true}});
+    expect(v2CityViewPatch({...previous,trees3d:true},{...previous,trees3d:false})).toEqual({city:{trees3d:false}});
+  });
+
 });

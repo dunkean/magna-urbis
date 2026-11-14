@@ -2,6 +2,8 @@ import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
 import { CULTURE_LABELS, cultureEra } from '../gen/options';
 import { advancedPanel } from './advancedPanel';
+import { mountRenderPassControls } from './renderPassControls';
+import { editorButtonIcon } from './editorIcons';
 import { recommendedCounts, recommendedCulture, settlementEnvironment } from './settlementDefaults';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { currentComposition, writeAppearanceControl } from './renderControls';
@@ -17,6 +19,7 @@ registerMessages({
   'Fantasy cultures': { en: 'Fantasy cultures', fr: 'Cultures fantastiques' },
   'Modern cultures': { en: 'Modern cultures', fr: 'Cultures modernes' },
   'Futuristic cultures': { en: 'Futuristic cultures', fr: 'Cultures futuristes' },
+  'City rendering': { en: 'City rendering', fr: 'Rendu des villes' },
   'Footprints': { en: 'Footprints', fr: 'Empreintes' }, 'Simple': { en: 'Simple', fr: 'Simple' },
   'Complex': { en: 'Complex', fr: 'Complexe' }, 'Black and white': { en: 'Black and white', fr: 'Noir et blanc' },
   'Coloured': { en: 'Coloured', fr: 'Coloré' }, 'Textured': { en: 'Textured', fr: 'Texturé' },
@@ -107,9 +110,15 @@ export function mountWorkbenchLayout(api: {
   const places = $('#places-panel'); $('.map-area').append(places);
   places.querySelector('header')!.after(selection);
   editor.querySelector('.family-head')!.after($('#header-menu'), $('#editor-dock'));
+  editorButtonIcon($<HTMLButtonElement>('#edit-navigate'), 'display-2d');
+  editorButtonIcon($<HTMLButtonElement>('#labels-open'), 'display-labels');
+  editorButtonIcon($<HTMLButtonElement>('#edit-done'), 'display-2d', '✓');
+  editorButtonIcon($<HTMLButtonElement>('#preview-close'), 'display-2d', '↶');
   const cityInspector = document.createElement('div'); cityInspector.id = 'city-inspector'; cities.prepend(cityInspector); cityInspector.append($('#inspector'));
 
+  editor.querySelector('.family-run')?.remove();
   const mapAdvanced = advancedPanel($('.view-strip'), 'Advanced'); mapAdvanced.button.id = 'map-advanced-open';
+  const viewAdvanced=document.createElement('div');viewAdvanced.id='view3d-advanced-controls';mapAdvanced.grid.append(viewAdvanced);
   for (const row of Array.from(editor.querySelectorAll<HTMLElement>('.stage-row'))) {
     const quick = row.querySelector<HTMLElement>('.stage-quick');
     if (quick) {
@@ -122,6 +131,11 @@ export function mountWorkbenchLayout(api: {
     }
     mapAdvanced.grid.append(row);
   }
+  const plan=$<HTMLElement>('[data-setting-path="appearance.city.plan"]').closest<HTMLElement>('.parameter-field')!;
+  const sharedPlan=document.createElement('div');sharedPlan.className='stage-quick';sharedPlan.append(plan);$('.view-strip').insertBefore(sharedPlan,mapAdvanced.button);
+  const buildings=$<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!;
+  const sharedBuildings=document.createElement('div');sharedBuildings.className='stage-quick';sharedBuildings.append(buildings);$('.view-strip').insertBefore(sharedBuildings,mapAdvanced.button);
+  const texture=$<HTMLElement>('[data-setting-path="appearance.textured"]').closest<HTMLElement>('.parameter-field')!;mapAdvanced.grid.prepend(texture);
   const display = document.createElement('div'); display.className = 'city-display-options';
   const specs = [
     ['Footprints', 'footprints'], ['Simple', 'simple-volumes'], ['Complex', 'detailed-volumes'],
@@ -136,15 +150,23 @@ export function mountWorkbenchLayout(api: {
       else { writeAppearanceControl(s, 'appearance.textured', value === 'texture'); writeAppearanceControl(s, 'appearance.city.palette', value === 'ink' ? 'ink' : 'atlas'); }
       api.appearance(); sync();
     }; display.append(button);
-  }); $('.view-strip').insertBefore(display, mapAdvanced.button);
+  });
+  const cityRendering=document.createElement('section');cityRendering.className='advanced-card city-rendering-settings';
+  const cityRenderingTitle=document.createElement('h3');setText(cityRenderingTitle,'City rendering');
+  cityRendering.append(cityRenderingTitle,display);mapAdvanced.grid.prepend(cityRendering);
   const editorTab = $('#family-tab-map .chain-family-label'); setText(editorTab, 'Editor'); setText($('#family-map h3'), 'Editor');
   const strip = $('.view-strip'), toolbar = document.createElement('div');
   toolbar.className = 'toolbar-row';
   toolbar.append($('.style-control'), $('#scene-controls'));
   for (const child of Array.from(strip.children)) if (child !== mapAdvanced.panel) toolbar.append(child);
   // The optional 3D capture action stays available without widening the single settings row.
-  mapAdvanced.grid.prepend($('#capture3d'));
+  const capture = toolbar.querySelector<HTMLElement>('#capture3d');
+  if (capture) {
+    const header = mapAdvanced.panel.querySelector(':scope > header')!;
+    header.insertBefore(capture, header.lastElementChild);
+  }
   strip.prepend(toolbar);
+  const passes=mountRenderPassControls(mapAdvanced.panel,{getSettings:api.getSettings,onChange:api.appearance});
   bindTree(document.body);
   function sync(force = false): void {
     const s = api.getSettings(); let previous = state.get(s);
@@ -166,6 +188,7 @@ export function mountWorkbenchLayout(api: {
       }
       previous.environment = environment; api.syncForms();
     }
+    passes.sync();
     auto.checked = previous.autoCulture; density.value = String(previous.density); output.value = `${Math.round(previous.density * 100)}%`;
     display.querySelectorAll<HTMLButtonElement>('button').forEach((button, i) => button.setAttribute('aria-pressed', String(i < 3
       ? currentComposition(s).buildings.look === button.dataset.cityDisplay

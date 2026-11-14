@@ -1,7 +1,8 @@
 import type { Point, Street } from '../../../rust/bridge/urban';
 import type { CityScene, CityBuildings, CityLayers, CityLod } from './cityCanvas';
-import { ROAD_RANKS, emphasisAlpha, regionalStreetRank, roadWidth, strokeNaturalRoad, type RoadInk, type RoadRank, type RoadStyle } from './roadStyle';
+import { ROAD_RANKS, emphasisAlpha, lookRoadWidth, regionalStreetRank, roadWidth, strokeNaturalRoad, type RoadInk, type RoadRank, type RoadStyle } from './roadStyle';
 import { splitByPavement, type PavementSites, type RoadPavement } from './roadPavement';
+import { groundRoadLook } from './composition';
 
 const roadBounds = new WeakMap<Street, { minX: number; minY: number; maxX: number; maxY: number; pad: number }>();
 export function tileRoadVisible(road: Street, box: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number): boolean {
@@ -39,12 +40,14 @@ function roadPieces(road: Street, sites: PavementSites): { road: Street; pavemen
 /** Regional roads in one material tile (world transform set), with the 2D ranks and paints: `roadStyle.ts`.
  * `sites`: the settlements whose roads are paved, when the map has any. */
 export function drawTileRoads(ctx: CanvasRenderingContext2D, roads: readonly Street[], box: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, style: RoadStyle = { look: 'ink', emphasis: 1, night: false }, ink?: RoadInk, sites?: PavementSites): void {
-  const scale = 1 / mpp, groups = new Map<string, { rank: RoadRank; width: number; roads: Street[]; paved: boolean }>();
+  const scale = 1 / mpp, groups = new Map<string, { rank: RoadRank; width: number; metres: number; roads: Street[]; paved: boolean }>();
   const add = (road: Street, paved: boolean): void => {
     if (!tileRoadVisible(road, box, mpp)) return;
     const rank = regionalStreetRank(road.rank), mean = road.widths.reduce((sum, w) => sum + w, 0) / Math.max(1, road.widths.length);
-    const width = Math.round(roadWidth(rank, mean, scale) * 4) / 4, key = paved ? `${rank}|${width}|paved` : `${rank}|${width}`;
-    let group = groups.get(key); if (!group) groups.set(key, group = { rank, width, roads: [], paved });
+    // The rendered surface keeps true widths: below a pixel, roads of one stroke width still differ by their true width.
+    const rendered = style.look === 'rendered', metres = rendered ? Math.round(mean * 2) / 2 : 0;
+    const width = Math.round(lookRoadWidth(style.look, rank, mean, scale) * 4) / 4, key = `${rank}|${width}${paved ? '|paved' : ''}${rendered ? `|${metres}` : ''}`;
+    let group = groups.get(key); if (!group) groups.set(key, group = { rank, width, metres: rendered ? metres : width, roads: [], paved });
     group.roads.push(road);
   };
   for (const road of roads) {
@@ -53,7 +56,7 @@ export function drawTileRoads(ctx: CanvasRenderingContext2D, roads: readonly Str
   }
   const ordered = [...groups.values()].sort((a, b) => ROAD_RANKS.indexOf(b.rank) - ROAD_RANKS.indexOf(a.rank));
   const trace = (target: Pick<Path2D, 'moveTo' | 'lineTo'>, roads: readonly Street[]): void => { for (const road of roads) road.path.forEach((p, i) => i ? target.lineTo(p.x, p.y) : target.moveTo(p.x, p.y)); };
-  if (style.look === 'natural') { for (const g of ordered) { const path = new Path2D(); trace(path, g.roads); strokeNaturalRoad(ctx, path, g.rank, g.width, scale, g.paved ? { ...style, pavement: 'asphalt' } : style); } return; }
+  if (groundRoadLook(style.look)) { for (const g of ordered) { const path = new Path2D(); trace(path, g.roads); strokeNaturalRoad(ctx, path, g.rank, g.width, scale, g.paved ? { ...style, pavement: 'asphalt' } : style, 0, g.metres); } return; }
   const paint = ink ?? { fill: style.colors?.road ?? '#dccba5', edge: style.colors?.roadEdge ?? '#8b7c63', track: style.colors?.track ?? '#b39a72', trackAlpha: 1 }, e = emphasisAlpha(style.emphasis);
   ctx.lineJoin = ctx.lineCap = 'round';
   for (const pass of ['casing', 'fill'] as const) for (const g of ordered) {

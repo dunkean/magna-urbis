@@ -55,7 +55,9 @@ describe('appearance recipe', () => {
     const composition = presetComposition('satellite'), seasonal = presetComposition('satellite'); seasonal.effects.season = .9;
     const base = resolve({ ...a, composition }).keys, season = resolve({ ...a, composition: seasonal }).keys;
     expect(season.terrainLook).not.toBe(base.terrainLook);
-    for (const pass of ['terrainBase', 'water', 'forest', 'cartography', 'city'] as const) expect(season[pass]).toBe(base[pass]);
+    // Water freezing follows the season too; the retained terrain and forest products do not.
+    expect(season.water).not.toBe(base.water);
+    for (const pass of ['terrainBase', 'forest', 'cartography', 'city'] as const) expect(season[pass]).toBe(base[pass]);
     const recolored = resolve({ ...a, colors: { river: '#112233', waterShore: '#445566' } }).keys;
     expect(recolored.water).toBe(before.water);
     const map = resolve({ style: 'atlas' }).keys;

@@ -29,7 +29,7 @@ import type { BuildingFrame } from './urbanBuilding3d';
 import { occupationMergeSlot, withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
-import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
+import { groundNavigationScale, walkDisplacement, flightDisplacement, navigationFogDistance, WALK_EYE_HEIGHT } from './terrain3dNavigation';
 import { terrain3dPixelRatio, TERRAIN_3D_SETTLE_MS } from './terrain3dResolution';
 import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_3D_GLSL, TREE_DISTANCE_DEFAULT, TREE_STRIDE, TREE_VERTICES, treeLimits, type TreeInputs } from './terrain3dTrees';
 /** Light display quality: illustrated stamps raised within this distance of the eye (m). */
@@ -40,7 +40,9 @@ import { BILLBOARD_3D_GLSL, RAISED_MATERIAL_GLSL, terrain3dRaisedBlend, terrain3
 export interface Terrain3dCamera {
   x: number; y: number; distance: number; yaw: number; pitch: number; exaggeration: number;
   /** In walk mode x/y locate the walker; pitch is the downward viewing angle. */
-  navigation?: 'orbit' | 'walk';
+  navigation?: 'orbit' | 'walk' | 'fly';
+  /** Absolute physical altitude in free-flight mode, in world metres. */
+  flightAltitude?:number;
   /** Capture-only measurements from the actual eye, including terrain clearance. */
   heightAboveTargetMetres?: number; altitudeMetres?: number; viewAngleDegrees?: number; azimuthDegrees?: number; verticalFovDegrees?: number;
 }
@@ -1289,8 +1291,8 @@ export class Terrain3d {
   }
   private frameGeometry(): FrameGeometry {
     const c = this.camera, targetHeight = this.heightAt(c.x, c.y)! * c.exaggeration;
-    if (c.navigation === 'walk') {
-      const eye: Vec3 = [0, WALK_EYE_HEIGHT, 0];
+    if (c.navigation === 'walk' || c.navigation === 'fly') {
+      const eye: Vec3 = [0, c.navigation==='fly'?(c.flightAltitude??targetHeight/c.exaggeration+30)*c.exaggeration-targetHeight:WALK_EYE_HEIGHT, 0];
       const forward: Vec3 = [-Math.sin(c.yaw) * Math.cos(c.pitch), -Math.sin(c.pitch), -Math.cos(c.yaw) * Math.cos(c.pitch)];
       const right = normalize(cross(forward, [0, 1, 0])), up = cross(right, forward);
       const view = lookAt(eye, [forward[0], eye[1] + forward[1], forward[2]]);
@@ -2004,6 +2006,10 @@ export class Terrain3d {
     const lights = terrainLights((this.groundSettings ?? this.forestSettings)?.lighting ?? DEFAULT_TERRAIN_LIGHTING);
     return [lights.primary[0], lights.primary[2], lights.primary[1]];
   }
+  /** One atmospheric distance for terrain, trees and billboards, shared by both GPU backends. */
+  protected fogDistance(): number {
+    return navigationFogDistance(this.camera.navigation, this.camera.distance, this.layer?.width ?? 0);
+  }
   private drawTrees(frame: FrameGeometry): void {
     const gl = this.gl, p = this.treeProgram, c = this.camera;
     if (!p || !this.treesShown() || this.groundSettings?.underdark) return;
@@ -2011,7 +2017,7 @@ export class Terrain3d {
     gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
     gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform4fv(this.uniform('treeFade', p), this.forestTreesUniform(frame));
     gl.uniform3fv(this.uniform('eye', p), frame.eye); gl.uniform3fv(this.uniform('treeLight', p), this.treeLight());
-    gl.uniform1f(this.uniform('fogDistance', p), Math.max(c.distance * 2, 100)); gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
+    gl.uniform1f(this.uniform('fogDistance', p), this.fogDistance()); gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
     gl.drawArraysInstanced(gl.TRIANGLES, 0, TREE_VERTICES, this.treeCount); gl.bindVertexArray(null);
   }
   protected billboardsReady(): boolean { return !this.billboardCount || !!this.billboardProgram; }
@@ -2022,7 +2028,7 @@ export class Terrain3d {
     gl.useProgram(p); gl.bindVertexArray(this.billboardVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     gl.uniformMatrix4fv(this.uniform('matrix',p),false,frame.matrix); gl.uniform3f(this.uniform('cameraOrigin',p),c.x,frame.targetHeight,c.y);
     gl.uniform2f(this.uniform('cameraRight',p),Math.cos(c.yaw),-Math.sin(c.yaw)); gl.uniform1f(this.uniform('exaggeration',p),c.exaggeration);
-    gl.uniform1f(this.uniform('raisedBlend',p),blend); gl.uniform3fv(this.uniform('eye',p),frame.eye); gl.uniform1f(this.uniform('fogDistance',p),Math.max(c.distance*2,100)); gl.uniform1i(this.uniform('uNight',p),+(this.lookSettings.ambience==='night'));
+    gl.uniform1f(this.uniform('raisedBlend',p),blend); gl.uniform3fv(this.uniform('eye',p),frame.eye); gl.uniform1f(this.uniform('fogDistance',p),this.fogDistance()); gl.uniform1i(this.uniform('uNight',p),+(this.lookSettings.ambience==='night'));
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.billboardAtlas.texture); gl.uniform1i(this.uniform('billboardAtlas',p),0);
     gl.drawArraysInstanced(gl.TRIANGLES,0,6,this.billboardCount); gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gl.bindVertexArray(null);
   }
@@ -2032,15 +2038,22 @@ export class Terrain3d {
     this.request();
   }
   getCamera(): Terrain3dCamera { return { ...this.camera }; }
-  setNavigation(navigation: 'orbit' | 'walk'): void {
+  setNavigation(navigation: 'orbit' | 'walk' | 'fly'): void {
     if (!this.options.navigation || (this.camera.navigation ?? 'orbit') === navigation) return;
     this.stopWalking(); this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag');
-    if (navigation === 'walk') {
-      this.orbitBeforeWalk = { distance: this.camera.distance, pitch: this.camera.pitch };
-      // Enter at the point being inspected, on its physical surface.
-      this.camera = { ...this.camera, navigation, distance: 20, pitch: .08 };
-    } else {
-      this.camera = { ...this.camera, navigation, distance: this.orbitBeforeWalk?.distance ?? 120, pitch: this.orbitBeforeWalk?.pitch ?? .8 };
+    const previous=this.camera.navigation??'orbit';
+    if(previous==='orbit')this.orbitBeforeWalk={distance:this.camera.distance,pitch:this.camera.pitch};
+    if(navigation==='fly'){
+      if (!Number.isFinite(this.camera.flightAltitude)) {
+        this.camera={...this.camera,navigation,flightAltitude:(this.heightAt(this.camera.x,this.camera.y)??0)+WALK_EYE_HEIGHT,distance:20,pitch:.08};
+      } else {
+        const frame=this.frameGeometry();
+        this.camera={...this.camera,navigation,x:this.camera.x+frame.eye[0],y:this.camera.y+frame.eye[2],flightAltitude:(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,distance:20};
+      }
+    }else if(navigation==='walk'){
+      this.camera={...this.camera,navigation,distance:20,pitch:.08};
+    }else{
+      this.camera={...this.camera,navigation,distance:this.orbitBeforeWalk?.distance??120,pitch:this.orbitBeforeWalk?.pitch??.8};
     }
     this.changed();
   }
@@ -2106,7 +2119,7 @@ export class Terrain3d {
    * cursor stays under it: the orbit target slides toward that point in proportion to the distance change. */
   zoom(factor: number, cursorX?: number, cursorY?: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
-    if (this.camera.navigation === 'walk') return;
+    if (this.camera.navigation === 'walk' || this.camera.navigation==='fly') return;
     const before = this.camera.distance, anchor = cursorX === undefined || cursorY === undefined ? null : this.cursorGround(cursorX, cursorY);
     this.camera.distance = before / factor ** this.navigationScale();
     this.limitCamera();
@@ -2138,7 +2151,8 @@ export class Terrain3d {
     const minimumDistance = this.options.navigation ? 2.5 : this.height / (2 * Math.tan(FOV / 2) * this.maxScale());
     c.distance = clamp(Number.isFinite(c.distance) ? c.distance : width, minimumDistance, Math.max(width * 5, minimumDistance));
     if (!this.options.navigation) c.navigation = 'orbit';
-    c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : .8, c.navigation === 'walk' ? -1.45 : .14, c.navigation === 'walk' ? 1.45 : 1.48);
+    if(c.navigation==='fly'){const ground=this.heightAt(c.x,c.y)??0;c.flightAltitude=clamp(Number.isFinite(c.flightAltitude)?c.flightAltitude!:ground+30,ground+WALK_EYE_HEIGHT,ground+width*5);}
+    c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : .8, c.navigation === 'walk'||c.navigation==='fly' ? -1.45 : .14, c.navigation === 'walk'||c.navigation==='fly' ? 1.45 : 1.48);
     c.yaw = Number.isFinite(c.yaw) ? ((c.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI : 0;
     c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, 1, 5);
   }
@@ -2222,7 +2236,7 @@ export class Terrain3d {
     gl.uniform1f(this.uniform('exaggeration'), this.camera.exaggeration);
     gl.uniform1f(this.uniform('raisedBlend'),raisedBlend);
     gl.uniform3fv(this.uniform('eye'), frame.eye);
-    gl.uniform1f(this.uniform('fogDistance'), Math.max(this.camera.distance * 2, 100));
+    gl.uniform1f(this.uniform('fogDistance'), this.fogDistance());
     const settings=this.groundSettings;
     gl.uniform2fv(this.uniform('uWaterSeason'), waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
     const canopy=settings??this.forestSettings;
@@ -2358,6 +2372,10 @@ export class Terrain3d {
     const [dx, dy] = walkDisplacement(this.camera.yaw, forward, right, seconds, fast);
     this.camera.x += dx; this.camera.y += dy;
   }
+  private fly(forward:number,right:number,up:number,seconds:number,fast=false):void{
+    const [dx,dy,dz]=flightDisplacement(this.camera.yaw,this.camera.pitch,forward,right,up,seconds,fast);
+    this.camera.x+=dx;this.camera.y+=dy;this.camera.flightAltitude=(this.camera.flightAltitude??(this.heightAt(this.camera.x,this.camera.y)??0)+30)+dz;
+  }
   private stopWalking(): void {
     this.walkKeys.clear(); cancelAnimationFrame(this.walkFrame); this.walkFrame = 0; this.walkTime = 0;
   }
@@ -2366,14 +2384,16 @@ export class Terrain3d {
     this.walkTime = performance.now();
     const step = (now: number): void => {
       this.walkFrame = 0;
-      if (!this.active || this.camera.navigation !== 'walk' || !this.walkKeys.size) return;
+      if (!this.active || !['walk','fly'].includes(this.camera.navigation??'orbit') || !this.walkKeys.size) return;
       const held = (...keys: string[]): number => keys.some(key => this.walkKeys.has(key)) ? 1 : 0;
       const forward = held('KeyW', 'KeyZ', 'ArrowUp') - held('KeyS', 'ArrowDown');
       const right = held('KeyD', 'ArrowRight') - held('KeyA', 'KeyQ', 'ArrowLeft');
       // Bound catch-up after a stalled or backgrounded frame.
-      this.walk(forward, right, Math.min(.05, Math.max(0, (now - this.walkTime) / 1000)), !!held('ShiftLeft', 'ShiftRight'));
+      const seconds=Math.min(.05,Math.max(0,(now-this.walkTime)/1000)),fast=!!held('ShiftLeft','ShiftRight');
+      const up=held('Space','KeyE')-held('ControlLeft','ControlRight','KeyC');
+      if(this.camera.navigation==='fly')this.fly(forward,right,up,seconds,fast);else this.walk(forward,right,seconds,fast);
       this.walkTime = now;
-      if (forward || right) this.changed();
+      if (forward || right || up) this.changed();
       this.walkFrame = requestAnimationFrame(step);
     };
     this.walkFrame = requestAnimationFrame(step);
@@ -2399,8 +2419,11 @@ export class Terrain3d {
       const dx = event.clientX - previous.x, dy = event.clientY - previous.y;
       this.pointers.set(event.pointerId, { ...previous, x: event.clientX, y: event.clientY });
       const gesture = this.touchGesture();
-      if (this.camera.navigation === 'walk') {
-        if (gesture && this.gesture) this.walk((gesture.y - this.gesture.y) * .04, (this.gesture.x - gesture.x) * .04, .12);
+      if (this.camera.navigation === 'walk'||this.camera.navigation==='fly') {
+        if (gesture && this.gesture) {
+          const forward = (gesture.y - this.gesture.y) * .04, right = (this.gesture.x - gesture.x) * .04;
+          if (this.camera.navigation === 'fly') this.fly(forward, right, 0, .12); else this.walk(forward, right, .12);
+        }
         else if (this.pointers.size === 1) { this.camera.yaw -= dx * .003; this.camera.pitch += dy * .003; }
       } else if (gesture && this.gesture) {
         this.pan(gesture.x - this.gesture.x, gesture.y - this.gesture.y);
@@ -2420,16 +2443,18 @@ export class Terrain3d {
       if (!this.active) return;
       event.preventDefault(); event.stopPropagation();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1);
-      if (this.camera.navigation === 'walk') { this.walk(-clamp(delta, -200, 200) / 100, 0, .25, event.shiftKey); this.changed(); }
+      if (this.camera.navigation === 'walk'||this.camera.navigation==='fly') {if(this.camera.navigation==='fly')this.fly(-clamp(delta,-200,200)/100,0,0,.25,event.shiftKey);else this.walk(-clamp(delta,-200,200)/100,0,.25,event.shiftKey);this.changed();}
       else { const rect = canvas.getBoundingClientRect(); this.zoom(Math.exp(-clamp(delta, -1000, 1000) * .0015), event.clientX - rect.left, event.clientY - rect.top); }
     }, { passive: false, signal });
     canvas.addEventListener('dblclick', event => {
       if (!this.active) return; event.preventDefault(); event.stopPropagation(); this.zoom(event.shiftKey ? .5 : 2);
     }, { signal });
     canvas.addEventListener('keydown', event => {
-      if (this.active && this.camera.navigation === 'walk') {
+      if (this.active && (this.camera.navigation === 'walk'||this.camera.navigation==='fly')) {
         if (event.code === 'Escape') { event.preventDefault(); event.stopPropagation(); this.setNavigation('orbit'); return; }
-        if (!['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(event.code)) return;
+        const horizontal = ['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(event.code);
+        const vertical = this.camera.navigation === 'fly' && ['Space', 'KeyE', 'KeyC', 'ControlLeft', 'ControlRight'].includes(event.code);
+        if (!horizontal && !vertical) return;
         event.preventDefault(); event.stopPropagation(); this.walkKeys.add(event.code); this.startWalking(); return;
       }
       if (!this.active || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;

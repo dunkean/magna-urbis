@@ -1,4 +1,5 @@
 import { clearCityGroundUnderCanopy } from './cityCanopy';
+import { groundRoadLook } from './composition';
 /** Canvas 2D `drawCity` options shared by the V2 (nativeCityMap) and City Bench (paintCity).
  * One function maps the resolved appearance to the options (V2 values), so both pages paint the same
  * parchment/ink/night frame. What is truly page-specific stays a parameter, never a fork:
@@ -78,7 +79,7 @@ export function city3dPlanOptions(r: ResolvedAppearance, labelsAllowed = true) {
     roadLook: c.networks.roads.look, roadEmphasis: c.networks.roads.emphasis, streetPalette: city.palette === 'terrain' ? 'parchment' as const : city.palette,
     waterColor: hydrologyWaterColour(c.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.palette.colors),
     roadInk: roadInkOf(terrainStyle(r.palette.mapStyle, r.palette.colors).palette, buildingColors(r.palette.colors, c.ambience)),
-    groundBlend: c.networks.roads.look === 'natural', night: c.ambience === 'night',
+    groundBlend: groundRoadLook(c.networks.roads.look), night: c.ambience === 'night',
     buildingsVisible: c.buildings.visible && c.buildings.meshes === 'none',
     appearance: { colors: r.palette.colors, style: city.buildingStyle, diagnostic: city.diagnostic, ambience: c.ambience } };
 }

@@ -47,7 +47,7 @@ import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { forestOccupation } from './forestOccupation';
 import { withLandDetail, type LandCultures } from './landDetail';
-import type { SemanticDepth, SemanticLook } from '../render/composition';
+import { groundRoadLook, type SemanticDepth, type SemanticLook } from '../render/composition';
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { Layout, Partition, Street } from '../../../rust/bridge/urban';
@@ -70,6 +70,11 @@ export interface City3dOptions {
   fastTerrain?: boolean;
   /** Optional workshop controls. Omitted keeps City Bench's original two ground modes. */
   materialGrounds?: boolean;
+  /** Hide legacy independent ground choices when the host owns the map style. */
+  groundControl?: boolean;
+  toolbarHost?: HTMLElement;
+  advancedControls?: HTMLElement;
+  sharedVisibilityControls?: boolean;
   /** Drape the exact raster material over real geometry on software WebGL. */
   softwareMaterialFallback?: boolean;
   getGroundSettings?(ground: City3dGround): Terrain3dGroundSettings | undefined;
@@ -117,6 +122,8 @@ export interface City3dOptions {
   getBackground?(): string | undefined;
   /** Ready map bitmap; hosts with a rendered canvas avoid a PNG/decode round trip. */
   getBackgroundImage?(): HTMLCanvasElement | undefined;
+  /** Revision of a mutable background canvas, independent of its object identity. */
+  getBackgroundKey?(): string;
   /** Retained Illustrated background with the raised relief removed from its oblique material. */
   getIllustrated?(): { key: string; load(): Promise<Terrain3dIllustration> } | undefined;
   onSelect?(id: string): void;
@@ -172,6 +179,8 @@ export interface City3d {
   hide(): void;
   /** Cheap: re-reads the getters and updates only what changed. */
   refresh(): void;
+  /** Reflect a new recipe immediately, without waiting for map textures or shader preparation. */
+  syncControls(): void;
   focus(point: Point, radius?: number): void;
   getCamera(): Terrain3dCamera | undefined;
   setCamera(camera: Terrain3dCamera): void;
@@ -215,7 +224,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   const root = document.createElement('div'); root.className = 'city3d'; root.hidden = true;
   root.innerHTML = `<canvas tabindex="0" aria-label="Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner."></canvas>
     <div class="city3d-bar" role="group" aria-label="Vue 3D">
-      <label data-navigation-label>Navigation <select data-navigation><option value="orbit">Orbite</option><option value="walk">Marche</option></select></label>
+      <label data-navigation-label>Navigation <select data-navigation><option value="orbit">Orbite</option><option value="walk">Marche</option><option value="fly">Vol libre</option></select></label>
       <label title="Fond drapé sur le relief">Sol <select data-ground><option value="map">Carte pré-rendue</option><option value="render">Rendu 3D (sol procédural)</option></select></label>
       <label title="Rues, îlots et parcelles dessinés sur le sol en vue rapprochée"><input type="checkbox" data-plan checked>Plan</label>
       <label title="Textures des toits, murs, rues et places (bâtiments et constructions seulement)"><input type="checkbox" data-textured>Textures</label>
@@ -231,7 +240,10 @@ export function mountCity3d(options: City3dOptions): City3d {
   options.host.append(root);
   const canvas = root.querySelector('canvas')!, marker = root.querySelector<HTMLElement>('.city3d-marker')!, info = root.querySelector<HTMLElement>('.city3d-info')!;
   info.hidden = options.labels === false;
-  const $ = <T extends HTMLElement>(selector: string): T => root.querySelector(selector) as T;
+  const toolbar=root.querySelector<HTMLElement>('.city3d-bar')!,externalControls=document.createElement('section');
+  externalControls.className='advanced-card view3d-settings';externalControls.hidden=true;
+  const $ = <T extends HTMLElement>(selector: string): T => (selector==='.city3d-bar'?toolbar:root.querySelector(selector)??toolbar.querySelector(selector)??externalControls.querySelector(selector)) as T;
+  $('[data-ground]').closest('label')!.hidden = options.groundControl === false;
   $('[data-navigation-label]').hidden = !options.navigation;
   const groundNames: Record<typeof CITY_3D_MATERIAL_GROUNDS[number], [string, string, string, string, string]> = {
     'parchment-render': ['Satellite peint', 'Painted satellite', '绘制卫星', 'Satélite pintado', 'Satélite pintado'],
@@ -248,6 +260,12 @@ export function mountCity3d(options: City3dOptions): City3d {
     const label = document.createElement('label'); label.innerHTML = 'Raffinement <select data-refinement><option value="source">Source</option><option value="noise">Bruit multi-échelle</option></select>';
     $('.city3d-bar').append(label);
   }
+  if(options.sharedVisibilityControls)for(const selector of ['[data-plan]','[data-refinement]','[data-colors]','[data-relief]'])$(selector)?.closest('label')?.setAttribute('hidden','');
+  if(options.advancedControls){
+    for(const selector of ['[data-ground]','[data-refinement]','[data-colors]','[data-relief]']){const field=$(selector)?.closest('label');if(field)externalControls.append(field);}
+    options.advancedControls.append(externalControls);
+  }
+  if(options.toolbarHost){toolbar.hidden=true;options.toolbarHost.insertBefore(toolbar,options.toolbarHost.querySelector(':scope > .advanced-open'));}
   const orbitHelp = (): string => urbanText(['Vue 3D de la ville. Glisser : déplacer, clic droit ou Maj + glisser : orbiter, molette : zoom, clic : sélectionner.', '3D city view. Drag to pan, right-click or Shift-drag to orbit, wheel to zoom, click to select.', '城市三维视图。拖动平移，右键或 Shift 拖动环绕，滚轮缩放，点击选择。', 'Vista 3D de la ciudad. Arrastra para desplazar, clic derecho o Mayús y arrastrar para orbitar, rueda para zoom y clic para seleccionar.', 'Vista 3D da cidade. Arraste para mover, clique direito ou Shift e arraste para orbitar, roda para zoom e clique para selecionar.']);
   const localizeControls = (): void => {
     canvas.setAttribute('aria-label', orbitHelp());
@@ -256,6 +274,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     label('[data-ground]', ['Sol','Ground','地面','Suelo','Solo'], ['Fond drapé sur le relief','Background draped over terrain','覆盖在地形上的背景','Fondo ajustado al relieve','Fundo sobre o relevo']);
     label('[data-navigation]', ['Navigation', 'Navigation', '导航', 'Navegación', 'Navegação']);
     $<HTMLOptionElement>('[data-navigation] option[value="orbit"]').textContent = urbanText(['Orbite', 'Orbit', '环绕', 'Órbita', 'Órbita']);
+    $<HTMLOptionElement>('[data-navigation] option[value="fly"]').textContent=urbanText(['Vol libre','Free flight','自由飞行','Vuelo libre','Voo livre']);
     $<HTMLOptionElement>('[data-navigation] option[value="walk"]').textContent = urbanText(['Marche', 'Walk', '行走', 'Caminar', 'Caminhar']);
     label('[data-plan]', ['Plan','Plan','平面','Plano','Planta'], ['Rues, îlots et parcelles dessinés sur le sol en vue rapprochée','Streets, blocks and parcels drawn on the ground in close view','近景中绘制在地面的街道、街区与地块','Calles, manzanas y parcelas dibujadas en el suelo de cerca','Ruas, quadras e parcelas desenhadas no solo de perto']);
     label('[data-textured]', ['Textures','Textures','纹理','Texturas','Texturas'], ['Textures des toits, murs, rues et places (bâtiments et constructions seulement)','Roof, wall, street and square textures (buildings and structures only)','屋顶、墙壁、街道和广场纹理（仅建筑与构筑物）','Texturas de tejados, muros, calles y plazas (solo edificios y construcciones)','Texturas de telhados, paredes, ruas e praças (somente edifícios e construções)']);
@@ -307,6 +326,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if(landuse!==occupationLanduse){occupationLanduse=landuse;occupationGround=landuse&&withLandDetail(forestOccupation(landuse),landuse,semantic?.cultures);}
     return {...forest,occupation:occupationGround};
   }
+  let backgroundKey: string | undefined;
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = '';
   let imageBillboards: Terrain3dBillboards | undefined;
   let bridgeWaterAt: City3dHeight | undefined;
@@ -435,14 +455,15 @@ export function mountCity3d(options: City3dOptions): City3d {
     imageBillboards = undefined;
     const surface = options.getSurface?.();
     t.setSurface(surface?.height ?? { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, surface?.water, surface?.waterVisible);
-    imageUrl = undefined; syncImage(d);
+    imageUrl = undefined; backgroundKey=undefined; syncImage(d);
     applyGround();
   }
   /** The 2D background may change (map style selector): follow its image. */
   function syncImage(d: Decor): void {
     const bitmap = options.getBackgroundImage?.();
     if (bitmap) {
-      if (image !== bitmap) { ++textureTicket; imageUrl = undefined; image = bitmap; imageBillboards = undefined; applyGround(); }
+      const revision=options.getBackgroundKey?.();
+      if (image !== bitmap || backgroundKey !== revision) { backgroundKey=revision; ++textureTicket; imageUrl = undefined; image = bitmap; imageBillboards = undefined; applyGround(); }
       return;
     }
     const illustrated = ground === 'map' ? options.getIllustrated?.() : undefined;
@@ -660,7 +681,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const planOptions = options.getPlanOptions?.();
     if (roads?.length) {
       const roadLook=planOptions?.roadLook??(planOptions?.groundBlend?'natural':'ink');
-      const target = roadLook==='natural'?groundContext():inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
+      const target = groundRoadLook(roadLook)?groundContext():inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       drawTileRoads(target, roads, box, mpp, { look: roadLook, emphasis: planOptions?.roadEmphasis ?? 1, night: !satellite&&planOptions?.appearance?.ambience === 'night', colors: planOptions?.appearance?.colors }, planOptions?.roadInk, layoutPavementSites(options.getLayouts?.())); target.restore();
     }
     // Remote accesses of activity sites (stairs, causeways, rope bridges, tunnels) lie in the ground tile like the roads.
@@ -931,16 +952,17 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (!active || error) return;
     const t = terrain, c = t?.getCamera(), k = display?.kinds, id = options.getSelected?.(), b = id ? display?.buildings.find(x => x.id === id) : undefined;
     const height = b ? building3dHeight(b) : 0;
-    const walking = c?.navigation === 'walk';
-    $<HTMLSelectElement>('[data-navigation]').value = walking ? 'walk' : 'orbit';
-    root.dataset.navigationMode = walking ? 'walk' : 'orbit';
+    const flying=c?.navigation==='fly',walking=c?.navigation==='walk';
+    $<HTMLSelectElement>('[data-navigation]').value = flying?'fly':walking?'walk':'orbit';
+    root.dataset.navigationMode = flying?'fly':walking?'walk':'orbit';
     const walkHelp = urbanText(['Marche · ZQSD / WASD / flèches : marcher · glisser : regarder · Maj : accélérer · Échap : orbite', 'Walk · WASD / ZQSD / arrows: move · drag: look · Shift: faster · Esc: orbit', '行走 · WASD / ZQSD / 方向键：移动 · 拖动：环视 · Shift：加速 · Esc：环绕', 'Caminar · WASD / ZQSD / flechas: moverse · arrastrar: mirar · Mayús: acelerar · Esc: órbita', 'Caminhar · WASD / ZQSD / setas: mover · arrastar: olhar · Shift: acelerar · Esc: órbita']);
-    canvas.setAttribute('aria-label', walking ? walkHelp : orbitHelp());
+    const flightHelp=urbanText(['Vol libre · ZQSD / WASD : se déplacer · Espace / E : monter · Ctrl / C : descendre · Maj : accélérer · Échap : orbite','Free flight · WASD: move · Space / E: ascend · Ctrl / C: descend · Shift: faster · Esc: orbit','自由飞行 · WASD：移动 · 空格 / E：上升 · Ctrl / C：下降 · Shift：加速','Vuelo libre · WASD: mover · Espacio / E: subir · Ctrl / C: bajar · Mayús: acelerar','Voo livre · WASD: mover · Espaço / E: subir · Ctrl / C: descer · Shift: acelerar']);
+    canvas.setAttribute('aria-label',flying?flightHelp:walking?walkHelp:orbitHelp());
     info.innerHTML = [
       softwareMaterial && ground !== 'map' ? urbanText(['Texture de terrain · WebGL logiciel, drapée sur le relief 3D.', 'Raster terrain texture · software WebGL, draped over the 3D terrain.', '地形纹理 · 软件 WebGL，覆盖在三维地形上。', 'Textura del terreno · WebGL por software, sobre el relieve 3D.', 'Textura do terreno · WebGL por software, sobre o relevo 3D.']) : '',
       display && display.buildings.length > bridgeStats.count + wallStats.pieces + quayCount ? `<b>${(display.buildings.length - bridgeStats.count - wallStats.pieces - quayCount).toLocaleString()}</b> ${urbanText(['bâtiments','buildings','栋建筑','edificios','edifícios'])}${bridgeStats.count ? ` · ${urbanText(['ponts','bridges','桥梁','puentes','pontes'])} ${bridgeStats.count}` : ''}${wallStats.count ? ` · ${urbanText(['enceintes','enclosures','围墙','recintos','muralhas'])} ${wallStats.count}` : ''} · ${urbanText(['silhouettes','silhouettes','轮廓','siluetas','silhuetas'])} ${k!.silhouette} · ${urbanText(['plans','plans','平面','planos','plantas'])} ${k!.compact} · ${urbanText(['détaillés','detailed','详细','detallados','detalhados'])} ${k!.detailed}${converting.size ? ` · ${urbanText(['réalisation','realizing','生成中','realizando','realizando'])} ${converting.size}…` : ''}` : urbanText(['Aucun bâtiment : tracez les silhouettes ou implantez les bâtiments.', 'No buildings: draw silhouettes or place buildings.', '没有建筑：请绘制轮廓或放置建筑。', 'Sin edificios: dibuja siluetas o coloca edificios.', 'Sem edifícios: desenhe silhuetas ou posicione edifícios.']),
       b ? `${urbanText(['Sélection','Selection','选择','Selección','Seleção'])} : ${b.id} · ${b.recipe_id} · ${height.toFixed(1)} m${isBuildingProjection(b) ? ` · ${urbanText(['volume cartographique','map volume','地图体量','volumen cartográfico','volume cartográfico'])}` : ''}` : '',
-      walking ? walkHelp : c ? `${urbanText(['Distance','Distance','距离','Distancia','Distância'])} ${(c.distance).toFixed(1)} m · ${urbanText(['inclinaison','tilt','倾角','inclinación','inclinação'])} ${Math.round(c.pitch * 180 / Math.PI)}° · ${urbanText(['glisser : déplacer · clic droit / Maj : orbiter','drag: pan · right-click / Shift: orbit','拖动：平移 · 右键 / Shift：环绕','arrastrar: desplazar · clic derecho / Mayús: orbitar','arrastar: mover · clique direito / Shift: orbitar'])}` : '',
+      flying?flightHelp:walking ? walkHelp : c ? `${urbanText(['Distance','Distance','距离','Distancia','Distância'])} ${(c.distance).toFixed(1)} m · ${urbanText(['inclinaison','tilt','倾角','inclinación','inclinação'])} ${Math.round(c.pitch * 180 / Math.PI)}° · ${urbanText(['glisser : déplacer · clic droit / Maj : orbiter','drag: pan · right-click / Shift: orbit','拖动：平移 · 右键 / Shift：环绕','arrastrar: desplazar · clic derecho / Mayús: orbitar','arrastar: mover · clique direito / Shift: orbitar'])}` : '',
       info.dataset.detailError ? `${urbanText(['Réalisation','Realization','生成','Realización','Realização'])} : ${info.dataset.detailError}` : '',
       sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1'
         ? `Fenêtre native : ${sceneOf.parents} parents · ${sceneOf.buildings.length} membres · ${sceneOf.complete ? 'complète' : `partielle (${sceneOf.reason})`} · volumes cartographiques · capacité inconnue` : '',
@@ -949,7 +971,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let down: [number, number] | undefined;
   canvas.addEventListener('pointerdown', event => { down = event.button === 0 ? [event.clientX, event.clientY] : undefined; });
   canvas.addEventListener('pointerup', event => {
-    if (terrain?.getCamera().navigation === 'walk') { down = undefined; return; }
+    if (['walk','fly'].includes(terrain?.getCamera().navigation??'orbit')) { down = undefined; return; }
     if (!down || !terrain || Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 4) { down = undefined; return; }
     down = undefined;
     const rect = canvas.getBoundingClientRect(), id = terrain.pickBuilding(event.clientX - rect.left, event.clientY - rect.top);
@@ -961,21 +983,28 @@ export function mountCity3d(options: City3dOptions): City3d {
 
   // ------------------------------------------------------------ controls
   $<HTMLSelectElement>('[data-navigation]').onchange = event => {
-    terrain?.setNavigation((event.target as HTMLSelectElement).value as 'orbit' | 'walk');
+    terrain?.setNavigation((event.target as HTMLSelectElement).value as 'orbit' | 'walk' | 'fly');
     canvas.focus({ preventScroll: true });
   };
   function changedView(): void {
     options.onViewSettingsChange?.({ ground, plan: planOverlay, colors, exaggeration: terrain?.getCamera().exaggeration ?? Number($<HTMLInputElement>('[data-relief]').value), refinement, trees3d: nearTrees, treeDistance });
   }
+  let groundControlRevision = 0;
   function syncView(): void {
     const saved = options.getViewSettings?.(); if (!saved) return;
-    if (saved.ground && Array.from($<HTMLSelectElement>('[data-ground]').options).some(option => option.value === saved.ground)) ground = saved.ground;
+    const groundControl = $<HTMLSelectElement>('[data-ground]');
+    if (saved.ground && saved.ground !== ground && Array.from(groundControl.options).some(option => option.value === saved.ground)) {
+      ground = saved.ground; ++groundControlRevision;
+      groundControl.disabled = false; root.removeAttribute('aria-busy');
+    }
     if (saved.plan !== undefined) planOverlay = saved.plan;
     if (saved.colors) colors = saved.colors;
     if (saved.refinement) refinement = saved.refinement;
     if (saved.trees3d !== undefined) nearTrees = saved.trees3d;
     if (saved.treeDistance !== undefined) treeDistance = Math.max(200, Math.min(1500, saved.treeDistance));
-    $<HTMLInputElement>('[data-trees]').checked = nearTrees; $<HTMLInputElement>('[data-tree-distance]').value = String(treeDistance); $<HTMLElement>('[data-tree-distance-label]').hidden = !nearTrees;
+    const treeGround=options.getGroundSettings?.(ground),treesAvailable=!softwareMaterial&&!!treeGround?.renderV2&&!treeGround.forestBrushes&&treeGround.groundCover!==false;
+    $<HTMLInputElement>('[data-trees]').closest('label')!.hidden=!treesAvailable;
+    $<HTMLInputElement>('[data-trees]').checked = nearTrees; $<HTMLInputElement>('[data-tree-distance]').value = String(treeDistance); $<HTMLElement>('[data-tree-distance-label]').hidden = !nearTrees || !treesAvailable;
     terrain?.setTreeDistance(treeDistance); terrain?.setNearTrees(nearTrees);
     $<HTMLSelectElement>('[data-ground]').value = ground; $<HTMLInputElement>('[data-plan]').checked = planOverlay;
     $<HTMLSelectElement>('[data-colors]').value = colors;
@@ -986,6 +1015,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   $<HTMLSelectElement>('[data-ground]').onchange = async event => {
     const control = event.target as HTMLSelectElement, next = control.value as Ground;
+    const revision = ++groundControlRevision;
     const deferred = options.fastTerrain && !softwareMaterial && next !== 'map' && terrain?.getShaderProfile() === 'map';
     if (deferred) {
       control.disabled = true; root.setAttribute('aria-busy', 'true');
@@ -994,11 +1024,12 @@ export function mountCity3d(options: City3dOptions): City3d {
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     }
     try {
+      if (revision !== groundControlRevision) return;
       if (disposed || !active) { control.value = ground; return; }
       ground = next; changedView(); applyGround();
     } catch (error) {
       ground = 'map'; control.value = ground; changedView(); applyGround(); info.dataset.detailError = String(error);
-    } finally { control.disabled = false; root.removeAttribute('aria-busy'); updateInfo(); }
+    } finally { if (revision === groundControlRevision) { control.disabled = false; root.removeAttribute('aria-busy'); updateInfo(); } }
   };
   $<HTMLInputElement>('[data-plan]').onchange = event => { planOverlay = (event.target as HTMLInputElement).checked; changedView(); terrain?.invalidateTiles(); };
   // Hide or show only: the tree stream is built on the first switch-on, nothing else of the scene is rebuilt.
@@ -1006,7 +1037,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   // The distance changes the tree layer only: the stream is rebuilt around the eye, nothing else of the scene.
   $<HTMLInputElement>('[data-tree-distance]').onchange = event => { treeDistance = Number((event.target as HTMLInputElement).value); terrain?.setTreeDistance(treeDistance); changedView(); };
   const texturedBox = $<HTMLInputElement>('[data-textured]');
-  texturedBox.closest('label')!.hidden = !options.setTextured;
+  texturedBox.closest('label')!.hidden = !options.setTextured || !!options.sharedVisibilityControls;
   texturedBox.onchange = () => options.setTextured?.(texturedBox.checked);
   $<HTMLSelectElement>('[data-colors]').onchange = event => { colors = (event.target as HTMLSelectElement).value as Colors; changedView(); syncBuildings(); };
   $<HTMLInputElement>('[data-relief]').oninput = event => { if (terrain) terrain.setCamera({ ...terrain.getCamera(), exaggeration: Number((event.target as HTMLInputElement).value) }); changedView(); updateInfo(); };
@@ -1076,7 +1107,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     },
     show(): void {
       if (disposed) return;
-      root.hidden = false; active = true;
+      root.hidden = false; active = true;if(options.toolbarHost)toolbar.hidden=false;externalControls.hidden=false;
       const started = performance.now(), t = ensureTerrain(); if (!t) return;
       timings.engine = timings.engine ?? Math.round(performance.now() - started);
       t.resize(root.clientWidth, root.clientHeight); t.setActive(true); sync(); canvas.focus({ preventScroll: true });
@@ -1089,11 +1120,12 @@ export function mountCity3d(options: City3dOptions): City3d {
       }
     },
     hide(): void {
-      active = false; root.hidden = true; terrain?.setActive(false);
+      active = false; root.hidden = true;if(options.toolbarHost)toolbar.hidden=true;externalControls.hidden=true; terrain?.setActive(false);
       cancelAnimationFrame(detailFrame); detailFrame = 0;
       unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d');
     },
     refresh(): void { if (active) sync(); },
+    syncControls: syncView,
     focus(point: Point, radius = 150): void {
       const t = terrain; if (!t) return;
       const span = Math.max(120, 2.4 * radius), distance = span / (2 * Math.tan(TERRAIN_3D_FOV / 2));
@@ -1113,7 +1145,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     capture: async () => { if (!terrain) throw new Error('Vue 3D inactive.'); const request = await captureReady(); const image = await textOverlay.composite(await terrain.capture()); request.mark('capture-complete'); return image; },
     captureIllustration: async () => { if (!terrain) throw new Error('Vue 3D inactive.'); const request = await captureReady(); const result = await terrain.captureIllustration(), image = await textOverlay.composite(result.image); request.mark('capture-complete'); return { ...result, image }; },
     stats: () => ({ programsReady: programsReady(), buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces - quayCount, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo(), parentWindow: sceneOf && 'projection' in sceneOf && sceneOf.projection === 'native-parent-window-3d-1' ? { complete: sceneOf.complete, reason: sceneOf.reason, parents: sceneOf.parents, members: sceneOf.buildings.length } : undefined }),
-    dispose(): void { drapeTiles.clear(); tileWaterMask.dispose(); waterCells.dispose(); textOverlay.dispose(); disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); window.removeEventListener('magna-locale-change', localizeControls); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
+    dispose(): void { drapeTiles.clear(); tileWaterMask.dispose(); waterCells.dispose(); textOverlay.dispose(); disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); window.removeEventListener('magna-locale-change', localizeControls); resize.disconnect(); terrain?.dispose(); terrain = undefined;toolbar.remove();externalControls.remove();root.remove(); },
   };
   // The initial status reads display/scene state declared above; initialise it
   // after those bindings exist (also when mounted lazily from the V2 app).

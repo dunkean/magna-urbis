@@ -43,10 +43,8 @@ export function mergeCityPlans(parts: readonly { plan: CityScene; buildings?: Ci
     lotEnclosures: [], enclosureProfiles: [], lotYards: [], extent: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     ground: parts.find(p => p.plan.ground)?.plan.ground, parcelById: new Map(),
     bins: { blocks: new SpatialBins([]), parcels: new SpatialBins([]), streets: new SpatialBins([]), landmarks: new SpatialBins([]) } };
-  const items: CityBuildings['items'] = [], byId = new Map<string, number>(), itemShift: number[] = [];
-  for (const { plan: p, buildings } of parts) {
-    const L = plan.layouts.length, P = plan.parcels.length, I = items.length;
-    itemShift.push(I);
+  for (const { plan: p } of parts) {
+    const L = plan.layouts.length, P = plan.parcels.length;
     layouts.push(...p.layouts);
     plan.blocks.push(...p.blocks.map(b => ({ ...b, layout: b.layout + L })));
     plan.parcels.push(...p.parcels.map(x => ({ ...x, layout: x.layout + L })));
@@ -60,13 +58,24 @@ export function mergeCityPlans(parts: readonly { plan: CityScene; buildings?: Ci
     plan.lotYards!.push(...(p.lotYards ?? []).map(y => ({ ...y, parcel: y.parcel + P })));
     if (p.layouts.length || p.footprint.length) plan.extent = union(plan.extent, p.extent);
     for (const [id, i] of p.parcelById) if (!plan.parcelById.has(id)) plan.parcelById.set(id, i + P);
+  }
+  plan.bins = { blocks: new SpatialBins(boxes(parts.map(p => p.plan.bins.blocks)), 128), parcels: new SpatialBins(boxes(parts.map(p => p.plan.bins.parcels)), 64),
+    streets: new SpatialBins(boxes(parts.map(p => p.plan.bins.streets)), 128), landmarks: new SpatialBins(boxes(parts.map(p => p.plan.bins.landmarks)), 128) };
+  return { plan, buildings: mergeCityBuildings(parts) };
+}
+/** The buildings part of mergeCityPlans: items with their parcel indices shifted by the parcels of the earlier plans.
+ * Also used alone to swap one city's buildings (very large towns: detail of the visible area, v2/nativeCityMap.ts). */
+export function mergeCityBuildings(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): CityBuildings {
+  const items: CityBuildings['items'] = [], byId = new Map<string, number>(), itemShift: number[] = [];
+  let P = 0;
+  for (const { plan: p, buildings } of parts) {
+    itemShift.push(items.length);
     for (const b of buildings?.items ?? []) {
       if (!byId.has(b.id)) byId.set(b.id, items.length);
       items.push({ ...b, parcel: b.parcel === undefined ? undefined : b.parcel + P });
     }
+    P += p.parcels.length;
   }
-  plan.bins = { blocks: new SpatialBins(boxes(parts.map(p => p.plan.bins.blocks)), 128), parcels: new SpatialBins(boxes(parts.map(p => p.plan.bins.parcels)), 64),
-    streets: new SpatialBins(boxes(parts.map(p => p.plan.bins.streets)), 128), landmarks: new SpatialBins(boxes(parts.map(p => p.plan.bins.landmarks)), 128) };
   const built = parts.map(p => p.buildings), counts = built.map(b => b?.items.length ?? 0);
   let roofs: CityRoofs | undefined;
   if (built.some(b => b?.roofs)) {
@@ -79,7 +88,7 @@ export function mergeCityPlans(parts: readonly { plan: CityScene; buildings?: Ci
       wall: built.flatMap((b, i) => b?.roofs?.wall ?? Array<string>(faces[i]).fill('')),
       shadows: built.flatMap((b, i) => b?.roofs?.shadows ?? Array.from({ length: counts[i] }, (): CityRoofs['shadows'][number] => [])) };
   }
-  return { plan, buildings: { items, byId, bins: new SpatialBins(boxes(built.flatMap(b => b ? [b.bins] : [])), 64), ...(roofs ? { roofs } : {}) } };
+  return { items, byId, bins: new SpatialBins(boxes(built.flatMap(b => b ? [b.bins] : [])), 64), ...(roofs ? { roofs } : {}) };
 }
 
 // ---------------------------------------------------------------- offscreen GL composited into Canvas 2D (V2, exports)
@@ -109,6 +118,12 @@ export class CityGlComposite {
         error => { console.warn('Plan WebGL indisponible', error); });
     }
     return this.uploaded === plan && this.renderer.ready;
+  }
+  /** Replaces the uploaded buildings of the current plan (async); the previous buildings draw until the new ones are uploaded. */
+  setBuildings(buildings: CityBuildings | undefined): void {
+    const r = this.renderer;
+    if (!r || this.failed || !this.uploaded || this.uploaded !== this.requested) return;
+    r.setBuildings(buildings).then(() => this.onInvalidate(), error => { console.warn('Bâtiments WebGL indisponibles', error); });
   }
   /** Resolves once the last requested plan is uploaded (exports wait for it before their synchronous draw). */
   ready(): Promise<void> { return this.upload ?? Promise.resolve(); }

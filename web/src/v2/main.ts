@@ -6,9 +6,11 @@ import './editing.css';
 import './workbench.css';
 import { mountWorkbenchLayout, groupCultureSelector } from './workbenchLayout';
 import { organizeInspector } from './advancedPanel';
+import { runRemainingGeneration } from './fullGeneration';
 import { activitySitesOf } from './activitySites';
 import { demographicClass, DEMOGRAPHIC_CLASSES } from '../../../rust/bridge/settlementDemography';
 import { mountSceneControls } from './sceneControls';
+import { mountRoadDisplayControl } from './roadDisplayControl';
 import { applySceneClock, DEFAULT_SCENE } from './sceneClock';
 import { mountEditingTools } from './editingTools';
 import logo from '../ui/assets/logo-magna-urbis.png';
@@ -253,7 +255,8 @@ const sceneControls=mountSceneControls($('#scene-controls'),{getSettings:()=>set
 insertHTML($('.style-control'),'beforeend','<span id="render-status" class="hint" role="status" aria-live="polite" hidden></span><div id="render-controls" hidden></div>');
 const renderControls=mountRenderControls($('#render-controls'),{getSettings:()=>settings,getWorld:()=>world,getStyleSelectors:()=>[$<HTMLSelectElement>('#map-style')],getTarget:()=>document.querySelector('#view3d')?.getAttribute('aria-pressed')==='true'?'view3d':'view2d',onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 async function refreshAppearance():Promise<void>{
-  workbenchLayout?.sync();sceneControls.sync();
+  workbenchLayout?.sync();sceneControls.sync();roadDisplay?.sync();
+  city3d?.syncControls();
   const revision=++renderRevision,appearanceStart=performance.now();
   renderControls.sync();
   const status=$('#render-status');delete status.dataset.error;status.hidden=false;
@@ -263,7 +266,10 @@ async function refreshAppearance():Promise<void>{
     if(revision!==renderRevision)return;
     syncDisplayWidgets();
     if(city3d?.active){
-      await client.prepare3dBackground();city3d.refresh();await city3d.prepare();
+      await client.prepare3dBackground();
+      if(revision!==renderRevision||!city3d.active)return;
+      city3d.refresh();await city3d.prepare();
+      if(revision!==renderRevision)return;
       await client.waitFor3d(city3d);
     }else{
       await client.displaySettled();
@@ -339,7 +345,7 @@ $('#view3d').onclick=async()=>{
     await client.prepare3dBackground();
     if(stale3d())return;
     step3d(fr3d?'Moteur 3D et shaders':'3D engine and shaders');
-    if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),getBackgroundImage:()=>client.groundBackground(),getPhysicalGround:()=>client.physicalGround(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
+    if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),toolbarHost:$('.toolbar-row'),advancedControls:$('#view3d-advanced-controls'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),getBackgroundImage:()=>client.groundBackground(),getPhysicalGround:()=>client.physicalGround(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
       for(const settlement of world?.settlements??[]){const urban=townUrban(world!,settlement.key),index=urban?.buildings.findIndex(b=>(b as UrbanBuilding&{nativeId?:string}).nativeId===id)??-1;if(urban&&index>=0){showBuilding({settlement:settlement.key,index,building:urban.buildings[index]});break;}}
     }});}
     if(stale3d())return;
@@ -372,6 +378,24 @@ mountDesktopUpdates($('.header-tools'),desktopModulesHost);
 mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()}),beforeCapture2d:()=>client.prepareViewportCapture(),navigation:{getView:()=>client.viewer.getView(),setView:view=>client.viewer.setView(view),ready:()=>client.viewer.waitForFrame()}});
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
+const fullGenerationHelp:Record<StageFamily,{en:string;fr:string}>={
+  region:{en:'Generate relief, settlements and cities',fr:'Générer le relief, les peuplements et les villes'},
+  settlements:{en:'Generate settlements and cities, keeping the current relief',fr:'Générer les peuplements et les villes, en conservant le relief actuel'},
+  cities:{en:'Build targeted cities, keeping the relief and settlements',fr:'Construire les villes ciblées, en conservant le relief et les implantations'},
+  map:{en:'Redraw the current map without generation',fr:'Redessiner la carte actuelle sans régénération'},
+};
+for(const copy of Object.values(fullGenerationHelp))registerMessages({[copy.en]:copy});
+function syncFullGenerationButton(family:StageFamily):void{
+  const button=$<HTMLButtonElement>('#run-chain'),label=translate(fullGenerationHelp[family].en);
+  button.title=label;button.setAttribute('aria-label',label);button.hidden=family==='map';
+}
+async function runFullGeneration():Promise<void>{
+  if(busy)return;
+  await runRemainingGeneration(chain.family(),{
+    generate:(action,keys)=>generate(action,undefined,undefined,undefined,keys),
+    targets:cityTargets,redraw:refreshAppearance,
+  });
+}
 const familyActions:Record<StageFamily,[string,()=>void]>={
   region:['Créer le relief',()=>void generate('terrain')],
   settlements:['Implanter et relier',()=>void generate('region')],
@@ -408,7 +432,7 @@ const chain:StageChain=mountStageChain({
     source:host=>mountHeightmapSource(host,{getSettings:()=>settings,onLoaded:()=>{touchRecipe();terrainControls.sync();chain.sync();toast(getLanguage()==='fr'?'Heightmap chargée. Créez le relief pour l’utiliser.':'Heightmap loaded. Create the relief to use it.');},
       importFile:()=>$<HTMLButtonElement>('#terrain-import-heightmap').click(),importImage:()=>$<HTMLInputElement>('#heightmap-file').click(),onError:error=>toast(String(error),true)}),
   },
-  onFamily:family=>{window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'family'}));setText($('#generate-label'),familyActions[family][0]);syncPlacesPanel(family);},
+  onFamily:family=>{syncFullGenerationButton(family);window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'family'}));setText($('#generate-label'),familyActions[family][0]);syncPlacesPanel(family);},
 });
 const mapControls=mountMapControls(chain.body('map-naming'),chain.body('map-export'),{
   getSettings:()=>settings,getWorld:()=>world,busy:()=>busy,
@@ -519,7 +543,7 @@ function log(message: string): void {
 }
 function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
 client.onEngineReset=()=>chain.clearResults();
-let workbenchLayout: ReturnType<typeof mountWorkbenchLayout> | undefined;
+let workbenchLayout: ReturnType<typeof mountWorkbenchLayout> | undefined, roadDisplay: ReturnType<typeof mountRoadDisplayControl> | undefined;
 function touchRecipe(): void { workbenchLayout?.sync(); projectRevision++; scheduleAutosave();
   // A recipe change drops the place in flight; the pass resumes only while the city recipe still matches the displayed map.
   smallPlaces?.cancel(); smallPlaces?.start(); updateExtent(); scheduleChainSync(); setText($('#footer-status'), world ? 'Réglages modifiés · prêts à générer' : 'Relief et eau, en un clic'); }
@@ -597,14 +621,14 @@ async function generateMainOnly(): Promise<void> {
   await generate('region'); if (!world?.settlements?.length) return;
   await generate('town', world.settlements.find(place => place.main)?.key ?? 'main');
 }
-async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<void> {
-  if (busy) return; cancelled = false;
+async function generate(action: Action, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<boolean> {
+  if (busy) return false; cancelled = false;
   const previousSeed = settings.options.seed; migrateUrbanSeeds(settings);
   if (previousSeed !== settings.options.seed) { $<HTMLInputElement>('#seed').value = settings.options.seed; projectRevision++; }
-  if (action !== 'terrain' && action !== 'all' && !world) { toast('Créez d’abord le territoire.'); selectTab('terrain'); return; }
+  if (action !== 'terrain' && action !== 'all' && !world) { toast('Créez d’abord le territoire.'); selectTab('terrain'); return false; }
   setBusy(true);
   // A user run takes the engine: the background place in flight (if any) completes and is dropped.
-  await smallPlaces?.stop(); if (cancelled) return;
+  await smallPlaces?.stop(); if (cancelled) return false;
   const started = performance.now(); const revision = projectRevision; let completed = false;
   if (['terrain','region','settlements','town'].includes(action)) chain.clearCityResults();
   chain.beginRun(action === 'town' ? [] : stagesForAction(action, townStage, terrainStage, settings.terrain?.procedural?.coastAfter));
@@ -613,7 +637,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
   log(`Début : ${action} · graine ${settings.options.seed}`);
   try {
     const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys,cityOutput);
-    if (cancelled) return;
+    if (cancelled) return false;
     if (terrainStage && terrainStage !== 'cover-climate') {
       if (!world?.stats['v2.previewStage']) previewBase = { world, pristine };
     } else previewBase = undefined;
@@ -636,6 +660,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     completed = true;
   } catch (e) { if (!cancelled) { const message = e instanceof Error ? e.message : String(e); log(`Échec : ${message}`); toast(message,true); } }
   finally { chain.endRun(completed); setBusy(false); if (projectRevision !== revision) setText($('#footer-status'), 'Nouveaux réglages à générer'); if (completed) smallPlaces?.start(); }
+  return completed;
 }
 /** `keepInspector`: a background place arrived; the user's open inspector stays as it is. */
 function updateWorld(keepInspector = false): void {
@@ -810,7 +835,7 @@ document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[data-option]').f
 }));
 $('#random-seed').onclick=()=>{migrateUrbanSeeds(settings);settings.options.seed=Array.from(crypto.getRandomValues(new Uint32Array(2)),n=>n.toString(36)).join('-');mods=[];touchRecipe();syncControls();};
 $<HTMLInputElement>('#town-count').onchange=e=>{settings.settlementCount=Number((e.target as HTMLInputElement).value);if(settings.region?.placement){delete settings.region.placement.counts;settings.region.placement.mode='counts';}touchRecipe();regionControls.sync();};
-$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void generate('all');$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
+$('#generate-region').onclick=()=>runFamily(chain.family());$('#run-chain').onclick=()=>void runFullGeneration();$('#terrain-only').onclick=()=>void generate('terrain');$('#region-only').onclick=()=>void generate('region');$('#towns-only').onclick=()=>runCities();
 $('#cancel-job').onclick=()=>{cancelled=true;client.cancel();const local=settings.runtime?.backend==='native'||settings.runtime?.source==='neural-python'||settings.urban?.backend==='native';const message=local?'Attente annulée. La carte précédente est conservée ; le service local peut terminer son calcul en arrière-plan.':'Calcul annulé. La carte précédente est conservée.';log(message);setBusy(false);toast(message);};
 $('#zoom-in').onclick=()=>client.viewer.zoomBy(1.5);$('#zoom-out').onclick=()=>client.viewer.zoomBy(1/1.5);$('#fit-map').onclick=()=>client.viewer.fit();
 $<HTMLSelectElement>('#map-style').onchange=e=>writeRecipe('preset',(e.target as HTMLSelectElement).value);
@@ -947,16 +972,18 @@ const refreshPresentation=()=>{
   }).catch(reportAppearanceError);}
 };
 onUnitsChange(refreshPresentation);
-onLanguageChange(()=>{renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();refreshPresentation();});
+onLanguageChange(()=>{syncFullGenerationButton(chain.family());renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();refreshPresentation();});
 registerMessages({'General seed':{en:'General seed',fr:'Graine générale'}});
 setText($('label[for="seed"]'),'General seed');
 $<HTMLInputElement>('#seed').maxLength=65536;
 initializeLanguage();
 workbenchLayout=mountWorkbenchLayout({getSettings:()=>settings,getWorld:()=>world,changed:touchRecipe,appearance:()=>{projectRevision++;void refreshAppearance();},syncForms:()=>regionControls.sync()});
+// Roads as plan, hidden or rendered: next to the urban plan field of the top bar.
+roadDisplay=mountRoadDisplayControl(document.querySelector('[data-setting-path="appearance.city.plan"]')?.closest('.parameter-field')??null,$('.view-strip'),{getSettings:()=>settings,onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 setText($('#build-info'),`${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);
 syncControls();
 try{await client.init();}finally{document.getElementById('boot-splash')?.remove();}
-mountV2TestHook({getSettings:()=>settings,getWorld:()=>world??undefined,isBusy:()=>busy,load:loadProject,run:places=>places==='main'?generateMainOnly():generate('all'),smallPlacesSettled:()=>smallPlaces?.settled()??Promise.resolve(),getViewer:()=>client.viewer,get3d:()=>city3d,prepareCapture:()=>client.prepareViewportCapture(),rerollTown:key=>rerollCityStep('composition',[key]),displaySettled:()=>client.displaySettled()});
+mountV2TestHook({getSettings:()=>settings,getWorld:()=>world??undefined,isBusy:()=>busy,load:loadProject,run:async places=>{if(places==='main')await generateMainOnly();else await generate('all');},smallPlacesSettled:()=>smallPlaces?.settled()??Promise.resolve(),getViewer:()=>client.viewer,get3d:()=>city3d,prepareCapture:()=>client.prepareViewportCapture(),rerollTown:key=>rerollCityStep('composition',[key]),displaySettled:()=>client.displaySettled()});
 await cityCodeSharing.restoreFromLocation();
 { // Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
   const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';

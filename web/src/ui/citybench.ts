@@ -323,7 +323,7 @@ async function drawBackground(d: Decor): Promise<void> {
     const field = t.field!;
     if (uploadedBackground !== t) { groundRenderer.setBase({ x: 0, y: 0, width: t.width, n: field.n, data: field.data, cave: field.cave, waterSurface: t.waterSurface }); uploadedBackground = t; }
     groundRenderer.setForest(canopy?.field, canopy?.occupation); setRoadCanopy(canopy?.field, canopy?.occupation);
-    backgroundLook={ style: r.ground.style, ambience:c.ambience,waterLook:c.networks.water.look,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
+    backgroundLook={ style: r.ground.style, ambience:c.ambience,waterLook:c.networks.water.look,coastWaves:c.networks.water.waves,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
       colors: r.palette.colors, mapWidth: t.width, lighting: r.ground.lighting, layers: r.ground.layers, globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight,
       contours: false, contourStep: 1, flatRelief: relief === 'flat', refine: d.meta.terrainDisplay?.refine !== false, sourceCell: d.meta.terrainDisplay?.sourceCell ?? t.width / field.n,
       seed: seedHash(d.meta.seed), detail: DEFAULT_FRACTAL_DETAIL, floor: field.floor ?? 0, frame: r.ground.layers.frame, background: terrainStyle(c.variant, r.palette.colors).palette.paper, climate, climateZone: settings.climateZone, v2Season: r.ground.season, v2Calendar: r.ground.calendar };

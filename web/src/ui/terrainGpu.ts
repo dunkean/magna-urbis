@@ -874,7 +874,7 @@ export class TerrainGpu implements TerrainRenderer {
       enhancedAlpha = refined ? Math.min(1, (performance.now() - refined.fadeStart) / 240) : 1;
       p.set('uRefinedAlpha', enhancedAlpha);
       p.setArray('uPaper', hex(pal.paper)); p.setArray('uSea', hex(pal.seaFill));
-      p.setArray('uShore', hex(water.stops[0][1])); p.set('uCoastalSea', this.coastDistance ? 1 : 0);
+      p.setArray('uShore', hex(water.stops[0][1])); p.set('uCoastalSea', this.coastDistance ? 1 : 0); p.set('uCoastWaves', look.coastWaves ? 1 : 0);
       const waterPalette = waterUniforms(water);
       p.setArray('uWaterStops', waterPalette.colors); p.setArray('uWaterStopT', waterPalette.positions);
       p.set('uWaterStopCount', water.stops.length);

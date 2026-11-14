@@ -8,7 +8,7 @@ import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
 import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
-import { CityGlComposite, cityGlDrawOptions, mergeCityPlans } from '../render/cityGlView';
+import { CityGlComposite, cityGlDrawOptions, mergeCityBuildings, mergeCityPlans } from '../render/cityGlView';
 import type { CityGlFrame } from '../render/cityGl';
 import { cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
 import { getRenderMode, onRenderMode, reportRenderStats } from '../render/renderMode';
@@ -58,6 +58,32 @@ interface Entry {
   materials: ReadonlyMap<string, HouseMaterial>;
   refused: ReadonlySet<string>;
   canopyBuildings?: readonly PlacedBuilding[];
+  /** Very large towns: `buildings` is the view's tier, the items without roofs (`base`) or the cached detail of the visible tiles. */
+  large?: { base: CityBuildings; detail: Map<string, CityBuildings> };
+}
+/** Building count above which a town is prepared in two tiers: its items without roof pans, snow and shadows for the views
+ * where they cannot show, and the full detail of the visible tiles only, built on demand. Smaller towns keep one tier. */
+const LARGE_TOWN_BUILDINGS = 60000;
+/** Metres per pixel below which roof pans show (a 10 m roof face spans 2.5 px). */
+const DETAIL_MPP = 4;
+/** Side of the tiles the visible detail is snapped to, in metres. */
+const DETAIL_TILE = 1024;
+function largeTownBuildings(entry: Entry, viewport: Box, mpp: number): CityBuildings {
+  const large = entry.large!;
+  if (mpp > DETAIL_MPP) return large.base;
+  const margin = Math.max(viewport.maxX - viewport.minX, viewport.maxY - viewport.minY) * .25, tile = (v: number, up: boolean) => (up ? Math.ceil : Math.floor)(v / DETAIL_TILE) * DETAIL_TILE;
+  const region: Box = { minX: tile(viewport.minX - margin, false), minY: tile(viewport.minY - margin, false), maxX: tile(viewport.maxX + margin, true), maxY: tile(viewport.maxY + margin, true) };
+  const key = [region.minX, region.minY, region.maxX, region.maxY].join(',');
+  let detail = large.detail.get(key);
+  if (!detail) {
+    // In the town's own order, so overlapping buildings stack as in the one-tier drawing.
+    detail = buildCityBuildings({ buildings: large.base.bins.query(region).sort((a, b) => a - b).map(i => large.base.items[i].building) }, entry.plan);
+    // The snow line is the mean ground of the whole town, not of the visible subset.
+    for (const item of detail.items) { const i = large.base.byId.get(item.id); if (i !== undefined) item.snowAltitude = large.base.items[i].snowAltitude; }
+    // Only the current region is kept: at mid zoom a region of a 1M town holds tens of thousands of roofed buildings.
+    large.detail.clear(); large.detail.set(key, detail);
+  }
+  return detail;
 }
 interface MaterialFace { path: Path2D; layer: number; angle: number; z: number }
 interface MaterialGeometry { faces: MaterialFace[]; outline: Path2D }
@@ -120,7 +146,9 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
   const raster = cities.length ? cityGroundOf(world) : undefined;
   const entries: Entry[] = cities.map(city => {
     const plan = buildCityScene(city.layouts, city.partitions ?? [], raster);
-    return { plan, canopyBuildings: city.scene?.buildings, buildings: buildCityBuildings(city.scene, plan), houses: usesNativeHouseRenderer(city.scene) ? new UrbanBuildingLodRenderer(city.scene!) : undefined,
+    const large = !usesNativeHouseRenderer(city.scene) && (city.scene?.buildings.length ?? 0) > LARGE_TOWN_BUILDINGS
+      ? { base: buildCityBuildings(city.scene, plan, { roofs: false }), detail: new Map<string, CityBuildings>() } : undefined;
+    return { plan, canopyBuildings: city.scene?.buildings, buildings: large?.base ?? buildCityBuildings(city.scene, plan), ...(large ? { large } : {}), houses: usesNativeHouseRenderer(city.scene) ? new UrbanBuildingLodRenderer(city.scene!) : undefined,
       materials: new Map((city.scene?.materials ?? []).map(material => [material.id, material])),
       refused: new Set(city.scene?.refusals.map(refusal => refusal.parcel_id)) };
   });
@@ -212,6 +240,10 @@ export function createNativeCityMap(world: World, onInvalidate: () => void): Nat
       }
       const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
       lod = selectCityLod(mpp, lod); stats.lod = lod;
+      // Very large towns: the buildings of this view (base or visible detail); the GL scene follows once uploaded.
+      let swapped = false;
+      for (const entry of entries) if (entry.large) { const shown = largeTownBuildings(entry, viewport, mpp); if (shown !== entry.buildings) { entry.buildings = shown; swapped = true; } }
+      if (swapped && glScene) gl?.setBuildings(mergeCityBuildings(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings }))));
       const palette = city.palette, buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
       const requestedLayers = city.plan ? city.layers : EMPTY_LAYERS;
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),

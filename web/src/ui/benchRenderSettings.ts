@@ -2,7 +2,7 @@ import { mountRenderSettingsPanel, mountRenderColorControls, splitSectionLevels,
 import { compositionMessages, mountCompositionSection, renderControlFields, RENDER_SECTION_FIELDS, writeCompositionField, LIMITATION_ROW, NOTE_STYLE } from './compositionControls';
 import { mountParameterForm, readSettingPath, type ParameterForm, type ParameterField } from './parameterForm';
 import { getBenchComposition, setBenchComposition, resolveBenchAppearance, setBenchAppearanceField } from './benchComposition';
-import { GROUND_VARIANTS } from '../render/composition';
+import { GROUND_VARIANTS, groundRoadLook } from '../render/composition';
 import { resolveAppearance, resolvedValues } from '../render/appearanceRecipe';
 import { registerMessages, setLanguage } from '../v2/i18n';
 import { getBenchRenderColors, setBenchRenderColors } from './benchRenderColors';
@@ -51,7 +51,7 @@ export function installBenchRenderSettings(): void {
     try {
       const r = resolveBenchAppearance({}, 'view2d'), notes = resolveBenchAppearance(), c = r.composition, a = resolvedValues(r);
       driven('#style, #backgroundStyle', c.variant); driven('#showContours', r.ground.contours); driven('#showRelief', r.ground.layers.relief);
-      driven('#showWater', c.networks.water.visible); driven('#roadShow', c.networks.roads.visible); driven('#roadPreset', c.networks.roads.look === 'natural' ? 'render' : 'ink');
+      driven('#showWater', c.networks.water.visible); driven('#roadShow', c.networks.roads.visible); driven('#roadPreset', groundRoadLook(c.networks.roads.look) ? 'render' : 'ink');
       driven('[data-building-visible]', c.buildings.visible); driven('[data-building-style]', r.city.buildingStyle); driven('[data-building-diagnostic]', r.city.diagnostic);
       driven('#roadBlend', c.networks.roads.look === 'ink' ? 'classic' : 'blended'); driven('[data-render="groundBlend"]', r.city.groundBlend);
       driven('#showLanduse', true); driven('#showPlan', r.city.plan); driven('#showLegend', r.cartography.legend); driven('#showFrame', r.ground.layers.frame);

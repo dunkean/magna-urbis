@@ -183,6 +183,9 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     opacity: c?.opacity ?? (legacy3d ? LEGACY_3D_CITY.opacity : DEFAULT_CITY.opacity), width: c?.width ?? DEFAULT_CITY.width, ground: c?.ground ?? (traits.ground3d ? styleId as CityGround : 'map'), plan: c?.plan ?? DEFAULT_CITY.plan,
     colors: c?.colors ?? (c?.diagnostic === 'uses' ? 'uses' : DEFAULT_CITY.colors), exaggeration: c?.exaggeration ?? DEFAULT_CITY.exaggeration, refinement: c?.refinement ?? DEFAULT_CITY.refinement, trees3d: c?.trees3d ?? DEFAULT_CITY.trees3d, treeDistance: c?.treeDistance ?? DEFAULT_CITY.treeDistance };
 
+  // The shared Plan switch controls the same urban overlays in 2D, 3D and export.
+  if (!city.plan) city.layers={...city.layers,reserve:false,allocated:false,centers:false,domains:false,quarters:false,blocks:false,streets:false,enclosures:false,parcelOverlay:false,parcels:false,gardens:false,places:false,fronts:false,axes:false,access:false};
+
   if (target !== 'view3d') {
     city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';
     city.painted = !flatBuildings;
@@ -207,7 +210,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   }
 
   const keys: PassKeys = {
-    terrainLook: key(ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.calendar, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look),
+    terrainLook: key(ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.calendar, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look,composition.networks.water.waves),
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
     water: key(ground.style, ground.season, ground.calendar, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
