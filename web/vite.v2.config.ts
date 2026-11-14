@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { defineConfig, normalizePath, type Plugin } from 'vite';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { cp, mkdir, rename } from 'node:fs/promises';
@@ -94,7 +95,12 @@ function v2Resources(): Plugin {
   };
 }
 
+const buildDate = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+let buildCommit = 'local';
+try { buildCommit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim(); } catch { /* Source archives have no Git metadata. */ }
+
 export default defineConfig({
+  define: { 'import.meta.env.VITE_BUILD_DATE': JSON.stringify(buildDate), 'import.meta.env.VITE_BUILD_COMMIT': JSON.stringify(buildCommit) },
   root: resolve(web, 'src/ui'),
   base: './',
   cacheDir: resolve(web, 'out/.vite-v2'),

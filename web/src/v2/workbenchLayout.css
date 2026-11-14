@@ -1,0 +1,121 @@
+/* Identity line plus one shared row of scene, map and 3D controls. */
+#app>.app-header{height:38px;min-height:38px;padding:3px 16px;gap:10px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+#app>.app-header>*{flex-shrink:0}
+.app-header .brand-icon{width:25px;height:25px}.app-header .brand h1{font-size:13px}.app-header .brand p{display:none}
+.app-header .project-actions{margin-inline-start:auto}.app-header button,.app-header .header-tools button{padding:4px 8px;font-size:10px}
+.project-links{display:flex;gap:14px;align-items:center;margin-inline-start:12px;white-space:nowrap}
+.project-links a{color:var(--muted);font-size:11px;text-decoration:none}.project-links a:hover{color:var(--gold)}
+#build-info{font:9px ui-monospace,monospace;color:var(--muted)}
+#app .workbench-bar .view-strip{display:flex;align-items:center;height:56px;min-height:56px;padding:6px 14px;gap:0;flex-wrap:nowrap;border:0;overflow:visible}
+#app .view-strip>.toolbar-row{display:flex;align-items:center;gap:12px;width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;white-space:nowrap}
+#app .toolbar-row>*{flex-shrink:0}
+#app .toolbar-row>.style-control{display:flex;align-items:center;width:auto;max-width:none;flex:none;gap:8px}
+#app .toolbar-row #map-style{width:140px;max-width:140px;flex:none;font-size:11px;padding:7px}
+#app .view-strip .strip-label{display:none}
+#app .toolbar-row #scene-controls{display:flex;flex:none;align-items:center;gap:8px;min-width:0;width:auto;padding-inline-start:12px}
+#app .toolbar-row #scene-controls .scene-caption,#app .toolbar-row #scene-controls .scene-direction-caption,#app .toolbar-row #scene-controls .scene-season-ticks{display:none}
+#app .toolbar-row #scene-controls .scene-field{padding:0}
+#app .toolbar-row #scene-controls .scene-season{display:grid;grid-template-columns:1fr;gap:0;width:110px;flex:none}
+#app .toolbar-row #scene-controls .scene-season-icons{height:22px;padding:0}
+#app .toolbar-row #scene-controls .scene-season-icons button{height:22px;padding:0 3px}
+#app .toolbar-row #scene-controls .scene-season-icons img{width:21px;height:21px}
+#app .toolbar-row #scene-controls .scene-season input{height:10px;min-height:10px}
+#app .toolbar-row #scene-controls .scene-daynight{padding:1px}
+#app .toolbar-row #scene-controls .scene-daynight button{width:30px;height:30px;padding:2px}
+#app .toolbar-row #scene-controls .scene-daynight img{width:23px;height:23px}
+#app .toolbar-row #scene-controls .scene-compass{width:32px;height:32px}
+#app .toolbar-row #scene-controls .scene-direction{width:32px}
+#app .toolbar-row #scene-controls .scene-height,#app .toolbar-row #scene-controls .scene-shadows{width:62px;flex:none}
+#app .toolbar-row>.stage-quick{display:flex;align-items:center;gap:6px;margin:0;padding:0;flex:none}
+#app .toolbar-row .stage-quick:empty{display:none}
+#app .toolbar-row .stage-quick .parameter-field{display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;margin:0;gap:5px}
+#app .toolbar-row .stage-quick .parameter-caption{font-size:10px}
+#app .toolbar-row .stage-quick .parameter-field small{display:none}
+#app .toolbar-row .stage-quick input[type=checkbox]{margin:0;width:13px;height:13px}
+.city-display-options{display:flex;gap:3px;margin-inline-start:auto}
+.city-display-options button{padding:2px;background:#20221c;height:32px;width:32px}
+.city-display-options button:nth-child(4){margin-inline-start:6px}
+.city-display-icon{display:block;width:26px;height:26px;background-image:url('./assets/city-display-v1.png');background-size:600% 200%;background-repeat:no-repeat}
+.city-display-options button[aria-pressed=true]{border-color:var(--gold);background:#dcb86f22}
+.advanced-open{border-color:#dcb86f66;color:var(--gold);font-size:11px;padding:7px 12px}
+.chain-family>.advanced-open{margin-block:14px;width:100%}
+
+/* Primary generation parameters on the left, stage actions and optional fields in the grid. */
+#app :is(#family-settlements,#family-cities)>.family-general{border:0;background:none;padding:0;margin:0}
+.generation-primary-group{margin-top:12px;min-width:0}
+.generation-primary-group h4{color:var(--gold);font-size:11px;font-weight:500;margin-bottom:10px}
+.urban-primary{display:grid;gap:8px}.urban-primary:empty{display:none}.urban-primary .parameter-field{margin:0}
+.urban-primary+.advanced-open{margin-top:12px}
+.workbench-advanced{inset:auto;top:110px;left:376px;width:calc(100vw - 392px);height:calc(100dvh - 126px);max-height:none;box-sizing:border-box;padding:0;background:#25271f;color:var(--ink);border:1px solid #dcb86f55;border-radius:12px;box-shadow:0 16px 60px #0007}
+.workbench-advanced::backdrop{background:#10140d55}
+.workbench-advanced>header{display:flex;justify-content:space-between;align-items:center;padding:15px 20px;position:sticky;top:0;background:#20221c;z-index:2;border-bottom:1px solid var(--line)}
+.workbench-advanced h2{font:24px Georgia,serif}
+.advanced-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:16px;padding:20px;align-items:start}
+.advanced-card,.advanced-grid>.urban-control-section,.advanced-grid>.stage-row{padding:14px;background:#ffffff03;border:1px solid var(--line);border-radius:8px;min-width:0}
+.advanced-card h3{font:18px Georgia,serif;margin-bottom:12px}
+.advanced-grid .stage-body{display:block!important;border:0;padding:8px 0 0}
+.advanced-grid .parameter-field{min-width:0}
+.density-control{display:grid;grid-template-columns:1fr auto;gap:9px;font-size:12px;color:var(--muted);margin:18px 0}
+.density-control input{grid-column:1/-1;width:100%}.density-control output{color:var(--gold)}
+.settlement-counts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#app .settlement-counts .parameter-field{display:grid;grid-template-columns:1fr 65px;gap:5px;margin:0}
+#app .settlement-counts .parameter-field>.parameter-caption{grid-column:1;grid-row:1;font-size:11px}
+#app .settlement-counts .parameter-field>input[type=number]{grid-column:2;grid-row:1;width:65px;min-width:0;font-size:12px}
+#app .settlement-counts .parameter-slider{display:none}
+.culture-picker{display:grid;grid-template-columns:1fr!important;gap:8px;padding:0;border:0;border-radius:0;background:none}
+.culture-picker>select{width:100%;max-width:none}.culture-picker .checkline{margin:0}
+.settlement-position-tools{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.settlement-position-tools button{font-size:11px}
+#city-inspector .inspector{position:static;width:auto;max-width:none;background:none;padding:0;box-shadow:none;overflow:visible}
+#city-inspector .inspector>.close,#city-inspector .breadcrumbs,#city-inspector .inspect-note,#city-inspector .inspector-selection-section{display:none}
+#city-inspector h2{font:24px Georgia,serif}
+#family-cities:has(#inspector:not([hidden]))>.family-general,#family-cities:has(#inspector:not([hidden]))>.advanced-open{display:none}
+#app #city-inspector .inspector[data-scope]:not([data-scope=settlement])>:not(#building-inspector){display:none}
+#app #city-inspector .inspector[data-scope]:not([data-scope=settlement]) #building-inspector{display:block}
+
+/* A single right-hand list selects either every place or one place. */
+#app .map-area>#places-panel{position:absolute;inset:14px 14px 14px auto;width:300px;max-height:none;max-width:calc(100% - 80px);z-index:12;margin:0;padding:0;overflow:hidden;flex-direction:column;background:#272923f5;box-shadow:0 8px 28px #0003;backdrop-filter:blur(12px)}
+#app .map-area>#places-panel:not([hidden]){display:flex!important}
+#app #places-panel>header{display:flex;align-items:center;flex-wrap:nowrap;gap:8px;padding:12px 14px}
+#app #places-panel>header h2{font-size:18px}
+#app #places-panel #towns-only{display:none}
+#app #places-panel .places-selection{display:flex;align-items:center;gap:8px;padding:10px 14px}
+#app #cities-select-all[aria-pressed=true]{color:var(--gold);border-color:var(--gold);background:#dcb86f18}
+#app #places-panel .settlement-list{display:flex;flex-direction:column;gap:6px;flex:1;min-height:0;max-height:none;overflow:auto;padding:0 10px 12px}
+#app #places-panel .settlement-choice{display:flex;align-items:center;gap:6px;flex:none}
+#app #places-panel .settlement-choice>input[type=radio]{width:15px;min-width:15px;height:15px;padding:0;margin:0;flex:0 0 15px;appearance:auto}
+#app #places-panel .settlement-choice>.settlement-item{flex:1;width:auto;min-width:0}
+#app #places-panel .settlement-item .grow{min-width:0}
+#app #places-panel .settlement-item strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app #places-panel .settlement-item{padding:6px 7px;gap:6px}
+#app #places-panel .settlement-item strong{font-size:12px}#app #places-panel .settlement-item small{font-size:10px}
+#app #places-panel .settlement-stage{display:none}
+#app #places-panel[data-collapsed=true]{bottom:auto}
+#app #places-panel[data-collapsed=true]>.settlement-list,#app #places-panel[data-collapsed=true]>.places-selection,#app #places-panel[data-collapsed=true]>.inspector-mode{display:none}
+#app #places-panel>.inspector-mode{position:static;display:flex;align-items:center;gap:8px;padding:8px 14px;margin:0;font-size:11px;border-bottom:1px solid var(--line)}
+#app #places-panel #inspect-target{width:auto!important;flex:1;font-size:11px}#app #places-panel #inspect-mode{width:auto}
+.settlement-group{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin:14px 0 6px}
+.activity-place{display:flex;width:100%;justify-content:space-between;font-size:11px;padding:7px;gap:8px}.activity-place small{color:var(--muted)}
+
+#family-map #header-menu{display:flex;flex-wrap:wrap;margin:0;padding:0 0 14px;gap:6px}
+#family-map #header-menu .strip-label,#family-map #active-tool,#family-map #header-menu .tool-spacer{display:none}
+#family-map #header-menu .v2-network-shortcuts{display:flex;flex-wrap:wrap;gap:6px}
+#family-map #editor-dock{position:static;width:auto;max-width:none;background:none;border:0;box-shadow:none;backdrop-filter:none;overflow:visible}
+#family-map #editor-dock>header{padding:10px 0;background:none}#family-map #editor-content{padding:10px 0}
+
+/* The renderer keeps ownership of its controls; they paint in the same settings row. */
+body:has(.map-area>.city3d:not([hidden])) #app .map-area>.city3d{z-index:11}
+body:has(.map-area>.city3d:not([hidden])) #app .toolbar-row>:not(.style-control):not(#map-advanced-open){visibility:hidden}
+body:has(.map-area>.city3d:not([hidden])) #app .map-area>.city3d .city3d-bar{position:fixed;top:43px;left:215px;right:94px;height:45px;max-width:none;padding:3px 0;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;white-space:nowrap;align-content:normal;gap:6px 12px;border:0;border-radius:0;box-shadow:none;background:#272923;z-index:11}
+body:has(.map-area>.city3d:not([hidden])) #app .city3d-bar>*{flex-shrink:0}
+body:has(.map-area>.city3d:not([hidden])) #app #map-advanced-open{position:fixed;top:50px;right:14px;visibility:visible;z-index:12}
+@media(min-width:1700px){.workbench-advanced{left:406px;width:calc(100vw - 422px)}}
+@media(max-width:1000px){.project-links{gap:8px;margin:0}#build-info{max-width:130px;overflow:hidden;text-overflow:ellipsis}.workbench-advanced{left:336px;width:calc(100vw - 352px)}#app .map-area>#places-panel{width:260px}}
+@media(max-width:720px){
+  #app>.app-header{padding:3px 8px;gap:5px}.app-header .brand h1{font-size:10px}.app-header .brand-icon,.app-header .version,.app-header .edition,#build-info{display:none}
+  .project-links{gap:7px}.project-links a{font-size:9px}.app-header .project-actions{flex:none;margin-inline-start:auto}.app-header .project-actions button{font-size:9px;padding:4px}.app-header .header-tools button{padding:4px}.app-header .header-tools .illustration-trigger{display:none}
+  #app .workbench-bar .view-strip{padding:6px 8px}#app .view-strip>.toolbar-row{gap:10px}#app .toolbar-row #map-style{width:130px;max-width:130px}
+  .workbench-advanced{left:10px;top:104px;width:calc(100vw - 20px);height:calc(100dvh - 118px)}.advanced-grid{padding:12px;gap:12px}
+  #app .map-area>#places-panel{inset:12px 12px auto auto;width:240px;max-width:calc(100% - 72px);max-height:45%}
+  body:has(.map-area>.city3d:not([hidden])) #app .map-area>.city3d .city3d-bar{left:190px;right:80px;font-size:10px}
+  body:has(.map-area>.city3d:not([hidden])) #app #map-advanced-open{right:8px}
+}

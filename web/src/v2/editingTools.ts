@@ -24,13 +24,13 @@ export function mountEditingTools(api: { canEdit(): boolean }): { sync(): void }
   function sync(): void {
     const available = api.canEdit();
     for (const selector of ['#inspect-mode', '#labels-open', '#rivers-open', '#move-towns', '[data-network-quick]'])
-      toolbar.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => control.disabled = !available);
+      document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => control.disabled = !available);
     $<HTMLSelectElement>('#inspect-target').disabled = !available || !inspect.checked;
   }
   function show(next: string): void {
     mode = next;
     const section = next === 'buildings' || next === 'selection' ? 'buildings' : next.startsWith('network:roads') ? 'roads' : next === 'network:rivers' ? 'rivers' : next === 'labels' ? 'labels' : '';
-    dock.hidden = !section;
+    dock.hidden = !section || section === 'buildings';
     for (const key of ['buildings', 'roads', 'rivers', 'labels']) $(`#edit-${key}`).hidden = key !== section;
     const label = section === 'buildings' ? 'Buildings' : section === 'roads' ? 'Network editing' : section === 'rivers' ? 'Rivers' : section === 'labels' ? 'Names & labels' : next === 'town-move' ? 'Move towns' : next === 'placement' ? 'Choose a position on the map' : 'Navigate';
     setText($('#editor-title'), label); setText($('#active-tool'), label);

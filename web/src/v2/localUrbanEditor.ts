@@ -12,13 +12,13 @@ const button = (host: HTMLElement, text: string, action: () => void): void => {
 
 /** Direct actions preserve the other fields of the selected native override. */
 export function mountSubdivisionActions(host: HTMLElement, opts: {
-  kind: Kind; french: boolean; get: () => Edit | undefined; apply: (value: Edit) => void;
+  kind: Kind; french: boolean; actionsOnly?: boolean; get: () => Edit | undefined; apply: (value: Edit) => void;
   shape: { outer: Pt[]; holes?: Pt[][] }; map: HTMLElement; getView: () => View;
 }): void {
   const { kind, french, get, apply } = opts;
   host.classList.add('v2-edit-actions');
   const act = (patch: Edit): void => apply({ ...get(), ...patch });
-  if (kind === 'quarter') {
+  if (kind === 'quarter' && !opts.actionsOnly) {
     const select = (key: 'culture' | 'tissue' | 'role', title: string, choices: [string, string][]): void => {
       const row = document.createElement('label'); row.className = 'label'; row.textContent = title;
       const input = document.createElement('select');
@@ -33,7 +33,7 @@ export function mountSubdivisionActions(host: HTMLElement, opts: {
     select('role', label(french, 'District role', 'Fonction du quartier'), [['civic',label(french,'Civic','Civique')],['market',label(french,'Market','Marché')],['religious',label(french,'Religious','Religieux')],['port',label(french,'Port','Port')],['elite',label(french,'Elite','Patricien')],['commoner',label(french,'Residential','Populaire')],['poor',label(french,'Poor','Pauvre')],['garrison',label(french,'Garrison','Garnison')],['gardens',label(french,'Gardens','Jardins')],['foreign',label(french,'Foreign','Étranger')],['craft',label(french,'Craft','Artisanat')]]);
     select('tissue', label(french, 'Street pattern', 'Trame'), [['culture',label(french,'Cultural','Culturelle')],['grid',label(french,'Grid','Grille')],['organic',label(french,'Organic','Organique')],['radial',label(french,'Radial','Radiale')],['terraces',label(french,'Terraces','Terrasses')],['dendritic',label(french,'Branching','Ramifiée')],['clusters',label(french,'Clusters','Groupée')]]);
   }
-  button(host, label(french, 'Reroll', 'Nouvelle variation'), () => act({ salt: ((get()?.salt ?? 0) + 1) >>> 0 }));
+  button(host, label(french, '⚄ Reroll', '⚄ Nouvelle variation'), () => act({ salt: ((get()?.salt ?? 0) + 1) >>> 0 }));
   button(host, label(french, 'Edit outline', 'Modifier le contour'), () => {
     const shape = get()?.shape ?? opts.shape;
     editOutline(opts.map, opts.getView, shape.outer, ring => act({ shape: { outer: ring, holes: shape.holes ?? [] } }), label(french, 'Edit outline', 'Modifier le contour'));

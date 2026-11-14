@@ -1,3 +1,4 @@
+import { organizeUrbanForm } from './advancedPanel';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import type { V2Settings, V2UrbanControls } from './contracts';
 import type { HouseMix } from '../../../rust/bridge/urbanArchitecture';
@@ -185,7 +186,7 @@ function section(root: HTMLElement, title: string, open = false): HTMLDetailsEle
 function message(root: HTMLElement, source: string): HTMLElement { const p = document.createElement('small'); setText(p, source); root.append(p); return p; }
 function button(root: HTMLElement, source: string, onClick: () => void): HTMLButtonElement { const b = document.createElement('button'); b.type = 'button'; setText(b, source); b.onclick = onClick; root.append(b); return b; }
 function localFields(scope: UrbanControlScope): UrbanParameterField[] {
-  if (scope.kind === 'quarter') return Object.entries({ culture: '', tissue: 'culture', density: 1, role: '', wealth: .5, deleted: false, salt: 1 }).map(([key, value]) => { const field = urbanField(key, value, 'quarter'); if (key === 'role') field.type = 'text'; return field; });
+  if (scope.kind === 'quarter') return Object.entries({ culture: '', tissue: 'culture', zone: '', density: 1, role: '', wealth: .5, deleted: false, salt: 1 }).map(([key, value]) => { const field = urbanField(key, value, 'quarter'); if (key === 'role') field.type = 'text'; return field; });
   if (scope.kind === 'parcel') return Object.entries({ role: '', function: '', households: 1, deleted: '', salt: 1 }).map(([key, value]) => {
     const field = urbanField(key, value, 'parcel');
     if (key === 'deleted') { field.type = 'select'; field.options = [{ value: 'merge', label: 'Merge into neighbours' }, { value: 'garden', label: 'Keep as a garden' }]; }
@@ -388,6 +389,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
       for (const suggestion of suggestions.filter(Boolean)) list.append(new Option(suggestion, suggestion)); root.append(list); input.setAttribute('list', id);
     }
   }
+  organizeUrbanForm(root);
   let alive = true; bindTree(root); sync();
   return { sync, dispose: () => { alive = false; forms.forEach(form => form.dispose()); root.replaceChildren(); } };
 }
