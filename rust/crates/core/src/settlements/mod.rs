@@ -336,6 +336,7 @@ impl Terrain {
         partitions: &[crate::urban::Partition],
         architecture_culture: Option<&str>,
         origin: crate::urban::Point,
+        version: u32,
     ) -> Result<Vec<u8>, String> {
         let r = &self.fields.r;
         crate::urban::building_sites::display_buffers(
@@ -346,6 +347,7 @@ impl Terrain {
             &r.water_level,
             architecture_culture,
             origin,
+            version,
         )
     }
     /// Sites `start..end` of `urban_building_sites_with_culture` (same order and

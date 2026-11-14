@@ -72,8 +72,11 @@ export interface CitySiteVisual {
   programme?: Record<string, unknown>; surface: { outer: { x: number; y: number }[]; holes: { x: number; y: number }[][] }[];
   preview: boolean; ground_z_m: number; entrance: { x: number; y: number }; access_id: string;
 }
-/** Site count above which the decoded programmes drop their housing-need evidence (towns of several hundred thousand people). */
+/** Site count above which the decoded version-1 programmes drop their housing-need evidence (towns of several hundred
+ * thousand people); version 2 never carries it. */
 const LARGE_SITE_SET = 50000;
+/** Sites per programme parse of a version-2 buffer: strings of about a megabyte. */
+const PROGRAMME_RUN = 1024;
 /** The buffer each decoded site array came from: worker/page hops transfer it instead of cloning the objects (v2/urbanPack.ts). */
 const siteVisualPacks = new WeakMap<object, ArrayBuffer>();
 export const siteVisualsPackOf = (sites: object): ArrayBuffer | undefined => siteVisualPacks.get(sites);
@@ -87,7 +90,7 @@ function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
   const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, headLength))) as {
     format: string; version: number; origin: { x: number; y: number }; count: number; tables: Record<string, string[]>; sections: Record<string, Section>;
   };
-  if (header.format !== 'magna-city-sites' || header.version !== 1) throw new Error('Unknown city site display buffers.');
+  if (header.format !== 'magna-city-sites' || (header.version !== 1 && header.version !== 2)) throw new Error('Unknown city site display buffers.');
   const body = 4 + headLength;
   const view = <K extends keyof typeof VIEWS>(name: string, type: K): InstanceType<(typeof VIEWS)[K]> => {
     const s = header.sections[name];
@@ -104,7 +107,18 @@ function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
   const fn = view('sites.function', 'u16'), culture = view('sites.culture', 'u16'), preview = view('sites.preview', 'u8');
   const ground = view('sites.groundZ', 'f32'), entrance = view('sites.entrance', 'f32');
   const ids = strings('sites.id'), parcels = strings('sites.parcelId'), accesses = strings('sites.accessId');
-  const programmes = n ? JSON.parse(new TextDecoder().decode(view('sites.programme', 'u8'))) as (Record<string, unknown> | null)[] : [];
+  // Version 1: one JSON array for the town. Version 2: `record,` per site (n+1 byte offsets), parsed by runs of sites
+  // so that a large town never builds its whole programme text as one string.
+  let programmes: (Record<string, unknown> | null)[] = [];
+  if (n && header.version === 1) programmes = JSON.parse(new TextDecoder().decode(view('sites.programme', 'u8'))) as (Record<string, unknown> | null)[];
+  else if (n) {
+    const offsets = view('sites.programme.offsets', 'u32'), text = view('sites.programme.text', 'u8'), decoder = new TextDecoder();
+    if (offsets.length !== n + 1) throw new Error('Section sites.programme.offsets mistyped.');
+    for (let i = 0; i < n; i += PROGRAMME_RUN) {
+      const run = decoder.decode(text.subarray(offsets[i], offsets[Math.min(n, i + PROGRAMME_RUN)]));
+      for (const programme of JSON.parse(`[${run.slice(0, -1)}]`) as (Record<string, unknown> | null)[]) programmes.push(programme);
+    }
+  }
   const functions = header.tables.function ?? [''], cultures = (header.tables.culture ?? ['']).map(text => text ? JSON.parse(text) as CitySiteVisual['culture'] : null);
   const ring = (r: number) => { const out: { x: number; y: number }[] = []; for (let k = rings[r]; k < rings[r + 1]; k++) out.push({ x: coords[2 * k] + ox, y: coords[2 * k + 1] + oy }); return out; };
   const sites: CitySiteVisual[] = [];

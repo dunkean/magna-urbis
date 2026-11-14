@@ -58,13 +58,25 @@ export async function readUrbanParcelRecord(runtime: ExecutionRuntime, source: U
 }
 
 export interface UrbanSiteVisualsRequest { source: UrbanSourceHandle; seed: string; architectureCulture?: string }
+/** Engines with `urban.site-visuals-v2` send per-site programme texts without the fields no display reads. */
+const siteVisualsV2 = new Map<string, Promise<boolean>>();
+function siteVisualsVersion(runtime: ExecutionRuntime): Promise<boolean> {
+  let known = siteVisualsV2.get(runtime.server);
+  if (!known) {
+    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+      .then((s: { capabilities?: unknown }) => Array.isArray(s.capabilities) && s.capabilities.includes('urban.site-visuals-v2'), () => false);
+    siteVisualsV2.set(runtime.server, known); void known.then(ok => { if (!ok) siteVisualsV2.delete(runtime.server); });
+  }
+  return known;
+}
 /** Binary display projection of every building site of a retained native snapshot. The complete
  * placement requests stay in the engine session; read one with `readUrbanBuildingSite`. */
 export async function readUrbanSiteVisuals(input: UrbanSiteVisualsRequest, runtime: ExecutionRuntime): Promise<ArrayBuffer> {
   if (runtime.profile !== 'local') throw new Error('Retained urban site visuals require the local runtime.');
   validateUrbanSource(input.source);
+  const version = await siteVisualsVersion(runtime) ? 2 : undefined;
   const response = await nativeRequest(runtime, '/urban', JSON.stringify({
-    kind: 'buildingSiteVisuals', source: input.source, seed: input.seed, architectureCulture: input.architectureCulture,
+    kind: 'buildingSiteVisuals', source: input.source, seed: input.seed, architectureCulture: input.architectureCulture, version,
   }));
   if (response.headers.get('content-type')?.split(';', 1)[0].trim() !== 'application/octet-stream') {
     throw new Error('The local runtime did not return binary urban site visuals.');

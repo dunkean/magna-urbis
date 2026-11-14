@@ -1613,6 +1613,7 @@ pub fn display_buffers(
     water_level: &[f32],
     architecture_culture: Option<&str>,
     origin: Point,
+    version: u32,
 ) -> Result<Vec<u8>, String> {
     const CHUNK: usize = 8192;
     #[cfg(not(target_arch = "wasm32"))]
@@ -1620,14 +1621,14 @@ pub fn display_buffers(
     let selected: Vec<_> = (0..partitions.len()).collect();
     let index = BuildingSiteIndex::prepare(layouts, partitions, &selected)?;
     let total = index.total();
-    let mut display = super::display::SiteDisplay::new(origin, total);
+    let mut display = super::display::SiteDisplay::new(origin, total, version);
     let mut start = 0;
     while start < total {
         let end = (start + CHUNK).min(total);
         let rows = super::par::range(end - start, |k| {
             index
                 .request_site(start + k, seed, layouts, partitions, surface, water_level, architecture_culture, false)
-                .map(|request| super::display::SiteRow::new(&request, origin))
+                .map(|request| super::display::SiteRow::new(&request, origin, version))
         });
         // The first error in site order wins, as in a serial loop.
         for row in rows {

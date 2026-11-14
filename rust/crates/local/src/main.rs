@@ -763,6 +763,13 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let source: UrbanSourceHandle = value(&input["source"])?;
         let seed = input["seed"].as_str().ok_or("Graine absente.")?;
         let culture = input["architectureCulture"].as_str();
+        // `version` 2 (capability urban.site-visuals-v2): per-site programme texts
+        // without the fields no display reads; absent = version 1 for older pages.
+        let version = match input.get("version").map(Value::as_u64) {
+            None => 1,
+            Some(Some(v @ (1 | 2))) => v as u32,
+            Some(_) => return Err("Unsupported building site visuals version.".into()),
+        };
         let terrain = state
             .settlements
             .as_ref()
@@ -780,6 +787,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             snapshot.partitions,
             culture,
             origin,
+            version,
         )?;
         return Ok(Reply {
             kind: "application/octet-stream",
@@ -1207,7 +1215,7 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["landuse.stage-v1", "terrain.water-v1", "terrain.relief-session-v1","site.choose-v1", "terrain.forest-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers", "urban.parcel-pack-v1",
+                "capabilities": ["landuse.stage-v1", "terrain.water-v1", "terrain.relief-session-v1","site.choose-v1", "terrain.forest-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers", "urban.parcel-pack-v1", "urban.site-visuals-v2",
                     "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
     }

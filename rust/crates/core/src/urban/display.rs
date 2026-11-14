@@ -236,8 +236,25 @@ pub struct SiteRow {
     /// Lot programme as JSON (`null` when the request has none).
     programme: Vec<u8>,
 }
+/// Programme fields that no display reads: the housing-need evidence is about a
+/// third of each programme and stays in the complete request (read by id).
+const NOT_DISPLAYED: &[&str] = &["housing_floor_need"];
+/// A lot programme serialised without `NOT_DISPLAYED`, other keys in their order.
+struct DisplayProgramme<'a>(&'a serde_json::Map<String, Value>);
+impl serde::Serialize for DisplayProgramme<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(None)?;
+        for (k, v) in self.0.iter().filter(|(k, _)| !NOT_DISPLAYED.contains(&k.as_str())) {
+            map.serialize_entry(k, v)?;
+        }
+        map.end()
+    }
+}
 impl SiteRow {
-    pub fn new(r: &Value, origin: Point) -> Self {
+    /// `version` 1: the programme as the request carries it (`null` when absent);
+    /// 2: without the fields no display reads.
+    pub fn new(r: &Value, origin: Point, version: u32) -> Self {
         let has = |v: &Value| v.as_array().is_some_and(|a| !a.is_empty());
         let fun = r["function"].as_str().unwrap_or("");
         let is_preview = has(&r["preview"]);
@@ -277,6 +294,9 @@ impl SiteRow {
         };
         let mut programme = Vec::new();
         match &r["programme"] {
+            Value::Object(map) if version >= 2 => {
+                let _ = serde_json::to_writer(&mut programme, &DisplayProgramme(map));
+            }
             Value::Object(_) => {
                 let _ = serde_json::to_writer(&mut programme, &r["programme"]);
             }
@@ -318,14 +338,24 @@ pub struct SiteDisplay {
     ids: Strings,
     parcel_ids: Strings,
     access_ids: Strings,
-    /// `[p0,p1,…` JSON array under construction (one record per site).
+    /// Version 1: `[p0,p1,…` JSON array under construction (one record per
+    /// site). Version 2: `p0,p1,…,` (each record followed by a comma).
     programmes: Vec<u8>,
+    /// Version 2: n+1 byte offsets of each site's `record,` in `programmes`, so
+    /// that a reader parses a run of sites at a time (no whole-town string).
+    programme_offsets: Vec<u32>,
+    version: u32,
 }
 impl SiteDisplay {
-    pub fn new(origin: Point, expected_sites: usize) -> Self {
+    /// `version` 1 or 2 (see `SiteRow::new` and `finish`).
+    pub fn new(origin: Point, expected_sites: usize, version: u32) -> Self {
         let mut programmes = Vec::with_capacity(expected_sites.saturating_mul(1024).min(1 << 30));
-        programmes.push(b'[');
+        if version < 2 {
+            programmes.push(b'[');
+        }
         Self {
+            version,
+            programme_offsets: if version < 2 { Vec::new() } else { Vec::with_capacity(expected_sites + 1) },
             origin,
             count: 0,
             tables: BTreeMap::new(),
@@ -371,10 +401,20 @@ impl SiteDisplay {
         self.ids.push(&row.id);
         self.parcel_ids.push(&row.parcel_id);
         self.access_ids.push(&row.access_id);
-        if self.count > 0 {
+        if self.version >= 2 {
+            if self.programme_offsets.is_empty() {
+                self.programme_offsets.push(0);
+            }
+            self.programmes.extend_from_slice(&row.programme);
             self.programmes.push(b',');
+            // Saturates past 4 GiB of programme text; the page cannot hold such a town anyway.
+            self.programme_offsets.push(u32::try_from(self.programmes.len()).unwrap_or(u32::MAX));
+        } else {
+            if self.count > 0 {
+                self.programmes.push(b',');
+            }
+            self.programmes.extend_from_slice(&row.programme);
         }
-        self.programmes.extend_from_slice(&row.programme);
         self.count += 1;
     }
 
@@ -395,17 +435,24 @@ impl SiteDisplay {
             w.u32s(&format!("{name}.offsets"), &offsets);
             w.u8_owned(&format!("{name}.text"), s.text.into_bytes());
         }
-        // Lot programmes (role, wealth, massing…) stay nested records: one JSON
-        // array for the whole town, parsed once by the reader.
-        self.programmes.push(b']');
-        w.u8_owned("sites.programme", self.programmes);
+        // Lot programmes (role, wealth, massing…) stay nested records. Version 1:
+        // one JSON array for the whole town; version 2: `record,` per site
+        // (`sites.programme.offsets`: n+1 byte offsets into `sites.programme.text`).
+        if self.version >= 2 {
+            let offsets = if self.programme_offsets.is_empty() { vec![0] } else { self.programme_offsets };
+            w.u32s("sites.programme.offsets", &offsets);
+            w.u8_owned("sites.programme.text", self.programmes);
+        } else {
+            self.programmes.push(b']');
+            w.u8_owned("sites.programme", self.programmes);
+        }
         let tables: serde_json::Map<String, Value> = self
             .tables
             .into_iter()
             .map(|(k, t)| (k.to_string(), json!(t.names)))
             .collect();
         w.finish(json!({
-            "format": "magna-city-sites", "version": 1,
+            "format": "magna-city-sites", "version": self.version.max(1),
             "origin": {"x": self.origin.x, "y": self.origin.y},
             "count": self.count,
             "tables": tables,
@@ -418,10 +465,11 @@ impl SiteDisplay {
 /// admission hint, else the buildable land), function, culture, preview flag,
 /// ground height, entrance, identities and lot programme. Cadastral, reserve,
 /// neighbour and access geometry stay in the engine and are read by id.
-pub fn site_display_buffers(requests: &[Value], origin: Point) -> Vec<u8> {
-    let mut display = SiteDisplay::new(origin, requests.len());
+/// `version` 1 or 2 (`SiteDisplay::finish`).
+pub fn site_display_buffers(requests: &[Value], origin: Point, version: u32) -> Vec<u8> {
+    let mut display = SiteDisplay::new(origin, requests.len(), version);
     for r in requests {
-        display.push(SiteRow::new(r, origin));
+        display.push(SiteRow::new(r, origin, version));
     }
     display.finish()
 }
@@ -570,7 +618,7 @@ mod tests {
             json!({"id": "s2é", "parcel_id": "p2", "function": "open_space", "culture": {"culture": "c", "pack": "p", "mode": "m", "borrowing": null},
                 "placement_hint": sq(30.0), "buildable": sq(60.0), "terrain": {"ground_z_m": 3.0}, "accesses": [], "programme": null}),
         ];
-        let blob = site_display_buffers(&requests, Point { x: 10.0, y: 0.0 });
+        let blob = site_display_buffers(&requests, Point { x: 10.0, y: 0.0 }, 1);
         let head = u32::from_le_bytes(blob[..4].try_into().unwrap()) as usize;
         let header: Value = serde_json::from_slice(&blob[4..4 + head]).unwrap();
         let body = &blob[4 + head..];
@@ -596,5 +644,59 @@ mod tests {
         assert!(programmes[1].is_null());
         assert_eq!(header["tables"]["function"][2], "open_space");
         assert_eq!(blob.len() % 4, 0);
+    }
+
+    /// Version 2: per-site `programme,` texts without the housing need, every other
+    /// section byte-identical to version 1. Writes the fixture read by
+    /// `web/tests/cityDisplayBuffers.test.ts`.
+    #[test]
+    fn site_display_buffers_v2_split_programmes_and_drop_housing_need() {
+        let sq = |x: f64| json!([{"outer": [{"x": x, "y": 0.0}, {"x": x + 4.0, "y": 0.0}, {"x": x + 4.0, "y": 4.0}], "holes": []}]);
+        let culture = json!({"culture": "c", "pack": "p", "mode": "m", "borrowing": null});
+        let requests = vec![
+            json!({"id": "s1", "parcel_id": "p1", "function": "domestic", "culture": culture, "preview": sq(10.0), "buildable": sq(50.0),
+                "terrain": {"ground_z_m": 12.5}, "accesses": [{"id": "a1", "segment": [{"x": 10.0, "y": 0.0}, {"x": 14.0, "y": 0.0}]}],
+                "programme": {"role": "dwelling.row", "households": 2.0, "housing_floor_need": {"requested_m2": 99.0}, "label": "Fontaine Saint-Éloi",
+                    "massing": [{"eave_m": 2.66, "floors": 1, "roof": "gable", "ridges": [[10.5, 1.25, 13.5, 1.25]], "cover": "tile", "wall": "timber",
+                        "volumes": [{"ring": [[10.0, 0.0], [14.0, 0.0], [14.0, 4.0]], "eave_m": 2.66, "rise_m": 3.06, "roof": "gable", "ridges": [], "cover": "tile", "wall": "timber"}]}]}}),
+            json!({"id": "s2", "parcel_id": "p2", "function": "open_space", "culture": culture, "buildable": sq(60.0),
+                "terrain": {"ground_z_m": 3.0}, "accesses": [], "programme": null}),
+        ];
+        let origin = Point { x: 10.0, y: 0.0 };
+        let parse = |blob: &[u8]| {
+            let head = u32::from_le_bytes(blob[..4].try_into().unwrap()) as usize;
+            let header: Value = serde_json::from_slice(&blob[4..4 + head]).unwrap();
+            (header, blob[4 + head..].to_vec())
+        };
+        let (h1, b1) = parse(&site_display_buffers(&requests, origin, 1));
+        let blob = site_display_buffers(&requests, origin, 2);
+        let (h2, b2) = parse(&blob);
+        assert_eq!(h2["version"], 2);
+        assert!(h2["sections"].get("sites.programme").is_none());
+        let bytes = |h: &Value, b: &[u8], name: &str| {
+            let s = &h["sections"][name];
+            let (o, n) = (s["offset"].as_u64().unwrap() as usize, s["length"].as_u64().unwrap() as usize);
+            let size = match s["type"].as_str().unwrap() { "u8" => 1, "u16" => 2, _ => 4 };
+            b[o..o + n * size].to_vec()
+        };
+        for (name, _) in h1["sections"].as_object().unwrap().iter().filter(|(k, _)| k.as_str() != "sites.programme") {
+            assert_eq!(bytes(&h1, &b1, name), bytes(&h2, &b2, name), "{name}");
+        }
+        let offsets: Vec<u32> = bytes(&h2, &b2, "sites.programme.offsets").chunks_exact(4).map(|b| u32::from_le_bytes(b.try_into().unwrap())).collect();
+        let text = bytes(&h2, &b2, "sites.programme.text");
+        assert_eq!(offsets.len(), 3);
+        assert_eq!(&text[offsets[1] as usize..], b"null,");
+        let first: Value = serde_json::from_slice(&text[..offsets[1] as usize - 1]).unwrap();
+        let mut expected = requests[0]["programme"].clone();
+        expected.as_object_mut().unwrap().remove("housing_floor_need");
+        assert_eq!(first, expected);
+        // Other keys keep their order.
+        let v1: Value = serde_json::from_slice(&bytes(&h1, &b1, "sites.programme")).unwrap();
+        let keys = |v: &Value| v.as_object().unwrap().keys().filter(|k| k.as_str() != "housing_floor_need").cloned().collect::<Vec<_>>();
+        assert_eq!(keys(&first), keys(&v1[0]));
+        assert_eq!(blob.len() % 4, 0);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../web/tests/fixtures");
+        std::fs::write(dir.join("site-visuals-v2.bin"), &blob).unwrap();
+        std::fs::write(dir.join("site-visuals-v1.bin"), site_display_buffers(&requests, origin, 1)).unwrap();
     }
 }
