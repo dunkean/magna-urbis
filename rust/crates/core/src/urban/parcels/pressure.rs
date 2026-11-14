@@ -22,7 +22,10 @@ pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
             });
             path.push(id);
         }
-        if !matches!(street.role.as_str(), "boundary" | "bridge") {
+        // A bridge has no building frontage, but carries access between its
+        // banks. Excluding it here disconnected the far bank from the town's
+        // sources, bypassing even the enclosed-land occupation floor.
+        if street.role != "boundary" {
             for pair in path.windows(2) {
                 let cost = length(sub(nodes[pair[0]], nodes[pair[1]]))
                     * if street.rank >= 3 { 1.15 } else { 1.0 };
@@ -157,6 +160,38 @@ fn scale_point(p: Point, s: f64) -> Point {
 #[cfg(test)]
 mod enclosure_tests {
     use super::*;
+    #[test]
+    fn enclosed_quarters_share_access_across_a_bridge() {
+        let mut l: Layout = serde_json::from_value(serde_json::json!({
+            "key":"bastide-banks","culture":"bastide","center":{"x":10.,"y":100.},
+            "quarters":[],"warnings":[],
+            "blocks":[{"shape":super::super::super::geometry::rectangle(10.,104.,80.,180.),"quarter":0,"kind":"block","zone":"middle","axis":{"x":1.,"y":0.}},
+                {"shape":super::super::super::geometry::rectangle(140.,104.,210.,180.),"quarter":1,"kind":"block","zone":"middle","axis":{"x":1.,"y":0.}}],
+            "streets":[{"path":[{"x":10.,"y":100.},{"x":80.,"y":100.}],"widths":[8.,8.],"rank":1,"role":"street"},
+                {"path":[{"x":80.,"y":100.},{"x":140.,"y":100.}],"widths":[8.,8.],"rank":1,"role":"bridge"},
+                {"path":[{"x":140.,"y":100.},{"x":210.,"y":100.}],"widths":[8.,8.],"rank":1,"role":"street"}],
+            "enclosures":[{"kind":"wall","path":[{"x":0.,"y":80.},{"x":240.,"y":80.},{"x":240.,"y":200.},{"x":0.,"y":200.},{"x":0.,"y":80.}],"gates":[],"towers":[]}]
+        })).unwrap();
+        // Every supported crossing carries the same pedestrian access.
+        for role in ["bridge", "ford", "causeway"] {
+            l.streets[1].role = role.into();
+            let pressure = super::super::occupation_pressures(&l);
+            assert!(pressure[0] > pressure[1] && pressure[1] >= 0.65, "{role}: {pressure:?}");
+        }
+        l.streets[1].role = "bridge".into();
+        l.center.x = 210.0;
+        let pressure = super::super::occupation_pressures(&l);
+        assert!(pressure[1] > pressure[0] && pressure[0] >= 0.65, "{pressure:?}");
+        // The bridge still supplies no building frontage of its own.
+        let on_deck = super::super::super::geometry::rectangle(90.,104.,130.,150.);
+        assert!(super::super::block_contacts(&on_deck, &l).is_empty());
+        // A wall boundary is not a crossing; disconnected land must not gain
+        // fictitious access merely because it stands inside an enclosure.
+        l.center.x = 10.0;
+        l.streets[1].role = "boundary".into();
+        assert_eq!(super::super::occupation_pressures(&l)[1], 0.0);
+    }
+
     #[test]
     fn serviced_walled_land_keeps_an_urban_gradient() {
         let mut l: Layout = serde_json::from_value(serde_json::json!({

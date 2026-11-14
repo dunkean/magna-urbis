@@ -390,15 +390,15 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   }
   // Close up, the fields, orchards and gardens of the land detail meet the other land along their true polygon: its
   // signed edge distance gives their joint share instead of the bilinear weights of the coarser class raster, which
-  // drew the limit as rounded texel steps. Only where the class neighbourhood holds no town, lane or building ground,
-  // which the detail does not know; between two detailed classes the class weights stay.
+  // drew the limit as rounded texel steps. Towns and buildings override plots; agricultural lanes follow the same
+  // smooth plot edge, including beside orchards. Between two detailed classes the class weights stay.
   float detailed=wField+wOrchard+wGarden;
-  if(uHasLandDetail==1&&detailed>0.&&detailed<1.&&wTown+wLane+wBuilt<.001){
+  if(uHasLandDetail==1&&detailed>0.&&detailed<1.&&wTown+wBuilt<.001){
     float dcell=uLandDetailRect.z/uLandDetailN,near=1.-groundSmooth(dcell,dcell*2.,footprint);
     if(near>0.){
       float sd=landDetailDist(landDetailSample((world-uLandDetailRect.xy)/uLandDetailRect.z,0.).a),w=.5*max(footprint,.25);
       float share=mix(detailed,groundSmooth(-w,w,sd),near),rest=1.-detailed;
-      hardShare*=rest>.001?(1.-share)/rest:0.;
+      float other=rest>.001?(1.-share)/rest:0.;hardShare*=other;wLane*=other;
       float k=share/detailed;wField*=k;wOrchard*=k;wGarden*=k;
     }
   }

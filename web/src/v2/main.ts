@@ -266,6 +266,19 @@ async function refreshAppearance():Promise<void>{
   catch(error){if(revision===renderRevision)reportAppearanceError(error);}
   finally{if(revision===renderRevision){if(status.dataset.error!=='true')status.hidden=true;performance.measure('v2:appearance',{start:appearanceStart});}}
 }
+/** A new world (relief, settlements, edits) shown while the 3D view is open: the ground capture, the surface and the tiles must follow it (the 2D map redraws itself). */
+async function refresh3dWorld():Promise<void>{
+  if(!city3d?.active)return;
+  const revision=++renderRevision,status=$('#render-status');delete status.dataset.error;status.hidden=false;
+  setText(status,getLanguage()==='fr'?'Chargement HD…':'HD loading…');
+  try{
+    await client.prepare3dBackground();   // the bench ground of the new world is captured on demand, never while the 3D view is active
+    if(!city3d?.active||revision!==renderRevision)return;
+    city3d.refresh();await city3d.prepare();
+    await client.waitFor3d(city3d);
+  }catch(error){if(revision===renderRevision)reportAppearanceError(error);}
+  finally{if(revision===renderRevision&&status.dataset.error!=='true')status.hidden=true;}
+}
 function reportAppearanceError(error:unknown):void{
   const message=error instanceof Error?error.message:String(error);
   if(error instanceof Error&&error.name==='MaterialRasterUnavailableError'){
@@ -291,34 +304,49 @@ setDynamicText($('#preview-close'), () => getLanguage() === 'fr' ? 'Fermer l’a
 $('#preview-close').onclick = async () => {
   if (!previewBase?.world || busy) return;
   world = previewBase.world; pristine = previewBase.pristine; previewBase = undefined;
-  await client.show(world, true); updateWorld();
+  await client.show(world, true); updateWorld(); void refresh3dWorld();
 };
+/** Token of the 3D opening in flight (0 = none): the button stays enabled while the 3D view loads, and a click on "2D" abandons the opening. */
+let open3dToken=0,open3dSeq=0;
 $('#view3d').onclick=async()=>{
   window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'3d'}));
   if(!world){toast(getLanguage()==='fr'?'Créez d’abord le territoire.':'Create the terrain first.');return;}
-  if(city3d?.active){const mapView=city3d.toMapView();city3d.hide();client.set3dActive(false);if(mapView)client.viewer.setView(mapView);setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;editingTools.sync();return;}
-  $<HTMLButtonElement>('#view3d').disabled=true;
+  if(open3dToken||city3d?.active){
+    const opening=open3dToken!==0;open3dToken=0;   // a pending opening sees its token vanish and stops without showing the 3D view
+    const mapView=city3d?.active?city3d.toMapView():undefined;
+    if(city3d?.active)city3d.hide();
+    client.set3dActive(false);if(mapView)client.viewer.setView(mapView);setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;editingTools.sync();
+    if(opening){if(!busy)$('#progress-card').hidden=true;$<HTMLButtonElement>('#cancel-job').hidden=false;if($('#render-status').dataset.error!=='true')$('#render-status').hidden=true;}
+    return;
+  }
+  const myToken=open3dToken=++open3dSeq,stale3d=()=>open3dToken!==myToken;
+  setText($('#view3d'),'2D');   // back to 2D is possible at any time, also while the 3D view loads
   // The progress card stays until the 3D view has drawn a complete first frame (tiles ready, no pending job):
   // the view needs seconds after it is shown, and a vanished card looked like a freeze.
   const fr3d=getLanguage()==='fr',card3d=$('#progress-card'),cancel3d=$<HTMLButtonElement>('#cancel-job');
-  const step3d=(detail:string)=>{if(busy)return;card3d.hidden=false;cancel3d.hidden=true;setText($('#progress-label'),fr3d?'Ouverture de la vue 3D…':'Opening the 3D view…');setText($('#progress-detail'),detail);setText($('#progress-time'),'');$<HTMLProgressElement>('#progress').removeAttribute('value');};
+  const step3d=(detail:string)=>{if(busy||stale3d())return;card3d.hidden=false;cancel3d.hidden=true;setText($('#progress-label'),fr3d?'Ouverture de la vue 3D…':'Opening the 3D view…');setText($('#progress-detail'),detail);setText($('#progress-time'),'');$<HTMLProgressElement>('#progress').removeAttribute('value');};
   const open3dStart=performance.now(),request3d=client.begin3dRequest();
   client.set3dActive(true);
   try{
     step3d(fr3d?'Fond de carte':'Map ground');
     await client.prepare3dBackground();
+    if(stale3d())return;
     step3d(fr3d?'Moteur 3D et shaders':'3D engine and shaders');
     if(!city3d){toast(getLanguage()==='fr'?'Chargement de la vue 3D…':'Loading the 3D view…');city3d=await(await import('./urban3d')).mountV2Urban3d({host:$('.map-area'),getWorld:()=>world,getSettings:()=>settings,getBackground:()=>client.backgroundUrl(),getBackgroundImage:()=>client.groundBackground(),getPhysicalGround:()=>client.physicalGround(),onAppearancePatch:patch=>{settings.appearance=applyAppearancePatch(settings.appearance,settings.options.style,patch);projectRevision++;void refreshAppearance();},getTextured:()=>settings.appearance?.textured??false,setTextured:value=>{settings.appearance={style:settings.options.style,...settings.appearance,textured:value};projectRevision++;void refreshAppearance();},getSelected:()=>selectedBuilding?(selectedBuilding.building as UrbanBuilding&{nativeId?:string}).nativeId:undefined,onSelect:id=>{
       for(const settlement of world?.settlements??[]){const urban=townUrban(world!,settlement.key),index=urban?.buildings.findIndex(b=>(b as UrbanBuilding&{nativeId?:string}).nativeId===id)??-1;if(urban&&index>=0){showBuilding({settlement:settlement.key,index,building:urban.buildings[index]});break;}}
     }});}
-    await city3d.prepare();city3d.show();city3d.fromMapView(client.viewer.getView());performance.measure('v2:3d:shown',{start:open3dStart});setText($('#view3d'),'2D');$('#view3d').setAttribute('aria-pressed','true');$('#capture3d').hidden=false;editingTools.sync();
+    if(stale3d())return;
+    await city3d.prepare();
+    if(stale3d())return;   // back to 2D while loading: the 3D view is never shown
+    city3d.show();city3d.fromMapView(client.viewer.getView());performance.measure('v2:3d:shown',{start:open3dStart});setText($('#view3d'),'2D');$('#view3d').setAttribute('aria-pressed','true');$('#capture3d').hidden=false;editingTools.sync();
     step3d(fr3d?'Relief, bâtiments et arbres':'Terrain, buildings and trees');
     const view3d=city3d,status3d=$('#render-status');status3d.hidden=false;
     setText(status3d,fr3d?'Chargement HD…':'HD loading…');
     const coverageTimer=setInterval(()=>{if(request3d.has('first-covered-frame')&&!busy)card3d.hidden=true;},40);
     try{await client.waitFor3d(view3d,request3d);}finally{clearInterval(coverageTimer);status3d.hidden=true;}
     performance.measure('v2:3d:tiles',{start:open3dStart});
-  }catch(error){if(!city3d?.active)client.set3dActive(false);toast(String(error),true);}finally{if(!busy)card3d.hidden=true;cancel3d.hidden=false;$<HTMLButtonElement>('#view3d').disabled=false;}
+  }catch(error){if(stale3d())return;if(!city3d?.active){client.set3dActive(false);setText($('#view3d'),'3D');}toast(String(error),true);}
+  finally{if(!stale3d()){open3dToken=0;if(!busy)card3d.hidden=true;cancel3d.hidden=false;}}
 };
 $('#capture3d').onclick=async()=>{try{if(city3d?.active)download(await city3d.capture(),`magna-urbis-${settings.options.seed}.3d.png`);}catch(error){toast(String(error),true);}};
 const terrainControls=mountTerrainControls($('#terrain-controls'),{getSettings:()=>settings,onChange:()=>{touchRecipe();regionControls?.sync();syncUrbanBackend();},disabled:()=>busy,context:{getWorld:()=>world,onApply:()=>void generate('terrain')}});
@@ -572,7 +600,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     if (edited.skipped) log(`${edited.skipped} modification(s) ne correspondent plus à leur bâtiment d’origine.`);
     setText($('#progress-label'), 'Dessin de la carte…');$<HTMLButtonElement>('#cancel-job').disabled=true;log('Préparation de la scène et dessin dans le worker de rendu…');
     const showStart=performance.now();await client.show(world,action === 'town' || action === 'towns');canvas.hidden=false; $('#empty-map').hidden = true;
-    updateWorld();performance.measure('v2:show',{start:showStart}); if (['region','settlements'].includes(action)) selectTab('settlements'); else if (['all','towns'].includes(action)) selectTab('cities');
+    updateWorld();void refresh3dWorld();performance.measure('v2:show',{start:showStart}); if (['region','settlements'].includes(action)) selectTab('settlements'); else if (['all','towns'].includes(action)) selectTab('cities');
     setText($('#footer-status'), `Carte prête · ${((performance.now()-started)/1000).toFixed(1)} s`);
     const completion = `Terminé en ${((performance.now()-started)/1000).toFixed(2)} s · relief ${String(world.stats.backend ?? 'typescript-cpu')}`;
     const hasBuiltTowns = !!world.urban || world.settlements?.some(place => !!place.urban);
@@ -613,7 +641,7 @@ async function applyDirectMapEdit(next:World):Promise<void>{
   if(next.terrain!==world?.terrain)next.stats={...next.stats,'v2.waterEditRevision':Math.max(Number(next.stats['v2.waterEditRevision']??0),Number(world?.stats['v2.waterEditRevision']??0)+1)};
   pristine=next;mods=[];world=next;smallPlaceRecipe=undefined;
   client.invalidateRetained();touchRecipe();
-  await client.show(next,true);updateWorld();
+  await client.show(next,true);updateWorld();void refresh3dWorld();
 }
 function showInspector(key: string, focus = false): void {
   if (!world) return; const source = world.settlements?.find(s=>s.key===key); if (!source) return; const s={...source,name:settlementDisplayName(world,key,settings)};

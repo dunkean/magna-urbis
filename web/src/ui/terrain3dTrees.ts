@@ -5,13 +5,19 @@
  * within TREE_FAR of the eye are built; trees grow out of their painted crown between TREE_FAR and TREE_NEAR,
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
-import { ForestRoom, type ForestCorridor } from '../render/forestRoom';
+import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/forestRoom';
+import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
+import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { FOREST_CLUMP_GLSL, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
-/** Horizontal distance from the eye (m): full trees within TREE_NEAR, none beyond TREE_FAR. */
-export const TREE_NEAR = 420, TREE_FAR = 600;
-/** Upper bound on drawn trees (a frame then costs TREE_VERTICES vertices per tree). */
-export const TREE_MAX = 60000;
+/** Horizontal distance from the eye (m): full trees within TREE_NEAR, none beyond TREE_FAR. Beyond, the painted
+ * crowns are the forest's far level of detail. Kept short: a dense forest costs about π·TREE_FAR²/2 / 20 trees. */
+export const TREE_NEAR = 240, TREE_FAR = 360;
+/** Upper bound on drawn trees (a frame then costs TREE_VERTICES vertices per tree). Blocks are visited nearest
+ * first, so the cap drops the farthest trees, never a hole near the eye. */
+export const TREE_MAX = 16000;
+/** World blocks between two partial installs of a stream that is still being built (nearest blocks first). */
+const PARTIAL_BLOCKS = 96;
 const SEGMENTS = 12, BANDS = 6;
 export const TREE_VERTICES = SEGMENTS * BANDS * 6;
 /** Floats per instance: (x, y, ground z, r) (h, crown depth, needle, phase) (r, g, b, leafless flag + .45 x snow load). */
@@ -22,6 +28,9 @@ export interface TreeInputs {
   renderV2: number; zone: number; season: number;
   /** Calendar setting 'crownSnow' (0 bare crowns, 1 heavily laden); the zone default when absent. */
   crownSnow?: number;
+  /** Climate zone and calendar of the map: the deciduous leaf state and the larch share, as the painted crowns read them
+   * (v2SeasonLeaf, v2SeasonClimate). Absent: a climate proxy. */
+  climateZone?: ClimateZone; calendar?: SeasonCalendar;
   /** Displayed water cover 0..1 at a point (tile water masks); undefined: dry. */
   water(x: number, y: number): number;
   height(x: number, y: number): number | undefined;
@@ -92,8 +101,9 @@ function wayRoomOf(ways: NonNullable<ForestOccupation['ways']>): ForestRoom {
   if (!room) wayRooms.set(ways, room = new ForestRoom(ways as readonly ForestCorridor[], []));
   return room;
 }
-/** Same instance order and arithmetic, with one bounded world block per step. */
-export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Generator<void, Float32Array> {
+/** Same instance order and arithmetic, with one bounded world block per step. Blocks run nearest first; `partial`
+ * receives the stream built so far every PARTIAL_BLOCKS blocks, so trees appear around the eye before the rest. */
+export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial?: (values: Float32Array) => void): Generator<void, Float32Array> {
   const { field, occupation: occ, seed } = inputs, T = inputs.climate.temperature, P = inputs.climate.precipitation;
   const humid = P / Math.max(20 * T + 280, 120), trop = sstep(13, 19, T - 6), dry = 1 - sstep(.8, 2, humid);
   const savanna = trop * sstep(.3, .6, dry);
@@ -148,7 +158,10 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
 
   const season = inputs.season, sx = Math.max(-Math.sin(6.2831853 * season), 0);
   const at = (season % 1 + 1) % 1 * 4, winter = Math.max(0, 1 - Math.min(Math.abs(at), Math.abs(at - 4)));
-  const evergreen = inputs.renderV2 > 0 ? kind[0] + kind[1] : 1, leaf = 1 - winter * (1 - evergreen) * .9;
+  const evergreen = inputs.renderV2 > 0 ? kind[0] + kind[1] : 1;
+  // Deciduous leaf state and larch share of the zone's year, as the painted crowns under these trees read them.
+  const year = inputs.renderV2 > 0 && inputs.climateZone ? calendarSeason(inputs.climateZone, inputs.calendar) : undefined, w = seasonWeights(season);
+  const leaf = year ? clamp(year.leaf.reduce((sum, v, i) => sum + v * w[i], 0)) : 1 - winter * (1 - evergreen) * .9, larchShare = year?.larch ?? 0;
   const snow = inputs.renderV2 > 0 ? winter * (1 - sstep(2, 10, T)) : 0, crownSnow = clamp(inputs.crownSnow ?? .7);
   // Mean crown load of forestSnowLoad; the tree shader spreads it over the crown (instance colour w, fraction).
   const snowLoad = (needle: boolean): number => .45 * snow * (needle ? mix(.24, .62, crownSnow) : mix(.2, .8, crownSnow));
@@ -201,10 +214,19 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
   const far2 = TREE_FAR * TREE_FAR, block = 24;
   const bx0 = Math.floor((view.x - TREE_FAR) / block), bx1 = Math.floor((view.x + TREE_FAR) / block);
   const by0 = Math.floor((view.y - TREE_FAR) / block), by1 = Math.floor((view.y + TREE_FAR) / block);
+  // Visible blocks, nearest first: partial streams and the instance cap both keep the trees around the eye.
+  const blocks: [number, number, number][] = [];
   for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+    const dx = (bx + .5) * block - view.x, dy = (by + .5) * block - view.y, d2 = dx * dx + dy * dy;
+    if (d2 > (TREE_FAR + block) ** 2 || dx * view.forwardX + dy * view.forwardY < -2 * block) continue;
+    blocks.push([d2, bx, by]);
+  }
+  blocks.sort((a, b) => a[0] - b[0]);
+  let shown = out.length;
+  for (let b = 0; b < blocks.length; b++) {
     yield;
-    const cxm = (bx + .5) * block, cym = (by + .5) * block, dx = cxm - view.x, dy = cym - view.y;
-    if (dx * dx + dy * dy > (TREE_FAR + block) ** 2 || dx * view.forwardX + dy * view.forwardY < -2 * block) continue;
+    if (partial && b > 0 && b % PARTIAL_BLOCKS === 0 && out.length > shown) { shown = out.length; partial(new Float32Array(out)); }
+    const bx = blocks[b][1], by = blocks[b][2], cxm = (bx + .5) * block, cym = (by + .5) * block;
     const levels = levelsAt(cxm, cym); if (!levels) continue;
     for (let k = 0; k < 2; k++) {
       if ((k === 0 ? levels[1] : levels[2]) <= .002) continue;
@@ -241,7 +263,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
           const e = occCell, openAt = (x: number, y: number): number => occAt(x, y)?.[0] ?? -1e3;
           const gx = openAt(cx + e, cy) - openAt(cx - e, cy), gy = openAt(cx, cy + e) - openAt(cx, cy - e), gl = Math.max(Math.hypot(gx, gy), 1e-4);
           const side = occAt(cx + gx / gl * (.5 * e - open), cy + gy / gl * (.5 * e - open))?.[2] ?? 0;
-          if ((side === 4 || side === 8 || side === 9 || side === 11) && open > -(.7 + .3 * u8(h2, 16)) * radius) occupied = true;
+          if ((side === 4 || side === 8 || side === 9 || side === 11) && open > -forestCrownSetback(radius, u8(h2, 16))) occupied = true;
         }
         if (occupied) continue;
         const centreLevel = clamp(2 * Math.log2(radius / rhoOf(tauOf(dens)) / 2), 0, 5.999);
@@ -257,7 +279,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         } else { alive = u8(h, 16) < q && threshold < share; edge = 1 - sstep(0, .1, share - threshold); }
         if (!alive || inputs.water(cx, cy) >= (inputs.renderV2 > 0 ? .05 : .5)) continue;
         if (inputs.renderV2 > 0 && u8(forestHash(i, j, level * 2 + 37, crownSeed), 0) < beachAt(cx, cy)) continue;
-        const isNeedle = u8(h2, 8) < needle, emergent = kind[1] * sstep(.9, .97, u8(h2, 24));
+        const isNeedle = u8(h2, 8) < needle, larch = isNeedle && u8(Math.imul(h, 0x27d4eb2d) >>> 0, 16) < larchShare, emergent = kind[1] * sstep(.9, .97, u8(h2, 24));
         const r = Math.min(rho * s * (.8 + .4 * u8(h, 24)) * (1 + .1 * edge) * (beyond > 0 ? .75 : 1) * (1 + .6 * emergent + .3 * krumm), 1.14 * s);
         const th = height * (mix(.82, .66, kind[1]) + mix(.36, .6, kind[1]) * u8(h2, 16)) * (1 + .45 * emergent);
         const depth = r * (isNeedle ? mix(3.2, 1.1, krumm) : mix(.55, .22, kind[2]));
@@ -268,6 +290,12 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
         let c: [number, number, number] = isNeedle ? [.15, .23, .16] : [mix(.24, .27, dry), mix(.33, .31, dry), mix(.15, .19, dry)];
         if (riparian) c = [c[0] * 1.06, c[1] * 1.08, c[2] * .96];
         c = [c[0] * tone, c[1] * tone, c[2] * tone];
+        if (larch && inputs.renderV2 > 0) {
+          // Larches: gold in autumn, bare in winter, as their painted crowns.
+          const t = .85 * sx, gold = .9 + .2 * tint;
+          c = [mix(c[0], .70 * gold, t), mix(c[1], .52 * gold, t), mix(c[2], .17 * gold, t)];
+          c = [mix(c[0], .31 * (.85 + .3 * tint), 1 - leaf), mix(c[1], .27 * (.85 + .3 * tint), 1 - leaf), mix(c[2], .23 * (.85 + .3 * tint), 1 - leaf)];
+        }
         if (!isNeedle && inputs.renderV2 > 0) {
           const fall = sx * temperate;
           if (fall > 0) {
@@ -293,7 +321,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView): Genera
           }
           if (overlaps) continue;
         }
-        out.push(cx, cy, z, width, tree, Math.min(depth * tree / th, .94 * tree), isNeedle ? 1 : 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], (!isNeedle && leaf < .5 ? 1 : 0) + snowLoad(isNeedle));
+        out.push(cx, cy, z, width, tree, Math.min(depth * tree / th, .94 * tree), isNeedle ? 1 : 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < .5 ? 1 : 0) + snowLoad(isNeedle));
         if (out.length >= TREE_MAX * TREE_STRIDE) return new Float32Array(out);
       }
     }

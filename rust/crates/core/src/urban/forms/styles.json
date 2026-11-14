@@ -109,7 +109,7 @@
     "levantine-tell": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "mediterranean": true, "flavor": "levant" } },
     "lizardfolk-swamp": { "traits": { "tradition": { "roof": "cone", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "stone" }, "piles": true } },
     "maori-pa": { "traits": { "tradition": { "roof": "gable", "pitch": 42, "storeys": [1, 2], "cover": "thatch", "wall": "wood" } } },
-    "maya": { "traits": { "flavor": "meso" } },
+    "maya": { "traits": { "flavor": "meso", "roleGroups": ["thatch-wings"] } },
     "medina": { "traits": { "flavor": "maghreb" } },
     "merfolk-tidal": { "traits": { "tradition": { "roof": "dome", "pitch": 0, "storeys": [1, 2], "cover": "stone", "wall": "stone" }, "form": "stilt" } },
     "mesopotamian": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "levant" } },

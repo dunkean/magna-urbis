@@ -24,7 +24,7 @@ import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { roadGroundTones, setRoadCanopy, setRoadGround } from '../render/roadStyle';
-import { setWhiteWater } from '../render/whiteWater';
+import { setWhiteWater, WHITE_WATER_ENABLED } from '../render/whiteWater';
 import { vectorWhiteWater } from '../render/whiteWaterCourses';
 import { displayWorld } from '../render/displayWorld';
 import { buildingOccupationShapes } from '../ui/forestOccupation';
@@ -471,7 +471,13 @@ export class BenchRenderer {
   private forestShown = false;
   private async forestPass(): Promise<void> {
     // The natural road painter fades ways under the same canopy as the ground shader (roadStyle.ts setRoadCanopy).
-    if (!this.gpuActive) { setRoadCanopy(undefined, undefined); return; }
+    if (!this.gpuActive) {
+      // Raster and Illustrated grounds carry the same forest product as the live GPU ground.
+      const world = this.world!, request = this.request;
+      const [field, occupation] = await Promise.all([v2DisplayForestAsync(world, this.settings!, this.resolved!), this.groundOccupation()]);
+      if (!this.disposed && this.world === world && this.request === request) setRoadCanopy(field, occupation);
+      return;
+    }
     this.dropBackground();
     // The Rust forest field and the occupation worker are independent: run them at once.
     const job = Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
@@ -516,7 +522,7 @@ export class BenchRenderer {
     }
     // Rapids and falls of the satellite ground: vector foam marks over the GL rivers, built once per network (whiteWater.ts).
     const satellite = r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap && this.world!.options.biome !== 'underdark';
-    setWhiteWater(this.gpuActive && visible && !ink && satellite && water.overlay === 'none' && t.water ? vectorWhiteWater(t.water, water.riverArea, water.season) : undefined);
+    setWhiteWater(WHITE_WATER_ENABLED && this.gpuActive && visible && !ink && satellite && water.overlay === 'none' && t.water ? vectorWhiteWater(t.water, water.riverArea, water.season) : undefined);
     const decor = retainedDecorOf(this.world!.terrain);
     let svg = decor && visible ? decorWaterSvg(decor, ink ? r.palette.mapStyle : 'render3d', water.showLakes, colors) : '';
     if (t.water && visible) {

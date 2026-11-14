@@ -200,7 +200,7 @@ describe('V2 and City Bench stay in sync', () => {
       const full = presetComposition(base), light = presetComposition(`${base}-light`);
       expect(() => validateComposition(light)).not.toThrow();
       expect(light).toEqual({ ...full, preset: `${base}-light`, quality: 'light' });
-      expect(compositionMessages[PRESET_OPTIONS.find(o => o.value === `${base}-light`)!.label].fr).toContain('léger');
+      expect(compositionMessages[PRESET_OPTIONS.find(o => o.value === `${base}-light`)!.label].fr).toContain('Rapide');
       const customized = { ...full, effects: { ...full.effects, season: .8 } };
       expect(withCompositionQuality(withCompositionQuality(customized, 'light'), 'full')).toEqual(customized);
       const appearance = { style: 'parchment' as const, composition: light };

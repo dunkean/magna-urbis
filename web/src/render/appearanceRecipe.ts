@@ -26,6 +26,8 @@ export interface CityInput {
   view?: CityView; palette?: CityPalette; buildingStyle?: UrbanBuildingStyle; diagnostic?: UrbanBuildingDiagnostic; layers?: Partial<CityLayers>;
   groundBlend?: 'classic' | 'blended'; painted?: boolean; opacity?: number; width?: number; ground?: CityGround; plan?: boolean;
   colors?: 'materials' | 'uses'; exaggeration?: number; refinement?: 'source' | 'noise';
+  /** Modelled trees in the 3D view (off by default: the view opens on the painted canopy, trees on demand). */
+  trees3d?: boolean;
 }
 /** The persisted recipe: every field optional, nothing expanded. */
 export interface AppearanceInput {
@@ -76,7 +78,7 @@ export interface CityComponent {
   visible: boolean; textured: boolean;
   view: CityView; palette: CityPalette; buildingStyle: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; layers: Readonly<CityLayers>;
   groundBlend: 'classic' | 'blended'; painted: boolean; opacity: number; width: number; ground: CityGround; plan: boolean;
-  colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise';
+  colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise'; trees3d: boolean;
 }
 export interface Incompatibility { field: string; reason: string }
 /** Per-pass cache keys: each is computed only from the fields its pass reads. */
@@ -119,7 +121,7 @@ export interface ResolvedAppearance {
 
 /** The single default table for 2D, 3D and export. */
 export const DEFAULT_CITY_LAYERS: Readonly<CityLayers> = Object.freeze({ reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, lotEnclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false });
-export const DEFAULT_CITY = { view: 'buildings', palette: 'parchment', buildingStyle: 'cartographic', diagnostic: 'none', opacity: .8, width: .6, plan: true, colors: 'materials', exaggeration: 1, refinement: 'noise', groundBlend: 'classic' } as const;
+export const DEFAULT_CITY = { view: 'buildings', palette: 'parchment', buildingStyle: 'cartographic', diagnostic: 'none', opacity: .8, width: .6, plan: true, colors: 'materials', exaggeration: 1, refinement: 'noise', groundBlend: 'classic', trees3d: false } as const;
 /** Previous 3D defaults, used while `unifiedDefaults` is off. */
 const LEGACY_3D_CITY = { view: 'parcels', palette: 'terrain', opacity: 1 } as const;
 const LEGACY_3D_LAYERS: Readonly<CityLayers> = Object.freeze({ ...DEFAULT_CITY_LAYERS, domains: false });
@@ -177,7 +179,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     view: c?.view ?? (legacy3d ? LEGACY_3D_CITY.view : DEFAULT_CITY.view), palette: c?.palette ?? (legacy3d ? LEGACY_3D_CITY.palette : DEFAULT_CITY.palette), buildingStyle: c?.buildingStyle ?? DEFAULT_CITY.buildingStyle, diagnostic: c?.diagnostic ?? DEFAULT_CITY.diagnostic,
     layers: { ...(legacy3d ? LEGACY_3D_LAYERS : DEFAULT_CITY_LAYERS), ...c?.layers }, groundBlend: c?.groundBlend ?? DEFAULT_CITY.groundBlend, painted: c?.painted ?? (traits.paintedCityByDefault || styleTraits(c?.ground ?? '').paintedCityByDefault),
     opacity: c?.opacity ?? (legacy3d ? LEGACY_3D_CITY.opacity : DEFAULT_CITY.opacity), width: c?.width ?? DEFAULT_CITY.width, ground: c?.ground ?? (traits.ground3d ? styleId as CityGround : 'map'), plan: c?.plan ?? DEFAULT_CITY.plan,
-    colors: c?.colors ?? (c?.diagnostic === 'uses' ? 'uses' : DEFAULT_CITY.colors), exaggeration: c?.exaggeration ?? DEFAULT_CITY.exaggeration, refinement: c?.refinement ?? DEFAULT_CITY.refinement };
+    colors: c?.colors ?? (c?.diagnostic === 'uses' ? 'uses' : DEFAULT_CITY.colors), exaggeration: c?.exaggeration ?? DEFAULT_CITY.exaggeration, refinement: c?.refinement ?? DEFAULT_CITY.refinement, trees3d: c?.trees3d ?? DEFAULT_CITY.trees3d };
 
   if (target !== 'view3d') {
     city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';
@@ -227,7 +229,7 @@ export function resolvedValues(r: ResolvedAppearance): AppearanceInput {
     lakes: r.ground.lakes, oxbows: r.ground.oxbows, roads: r.cartography.roads, buildings: r.city.visible, terrainLayers: { ...r.ground.layers },
     fantasy: { ...r.vegetation.fantasy }, forest: { ...r.vegetation.forestSettings },
     city: { view: r.city.view, palette: r.city.palette, buildingStyle: r.city.buildingStyle, diagnostic: r.city.diagnostic, opacity: r.city.opacity, width: r.city.width, plan: r.city.plan,
-      colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement, groundBlend: r.city.groundBlend, painted: r.city.painted, ground: r.city.ground, layers: { ...r.city.layers } } };
+      colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement, trees3d: r.city.trees3d, groundBlend: r.city.groundBlend, painted: r.city.painted, ground: r.city.ground, layers: { ...r.city.layers } } };
 }
 
 /** An interaction's request to change the recipe. Views emit patches; the orchestration applies them. */

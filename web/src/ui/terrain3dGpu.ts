@@ -480,7 +480,7 @@ class Terrain3dGpu extends Terrain3d {
     this.pipeline('tree');
   }
   private recordTrees(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
-    if (!this.treeCount || !this.gpuTreeBuffer || this.groundSettings?.underdark) return;
+    if (!this.treesShown() || !this.gpuTreeBuffer || this.groundSettings?.underdark) return;
     const pipeline = this.pipeline('tree'); if (!pipeline) return;
     const p = this.treeParams, c = this.camera;
     p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);

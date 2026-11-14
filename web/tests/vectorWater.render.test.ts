@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { lakeField, lakeSample } from '../src/ui/lakeGeometry';
 import { computeHydrology, waterBodies } from '../src/ui/simpleHydrology';
 import { vectorRivers, channelWidth, type RiverLine } from '../src/ui/riverVectors';
-import { MOUTH_END, mouthFlare, riverSegments, riverWidths, vectorWaterSvg, type WaterDisplay } from '../src/ui/vectorWaterRender';
+import { MOUTH_OPEN, mouthFlare, riverSegments, riverWidths, vectorWaterSvg, type WaterDisplay } from '../src/ui/vectorWaterRender';
 import type { VectorWater } from '../src/ui/vectorWater';
 import { computeVectorWater } from '../src/ui/vectorWater';
 import { waterBalance } from '../src/ui/waterBalance';
@@ -173,10 +173,12 @@ describe('continuous vector water', () => {
     expect(widths[1]).toBeCloseTo(own * mouthFlare(own));
     expect(riverWidths(water, { ...line, area: [1e6, 1e5], threads: [1, 1] })[1]).toBeCloseTo(channelWidth(1e5, 3));
     const segments = riverSegments({ ...water, rivers: { ...water.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } }, display);
-    expect(segments.length).toBe(9);
+    // The course keeps its flared width at the coast, then runs on into the sea and opens further (seaMouth).
+    expect(segments.length).toBe(18);
     expect(segments[4]).toBeCloseTo(widths[0]);
-    // The drawn ribbon narrows at a last vertex that lies in the sea.
-    expect(segments[5]).toBeCloseTo(widths[1] * MOUTH_END);
+    expect(segments[5]).toBeCloseTo(widths[1]);
+    expect(segments[11]).toBeLessThan(150);
+    expect(segments[14]).toBeCloseTo(widths[1] * MOUTH_OPEN);
   });
 
   it('keeps following a channel when downstream losses take it below the display threshold', async () => {

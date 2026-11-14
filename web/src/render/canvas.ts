@@ -43,7 +43,7 @@ import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './c
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { BLEND_ROAD_ALPHA, BLEND_ROAD_PX } from './groundBlend';
-import { CANOPY_LEVELS, canopyRuns, emphasisAlpha, regionalRank, roadCanopyRevision, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
+import { CANOPY_LEVELS, canopyRuns, emphasisAlpha, regionalRank, roadCanopyOpacity, roadCanopyRevision, roadWidth, strokeNaturalRoad, trackInk, type RoadStyle } from './roadStyle';
 import { drawWhiteWater, whiteWaterRevision } from './whiteWater';
 import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
@@ -1390,14 +1390,19 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       canopyMerged(ls).forEach((p, k) => { if (p) strokeNaturalRoad(ctx, p, rank, width, sc, roadStyle, k / (CANOPY_LEVELS - 1)); });
     const drawRegionalRoads = (roads: LineLayer[], tracks: LineLayer[]): void => {
       if (natural) {
-        // Layers of one rank share a width: one painter call each, tracks first.
-        if (tracks.length) strokeEarthRoads(tracks, 'track', roadWidth('track', tracks[0].width, sc));
+        // Each retained width has its own layer, as on the 3D road surface.
+        for (const l of tracks) {
+          const rank = l.width < 2 ? 'path' : 'track';
+          strokeEarthRoads([l], rank, roadWidth(rank, l.width, sc));
+        }
         // Earth and gravel first, then the paved lengths of the same rank (roadPavement.ts).
         for (const kind of ['minor', 'major'] as const) for (const pavement of ['earth', 'asphalt'] as const) {
           const ls = roads.filter((l) => l.kind === kind && (l.pavement ?? 'earth') === pavement);
           if (!ls.length) continue;
-          if (pavement === 'earth') strokeEarthRoads(ls, regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc));
-          else strokeNaturalRoad(ctx, merged(ls), regionalRank(kind), roadWidth(regionalRank(kind), ls[0].width, sc), sc, { ...roadStyle, pavement });
+          for (const l of ls) {
+            if (pavement === 'earth') strokeEarthRoads([l], regionalRank(kind), roadWidth(regionalRank(kind), l.width, sc));
+            else strokeNaturalRoad(ctx, merged([l]), regionalRank(kind), roadWidth(regionalRank(kind), l.width, sc), sc, { ...roadStyle, pavement });
+          }
         }
         return;
       }
@@ -1414,14 +1419,24 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           strokeLines(ls, pal.roadFill, width, Math.min(1, BLEND_ROAD_ALPHA[rank] * inkAlpha));
           if (kind === 'major') pavedCentre(width);
         }
-        strokeLines(tracks, trackInk(ruralInk(pal), pal.roadFill), () => Math.min(lw(1.3, 0.85), px(2.2)), Math.min(1, pal.rural.track * inkAlpha), [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
+        strokeCoveredTracks(tracks);
         return;
       }
       const surface = (l: LineLayer) => regionalRoadSurface(l.kind === 'major' ? 'major' : 'minor', sc, l.width);
       strokeLines(roads, pal.roadEdge, (l) => { const r = surface(l); return r.fill + (r.casing - r.fill) * Math.max(1, roadStyle.emphasis) * (l.pavement === 'asphalt' ? 1.5 : 1); }, Math.min(1, inkAlpha));
       strokeLines(roads, pal.roadFill, (l) => surface(l).fill);
       pavedCentre((l) => surface(l).fill);
-      strokeLines(tracks, trackInk(ruralInk(pal), pal.roadFill), () => Math.min(lw(1.3, 0.85), px(2.2)), Math.min(1, pal.rural.track * inkAlpha), [px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)], 'butt');
+      strokeCoveredTracks(tracks);
+    };
+    const strokeCoveredTracks = (tracks: LineLayer[]): void => {
+      canopyMerged(tracks).forEach((path, level) => {
+        if (!path) return;
+        ctx.strokeStyle = trackInk(ruralInk(pal), pal.roadFill); ctx.lineWidth = Math.min(lw(1.3, .85), px(2.2));
+        ctx.globalAlpha = Math.min(1, pal.rural.track * inkAlpha) * roadCanopyOpacity('track', level / (CANOPY_LEVELS - 1));
+        ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+        ctx.setLineDash([px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)]); ctx.stroke(path);
+      });
+      ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.lineCap = 'round';
     };
 
     // 1. terrain
@@ -1591,7 +1606,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       strokeLines(linesOf((l) => l.name === 'headlands'), pal.furrow, () => mapStrokeWidth(MAP_STROKES.headland, sc), pal.rural.headland, [], 'butt');
       if (sc >= WAY_SCALE) {
         const ways = linesOf((l) => l.name === 'field-ways');
-        if (natural) { if (ways.length) strokeNaturalRoad(ctx, merged(ways), 'path', roadWidth('path', ways[0].width * .7, sc), sc, roadStyle); }
+        if (natural) { if (ways.length) strokeEarthRoads(ways, 'path', roadWidth('path', ways[0].width * .7, sc)); }
         else strokeLines(ways, trackInk(rk, pal.roadFill), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), lod.band >= 2 ? [px(6), px(4)] : [], 'butt');
       }
       if (pal.hedgeOn) {
@@ -2263,7 +2278,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       let points = entries.get(tile);
       if (!points) {
         points = canopyMarks(tl, tile, world.seed).filter(m => (tl.kind !== 'forest' || m.k < (canopy ? .5 + .5 * forestWeight(m.x, m.y) : forestWeight(m.x, m.y)))
-          && (!room || room.keeps(m.x, m.y, (m.k * 37.17) % 1))
+          && (!room || room.keeps(m.x, m.y, (m.k * 37.17) % 1, (canopy ? 6.1 : brushes ? 4.75 : 0) * m.r))
           // Parchment woods grow in clumps: small glades let the dark shaded floor show between them.
           && (tl.kind !== 'forest' || !canopy || pal.name !== 'parchment' || clumpNoise(m.x, m.y, 26, 5) > .27) && (!exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
           pointInRenderPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInRenderPoly(h, m.x, m.y)))));
@@ -2511,7 +2526,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       let marks = penMarks.get(key);
       if (!marks) {
         marks = [];
-        for (const m of textureMarks(tl, t, sp, (TEX_SALT[tl.kind] ?? 1) + 101, world.seed)) { const s = penSymbol(tl.kind, m); if (s) marks.push({ x: m.x, y: m.y, ...s }); }
+        for (const m of textureMarks(tl, t, sp, (TEX_SALT[tl.kind] ?? 1) + 101, world.seed)) {
+          const s = penSymbol(tl.kind, m);
+          if (s && (tl.kind !== 'forest' || roomOf().keeps(m.x, m.y, m.k, s.size * .4))) marks.push({ x: m.x, y: m.y, ...s });
+        }
         if (penMarks.size >= 4096) penMarks.delete(penMarks.keys().next().value!);
         penMarks.set(key, marks);
       }
@@ -2609,7 +2627,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         if (!marks.length) return null;
         const path = new P();
         for (const m of marks) {
-          if (tl.kind === 'forest' && (m.k >= forestWeight(m.x, m.y) || !roomOf().keeps(m.x, m.y, m.k))) continue;
+          if (tl.kind === 'forest' && (m.k >= forestWeight(m.x, m.y) || !roomOf().keeps(m.x, m.y, m.k, spec.r * m.r))) continue;
           const r = spec.r * m.r;
           if (underground) appendUnderdarkMark(path, tl.kind, m.x, m.y, r, pal);
           else if (pen && spec.shape !== 'circle') appendPenMark(path, spec.shape, m.x, m.y, r, m.k);

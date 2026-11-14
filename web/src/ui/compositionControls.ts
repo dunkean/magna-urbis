@@ -43,16 +43,16 @@ export const limitationText: Record<string, string> = {
   "The 3D bench cannot drape footprints from retained building projections.": copy("The 3D bench cannot drape footprints from retained building projections.", "Le banc 3D ne peut pas draper les emprises des projections de bâtiments conservées."),
 };
 // Level 1 and 2: every row writes appearance.composition (render/composition.ts) and nothing else.
-const STYLE_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Satellite 2', 'Satellite 2'],
+const STYLE_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Painted satellite', 'Satellite peint'],
   ['parchment', 'Parchment', 'Parchemin'], ['illustration', 'Illustration', 'Illustration']] as const satisfies readonly (readonly [StyleId, string, string])[];
 const PRESET_ENTRIES = [...STYLE_ENTRIES.filter(entry => !isHiddenPreset(entry[0])).flatMap((entry): readonly (readonly [PresetId, string, string])[] => entry[0] === 'satellite'
-  ? [entry, ['satellite-light', 'Satellite · light', 'Satellite · léger'] as const]
-  : entry[0] === 'parchment' ? [entry, ['parchment-light', 'Parchment · light', 'Parchemin · léger'] as const] : [entry]), ['custom', 'Custom', 'Personnalisé']] as const;
+  ? [entry, ['satellite-light', 'Satellite · Fast', 'Satellite · Rapide'] as const]
+  : entry[0] === 'parchment' ? [entry, ['parchment-light', 'Parchment · Fast', 'Parchemin · Rapide'] as const] : [entry]), ['custom', 'Custom', 'Personnalisé']] as const;
 /** Options of the preset selects (English labels, translated by the shared messages). */
 export const PRESET_OPTIONS: readonly { value: string; label: string }[] = PRESET_ENTRIES.map(([value, en]) => ({ value, label: en }));
 const semanticEntries = [['off', 'Off', 'Désactivée'], ['subtle', 'Subtle tint', 'Teinte discrète'], ['categorical', 'Category colours', 'Couleurs par catégorie'], ['outlines', 'Outline only', 'Contours seuls']] as const;
 const networkEntries = [['inherit', 'Follow the ground', 'Selon le fond'], ['ink', 'Ink', 'Encre'], ['natural', 'Natural', 'Naturel']] as const;
-const styleFrench: Record<string, string> = { 'parchment-render': 'Satellite 2 · Peint', parchment: 'Parchemin', watabou: 'Simple (classique)', engraving: 'Gravure', blueprint: 'Plan bleu', illuminated: 'Enluminure', topographic: 'Topographique', night: 'Nocturne',
+const styleFrench: Record<string, string> = { 'parchment-render': 'Satellite peint', parchment: 'Parchemin', watabou: 'Simple (classique)', engraving: 'Gravure', blueprint: 'Plan bleu', illuminated: 'Enluminure', topographic: 'Topographique', night: 'Nocturne',
   render3d: 'Render3D · Multi-échelle', 'fantasy-ink': 'Fantasy · Encre N&B', 'fantasy-color': 'Fantasy · Aquarelle',
   'render-v2-substrate': 'Render v2 - Substrat', 'render-v2-moisture': 'Render v2 - Humidité', 'render-v2-vegetation': 'Render v2 - Végétation', 'render-v2-snow': 'Render v2 - Neige / glace' };
 const variantLabel = (id: TerrainStyle): readonly [string, string] => {

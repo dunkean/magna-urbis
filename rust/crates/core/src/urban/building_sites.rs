@@ -56,6 +56,13 @@ fn access_segments(
 fn ground_patch(surface: Surface<'_>, shape: &super::Shape) -> Value {
     let n = surface.height_resolution();
     let step = surface.width / n as f64;
+    // A collapsed/invalid cut has no terrain grid. Clamp in floating point
+    // before casting: infinite bounds used to overflow the index margins,
+    // and an empty ring produced reversed indices and unsigned subtraction.
+    if n == 0 || !step.is_finite() || step <= 0.0 || shape.outer.len() < 3
+        || shape.outer.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+        return Value::Null;
+    }
     let (mut x0, mut y0, mut x1, mut y1) = (
         f64::INFINITY,
         f64::INFINITY,
@@ -69,9 +76,9 @@ fn ground_patch(surface: Surface<'_>, shape: &super::Shape) -> Value {
         y1 = y1.max(p.y);
     }
     let lo =
-        |v: f64| ((v / step - 0.5).floor() as isize - 1).clamp(0, n as isize - 1) as usize;
+        |v: f64| ((v / step - 0.5).floor() - 1.0).clamp(0.0, (n - 1) as f64) as usize;
     let hi =
-        |v: f64| ((v / step - 0.5).ceil() as isize + 1).clamp(0, n as isize - 1) as usize;
+        |v: f64| ((v / step - 0.5).ceil() + 1.0).clamp(0.0, (n - 1) as f64) as usize;
     let (a, b, c, d) = (lo(x0), lo(y0), hi(x1), hi(y1));
     let mut heights = vec![];
     for y in b..=d {
@@ -1598,6 +1605,11 @@ mod tests {
         assert_eq!(patch["step_m"], 1.0);
         assert_eq!(patch["origin"]["x"], 18.5);
         assert_eq!(patch["elevations_m"][0], 18.5);
+        let empty = super::super::Shape { outer: vec![], holes: vec![] };
+        assert!(ground_patch(surface, &empty).is_null());
+        let mut invalid = shape.clone();
+        invalid.outer[0].x = f64::INFINITY;
+        assert!(ground_patch(surface, &invalid).is_null());
     }
 
     #[test]

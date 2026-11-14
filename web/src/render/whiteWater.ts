@@ -11,8 +11,9 @@
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 
 // ---------------------------------------------------------------- tunables
-/** Master switch: false paints nothing and leaves the retained keys unchanged (the map draws as without this module). */
-export const WHITE_WATER_ENABLED = true;
+/** Master switch: false paints nothing and leaves the retained keys unchanged (the map draws as without this module).
+ * Off: the marks have no 3D counterpart and read as strokes, not foam; the code stays for a later shader version. */
+export const WHITE_WATER_ENABLED: boolean = false;
 /** Resampling step of a course, m. */
 export const SAMPLE_STEP = 2;
 /** Window of the smoothed slope, m of channel. */

@@ -14,6 +14,7 @@ import { forestBeachGrid } from './terrainForestBeach';
 import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterior, forestRoutingRiverSegments, forestSegmentsKey, type ForestBank } from './terrainForestRiparian';
 import { forestPlanes } from './forestNative';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
+import { FOREST_CROWN_SETBACK_GLSL } from '../../web/src/render/forestRoom';
 
 export interface ForestSettings { enabled: boolean; density: number; clearings: number }
 /** density 0..2 (1 = climate potential), clearings 0..1. */
@@ -526,6 +527,7 @@ vec3 forestClump(vec2 world,float radius,float fp,float tint){
  * and an earthMaterial call for the same fragment before applyForest (Render guide). */
 export const FOREST_GLSL = `
 ${LAND_DETAIL_GLSL}
+${FOREST_CROWN_SETBACK_GLSL}
 // Class IDs are categorical: never decode the bilinearly filtered B channel.
 bool groundOccupationCached=false;vec2 groundOccupationPoint=vec2(0.);vec3 groundOccupationSample=vec3(0.);
 vec3 groundOccupation(vec2 world){
@@ -676,7 +678,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     vec2 g=vec2(forestOpenAt(k.c+vec2(e,0.))-forestOpenAt(k.c-vec2(e,0.)),forestOpenAt(k.c+vec2(0.,e))-forestOpenAt(k.c-vec2(0.,e)));
     vec2 edge=(k.c+g/max(length(g),1e-4)*(.5*e-open)-uOccupationRect.xy)/uOccupationRect.z;
     int side=int(texelFetch(uOccupation,clamp(ivec2(edge*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
-    if((side==4||side==8||side==9||side==11)&&open>-(.7+.3*forestU8(h2,16u))*radius)occupied=true;
+    if((side==4||side==8||side==9||side==11)&&open>-forestCrownSetback(radius,forestU8(h2,16u)))occupied=true;
   }
   float centreLevel=clamp(2.*log2(radius/forestRho(forestTau(density))/2.),0.,5.999);
   float weight=max(0.,1.-abs(centreLevel-float(level)));
@@ -1092,7 +1094,8 @@ void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hi
   float leaf=uRenderV2>0?v2SeasonLeaf():1.,snow=uRenderV2>0?v2GroundSnow*forestSnowLoad(0.):0.;
   // A planted parcel is open land: its floor is the open ground (with its snow), as the forest path rebuilds it for
   // open land, not the macro woods canopy, which under snow left a grey patch cut on the class texels.
-  if(uRenderV2>0)m.albedo=forestFloorAlbedo(clamp(renderGuideOpen,0.,1.));
+  // Keep the filtered plot/road material at the edge: replacing it on the nearest class texel left a staircase.
+  if(uRenderV2>0)m.albedo=mix(m.albedo,forestFloorAlbedo(clamp(renderGuideOpen,0.,1.)),v2OrchardShare);
   vec3 crown=forestSnowed(mix(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.),forestBareColor(.5,.25),1.-leaf),snow);
   // The unresolved crowns fade out with the smooth orchard share (applyGroundOccupation), not on the class texels.
   float cover=.31*forestCrownShow(leaf)*forestHeightGate(forestField(st.p,0.).g*50.)*v2OrchardShare;

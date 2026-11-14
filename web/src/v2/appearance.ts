@@ -73,7 +73,7 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     enumeration(value.city.ground, CITY_GROUND_STYLES, 'appearance.city.ground');
     enumeration(value.city.colors, ['materials', 'uses'], 'appearance.city.colors');
     enumeration(value.city.refinement, ['source', 'noise'], 'appearance.city.refinement');
-    boolean(value.city.painted, 'appearance.city.painted'); boolean(value.city.plan, 'appearance.city.plan');
+    boolean(value.city.painted, 'appearance.city.painted'); boolean(value.city.plan, 'appearance.city.plan'); boolean(value.city.trees3d, 'appearance.city.trees3d');
     number(value.city.opacity, 'appearance.city.opacity', 0, 1);
     number(value.city.width, 'appearance.city.width', 0, 5);
     number(value.city.exaggeration, 'appearance.city.exaggeration', 1, 5);

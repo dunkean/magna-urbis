@@ -2164,8 +2164,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let mut extra_households = vec![false; parcels.len()];
     let requested: f64 = dwelling.iter().map(|&di| pr.demands[di].requested).sum();
     let fill_limit = (requested * 1.3).floor().max(requested.ceil());
-    // Seed every buildable block, core outward, before cohesion can consume
-    // the programme on a handful of peripheral street fronts.
+    // Seed enclosed blocks before open growth, then core outward, before
+    // cohesion can consume the programme on peripheral street fronts. The
+    // footprint bounds enclosed blocks by the population margin; spending
+    // that margin outside first could still leave a far-bank ward empty.
     if !roles::is_isolated(&pr.context.intent) {
         let mut built = vec![false; layout.blocks.len()];
         for (pi, assignment) in assignments.iter().enumerate() {
@@ -2178,7 +2180,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             .collect();
         candidates.sort_by(|&a, &b| {
             let core = |pi: usize| layout.blocks.get(parcels[pi].block).is_some_and(|b| b.zone == "core");
-            core(b).cmp(&core(a)).then(prime[b].cmp(&prime[a]))
+            enclosed_at(b).cmp(&enclosed_at(a)).then(core(b).cmp(&core(a))).then(prime[b].cmp(&prime[a]))
                 .then(center_distances[a].total_cmp(&center_distances[b])).then(parcels[a].id.cmp(&parcels[b].id))
         });
         let mut held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();

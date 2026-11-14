@@ -1414,10 +1414,14 @@ pub(super) fn massing(m: &Input) -> Value {
                         _ => roof,
                     };
                     let stilts = if out_stilts > 0.0 { out_stilts * body } else if tr.form == "stilt" { (1.6 + 0.6 * drng.float()) * body } else { 0.0 };
+                    let composed_hut = hut && m.complex && home && matches!(roof.kind, "hip" | "gable");
                     let (eave_v, overhang) = match (hut, roof.kind) {
                         (true, "tent") if tent && tr.form == "yurt" => (1.6, 0.2),
                         (true, "tent") if tent && tr.form == "tipi" => (0.1, 0.0),
                         (true, "tent") => (0.5, 0.3),
+                        // A complex home under a pitched thatch composes its roof like any other
+                        // (valleys, the kit's eaves): its hut overhang gives way to the composition's.
+                        (true, _) if composed_hut => (base_eave(sn).min(2.2), 0.0),
                         (true, _) => (base_eave(sn).min(2.2), 0.65),
                         _ => (base_eave(sn), 0.0),
                     };
@@ -1475,7 +1479,7 @@ pub(super) fn massing(m: &Input) -> Value {
                         high,
                         form_roof,
                         pitch: vp,
-                        eaves: rule.and_then(|r| r.overhang),
+                        eaves: rule.and_then(|r| r.overhang).or(composed_hut.then_some(kit.overhang.max(0.5))),
                         pans: None,
                         gables: vec![],
                         minor: rule.is_some_and(|r| r.minor),

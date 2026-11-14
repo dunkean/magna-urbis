@@ -524,6 +524,9 @@ void main() {
     // line inside the channel, 0 once the sea is 6 m deep: the river's colour runs out into the shallows and fades,
     // instead of a deep river ending against a pale wedge of sea.
     float wEst=0.;
+    // Open cover of a river's water in the fragment (land side: its wet bed; sea side: its share of the estuary), kept
+    // through the antialiased coastline below.
+    float wRiver=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
@@ -601,6 +604,7 @@ void main() {
             wIceEdge=mix(rim,1.-smoothstep(.5,3.5*uDpr,inside),still);
           }
           wTint.xy=vec2(waterTea(),waterGlacial());
+          wRiver=wCover;
           // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
           color=wBase;
         } else {
@@ -609,6 +613,7 @@ void main() {
           wTint.z=smoothstep(-.12,.3,painted.r-painted.b);
           wEst=water.a*(1.-wTint.z)*(1.-smoothstep(0.,6.,-s.x));
           wTint.xy=vec2(waterTea(),waterGlacial())*wEst;
+          wRiver=water.a*(1.-wTint.z);
         }
       }
       else color=color*(1.-water.a*under)+water.rgb*under;
@@ -635,9 +640,11 @@ void main() {
     // only the open remainder takes the Render v2 water.
     if(uRenderV2>0)if(wIce.x>.001){
       vec4 sheet=v2FreshIce(world,uPx,wIce.x,wIce.y,wIce.z,wIce.w,wIceEdge);
-      wBase=mix(wBase,sheet.rgb,wCover*sheet.a);wCover*=1.-sheet.a;color=wBase;
+      wBase=mix(wBase,sheet.rgb,wCover*sheet.a);wCover*=1.-sheet.a;wRiver*=1.-sheet.a;color=wBase;
     }
-    if(uRenderV2>0 && landCover<1.){v2w=true;wBase=landColor;wCover=1.-landCover;wKind=1.;wDepth=max(-s.x,0.);}
+    // The antialiased coastline: a river crossing it stays water through the band, in its own colour (the estuary's
+    // river share), instead of a line of land colour drawn across every mouth like a thin dam.
+    if(uRenderV2>0 && landCover<1.){v2w=true;if(s.x>=0.)wEst=wRiver;wBase=landColor;wCover=1.-landCover*(1.-wRiver);wKind=1.;wDepth=max(-s.x,0.);}
 #ifdef AUX_PASS
     uint auxWater = 0u;
     if(!underdark && v2w && uV2WaterVisible == 1 && wCover > 0.){

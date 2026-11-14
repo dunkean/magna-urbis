@@ -137,6 +137,12 @@ pub(in crate::urban) struct CultureTraits {
     /// capping its ordinary buildings' storeys by the settlement's population;
     /// empty: no cap (the tissue's storey range by zone only).
     pub height_ladder: String,
+    /// The outermost growth epoch of a town (two epochs or more) is built
+    /// with the culture's `faubourg` tissue in the `edge` zone: a ring of
+    /// detached houses on small lots around the denser core and middle, as a
+    /// modern town grows. A style that densifies (an arcology, habitat domes)
+    /// leaves it false and keeps its compact rings.
+    pub suburb_ring: bool,
 }
 
 /// Wall tints of a style (`palettes.<id>`): sRGB `#rrggbb` keys and their

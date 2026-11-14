@@ -939,23 +939,14 @@ fn generate_modern(
         .sum::<f64>()
         .max(1e-9);
     for (epoch, shapes) in footprint.phases.iter().enumerate() {
-        let zone = footprint::epoch_zone(cfg, culture, site.population, epoch)
-            .0
-            .to_owned();
+        // Zone and recipe name as the footprint sized them (a suburb ring
+        // takes the faubourg tissue).
+        let (zone, name) = footprint::epoch_zone(cfg, culture, site.population, epoch);
+        let zone = zone.to_owned();
         let recipe = if cfg.recipe != "auto" {
             cfg.recipe.clone()
         } else {
-            recipe(
-                culture,
-                site.population,
-                if small {
-                    "village"
-                } else if epoch == 0 {
-                    "core"
-                } else {
-                    "ring"
-                },
-            )
+            recipe(culture, site.population, name)
         };
         let phase_area = shapes.iter().map(g::area).sum::<f64>();
         phases.push(GrowthPhase {

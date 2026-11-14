@@ -13,13 +13,14 @@ import type { RenderColors } from './customColors';
 import { type Palette, ruralInk } from './styles';
 import { f1, pathD } from './util';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
-import { naturalMarks, regionalRank, roadToneAt, roadWidth, type RoadStyle } from './roadStyle';
+import { CANOPY_LEVELS, canopyRuns, naturalMarks, regionalRank, roadCanopyOpacity, roadToneAt, roadWidth, type RoadStyle } from './roadStyle';
 import { MAP_STROKES, svgMapStroke } from './strokes';
 import { underdarkPatterns, underdarkMarkSvg } from './underdark';
 import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
 import { insideArea } from './scene';
 import { forestLandPaint, FOREST_EDGE_WIDTH, FOREST_EDGE_BLUR } from './landuseForestTone';
 import { ruralDetailsSvg } from './ruralDetails';
+import { ForestRoom, farmClearings, forestCorridors } from './forestRoom';
 
 /** Land-use tints multiply over the hillshaded terrain so relief stays readable under them (browsers; resvg falls back to plain alpha). Dark styles blend normally. */
 const mul = (pal: Palette): string => (pal.landBlend === 'multiply' ? ' style="mix-blend-mode:multiply"' : '');
@@ -113,6 +114,7 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
   let out = patterns(world, pal, s, scale);
   if (orchards.length) out += `<defs><clipPath id="lu-forest-orchards"><path clip-rule="evenodd" d="M0 0H${world.mapSize}V${world.mapSize}H0Z${orchards.map(ringsD).join('')}"/></clipPath></defs>`;
   const individualTrees = scale >= .7 && (vegetation === 'canopy' || !!brushes) && !isUnderdarkBiome(world.options.biome);
+  const room = individualTrees ? new ForestRoom(forestCorridors(world as World), farmClearings(lu)) : undefined;
   const order: LandKind[] = ['meadow', 'marsh', 'pasture', 'commons', 'forest', 'garden', 'orchard', 'field'];
   out += `<g class="layer-landuse" stroke-linejoin="round">`;
   for (const kind of order) {
@@ -151,7 +153,8 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
   if (individualTrees && scale >= .7) for (const kind of ['forest', 'orchard'] as const) {
     if (!pal.tex[kind]) continue;
     const marks = canopyAreaMarks(lu.areas.filter(a => a.kind === kind), kind, world.mapSize, world.seed ?? '')
-      .filter(m => kind !== 'forest' || !orchards.some(a => insideArea(a, m.x, m.y)) && !clearings.some(p => insideArea({ kind, poly: p.outer, holes: p.holes }, m.x, m.y)));
+      .filter(m => kind !== 'forest' || room!.keeps(m.x, m.y, (m.k * 37.17) % 1, (brushes ? 4.75 : 6.1) * m.r)
+        && !orchards.some(a => insideArea(a, m.x, m.y)) && !clearings.some(p => insideArea({ kind, poly: p.outer, holes: p.holes }, m.x, m.y)));
     if (!marks.length) continue;
     const stamps = (brushes ? marks.map(m => `<g opacity="${.88 + .12 * m.k}">${brushes.tree(m.x, m.y, (kind === 'orchard' ? 3.5 : 4.75) * m.r, kind === 'orchard')}</g>`).join('')
       : canopySvg(marks, kind, world.seed ?? '', pal));
@@ -305,14 +308,18 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     // hierarchy: cased major roads, thinner minor roads, tracks as thin dashed earth lines
     if (roadLook === 'natural') {
       // Same marks as the canvas painter, flat: SVG has no ground texture, so each road takes the tone of its midpoint.
-      const rank = regionalRank(k), style: RoadStyle = { look: 'natural', emphasis: roadEmphasis, night: roadNight, colors };
+      const style: RoadStyle = { look: 'natural', emphasis: roadEmphasis, night: roadNight, colors };
       for (const road of roads.filter(r => r.kind === k)) {
-        const width = roadWidth(rank, road.width, 1 / u), mid = road.path[road.path.length >> 1], marks = naturalMarks(rank, width, 1 / u, style), d = pathD(road.path, false);
-        if (marks.shadow) out += `<path d="${d}" stroke="${marks.shadow.color}" stroke-opacity="${marks.shadow.alpha.toFixed(2)}" stroke-width="${f1(width + marks.shadow.extra)}"/>`;
-        out += `<path d="${d}" stroke="${roadToneAt(mid.x, mid.y, rank, style)}" stroke-opacity="${marks.bed.alpha.toFixed(2)}" stroke-width="${f1(width)}"/>`;
+        const rank = k === 'track' && road.width < 2 ? 'path' : regionalRank(k), width = roadWidth(rank, road.width, 1 / u);
+        for (const run of canopyRuns(road.path)) {
+          const canopy = run.level / (CANOPY_LEVELS - 1), mid = run.pts[run.pts.length >> 1], marks = naturalMarks(rank, width, 1 / u, style), d = pathD(run.pts, false);
+          if (marks.shadow) out += `<path d="${d}" stroke="${marks.shadow.color}" stroke-opacity="${(marks.shadow.alpha * (1 - canopy)).toFixed(2)}" stroke-width="${f1(width + marks.shadow.extra)}"/>`;
+          out += `<path d="${d}" stroke="${roadToneAt(mid.x, mid.y, rank, style)}" stroke-opacity="${(marks.bed.alpha * roadCanopyOpacity(rank, canopy)).toFixed(2)}" stroke-width="${f1(width)}" stroke-linecap="butt"/>`;
+        }
       }
     } else if (k === 'track') {
-      out += `<path d="${d}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.6, 0.6 * s))}" stroke-dasharray="${f1(6 * s)} ${f1(3.5 * s)}" stroke-linecap="butt" stroke-opacity="${pal.rural.track}"/>`;
+      for (const road of roads.filter(r => r.kind === k)) for (const run of canopyRuns(road.path))
+        out += `<path d="${pathD(run.pts, false)}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.6, 0.6 * s))}" stroke-dasharray="${f1(6 * s)} ${f1(3.5 * s)}" stroke-linecap="butt" stroke-opacity="${(pal.rural.track * roadCanopyOpacity('track', run.level / (CANOPY_LEVELS - 1))).toFixed(2)}"/>`;
     } else {
       const road = regionalRoadSurface(k, 1 / u);
       out += `<path d="${d}" stroke="${pal.roadEdge}" stroke-width="${f1(road.casing)}"/>`;

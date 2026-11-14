@@ -178,7 +178,10 @@ pub(super) fn enclosed(cfg: &LayoutConfig, culture: &str, population: u32) -> bo
 }
 /// Zone and recipe of one growth epoch: the founding core, its first extension,
 /// then the periphery. Open villages keep a single village tissue; an enclosed
-/// one is built as the culture's compact core inside its wall.
+/// one is built as the culture's compact core inside its wall. A style with a
+/// suburb ring (`forms::kit` `suburb_ring`, the modern towns) builds its
+/// outermost epoch with its faubourg tissue in the `edge` zone: detached
+/// houses on small lots around the denser core.
 pub(super) fn epoch_zone<'a>(
     cfg: &'a LayoutConfig,
     culture: &str,
@@ -186,12 +189,19 @@ pub(super) fn epoch_zone<'a>(
     epoch: usize,
 ) -> (&'a str, &'static str) {
     let small = crate::settlements::demographics::below(population, "town");
+    let suburb = !small
+        && cfg.zone == "auto"
+        && epoch > 0
+        && epoch + 1 >= cfg.footprint.epochs.max(2)
+        && super::forms::kit::traits(culture).suburb_ring;
     let zone = if cfg.zone != "auto" {
         cfg.zone.as_str()
     } else if small && enclosed(cfg, culture, population) {
         "core"
     } else if small {
         "village"
+    } else if suburb {
+        "edge"
     } else {
         ["core", "middle", "edge"][epoch.min(2)]
     };
@@ -199,6 +209,8 @@ pub(super) fn epoch_zone<'a>(
         "village"
     } else if epoch == 0 {
         "core"
+    } else if suburb {
+        "faubourg"
     } else {
         "ring"
     };
@@ -2913,6 +2925,17 @@ mod tests {
         cfg.footprint.gross_density = 0.0;
         assert_eq!(manual_radius, budget(&site, &cfg, &morph, 250.0));
         assert_eq!(manual_radius.0, PI * 250.0 * 250.0);
+    }
+    /// A modern town grows a ring of detached houses (its faubourg tissue in
+    /// the edge zone) around its core; a style that densifies keeps its rings.
+    #[test]
+    fn a_suburb_ring_style_builds_its_outer_epoch_with_its_faubourg_tissue() {
+        let cfg = LayoutConfig::default();
+        assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 0), ("core", "core"));
+        assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 1), ("middle", "ring"));
+        assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 2), ("edge", "faubourg"));
+        assert_eq!(epoch_zone(&cfg, "corporate-arcology", 25_000, 2), ("edge", "ring"));
+        assert_eq!(epoch_zone(&cfg, "european-organic", 25_000, 2), ("edge", "ring"));
     }
     #[test]
     fn porous_growth_is_seeded_and_keeps_a_measured_population_budget() {

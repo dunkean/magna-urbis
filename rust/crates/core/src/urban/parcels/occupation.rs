@@ -2353,6 +2353,12 @@ fn rounded_ends(ring: &[Point], frac: f64) -> Option<Vec<Point>> {
     Some(out)
 }
 
+fn round_samples(bounds: (f64, f64, f64, f64), step: f64) -> Vec<Point> {
+    // Ordinary lots keep their original ~600-point lattice, including its
+    // addition order. Clipped diagonal slivers must not scan millions of cells.
+    super::super::generation_limits::samples(bounds, step, 1024)
+}
+
 fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape, &'static str)>, Kind) {
     let mut rng = Rng::new(o.seed).fork("occupation");
     let kind = resolved.unwrap_or_else(||kind(o));
@@ -3407,7 +3413,8 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
             // Invariant (a round house is never cut): every hut is a whole
             // 12-gon inside the buildable ground (lot holes kept clear), its
             // radius bounded by the clearance there, never clipped by a lot
-            // line. Spots are sampled on a frame grid (at most ~600).
+            // line. Bound the attempted spots, not just the polygon area:
+            // a thin diagonal lot can have an arbitrarily larger frame box.
             let ground = Shape {
                 outer: b.clone(),
                 holes: shape.holes.clone(),
@@ -3427,18 +3434,12 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
             const MIN_HUT: f64 = 2.0;
             let step = (ring_area(&b).abs() / 600.0).sqrt().max(0.6);
             let mut spots: Vec<(Point, f64, f64, f64)> = vec![];
-            let mut t = ta + 0.5 * step;
-            while t < t1 {
-                let mut s = s0 + 0.5 * step;
-                while s < s1 {
-                    let c = add(scale(main.u, s), scale(main.n, t));
-                    let room = clearance(c) / CORNER;
-                    if room >= MIN_HUT {
-                        spots.push((c, room, s, t));
-                    }
-                    s += step;
+            for Point { x: s, y: t } in round_samples((s0, ta, s1, t1), step) {
+                let c = add(scale(main.u, s), scale(main.n, t));
+                let room = clearance(c) / CORNER;
+                if room.is_finite() && room >= MIN_HUT {
+                    spots.push((c, room, s, t));
                 }
-                t += step;
             }
             let count = 1
                 + usize::from(total > 300.0)
@@ -4106,6 +4107,29 @@ mod tests {
             rank: 1,
             access: None,
         }
+    }
+
+    #[test]
+    fn smial_sampling_bounds_diagonal_slivers_and_keeps_ordinary_lattice() {
+        // A 0.1 m diagonal strip has 4000 m² of land, but a 1.6e9 m²
+        // frame box. The old area-based step attempted 240 million cells.
+        let step = (4000.0_f64 / 600.0).sqrt();
+        assert!(round_samples((0.0, 0.0, 40_000.0, 40_000.1), step).len() <= 1024);
+        assert!(round_samples((0.0, 0.0, 0.0, 20.0), step).is_empty());
+        assert!(round_samples((0.0, 0.0, f64::INFINITY, 20.0), step).is_empty());
+        let ordinary = round_samples((2.0, 3.0, 22.0, 33.0), 1.0);
+        let expected: Vec<_> = (0..30).flat_map(|j| (0..20).map(move |i|
+            Point { x: 2.5 + i as f64, y: 3.5 + j as f64 })).collect();
+        assert_eq!(ordinary, expected);
+
+        let mut p = lot(Shape { outer: vec![Point { x: 0.0, y: 0.0 },
+            Point { x: 40_000.0, y: 40_000.0 }, Point { x: 40_000.0, y: 40_000.1 },
+            Point { x: 0.0, y: 0.1 }], holes: vec![] },
+            [Point { x: 0.0, y: 0.0 }, Point { x: 1.0, y: 0.0 }], 0.5);
+        p.contacts.clear();
+        p.front = None;
+        let morph = tissue("primitive", "smial");
+        assert!(preview(&p, &home(&morph, "dwelling.house", "shire-sliver")).is_empty());
     }
     /// Probe: `S7_DUMP=<dir with layout.json, partition.json>` counts why the
     /// street range of core plots is refused (12 m deep, 3 m wing).

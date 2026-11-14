@@ -322,11 +322,18 @@ function canopyAt(x: number, y: number): number {
   const f = texel(canopyField, x, y); if (f < 0) return 0;
   const o = canopyOccupation ? texel(canopyOccupation, x, y) : -1;
   if (o >= 0 && canopyOccupation!.rgba[o + 3] && canopyOccupation!.rgba[o] > 128 && canopyOccupation!.rgba[o + 2] !== 12) return 0;
-  const c = canopyField.rgba[f] / 255, t = clamp((c - .3) / .45, 0, 1);
+  // Read the continuous control field like the 3D canopy, instead of stepping between its coarse texels.
+  const gx = (x - canopyField.x) / canopyField.width * canopyField.n - .5, gy = (y - canopyField.y) / canopyField.width * canopyField.n - .5;
+  const ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+  const at = (i: number, j: number): number => canopyField!.rgba[(clamp(j, 0, canopyField!.n - 1) * canopyField!.n + clamp(i, 0, canopyField!.n - 1)) * 4] / 255;
+  const c = (at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy) + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy;
+  const t = clamp((c - .3) / .45, 0, 1);
   return t * t * (3 - 2 * t);
 }
 /** Canopy levels of a split way: 0 open … CANOPY_LEVELS - 1 closed. */
 export const CANOPY_LEVELS = 4;
+/** A continuous trace in canopy gaps; made roads lose only a little contrast at their cleared edges. */
+export const roadCanopyOpacity = (rank: RoadRank, canopy: number): number => 1 - (rank === 'path' || rank === 'track' || rank === 'lane' ? .58 : .25) * canopy;
 const CANOPY_STEP = 14;
 type Pt = { x: number; y: number };
 /** A way cut into runs of one canopy level, sampled every ~14 m and smoothed so a level holds for at least a few tens of
@@ -377,7 +384,7 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
 export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0): void {
   if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style, canopy); return; }
   const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path', snow = !style.night && mapGroundSnow();
-  const open = 1 - canopy, under = 1 - .58 * canopy;
+  const open = 1 - canopy, under = roadCanopyOpacity(rank, canopy);
   marks.bed.alpha *= under;
   const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'butt'): void => {
     ctx.strokeStyle = color; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash as number[]); ctx.lineCap = cap; ctx.stroke(path);

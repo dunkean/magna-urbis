@@ -13,7 +13,7 @@ import { landDetail, withLandDetail, worldLandCultures } from '../ui/landDetail'
 import { retainTerrainDisplayPreparation, runDisplayJob, registerDisplayLanduse, displayWorkerEpoch, type WorkerOccupation } from './displayPrep';
 import { productRevision } from '../render/displayProduct';
 import { forestCorridors, streetCorridors, type ForestCorridor } from '../render/forestRoom';
-import { layoutPavementSites, layoutStreetPavements, splitByPavement } from '../render/roadPavement';
+import { layoutStreetPavements } from '../render/roadPavement';
 import { nativeCitiesOf } from './nativeProducts';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
 import { executionRuntime } from '../ui/executionProfile';
@@ -24,11 +24,11 @@ type OccupationParts = { occupation: Promise<ForestOccupation | undefined>; deta
 interface OccupationEntry { whole?: ForestOccupation; complete?: boolean; parts?: OccupationParts }
 const workerOccupations = new WeakMap<Uint8Array, WorkerOccupation>();
 const occupations = new WeakMap<LandUseLayer, Map<string, OccupationEntry>>();
-/** Every way of the world as a forest corridor: regional roads by surface (a paved length is cleared like a main road)
+/** Every way of the world as a forest corridor: regional roads by class (tracks stay covered, country roads clear)
  * and the streets of the towns, so no tree is rooted on a street, in 2D as in 3D. */
 function v2Corridors(world: World): ForestCorridor[] {
-  const layouts = nativeCitiesOf(world).flatMap(city => city.layouts ?? []), sites = layoutPavementSites(layouts);
-  return forestCorridors(world, false, sites && (path => splitByPavement(path, sites).map(piece => ({ path: [...piece.path], pavement: piece.pavement }))),
+  const layouts = nativeCitiesOf(world).flatMap(city => city.layouts ?? []);
+  return forestCorridors(world, false,
     layouts.flatMap(layout => streetCorridors(layout.streets, layoutStreetPavements(layout))));
 }
 /** The exact ways ride with the occupation raster to the modelled trees (terrain3dTrees.ts). */

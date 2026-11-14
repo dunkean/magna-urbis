@@ -16,5 +16,10 @@
     "lantern": { "base": "stack", "eave": { "width": 0.9 }, "roof": "pyramid|cone", "pitch": [45, 60], "floors": 1 },
     "stack-flat": { "base": "stack", "eave": { "width": 0.8 }, "roof": "flat", "floors": 1 }
   },
-  "overrides": {}
+  "overrides": {
+    "thatch-wings": {
+      "wing": { "eave": { "rel": [-1, 0] }, "roof": "hip" },
+      "crosswing": { "eave": { "rel": [0, 1] }, "roof": "hip" }
+    }
+  }
 }

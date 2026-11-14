@@ -291,10 +291,7 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
   };
   const climate = displayClimate(display), ink = climate && !display.material ? regimeInk(display.style, edge) : undefined;
   const line = (l: RiverLine, thinner: number): void => {
-    const geo = riverGeometry(water, l, thinner, display.riverArea), { points, kind } = geo, widths = geo.widths.slice();
-    // The drawn ribbon narrows over its last segment where the course ends in the sea (MOUTH_END).
-    { const m = widths.length - 1, h = water.hydro, cell = h.width / h.n, x = Math.floor(points[2 * m] / cell), y = Math.floor(points[2 * m + 1] / cell);
-      if (m > 0 && kind[0] !== 5 && x >= 0 && y >= 0 && x < h.n && y < h.n && h.sea[y * h.n + x]) widths[m] *= MOUTH_END; }
+    const geo = riverGeometry(water, l, thinner, display.riverArea), { points, kind, widths } = geo;
     const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
     for (let i = 1; i < widths.length; i++) {
       const x0 = points[2 * i - 2], y0 = points[2 * i - 1], x1 = points[2 * i], y1 = points[2 * i + 1];
@@ -356,7 +353,42 @@ function headwaterSet(water: VectorWater, threshold: number): Set<RiverLine> {
 /** River line geometry as drawn: a genuine headwater emerges from zero width instead of starting as a full-width disc (every style). */
 export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): HeadwaterGeometry {
   const widths = riverWidths(water, line, thinner);
-  return headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 };
+  return seaMouth(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 });
+}
+/** Width gain of the mouth's run into the sea, over its length (MOUTH_RUN widths, at least a cell). */
+export const MOUTH_OPEN = 1.5, MOUTH_RUN = 2;
+/** A course that ends in the sea runs on past the coast: the engine cuts it where it first meets a sea cell, which
+ * can lie up to a cell short of the drawn coastline (the zero of the refined surface). Without this run a strip of
+ * land closes every mouth (a thin dam) and the ribbon's round cap reads as the end of the river. The run opens
+ * further over the shallows (MOUTH_OPEN) and keeps going straight while it stays in the sea; under it the satellite
+ * ground mixes the river's water into the sea and fades it with depth (terrainGl estuary blend). */
+function seaMouth(water: VectorWater, line: RiverLine, geo: HeadwaterGeometry): HeadwaterGeometry {
+  const p = geo.points, m = geo.widths.length - 1;
+  if (m < 1 || line.kind[0] === 5 || !endsInSea(water, line)) return geo;
+  const h = water.hydro, cell = h.width / h.n, w = geo.widths[m], x = p[2 * m], y = p[2 * m + 1];
+  // Direction of the last stretch of channel, over about the run's length (one bent vertex does not steer the mouth).
+  const run = Math.max(MOUTH_RUN * w, cell);
+  let k = m - 1;
+  while (k > 0 && Math.hypot(x - p[2 * k], y - p[2 * k + 1]) < run) k--;
+  const dx = x - p[2 * k], dy = y - p[2 * k + 1], d = Math.hypot(dx, dy);
+  if (d < 1e-6) return geo;
+  for (const length of [run, run / 2]) {
+    const ex = x + dx / d * length, ey = y + dy / d * length;
+    if (!seaAt(water, ex, ey)) continue;
+    return { points: [...p, ex, ey], widths: [...geo.widths, w * MOUTH_OPEN], level: [...geo.level, geo.level[m]], kind: [...geo.kind, geo.kind[m]], reach: geo.reach };
+  }
+  return geo;
+}
+const seaAt = (water: VectorWater, px: number, py: number): boolean => {
+  const h = water.hydro, cell = h.width / h.n, x = Math.floor(px / cell), y = Math.floor(py / cell);
+  return x >= 0 && y >= 0 && x < h.n && y < h.n && !!h.sea[y * h.n + x];
+};
+/** The course ends in the sea, or one cell short of it: the cell its last segment points into counts too. */
+function endsInSea(water: VectorWater, line: RiverLine): boolean {
+  const p = line.points, m = p.length / 2 - 1, h = water.hydro, cell = h.width / h.n;
+  if (m < 0) return false;
+  const back = Math.max(0, m - 1), dx = p[2 * m] - p[2 * back], dy = p[2 * m + 1] - p[2 * back + 1], run = Math.hypot(dx, dy) || 1;
+  return seaAt(water, p[2 * m], p[2 * m + 1]) || seaAt(water, p[2 * m] + dx / run * cell, p[2 * m + 1] + dy / run * cell) || !!h.sea[line.outlet ?? -1];
 }
 
 /** Width gain of a river at its mouth in the sea, by the width of its channel there (m): none for a rill, a third
@@ -365,17 +397,11 @@ export function mouthFlare(width: number): number {
   const smooth = (a: number, b: number, v: number): number => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
   return 1 + .35 * smooth(3, 8, width) + .5 * smooth(8, 25, width) + .7 * smooth(30, 70, width);
 }
-/** Share of its width a drawn course keeps at a last vertex that lies in the sea: the ribbon narrows over its last
- * segment and ends inside the water it enters, instead of pushing a round cap as wide as the mouth out of the coast. */
-export const MOUTH_END = .2;
 /** Hydraulic geometry, shared by both renderers; tidal mouths widen gradually. */
 export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): number[] {
   const widths = line.area.map((a, i) => channelWidth(a / (line.threads?.[i] ?? 1), water.widthScale ?? water.rivers?.widthScale ?? 1) * (thinner ? 0.65 : 1));
-  const p = line.points, m = widths.length - 1, h = water.hydro, cell = h.width / h.n;
-  const sea = (px: number, py: number): boolean => { const x = Math.floor(px / cell), y = Math.floor(py / cell); return x >= 0 && y >= 0 && x < h.n && y < h.n && !!h.sea[y * h.n + x]; };
-  // The course ends in the sea, or one cell short of it: the cell its last segment points into counts too.
-  const back = Math.max(0, m - 1), dx = p[2 * m] - p[2 * back], dy = p[2 * m + 1] - p[2 * back + 1], run = Math.hypot(dx, dy) || 1;
-  if ((sea(p[2 * m], p[2 * m + 1]) || sea(p[2 * m] + dx / run * cell, p[2 * m + 1] + dy / run * cell) || h.sea[line.outlet ?? -1]) && line.kind[0] !== 5) {
+  const p = line.points, m = widths.length - 1;
+  if (endsInSea(water, line) && line.kind[0] !== 5) {
     // Exponential flare towards the sea, by the river's size, with a length and profile of its own. The gains follow
     // the estuary modes of the hydrology, held lower (a 4x funnel read as a bulb at the coast): a brook widens by
     // a third, a stream nearly doubles, a large river opens into a funnel of about two and a half widths.
@@ -388,7 +414,6 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
       widths[i] *= factor ** ((1 - arc / reach) ** profile);
       if (i) arc += Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
     }
-
   }
   return widths;
 }
