@@ -53,7 +53,7 @@ export async function render(lang) {
 <div class="filter"><label for="filter">${esc(m.filter)}</label><input id="filter" type="search" placeholder="${esc(m.filterPh)}" data-filter=".chapter, details.stage" autocomplete="off"><p class="filter-status" id="filter-status" role="status" data-template="${esc(m.filterStatus)}"></p></div>
 <p class="note">${esc(m.railNote)}</p>`;
 
-  const hero = `<header class="hero"><h1>${esc(m.heroTitle)}</h1><p class="lead">${esc(m.lead)}</p>
+  const hero = `<header class="hero"><h1>${esc(m.heroTitle)}</h1><p class="lead">${esc(m.lead)}</p><p class="credit">${esc(m.credit)}</p>
 <figure class="section-figure wide"><div class="plate">${diagram('section', lang)}</div><figcaption>${esc(m.heroCaption)}</figcaption></figure>
 <div class="facts">${m.facts.map(([v, l]) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('')}</div></header>`;
 
