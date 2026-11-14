@@ -77,6 +77,7 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     number(value.city.opacity, 'appearance.city.opacity', 0, 1);
     number(value.city.width, 'appearance.city.width', 0, 5);
     number(value.city.exaggeration, 'appearance.city.exaggeration', 1, 5);
+    number(value.city.treeDistance, 'appearance.city.treeDistance', 200, 1500);
     if (value.city.layers !== undefined) {
       object(value.city.layers, 'appearance.city.layers');
       for (const [key, entry] of Object.entries(value.city.layers)) {

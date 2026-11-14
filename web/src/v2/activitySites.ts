@@ -17,15 +17,29 @@ const PATTERN: Record<string, MaterialPattern> = {
 };
 const material = (cover: string): HouseMaterial => ({ id: `activity:${cover}`, label: cover, roles: ['roof'], pattern: PATTERN[cover] ?? 'plain', origin: 'activity', source_ref: null });
 
-type RegionSites = { placement?: { activities?: ActivitySite[] }; roads?: { nodes?: ActivitySite[] } | null };
+type RegionSites = { placement?: { activities?: ActivitySite[] }; roads?: { nodes?: ActivitySite[]; approaches?: { key: string; points: Point[] }[] } | null };
 const siteLists = new WeakMap<object, readonly ActivitySite[]>();
 const NONE: readonly ActivitySite[] = [];
-/** Activity sites of the retained regional placement, then the network nodes of its roads. */
+/** A remote place whose access line (stair, tunnel, causeway) the road network cut where it meets a road (Rust `RoadOutput::approaches`):
+ * the line ends on that road, or goes when the road passes at the door. Same line rule as settlements.ts accessLineOf. */
+function cutAccess(site: ActivitySite, cut: ReadonlyMap<string, Point[]>): ActivitySite {
+  const points = cut.get(site.id);
+  if (!points || site.kind !== 'remote') return site;
+  const line = site.installations?.find(g => !g.closed && g.points.length >= 2 && g.points[g.points.length - 1].x === site.access.x && g.points[g.points.length - 1].y === site.access.y);
+  if (!line) return site;
+  return { ...site, access: points[points.length - 1] ?? site.access,
+    installations: site.installations.flatMap(g => g !== line ? [g] : points.length >= 2 ? [{ ...g, points }] : []) };
+}
+/** Activity sites of the retained regional placement (remote access lines cut by the roads), then the network nodes of its roads. */
 export function activitySitesOf(world: World | undefined): readonly ActivitySite[] {
   const region = world?.debug?.v2RustRegion as RegionSites | undefined;
   if (!region) return NONE;
   let list = siteLists.get(region);
-  if (!list) siteLists.set(region, list = [...region.placement?.activities ?? [], ...region.roads?.nodes ?? []]);
+  if (!list) {
+    const cut = new Map((region.roads?.approaches ?? []).map(a => [a.key, a.points]));
+    const placed = region.placement?.activities ?? [];
+    siteLists.set(region, list = [...cut.size ? placed.map(site => cutAccess(site, cut)) : placed, ...region.roads?.nodes ?? []]);
+  }
   return list;
 }
 

@@ -86,6 +86,21 @@ pub struct RoadSite {
     /// Parent settlement key of an activity access point.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// Remote places: their access line (a stair, a tunnel, a causeway) from the place down
+    /// to `center`, where the ordinary path starts. A line that meets a road on its way down
+    /// ends on that road instead ([`RoadOutput::approaches`]) and no path leaves its foot.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub approach: Vec<Point>,
+}
+
+/// The access line of a remote place as the network cut it: from the place down to the
+/// first road it met. Fewer than two points: the road passes at the door, there is no line.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Approach {
+    /// Key of the activity site.
+    pub key: String,
+    pub points: Vec<Point>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -135,6 +150,10 @@ pub struct RoadOutput {
     /// Network nodes (catalogue P4), placed after the network is built.
     #[serde(default)]
     pub nodes: Vec<super::activities::ActivitySite>,
+    /// Access lines of remote places cut where they meet a road (see [`RoadSite::approach`]);
+    /// a line not listed keeps its whole length and its path from the foot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub approaches: Vec<Approach>,
 }
 
 struct Union(Vec<usize>);
@@ -530,11 +549,76 @@ impl Router<'_> {
         }
     }
 
-    /// Activity sites: a track or trail from each access point to the nearest road of its
-    /// parent's network (or the parent itself), after every settlement route.
-    fn activity_access(&mut self, points: &[&RoadSite]) {
+    /// Where an access line (from the place down to its foot) first meets the network: the
+    /// first sample, half a cell apart, on or beside a road cell, then on down to its nearest
+    /// approach to that cell. Returns the road cell and the line cut there, ending on the road
+    /// cell centre. None when no road lies on the way (the foot itself is not tested: an
+    /// ordinary path leaves from it). Costs one cell test per sample.
+    fn meet_road(&self, line: &[Point]) -> Option<(usize, Vec<Point>)> {
         let f = self.f;
+        let n = f.r.n;
+        let step = (0.5 * f.cell).max(1.0);
+        let mut samples: Vec<(usize, Point)> = vec![];
+        for (k, w) in line.windows(2).enumerate() {
+            let parts = (w[0].distance(w[1]) / step).ceil().max(1.0) as usize;
+            samples.extend((0..parts).map(|j| {
+                let t = j as f64 / parts as f64;
+                (k, Point { x: w[0].x + (w[1].x - w[0].x) * t, y: w[0].y + (w[1].y - w[0].y) * t })
+            }));
+        }
+        let road_near = |p: Point| -> Option<usize> {
+            let i = f.index(p);
+            if self.marked[i] {
+                return Some(i);
+            }
+            let (x, y) = (i % n, i / n);
+            [(x.wrapping_sub(1), y), (x + 1, y), (x, y.wrapping_sub(1)), (x, y + 1)]
+                .into_iter()
+                .filter(|&(u, v)| u < n && v < n)
+                .map(|(u, v)| v * n + u)
+                .filter(|&j| self.marked[j])
+                .min_by(|&a, &b| f.pos(a).distance(p).total_cmp(&f.pos(b).distance(p)))
+        };
+        let (mut at, mut road) = samples.iter().enumerate().find_map(|(k, &(_, p))| road_near(p).map(|r| (k, r)))?;
+        // On down while the line still nears that road cell, or until it enters a road cell.
+        while !self.marked[f.index(samples[at].1)] {
+            let next = at + 1;
+            if next >= samples.len() || samples[next].1.distance(f.pos(road)) >= samples[at].1.distance(f.pos(road)) {
+                break;
+            }
+            at = next;
+        }
+        let here = f.index(samples[at].1);
+        if self.marked[here] {
+            road = here;
+        }
+        let (k, cut) = samples[at];
+        let mut kept = line[..=k].to_vec();
+        if cut.distance(line[k]) > 1e-6 {
+            kept.push(cut);
+        }
+        let end = f.pos(road);
+        if cut.distance(end) > 0.25 * f.cell {
+            kept.push(end);
+        }
+        Some((road, kept))
+    }
+
+    /// Activity sites: a track or trail from each access point to the nearest road of its
+    /// parent's network (or the parent itself), after every settlement route. A remote
+    /// place whose access line meets a road on its way down attaches to that road where it
+    /// meets it: the line is cut there (returned) and no path is laid from its foot, so a
+    /// stair never crosses a road and no dead-end spur is built to serve as its foot.
+    fn activity_access(&mut self, points: &[&RoadSite]) -> Vec<Approach> {
+        let f = self.f;
+        let mut approaches = vec![];
         for s in points {
+            if s.approach.len() >= 2 {
+                if let Some((_, points)) = self.meet_road(&s.approach) {
+                    approaches.push(Approach { key: s.key.clone(), points });
+                    continue;
+                }
+            }
             let Some(parent) = self.sites.iter().position(|p| Some(&p.key) == s.parent.as_ref()) else {
                 continue;
             };
@@ -575,6 +659,7 @@ impl Router<'_> {
             }
             self.routed.push(Routed { cells, importance, profile, start: (s.center, s.key.clone()), end: None });
         }
+        approaches
     }
 
     /// A road from `site` to the map border `side`, ending wherever along that border the route
@@ -678,7 +763,8 @@ pub(super) fn route(
     };
     let sites = &places[..];
     validate(sites, cfg, f.r.width)?;
-    if activity.len() > 1000 || activity.iter().any(|s| !(0.0..f.r.width).contains(&s.center.x) || !(0.0..f.r.width).contains(&s.center.y)) {
+    let inside = |p: &Point| (0.0..f.r.width).contains(&p.x) && (0.0..f.r.width).contains(&p.y);
+    if activity.len() > 1000 || activity.iter().any(|s| !inside(&s.center) || s.approach.len() > 256 || !s.approach.iter().all(inside)) {
         return Err("Invalid road endpoints".into());
     }
     let mut out = RoadOutput::default();
@@ -893,7 +979,7 @@ pub(super) fn route(
     }
     router.rural_access(seed, density);
     let first_activity = router.routed.len();
-    router.activity_access(&activity);
+    out.approaches = router.activity_access(&activity);
     out.routes = router.routed.len();
     // Cells of the settlement network, and of activity paths by class (track | trail):
     // a link lying mostly off the former is an earthen way, whatever the development level.
@@ -1238,4 +1324,49 @@ fn measured_grade(f: &Fields, path: &[Point]) -> f64 {
                 .then(|| (f.height_at(w[0]) - f.height_at(w[1])).abs() / step)
         })
         .fold(0.0, f64::max)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settlements::Raster;
+
+    /// Distance from `p` to the polyline `path`.
+    fn to_path(p: Point, path: &[Point]) -> f64 {
+        path.windows(2)
+            .map(|w| {
+                let (dx, dy) = (w[1].x - w[0].x, w[1].y - w[0].y);
+                let t = (((p.x - w[0].x) * dx + (p.y - w[0].y) * dy) / (dx * dx + dy * dy).max(1e-9)).clamp(0.0, 1.0);
+                p.distance(Point { x: w[0].x + dx * t, y: w[0].y + dy * t })
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// A stair running down across the road between two villages ends on that road: its line
+    /// is cut there and no spur leads to its foot beyond the road.
+    #[test]
+    fn a_stair_across_a_road_ends_on_it() {
+        let (n, width) = (120, 6000.0);
+        let h = vec![20.0f32; n * n];
+        let (water, rivers, ids) = (vec![0u8; n * n], vec![0.0f32; n * n], vec![-1i32; n * n]);
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids });
+        let village = |key: &str, x: f64| RoadSite { key: key.into(), population: 400, culture: "european-organic".into(), center: Point { x, y: 3000.0 }, ..Default::default() };
+        let (top, foot) = (Point { x: 3000.0, y: 3500.0 }, Point { x: 3000.0, y: 2500.0 });
+        let temple = RoadSite {
+            key: "temple".into(),
+            culture: "european-organic".into(),
+            center: foot,
+            access: Some("trail".into()),
+            parent: Some("west".into()),
+            approach: vec![top, Point { x: 3000.0, y: 3000.0 }, foot],
+            ..Default::default()
+        };
+        let cfg = RoadConfig { density: 0.0, exits: 0, ..Default::default() };
+        let out = route("stair", &f, &[village("west", 1000.0), village("east", 5000.0), temple], &cfg).unwrap();
+        let cut = out.approaches.iter().find(|a| a.key == "temple").expect("the stair meets the road");
+        let end = *cut.points.last().unwrap();
+        assert!(cut.points.len() >= 2 && cut.points[0] == top, "the stair still leaves from the place");
+        assert!(out.segments.iter().any(|s| to_path(end, &s.path) < 1.5 * f.cell), "the stair ends on a road");
+        assert!(out.segments.iter().all(|s| to_path(foot, &s.path) > 200.0), "a spur leads to the old foot");
+    }
 }

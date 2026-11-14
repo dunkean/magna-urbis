@@ -7,7 +7,7 @@ import { TileIndex, boxesOf } from '../src/render/tileindex';
 import { insideArea, type TextureLayer } from '../src/render/scene';
 import { fakeWorld } from '../scripts/fakeworld';
 
-import { buildNearTrees, buildNearTreesSteps, TREE_MAX, TREE_STRIDE, type TreeInputs } from '../src/ui/terrain3dTrees';
+import { buildNearTrees, buildNearTreesSteps, TREE_STRIDE, treeLimits, type TreeInputs } from '../src/ui/terrain3dTrees';
 import { forestOccupation } from '../src/ui/forestOccupation';
 import { withLandDetail } from '../src/ui/landDetail';
 import { ForestRoom } from '../src/render/forestRoom';
@@ -57,7 +57,7 @@ describe('individual canopy stamps', () => {
       expect(Math.abs(u - Math.round(u))).toBeLessThan(.061); expect(Math.abs(v - Math.round(v))).toBeLessThan(.061);
     }
     expect(fruit).toBeGreaterThan(120);
-    expect(trees.length / TREE_STRIDE).toBeLessThanOrEqual(TREE_MAX);
+    expect(trees.length / TREE_STRIDE).toBeLessThanOrEqual(treeLimits(600).max);
     expect(new Set(Array.from({ length: trees.length / TREE_STRIDE }, (_, i) => `${trees[i * TREE_STRIDE]},${trees[i * TREE_STRIDE + 1]}`)).size).toBe(trees.length / TREE_STRIDE);
     const work = buildNearTreesSteps(inputs, view); let step = work.next(); while (!step.done) step = work.next();
     expect(step.value).toEqual(trees);
@@ -107,6 +107,7 @@ describe('individual canopy stamps', () => {
     const w = fakeWorld({ mapSize: 160, buildings: 0, streets: 0, landAreas: 0 });
     w.landuse!.areas = [{ kind: 'forest', poly: rect(20, 20, 120), holes: [rect(60, 60, 40)] }];
     w.landuse!.farmsteads = [];
+    w.roads = []; // the fake world's random roads would clear their corridors through this small forest
     const layer = landuseLayer(w, pal, 1, 1, undefined, '', 'canopy');
     const image = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160" height="160"><rect width="160" height="160" fill="white"/>${layer}</svg>`).render();
     const pixel = (x: number, y: number) => [...image.pixels.slice((y * 160 + x) * 4, (y * 160 + x) * 4 + 4)];

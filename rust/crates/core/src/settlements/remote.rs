@@ -380,6 +380,16 @@ fn approach(f: &Fields, t: &act::Site, place: &'static act::RemotePlace, centre:
     ("none", None, centre, "none")
 }
 
+/// The access line of a remote place (its stair, tunnel, causeway…): the open installation
+/// that ends at its access point, from the place down; empty for any other site. The road
+/// router cuts it where it meets a road (`roads::RoadSite::approach`).
+pub(super) fn access_line(site: &ActivitySite) -> &[Point] {
+    if site.kind != "remote" {
+        return &[];
+    }
+    site.installations.iter().find(|i| !i.closed && i.points.len() >= 2 && i.points.last() == Some(&site.access)).map(|i| &i.points[..]).unwrap_or(&[])
+}
+
 /// The place of a candidate: its template, its yard on ground that holds it (the spot,
 /// then two rings of eight spots round it; a form takes its whole site, a tighter one or
 /// leaves the single body, `act::formed`), in ruins for its share, and its access.

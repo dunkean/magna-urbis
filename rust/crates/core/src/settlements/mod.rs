@@ -226,6 +226,7 @@ impl Output {
             center: a.access,
             access: Some(a.access_class.clone()),
             parent: Some(a.parent.clone()),
+            approach: remote::access_line(a).to_vec(),
             ..Default::default()
         });
         places.chain(sites).collect()

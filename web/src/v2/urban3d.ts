@@ -161,7 +161,7 @@ export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSu
 }
 export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
   const city = v2Resolved3d(settings).city;
-  return { ground: city.ground as City3dGround, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement, trees3d: city.trees3d };
+  return { ground: city.ground as City3dGround, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement, trees3d: city.trees3d, treeDistance: city.treeDistance };
 }
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {

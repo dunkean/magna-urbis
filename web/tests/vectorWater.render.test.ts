@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { lakeField, lakeSample } from '../src/ui/lakeGeometry';
 import { computeHydrology, waterBodies } from '../src/ui/simpleHydrology';
 import { vectorRivers, channelWidth, type RiverLine } from '../src/ui/riverVectors';
-import { MOUTH_OPEN, mouthFlare, riverSegments, riverWidths, vectorWaterSvg, type WaterDisplay } from '../src/ui/vectorWaterRender';
+import { ESTUARY_LENGTH, ESTUARY_PROFILE, ESTUARY_SEA, estuaryFlare, riverSegments, riverWidths, vectorWaterSvg, type WaterDisplay } from '../src/ui/vectorWaterRender';
 import type { VectorWater } from '../src/ui/vectorWater';
 import { computeVectorWater } from '../src/ui/vectorWater';
 import { waterBalance } from '../src/ui/waterBalance';
@@ -168,17 +168,32 @@ describe('continuous vector water', () => {
     const line: RiverLine = { points: [600, 3250, 150, 3250], area: [1e6, 16e6], level: [3, 0], kind: [0, 0], threads: [1, 2] };
     const widths = riverWidths(water, line);
     expect(widths[0]).toBeCloseTo(channelWidth(1e6, 3));
-    // At the mouth the flare follows mouthFlare: none for a rill, about two and a half widths for a large river.
-    const own = channelWidth(8e6, 3);
-    expect(widths[1]).toBeCloseTo(own * mouthFlare(own));
-    expect(riverWidths(water, { ...line, area: [1e6, 1e5], threads: [1, 1] })[1]).toBeCloseTo(channelWidth(1e5, 3));
+    // At the coastline (x = 195 m) the course has opened into an estuary of 2.5-4 widths; past it the funnel runs on
+    // over the sea, so its last vertex (x = 150 m, in the sea) is wider still.
+    const own = channelWidth(8e6, 3), most = 1 + (estuaryFlare(own, 1) - 1) * (1 + ESTUARY_SEA) ** ESTUARY_PROFILE;
+    expect(estuaryFlare(own, 0)).toBeGreaterThan(2.5);
+    expect(widths[1] / own).toBeGreaterThan(estuaryFlare(own, 0));
+    expect(widths[1] / own).toBeLessThan(most + 1e-6);
+    expect(riverWidths(water, { ...line, area: [1e6, 1e5], threads: [1, 1] })[1]).toBeGreaterThan(2 * channelWidth(1e5, 3));
     const segments = riverSegments({ ...water, rivers: { ...water.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } }, display);
-    // The course keeps its flared width at the coast, then runs on into the sea and opens further (seaMouth).
-    expect(segments.length).toBe(18);
+    expect(segments.length % 9).toBe(0);
+    expect(segments.length / 9).toBeGreaterThan(10);
     expect(segments[4]).toBeCloseTo(widths[0]);
-    expect(segments[5]).toBeCloseTo(widths[1]);
-    expect(segments[11]).toBeLessThan(150);
-    expect(segments[14]).toBeCloseTo(widths[1] * MOUTH_OPEN);
+    const funnel = 195 + ESTUARY_LENGTH[1] * own + 10;
+    let coast = 0;
+    for (let i = 0; i < segments.length; i += 9) {
+      const [x0, , x1, , w0, w1] = segments.subarray(i, i + 6);
+      // No widening above the funnel; inside it the banks open smoothly (subdivided, no step) and never narrow.
+      if (x0 > funnel) expect(w0).toBeLessThan(own * 1.01);
+      expect(w1).toBeGreaterThanOrEqual(w0 - 1e-6);
+      expect(w1 / w0).toBeLessThan(1.3);
+      if (x0 >= 195 && x1 < 195) coast = w0 + (w1 - w0) * (x0 - 195) / (x0 - x1);
+    }
+    expect(coast / own).toBeGreaterThan(2.4);
+    // The ribbon ends just past the coastline, in the sea: no long ribbon drawn out over the water.
+    const last = segments.length - 9;
+    expect(segments[last + 2]).toBeLessThan(195);
+    expect(segments[last + 2]).toBeGreaterThan(195 - ESTUARY_SEA * ESTUARY_LENGTH[1] * own - 5);
   });
 
   it('keeps following a channel when downstream losses take it below the display threshold', async () => {

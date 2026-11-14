@@ -31,7 +31,7 @@ import { UrbanBuildingGround } from './urbanBuildingGround';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, WALK_EYE_HEIGHT } from './terrain3dNavigation';
 import { terrain3dPixelRatio, TERRAIN_3D_SETTLE_MS } from './terrain3dResolution';
-import { buildNearTrees, buildNearTreesSteps, TREE_3D_GLSL, TREE_FAR, TREE_NEAR, TREE_STRIDE, TREE_VERTICES, type TreeInputs } from './terrain3dTrees';
+import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_3D_GLSL, TREE_DISTANCE_DEFAULT, TREE_STRIDE, TREE_VERTICES, treeLimits, type TreeInputs } from './terrain3dTrees';
 /** Light display quality: illustrated stamps raised within this distance of the eye (m). */
 const BILLBOARD_LIGHT_RADIUS = 600;
 import { BILLBOARD_3D_GLSL, RAISED_MATERIAL_GLSL, terrain3dRaisedBlend, terrain3dRaisedTexture, type Terrain3dBillboard, type Terrain3dBillboards } from './terrain3dBillboards';
@@ -773,6 +773,8 @@ export class Terrain3d {
   /** Near trees on demand (the 3D view's "3D trees" switch). Off, nothing is built or drawn and the painted crowns
    * stay whole; a built stream is kept, so switching back on shows it at once. */
   protected nearTrees = false;
+  /** Render distance of the near trees (m): the fade starts at 2/3 of it, the instance cap grows with its square. */
+  protected treeDistance = TREE_DISTANCE_DEFAULT;
   /** Tree streams queued in `preparation`: the view's readiness does not wait for them (trees stream in after). */
   private treeJobs = 0;
   private treeProgram?: WebGLProgram;
@@ -1946,11 +1948,11 @@ export class Terrain3d {
     if (!inputs) { this.treeCount = 0; this.treeKey = ''; return; }
     const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
     const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
-    const key = lift > TREE_FAR ? 'high' : [Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.crownSnow, inputs.seed, inputs.climateZone, JSON.stringify(inputs.calendar ?? {})].join('|');
+    const key = lift > treeLimits(this.treeDistance).far ? 'high' : [this.treeDistance, Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.crownSnow, inputs.seed, inputs.climateZone, JSON.stringify(inputs.calendar ?? {})].join('|');
     if (key === this.treeKey && (!this.fullQualityCapture || this.treeReadyKey === key)) return;
     this.treeKey = key;
     if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; return; }
-    const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl };
+    const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl, distance: this.treeDistance };
     const install = (values: Float32Array): void => {
       this.treeCount = values.length / TREE_STRIDE; this.treeReadyKey = key;
       (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.treeCount;
@@ -1982,7 +1984,8 @@ export class Terrain3d {
   }
   /** uForestTrees of the ground shader: eye xy and the fade radii, w = 0 without trees. */
   protected forestTreesUniform(frame: FrameGeometry): [number, number, number, number] {
-    return [this.camera.x + frame.eye[0], this.camera.y + frame.eye[2], TREE_NEAR, this.treesShown() ? TREE_FAR : 0];
+    const limits = treeLimits(this.treeDistance);
+    return [this.camera.x + frame.eye[0], this.camera.y + frame.eye[2], limits.near, this.treesShown() ? limits.far : 0];
   }
   /** Whether near trees are drawn this frame. */
   protected treesShown(): boolean { return this.nearTrees && this.treeCount > 0; }
@@ -1990,6 +1993,12 @@ export class Terrain3d {
   setNearTrees(enabled: boolean): void {
     if (this.nearTrees === enabled) return;
     this.nearTrees = enabled; this.request();
+  }
+  /** The 3D view's "tree distance" slider (m): only the tree layer is rebuilt, around the eye, nearest trees first. */
+  setTreeDistance(metres: number): void {
+    const distance = clampTreeDistance(metres);
+    if (this.treeDistance === distance) return;
+    this.treeDistance = distance; this.request();
   }
   protected treeLight(): [number, number, number] {
     const lights = terrainLights((this.groundSettings ?? this.forestSettings)?.lighting ?? DEFAULT_TERRAIN_LIGHTING);
@@ -2458,6 +2467,7 @@ export class Terrain3d {
     const replaced = this.buildings.replacedBuildings();
     if (replaced.length) target.replaceBuildings(replaced);
     target.setForest(this.forestField, this.forestOccupation, this.forestSettings);
+    target.setTreeDistance(this.treeDistance);
     target.setNearTrees(this.nearTrees);
     target.setTileLoader(this.tileLoader, this.requireHeights);
     if (this.textureSource) target.setTexture(this.textureSource, this.billboardSource);

@@ -85,11 +85,15 @@ export const ROAD_PROFILES: { id: string; label: string }[] = [
   { id: 'caravan', label: 'Caravan routes' }, { id: 'andean', label: 'Andean (stone stairs)' }, { id: 'mesoamerican', label: 'Mesoamerican causeways' },
   { id: 'tribal', label: 'Tribal paths' }, { id: 'elven', label: 'Elven (contour paths)' }, { id: 'dwarven', label: 'Dwarven (paved, steep)' },
 ];
-export interface RoadSite { key: string; population: number; culture: string; center: Point; radius: number; access?: 'track' | 'trail'; parent?: string }
+/** `approach`: a remote place's access line (stair, tunnel, causeway) from the place down to `center`; the router cuts it at the first road it meets (`RoadOutput.approaches`). */
+export interface RoadSite { key: string; population: number; culture: string; center: Point; radius: number; access?: 'track' | 'trail'; parent?: string; approach?: Point[] }
+/** Access line of a remote place (Rust `remote::access_line`): its open installation ending at its access point. */
+export const accessLineOf = (a: ActivitySite): ActivityInstallation | undefined =>
+  a.kind === 'remote' ? a.installations?.find(g => !g.closed && g.points.length >= 2 && g.points[g.points.length - 1].x === a.access.x && g.points[g.points.length - 1].y === a.access.y) : undefined;
 /** Road endpoints of a placement: settlements, then activity access points (Rust `Output::road_sites`). */
 export function roadSitesOf(output: SettlementOutput): RoadSite[] {
   return [...output.settlements.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })),
-    ...(output.activities ?? []).flatMap(a => a.accessClass === 'none' ? [] : [{ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent }])];
+    ...(output.activities ?? []).flatMap(a => { const line = accessLineOf(a); return a.accessClass === 'none' ? [] : [{ key: a.id, population: 0, culture: a.culture, center: a.access, radius: 0, access: a.accessClass, parent: a.parent, ...(line ? { approach: line.points } : {}) }]; })];
 }
 export interface RoadCrossing { kind: 'bridge' | 'ford' | 'causeway'; path: Point[] }
 export interface RoadSegment {
@@ -102,6 +106,8 @@ export interface RoadOutput {
   lengthByClass: Partial<Record<RoadClass, number>>; lengthBySurface: Partial<Record<RoadSurface, number>>; ms: number;
   /** Network nodes placed on the finished network (catalogue P4). */
   nodes?: ActivitySite[];
+  /** Access lines of remote places cut where they meet a road (Rust `roads::Approach`); fewer than two points = no line left. */
+  approaches?: { key: string; points: Point[] }[];
 }
 
 /** Map inputs of the Rust resource model (seed, sea-level °C, annual mm, biome or climate zone, world corner). */

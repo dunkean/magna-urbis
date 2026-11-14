@@ -350,34 +350,11 @@ function headwaterSet(water: VectorWater, threshold: number): Set<RiverLine> {
   }
   return set;
 }
-/** River line geometry as drawn: a genuine headwater emerges from zero width instead of starting as a full-width disc (every style). */
+/** River line geometry as drawn: a genuine headwater emerges from zero width instead of starting as a full-width disc,
+ * and a course that ends in the sea opens into its estuary (every style, 2D GPU ribbon, SVG ink and 3D water masks). */
 export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): HeadwaterGeometry {
-  const widths = riverWidths(water, line, thinner);
-  return seaMouth(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 });
-}
-/** Width gain of the mouth's run into the sea, over its length (MOUTH_RUN widths, at least a cell). */
-export const MOUTH_OPEN = 1.5, MOUTH_RUN = 2;
-/** A course that ends in the sea runs on past the coast: the engine cuts it where it first meets a sea cell, which
- * can lie up to a cell short of the drawn coastline (the zero of the refined surface). Without this run a strip of
- * land closes every mouth (a thin dam) and the ribbon's round cap reads as the end of the river. The run opens
- * further over the shallows (MOUTH_OPEN) and keeps going straight while it stays in the sea; under it the satellite
- * ground mixes the river's water into the sea and fades it with depth (terrainGl estuary blend). */
-function seaMouth(water: VectorWater, line: RiverLine, geo: HeadwaterGeometry): HeadwaterGeometry {
-  const p = geo.points, m = geo.widths.length - 1;
-  if (m < 1 || line.kind[0] === 5 || !endsInSea(water, line)) return geo;
-  const h = water.hydro, cell = h.width / h.n, w = geo.widths[m], x = p[2 * m], y = p[2 * m + 1];
-  // Direction of the last stretch of channel, over about the run's length (one bent vertex does not steer the mouth).
-  const run = Math.max(MOUTH_RUN * w, cell);
-  let k = m - 1;
-  while (k > 0 && Math.hypot(x - p[2 * k], y - p[2 * k + 1]) < run) k--;
-  const dx = x - p[2 * k], dy = y - p[2 * k + 1], d = Math.hypot(dx, dy);
-  if (d < 1e-6) return geo;
-  for (const length of [run, run / 2]) {
-    const ex = x + dx / d * length, ey = y + dy / d * length;
-    if (!seaAt(water, ex, ey)) continue;
-    return { points: [...p, ex, ey], widths: [...geo.widths, w * MOUTH_OPEN], level: [...geo.level, geo.level[m]], kind: [...geo.kind, geo.kind[m]], reach: geo.reach };
-  }
-  return geo;
+  const widths = channelWidths(water, line, thinner);
+  return estuaryGeometry(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 });
 }
 const seaAt = (water: VectorWater, px: number, py: number): boolean => {
   const h = water.hydro, cell = h.width / h.n, x = Math.floor(px / cell), y = Math.floor(py / cell);
@@ -391,28 +368,146 @@ function endsInSea(water: VectorWater, line: RiverLine): boolean {
   return seaAt(water, p[2 * m], p[2 * m + 1]) || seaAt(water, p[2 * m] + dx / run * cell, p[2 * m + 1] + dy / run * cell) || !!h.sea[line.outlet ?? -1];
 }
 
-/** Width gain of a river at its mouth in the sea, by the width of its channel there (m): none for a rill, a third
- * for a brook, nearly double for a stream, about two and a half for a large river. */
-export function mouthFlare(width: number): number {
-  const smooth = (a: number, b: number, v: number): number => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
-  return 1 + .35 * smooth(3, 8, width) + .5 * smooth(8, 25, width) + .7 * smooth(30, 70, width);
+/** Signed height (m, sea level 0) of the drawn relief: the same uniform cubic B-spline of the cell-centred heights as
+ * the GPU ground (terrainGl level()), so the coast found here is the coastline on screen. */
+function surfaceHeight(h: VectorWater['hydro'], px: number, py: number): number {
+  const n = h.n, cell = h.width / n, gx = px / cell - .5, gy = py / cell - .5, fx = Math.floor(gx), fy = Math.floor(gy);
+  const bw = (t: number): number[] => { const t2 = t * t, t3 = t2 * t, u = 1 - t; return [u * u * u / 6, (3 * t3 - 6 * t2 + 4) / 6, (-3 * t3 + 3 * t2 + 3 * t + 1) / 6, t3 / 6]; };
+  const wx = bw(gx - fx), wy = bw(gy - fy);
+  let v = 0;
+  for (let j = 0; j < 4; j++) {
+    const row = Math.min(n - 1, Math.max(0, fy - 1 + j)) * n;
+    for (let i = 0; i < 4; i++) v += h.height[row + Math.min(n - 1, Math.max(0, fx - 1 + i))] * wx[i] * wy[j];
+  }
+  return v;
 }
-/** Hydraulic geometry, shared by both renderers; tidal mouths widen gradually. */
-export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): number[] {
-  const widths = line.area.map((a, i) => channelWidth(a / (line.threads?.[i] ?? 1), water.widthScale ?? water.rivers?.widthScale ?? 1) * (thinner ? 0.65 : 1));
-  const p = line.points, m = widths.length - 1;
-  if (endsInSea(water, line) && line.kind[0] !== 5) {
-    // Exponential flare towards the sea, by the river's size, with a length and profile of its own. The gains follow
-    // the estuary modes of the hydrology, held lower (a 4x funnel read as a bulb at the coast): a brook widens by
-    // a third, a stream nearly doubles, a large river opens into a funnel of about two and a half widths.
-    const factor = mouthFlare(widths[m]);
-    let hash = Math.imul(Math.round(p[2 * m]) ^ Math.imul(Math.round(p[2 * m + 1]), 668265263), 374761393);
+
+/** Estuary shape: the funnel spans ESTUARY_LENGTH channel widths before the coastline (by mouth, from the shorter to
+ * the longer); its banks open as the power ESTUARY_PROFILE of the distance (a trumpet: concave banks that steepen into
+ * the coastline, no corner) and run on into the sea over ESTUARY_SEA of the funnel's length, where the satellite
+ * ground fades the river's water into the shallows (terrainGl estuary blend). */
+export const ESTUARY_LENGTH: readonly [number, number] = [4, 6], ESTUARY_PROFILE = 3, ESTUARY_SEA = .2;
+const smoothstep = (a: number, b: number, v: number): number => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** Width gain of a river at the coastline, by the width of its channel there (m): about two and a half widths for a
+ * brook, up to nearly four for a large river; a hairline rill hardly opens. `vary` (0-1) is the mouth's own variation. */
+export function estuaryFlare(width: number, vary = .5): number {
+  return 1 + (1.5 + 1.1 * smoothstep(5, 50, width) + .4 * (vary - .5)) * smoothstep(.5, 2.5, width);
+}
+interface Estuary {
+  /** Distance of the coastline from the course's last vertex, upstream positive (negative: beyond its end). */
+  coast: number;
+  /** Funnel length (m) and gain at the coastline. */
+  length: number; flare: number;
+  /** Seaward unit direction of the mouth, for the run past the course's end. */
+  dx: number; dy: number;
+}
+const estuaryMemo = new WeakMap<RiverLine, { hydro: VectorWater['hydro']; estuary: Estuary | undefined }>();
+/** Estuary of a course that ends in the sea, sized on its hydraulic width at the end. The coastline is where the banks
+ * of the open funnel (failing them, the axis) reach the land, walking from the sea up the course. Memoized per line. */
+function estuaryOf(water: VectorWater, line: RiverLine, width: number): Estuary | undefined {
+  const memo = estuaryMemo.get(line);
+  if (memo?.hydro === water.hydro) return memo.estuary;
+  let estuary: Estuary | undefined;
+  const p = line.points, m = p.length / 2 - 1;
+  if (m >= 1 && line.kind[0] !== 5 && width > 0 && endsInSea(water, line)) {
+    const h = water.hydro, cell = h.width / h.n, ex = p[2 * m], ey = p[2 * m + 1];
+    let hash = Math.imul(Math.round(ex) ^ Math.imul(Math.round(ey), 668265263), 374761393);
     hash = (hash ^ (hash >>> 13)) >>> 0;
-    const reach = widths[m] * (10 + 18 * (hash & 255) / 255), profile = 1.3 + 1.2 * ((hash >>> 8) & 255) / 255;
-    let arc = 0;
-    for (let i = m; i >= 0 && arc < reach; i--) {
-      widths[i] *= factor ** ((1 - arc / reach) ** profile);
-      if (i) arc += Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
+    const flare = estuaryFlare(width, (hash & 255) / 255);
+    const length = width * (ESTUARY_LENGTH[0] + (ESTUARY_LENGTH[1] - ESTUARY_LENGTH[0]) * ((hash >>> 8) & 255) / 255);
+    // Seaward direction over the last stretch of channel (one bent vertex does not steer the mouth).
+    let k = m - 1;
+    while (k > 0 && Math.hypot(ex - p[2 * k], ey - p[2 * k + 1]) < Math.max(cell, length)) k--;
+    const ddx = ex - p[2 * k], ddy = ey - p[2 * k + 1], dd = Math.hypot(ddx, ddy);
+    if (dd > 1e-6) {
+      const dx = ddx / dd, dy = ddy / dd;
+      // Distance of each vertex from the end; at(t): point and unit normal at distance t up the course (t < 0: past its end).
+      const back = new Float64Array(m + 1);
+      for (let i = m - 1; i >= 0; i--) back[i] = back[i + 1] + Math.hypot(p[2 * i + 2] - p[2 * i], p[2 * i + 3] - p[2 * i + 1]);
+      const at = (t: number): [number, number, number, number] => {
+        if (t <= 0) return [ex - dx * t, ey - dy * t, -dy, dx];
+        let i = m; while (i > 1 && back[i - 1] < t) i--;
+        const sx = p[2 * i] - p[2 * i - 2], sy = p[2 * i + 1] - p[2 * i - 1], sl = Math.hypot(sx, sy) || 1, u = (t - back[i]) / sl;
+        return [p[2 * i] - sx * u, p[2 * i + 1] - sy * u, -sy / sl, sx / sl];
+      };
+      const top = Math.min(back[0], Math.max(2 * cell, 2 * length)), bottom = -1.5 * cell, step = Math.max(.5, Math.min(cell / 8, width / 2));
+      const half = .5 * flare * width;
+      // First land met walking up from the sea along a line offset by `side` from the axis (linear zero crossing).
+      const crossing = (side: number): number | undefined => {
+        let previous: number | undefined;
+        for (let t = bottom; t <= top; t += step) {
+          const [x, y, nx, ny] = at(t), v = surfaceHeight(h, x + nx * side, y + ny * side);
+          if (v > 0) return previous === undefined ? undefined : t - step * v / (v - previous);
+          previous = v;
+        }
+        return undefined;
+      };
+      const banks = [crossing(-half), crossing(half)].filter((v): v is number => v !== undefined);
+      const coast = banks.length ? (banks[0] + banks[banks.length - 1]) / 2 : crossing(0) ?? 0;
+      estuary = { coast, length, flare, dx, dy };
+    }
+  }
+  estuaryMemo.set(line, { hydro: water.hydro, estuary });
+  return estuary;
+}
+/** Width gain at distance t up the course from its last vertex: 1 above the funnel, the trumpet down to the coastline,
+ * then its continuation over the sea run. */
+function estuaryGain(e: Estuary, t: number): number {
+  const d = t - e.coast;
+  if (d >= e.length) return 1;
+  return 1 + (e.flare - 1) * Math.min(1 + ESTUARY_SEA, 1 - d / e.length) ** ESTUARY_PROFILE;
+}
+/** The drawn course opens into its estuary: the funnel is subdivided (smooth banks), and the course is cut at the end
+ * of its sea run, or carried on along its mouth's direction when it stops short of it (the engine cuts a course at its
+ * first sea cell, up to a cell from the drawn coastline: without the run a strip of land would close the mouth). */
+function estuaryGeometry(water: VectorWater, line: RiverLine, geo: HeadwaterGeometry): HeadwaterGeometry {
+  const p = geo.points, m = geo.widths.length - 1;
+  if (m < 1) return geo;
+  const e = estuaryOf(water, line, geo.widths[m]);
+  if (!e) return geo;
+  const back = new Float64Array(m + 1);
+  for (let i = m - 1; i >= 0; i--) back[i] = back[i + 1] + Math.hypot(p[2 * i + 2] - p[2 * i], p[2 * i + 3] - p[2 * i + 1]);
+  const start = e.coast + e.length, stop = e.coast - ESTUARY_SEA * e.length, step = e.length / 10;
+  const points: number[] = [], widths: number[] = [], level: number[] = [], kind: number[] = [];
+  const add = (x: number, y: number, w: number, lv: number, k: number, t: number): void => { points.push(x, y); widths.push(w * estuaryGain(e, t)); level.push(lv); kind.push(k); };
+  add(p[0], p[1], geo.widths[0], geo.level[0], geo.kind[0], back[0]);
+  let cut = false;
+  for (let i = 1; i <= m && !cut; i++) {
+    const t0 = back[i - 1], t1 = back[i], span = t0 - t1;
+    if (t1 >= start || span <= 1e-9) { add(p[2 * i], p[2 * i + 1], geo.widths[i], geo.level[i], geo.kind[i], t1); continue; }
+    if (t0 <= stop) break;
+    // The funnel stretch of this segment, cut where the sea run ends.
+    const end = Math.max(t1, stop), pieces = Math.max(1, Math.min(64, Math.ceil((t0 - end) / step)));
+    cut = end > t1;
+    for (let j = 1; j <= pieces; j++) {
+      const s = (t0 - end) / span * j / pieces, at = (a: number, b: number): number => a + (b - a) * s;
+      add(at(p[2 * i - 2], p[2 * i]), at(p[2 * i - 1], p[2 * i + 1]), at(geo.widths[i - 1], geo.widths[i]), at(geo.level[i - 1], geo.level[i]),
+        j === pieces && !cut ? geo.kind[i] : geo.kind[i - 1], t0 - span * s);
+    }
+  }
+  if (!cut && stop < 0) {
+    const x = p[2 * m], y = p[2 * m + 1], pieces = Math.max(1, Math.min(64, Math.ceil(-stop / step)));
+    for (let j = 1; j <= pieces; j++) {
+      const t = stop * j / pieces;
+      add(x - e.dx * t, y - e.dy * t, geo.widths[m], geo.level[m], geo.kind[m], t);
+    }
+  }
+  return { points, widths, level, kind, reach: geo.reach };
+}
+/** Hydraulic channel widths of a course, before its estuary. */
+function channelWidths(water: VectorWater, line: RiverLine, thinner: number): number[] {
+  return line.area.map((a, i) => channelWidth(a / (line.threads?.[i] ?? 1), water.widthScale ?? water.rivers?.widthScale ?? 1) * (thinner ? 0.65 : 1));
+}
+/** Hydraulic geometry at the course's own vertices, shared by both renderers and the towns: a course that ends in the
+ * sea opens into its estuary (riverGeometry draws the same funnel, subdivided and run on into the sea). */
+export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): number[] {
+  const widths = channelWidths(water, line, thinner), p = line.points, m = widths.length - 1;
+  const e = m >= 1 ? estuaryOf(water, line, widths[m]) : undefined;
+  if (e) {
+    let t = 0;
+    for (let i = m; i >= 0 && t < e.coast + e.length; i--) {
+      widths[i] *= estuaryGain(e, t);
+      if (i) t += Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
     }
   }
   return widths;

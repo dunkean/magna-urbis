@@ -412,8 +412,8 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
     return { height: { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }, water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel } : undefined, waterVisible: r.composition.networks.water.visible };
   },
   getSemantic: () => { const s = resolveBenchAppearance({}, 'view3d').composition.landuse; return { landuse: settlements.landuse, cultures: settlements.landCultures, ...s }; },
-  getViewSettings: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ground: r.city.ground as import('./city3d').City3dGround, plan: r.city.plan, colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement, trees3d: r.city.trees3d }; },
-  onViewSettingsChange: value => { if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground)); for (const key of ['plan', 'colors', 'exaggeration', 'refinement', 'trees3d'] as const) setBenchAppearanceField(`city.${key}`, value[key]); },
+  getViewSettings: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ground: r.city.ground as import('./city3d').City3dGround, plan: r.city.plan, colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement, trees3d: r.city.trees3d, treeDistance: r.city.treeDistance }; },
+  onViewSettingsChange: value => { if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground)); for (const key of ['plan', 'colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance'] as const) setBenchAppearanceField(`city.${key}`, value[key]); },
   getGroundSettings: ground => {
     if (!decor) return;
     return cityGroundSettings(resolveBenchAppearance({}, 'view3d'), ground, { seed: decor.meta.seed, climate: decorClimate(decor.meta),

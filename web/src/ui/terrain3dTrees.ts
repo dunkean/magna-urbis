@@ -2,7 +2,7 @@
  * (rust/bridge/terrainForest.ts, forestCrown). The placement below is a CPU port of forestCrown on the same
  * hash, lattices, field, occupation, bank and beach rasters, so each tree stands on its painted crown; the
  * painted crown under a tree turns into its ground shade (uForestTrees in FOREST_PRELUDE_GLSL). Only crowns
- * within TREE_FAR of the eye are built; trees grow out of their painted crown between TREE_FAR and TREE_NEAR,
+ * within the render distance of the eye are built; trees grow out of their painted crown between 2/3 of it and it,
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
 import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/forestRoom';
@@ -10,12 +10,37 @@ import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rus
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { FOREST_CLUMP_GLSL, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
-/** Horizontal distance from the eye (m): full trees within TREE_NEAR, none beyond TREE_FAR. Beyond, the painted
- * crowns are the forest's far level of detail. Kept short: a dense forest costs about π·TREE_FAR²/2 / 20 trees. */
-export const TREE_NEAR = 240, TREE_FAR = 360;
-/** Upper bound on drawn trees (a frame then costs TREE_VERTICES vertices per tree). Blocks are visited nearest
- * first, so the cap drops the farthest trees, never a hole near the eye. */
-export const TREE_MAX = 16000;
+/** Render distance of the near trees (m), adjustable: full trees within `near` (2/3 of it), none beyond `far`. Beyond,
+ * the painted crowns are the forest's far level of detail. */
+export const TREE_DISTANCE_MIN = 200, TREE_DISTANCE_MAX = 1500, TREE_DISTANCE_DEFAULT = 600;
+/** Reference of the budget: 16000 trees within 360 m. The cap grows with the area (distance squared) up to TREE_CEILING
+ * (a frame costs TREE_VERTICES vertices per tree); past it, trees farther than `full` are thinned, not dropped. */
+const TREE_REFERENCE_FAR = 360, TREE_REFERENCE_MAX = 16000, TREE_CEILING = 36000;
+export interface TreeLimits {
+  near: number; far: number;
+  /** Upper bound on drawn trees. Blocks are visited nearest first, so the cap drops the farthest trees, never a hole near the eye. */
+  max: number;
+  /** Beyond this distance a crown is kept with probability (full / distance)², so the far ring stays populated under the cap. */
+  full: number;
+}
+export const clampTreeDistance = (metres: number): number => Number.isFinite(metres) ? clamp(Math.round(metres), TREE_DISTANCE_MIN, TREE_DISTANCE_MAX) : TREE_DISTANCE_DEFAULT;
+export function treeLimits(distance: number): TreeLimits {
+  const far = clampTreeDistance(distance), scale = (far / TREE_REFERENCE_FAR) ** 2, uncapped = TREE_REFERENCE_MAX * scale;
+  let full = far;
+  if (uncapped > TREE_CEILING) {
+    // Expected count with the thinning, relative to the reference density: f(R) = R²(1 + 2 ln(far / R)), increasing up to far.
+    const target = TREE_CEILING / TREE_REFERENCE_MAX * TREE_REFERENCE_FAR ** 2;
+    let lo = 1, hi = far;
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (mid * mid * (1 + 2 * Math.log(far / mid)) < target) lo = mid; else hi = mid; }
+    full = lo;
+  }
+  return { near: far * 2 / 3, far, max: Math.round(Math.min(uncapped, TREE_CEILING)), full };
+}
+/** Soft upper bound: ~x for small x, never above `cap` (natural variation survives, no pile of identical giants). */
+const softCap = (x: number, cap: number): number => cap * Math.tanh(x / cap);
+/** Realistic sizes next to 3 m storeys (display only, no vertical exaggeration on either): a mature broadleaf stand
+ * of 20-30 m gives 15-22 m trees under 25 m with 4-10 m wide crowns, a conifer up to 30 m with a 5 m wide spire. */
+const TREE_HEIGHT_CAP = { broad: 25, needle: 30 }, TREE_RADIUS_CAP = { broad: 5, needle: 2.8 };
 /** World blocks between two partial installs of a stream that is still being built (nearest blocks first). */
 const PARTIAL_BLOCKS = 96;
 const SEGMENTS = 12, BANDS = 6;
@@ -35,7 +60,7 @@ export interface TreeInputs {
   water(x: number, y: number): number;
   height(x: number, y: number): number | undefined;
 }
-export interface TreeView { x: number; y: number; forwardX: number; forwardY: number }
+export interface TreeView { x: number; y: number; forwardX: number; forwardY: number; /** Render distance (m); the default when absent. */ distance?: number }
 
 const V2_ZONE_FOREST: readonly (readonly [number, number, number])[] = [
   [1, .12, .45], [.62, .30, .45], [1, .55, .55], [1, .92, .75], [1, .90, .85], [.05, .98, .95], [.22, .20, .50], [.12, 0, 1], [.42, 0, 1], [1, 0, 1], [.55, .08, .70]];
@@ -86,7 +111,7 @@ function patchValue(x: number, y: number, seed: number): number {
 interface Stand { cover: number; height: number; needle: number }
 interface Climate { trop: number; dry: number; humid: number; kind: [number, number, number]; kappaBase: number }
 
-/** Builds the instance stream of the crowns within TREE_FAR of the eye, in front of it. */
+/** Builds the instance stream of the crowns within the render distance of the eye, in front of it. */
 export function buildNearTrees(inputs: TreeInputs, view: TreeView): Float32Array {
   const work = buildNearTreesSteps(inputs, view);
   let step = work.next();
@@ -104,6 +129,7 @@ function wayRoomOf(ways: NonNullable<ForestOccupation['ways']>): ForestRoom {
 /** Same instance order and arithmetic, with one bounded world block per step. Blocks run nearest first; `partial`
  * receives the stream built so far every PARTIAL_BLOCKS blocks, so trees appear around the eye before the rest. */
 export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial?: (values: Float32Array) => void): Generator<void, Float32Array> {
+  const limits = treeLimits(view.distance ?? TREE_DISTANCE_DEFAULT), TREE_FAR = limits.far, TREE_MAX = limits.max, full2 = limits.full * limits.full;
   const { field, occupation: occ, seed } = inputs, T = inputs.climate.temperature, P = inputs.climate.precipitation;
   const humid = P / Math.max(20 * T + 280, 120), trop = sstep(13, 19, T - 6), dry = 1 - sstep(.8, 2, humid);
   const savanna = trop * sstep(.3, .6, dry);
@@ -192,7 +218,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         const h = forestHash(i, j, 877, seed), h2 = forestHash(i, j, 878, seed);
         const u = (i + .5 + (u8(h, 0) - .5) * .12) * 8, v = (j + .5 + (u8(h, 8) - .5) * .12) * 8;
         const x = ca * u - sa * v, y = sa * u + ca * v, dx = x - view.x, dy = y - view.y;
-        if (dx * dx + dy * dy > TREE_FAR * TREE_FAR || dx * view.forwardX + dy * view.forwardY < -48) continue;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > TREE_FAR * TREE_FAR || dx * view.forwardX + dy * view.forwardY < -48) continue;
+        if (d2 > full2 && u8(forestHash(i, j, 879, seed), 0) >= full2 / d2) continue;
         if (!inside(patch.poly, x, y) || patch.holes?.some(hole => inside(hole, x, y)) || occAt(x, y)?.[2] !== 4) continue;
         const di = clamp(Math.floor((x - detail!.x) / detail!.width * detail!.n), 0, detail!.n - 1), dj = clamp(Math.floor((y - detail!.y) / detail!.width * detail!.n), 0, detail!.n - 1);
         const d = (dj * detail!.n + di) * 4, radius = 2.3 + .4 * u8(h, 16), height = 6 + 1.2 * u8(h2, 16);
@@ -238,7 +266,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         // Each crown belongs to the block holding its centre.
         if (Math.floor(cx / block) !== bx || Math.floor(cy / block) !== by) continue;
         const ex = cx - view.x, ey = cy - view.y;
-        if (ex * ex + ey * ey > far2) continue;
+        const e2 = ex * ex + ey * ey;
+        if (e2 > far2) continue;
+        if (e2 > full2 && u8(forestHash(i, j, level * 2 + 61, crownSeed), 0) >= full2 / e2) continue;
         if (orchardRoom && !orchardRoom.keeps(cx, cy, 0)) continue;
         if (wayRoom && !wayRoom.keeps(cx, cy, .5)) continue;
         const centre = fieldAt(cx, cy); if (!centre) continue;
@@ -309,9 +339,10 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           const bare = [.31 * (.85 + .3 * tint), .27 * (.85 + .3 * tint), .23 * (.85 + .3 * tint)];
           c = [mix(c[0], bare[0], 1 - leaf), mix(c[1], bare[1], 1 - leaf), mix(c[2], bare[2], 1 - leaf)];
         }
-        // Same scale as the painted crown it stands on: its centre, its height and its width, up to the largest real
-        // sizes (a 28 m broadleaf with a 15 m crown, a 32 m spire). Stand crowns widen a little so the canopy closes.
-        const tree = Math.min(th, isNeedle ? 32 : 28), width = Math.min(r * (beyond > 0 ? 1 : 1.12), isNeedle ? 3.6 : 7.5);
+        // Same centre as the painted crown it stands on, at real sizes next to the buildings (3 m storeys): heights and
+        // radii saturate smoothly below TREE_HEIGHT_CAP / TREE_RADIUS_CAP. Stand crowns widen a little so the canopy closes.
+        const kindCap = isNeedle ? 'needle' : 'broad';
+        const tree = softCap(th, TREE_HEIGHT_CAP[kindCap]), width = softCap(r * (beyond > 0 ? 1 : 1.12), TREE_RADIUS_CAP[kindCap]);
         // Keep the whole modelled forest crown off planted parcels, including sub-texel boundary slivers.
         if (orchardRoom && open > -1.5 * radius) {
           let overlaps = false;

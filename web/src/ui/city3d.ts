@@ -126,7 +126,7 @@ export interface City3dOptions {
   details?: City3dDetailService;
 }
 export type City3dGround = CityGroundMode;
-export interface City3dViewSettings { ground: City3dGround; plan: boolean; colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise'; trees3d: boolean }
+export interface City3dViewSettings { ground: City3dGround; plan: boolean; colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise'; trees3d: boolean; /** Render distance of the modelled trees (m). */ treeDistance: number }
 export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array }; waterVisible?: boolean }
 export interface City3dWaterDisplay {
   texture: HTMLCanvasElement; paths?: Path2D; ink?: { fill: string; stroke: string };
@@ -220,6 +220,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       <label title="Rues, îlots et parcelles dessinés sur le sol en vue rapprochée"><input type="checkbox" data-plan checked>Plan</label>
       <label title="Textures des toits, murs, rues et places (bâtiments et constructions seulement)"><input type="checkbox" data-textured>Textures</label>
       <label title="Arbres modélisés près de la caméra (sol satellite)"><input type="checkbox" data-trees>Arbres 3D</label>
+      <label title="Distance d'affichage des arbres modélisés (m)" data-tree-distance-label hidden>Distance des arbres <input type="range" data-tree-distance min="200" max="1500" step="100" value="600"></label>
       <label>Couleurs <select data-colors><option value="materials">Matériaux</option><option value="uses">Usages</option></select></label>
       <label title="Exagération du relief">Relief <input type="range" data-relief min="1" max="5" step="0.5" value="1"></label>
       <button type="button" data-north title="Nord en haut">N</button>
@@ -259,6 +260,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     label('[data-plan]', ['Plan','Plan','平面','Plano','Planta'], ['Rues, îlots et parcelles dessinés sur le sol en vue rapprochée','Streets, blocks and parcels drawn on the ground in close view','近景中绘制在地面的街道、街区与地块','Calles, manzanas y parcelas dibujadas en el suelo de cerca','Ruas, quadras e parcelas desenhadas no solo de perto']);
     label('[data-textured]', ['Textures','Textures','纹理','Texturas','Texturas'], ['Textures des toits, murs, rues et places (bâtiments et constructions seulement)','Roof, wall, street and square textures (buildings and structures only)','屋顶、墙壁、街道和广场纹理（仅建筑与构筑物）','Texturas de tejados, muros, calles y plazas (solo edificios y construcciones)','Texturas de telhados, paredes, ruas e praças (somente edifícios e construções)']);
     label('[data-trees]', ['Arbres 3D','3D trees','三维树木','Árboles 3D','Árvores 3D'], ['Arbres modélisés près de la caméra (sol satellite)','Modelled trees near the camera (satellite ground)','相机附近的建模树木（卫星地面）','Árboles modelados cerca de la cámara (suelo satélite)','Árvores modeladas perto da câmera (solo satélite)']);
+    label('[data-tree-distance]', ['Distance des arbres','Tree distance','树木距离','Distancia de árboles','Distância das árvores'], ["Distance d'affichage des arbres modélisés (m)",'Render distance of the modelled trees (m)','建模树木的显示距离（米）','Distancia de dibujo de los árboles modelados (m)','Distância de exibição das árvores modeladas (m)']);
     label('[data-colors]', ['Couleurs','Colours','颜色','Colores','Cores']); label('[data-relief]', ['Relief','Terrain','地形','Relieve','Relevo'], ['Exagération du relief','Terrain exaggeration','地形夸张','Exageración del relieve','Exagero do relevo']);
     $<HTMLOptionElement>('[data-ground] option[value="map"]').textContent = urbanText(['Carte pré-rendue','Pre-rendered map','预渲染地图','Mapa prerenderizado','Mapa pré-renderizado']);
     $<HTMLOptionElement>('[data-ground] option[value="render"]').textContent = urbanText(['Rendu 3D (sol procédural)','3D render (procedural ground)','三维渲染（程序化地面）','Render 3D (suelo procedural)','Renderização 3D (solo procedural)']);
@@ -278,7 +280,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   let tileRoadsOf: readonly Street[] | undefined;
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true, refinement: City3dViewSettings['refinement'] = 'noise';
   /** Modelled near trees: off by default, the view opens on the painted canopy and builds them on the first switch-on. */
-  let nearTrees = false;
+  let nearTrees = false, treeDistance = 600;
   let groundKey = '', planKey = '', proceduralGround = false, softwareMaterial = false;
   let waterDisplay: City3dWaterDisplay | undefined, retainedWater: City3dRetainedWater | undefined;
   /** Rivers come from the vector banks: the raster keeps only the sea and lakes (its river cells are 30 m blocks). */
@@ -963,7 +965,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     canvas.focus({ preventScroll: true });
   };
   function changedView(): void {
-    options.onViewSettingsChange?.({ ground, plan: planOverlay, colors, exaggeration: terrain?.getCamera().exaggeration ?? Number($<HTMLInputElement>('[data-relief]').value), refinement, trees3d: nearTrees });
+    options.onViewSettingsChange?.({ ground, plan: planOverlay, colors, exaggeration: terrain?.getCamera().exaggeration ?? Number($<HTMLInputElement>('[data-relief]').value), refinement, trees3d: nearTrees, treeDistance });
   }
   function syncView(): void {
     const saved = options.getViewSettings?.(); if (!saved) return;
@@ -972,7 +974,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (saved.colors) colors = saved.colors;
     if (saved.refinement) refinement = saved.refinement;
     if (saved.trees3d !== undefined) nearTrees = saved.trees3d;
-    $<HTMLInputElement>('[data-trees]').checked = nearTrees; terrain?.setNearTrees(nearTrees);
+    if (saved.treeDistance !== undefined) treeDistance = Math.max(200, Math.min(1500, saved.treeDistance));
+    $<HTMLInputElement>('[data-trees]').checked = nearTrees; $<HTMLInputElement>('[data-tree-distance]').value = String(treeDistance); $<HTMLElement>('[data-tree-distance-label]').hidden = !nearTrees;
+    terrain?.setTreeDistance(treeDistance); terrain?.setNearTrees(nearTrees);
     $<HTMLSelectElement>('[data-ground]').value = ground; $<HTMLInputElement>('[data-plan]').checked = planOverlay;
     $<HTMLSelectElement>('[data-colors]').value = colors;
     if (options.materialGrounds) $<HTMLSelectElement>('[data-refinement]').value = refinement;
@@ -998,7 +1002,9 @@ export function mountCity3d(options: City3dOptions): City3d {
   };
   $<HTMLInputElement>('[data-plan]').onchange = event => { planOverlay = (event.target as HTMLInputElement).checked; changedView(); terrain?.invalidateTiles(); };
   // Hide or show only: the tree stream is built on the first switch-on, nothing else of the scene is rebuilt.
-  $<HTMLInputElement>('[data-trees]').onchange = event => { nearTrees = (event.target as HTMLInputElement).checked; terrain?.setNearTrees(nearTrees); changedView(); };
+  $<HTMLInputElement>('[data-trees]').onchange = event => { nearTrees = (event.target as HTMLInputElement).checked; $<HTMLElement>('[data-tree-distance-label]').hidden = !nearTrees; terrain?.setNearTrees(nearTrees); changedView(); };
+  // The distance changes the tree layer only: the stream is rebuilt around the eye, nothing else of the scene.
+  $<HTMLInputElement>('[data-tree-distance]').onchange = event => { treeDistance = Number((event.target as HTMLInputElement).value); terrain?.setTreeDistance(treeDistance); changedView(); };
   const texturedBox = $<HTMLInputElement>('[data-textured]');
   texturedBox.closest('label')!.hidden = !options.setTextured;
   texturedBox.onchange = () => options.setTextured?.(texturedBox.checked);
