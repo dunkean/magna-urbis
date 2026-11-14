@@ -1,4 +1,4 @@
-/** Authored CPU interoperability fixtures, not fresh Infinite Generation evidence. */
+/** Authored CPU interoperability fixtures, not fresh InfiniteDiffusion evidence. */
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {parseArgs} from 'node:util';

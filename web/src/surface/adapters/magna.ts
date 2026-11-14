@@ -30,7 +30,7 @@ export function createInfiniteTerrainProvider(settings: TerrainSettings,
     assertNotAborted(request.signal);
     const b = request.bounds, extent = b.maxX - b.minX;
     if (![b.minX, b.minZ, b.maxX, b.maxZ, request.spacingM].every(Number.isFinite) || !(extent > 0) || Math.abs(extent - (b.maxZ - b.minZ)) > 1e-6 || !(request.spacingM > 0))
-      throw new Error('Infinite Generation bridge requires a square region and positive spacing.');
+      throw new Error('InfiniteDiffusion bridge requires a square region and positive spacing.');
     const resolution = Math.max(64, Math.min(1024, Math.ceil(extent / request.spacingM)));
     const reply = await sample({ x: b.minX, y: b.minZ, extent, resolution }, structuredClone(retained), request.signal);
     assertNotAborted(request.signal);

@@ -1,4 +1,4 @@
-/** Fresh Infinite Generation proof. Run with node --import tsx; no source substitution.
+/** Fresh InfiniteDiffusion proof. Run with node --import tsx; no source substitution.
  * Optional native E2E: --decoder-model original --viewer-godot C:/tools/Godot.exe
  * --viewer-assets C:/data/resolved.json --viewer-launcher ROOT/web/scripts/surface_viewer.mjs
  * --geology-scenario tilted-strata-v1 opts into an explicit fixed world-space scenario.

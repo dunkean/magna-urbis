@@ -3,7 +3,7 @@ import { assertNotAborted, type Bounds, type TerrainGrid } from './model';
 export interface TerrainRequest {
   bounds: Bounds; spacingM: number; worldVersion: string; signal?: AbortSignal;
 }
-/** Infinite Generation adapter implements this contract; interpolation is never a new source LOD. */
+/** InfiniteDiffusion adapter implements this contract; interpolation is never a new source LOD. */
 export interface TerrainProvider {
   readonly id: string;
   request(request: TerrainRequest): Promise<TerrainGrid>;

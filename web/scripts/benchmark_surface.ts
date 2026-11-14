@@ -12,7 +12,7 @@ const heights = Float32Array.from({ length: n * n }, (_, i) => 300 + (i % n) * .
 const start = performance.now(), memoryStart = process.memoryUsage();
 const world = compileSurfaceWorld({ seed: 42, terrain: { width: n, height: n, originX: 0, originZ: 0,
   spacingM: 40000 / n, heights, source: { id: 'performance-probe-not-generated-geography', version: '1', sourceLOD: 0,
-    nativeSpacingM: 40000 / n, provenance: 'Explicitly synthetic performance probe; not evidence of Infinite Generation quality' } } });
+    nativeSpacingM: 40000 / n, provenance: 'Explicitly synthetic performance probe; not evidence of InfiniteDiffusion quality' } } });
 const compiled = performance.now(), memoryCompiled = process.memoryUsage();
 const binary = encodeSurfaceBinary({ format: 'magna-surface-packet', version: 1, world });
 const encoded = performance.now(), copy = decodeSurfaceBinary<{ world: SurfaceWorld }>(binary).world;

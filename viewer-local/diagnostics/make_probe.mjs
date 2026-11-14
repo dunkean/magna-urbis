@@ -14,7 +14,7 @@ for(let z=0;z<n;z++)for(let x=0;x<n;x++){
 const materials=[{family:'bedrock',colorLinear:[0.31,0.29,0.25]},{family:'mineral-plains',colorLinear:[0.25,0.28,0.12]},{family:'vegetation',colorLinear:[0.18,0.23,0.08]}].map((m,i)=>({...m,id:`probe-${i}`,roughness:0.85,physicalExtentMetres:4}));
 let state=177;const random=()=>{state=Math.imul(state,1664525)+1013904223|0;return(state>>>0)/4294967296;};
 const candidates=Array.from({length:100000},(_,i)=>{const x=random()*span,z=random()*span;return{stableId:`synthetic-probe-${i}`,family:i%5===0?'boulder':i%3===0?'grass':'tree',x,y:120+350*Math.sin(x/6000)*Math.sin(z/8000)+0.002*x,z,size:2+random()*12,orientation:random()*6.28,rank:random()};});
-const world={schemaVersion:1,id:'SYNTHETIC-ADAPTER-PROBE',units:'metres',crs:'local-xz',seed:177,bounds:{minX:0,minZ:0,maxX:span,maxZ:span},terrain:{width:n,height:n,originX:0,originZ:0,spacingM:spacing,heights,source:{id:'synthetic-adapter-probe-NOT-infinite-generation',version:'1',sourceLOD:0,nativeSpacingM:spacing}},fields,materials,diagnostics:{warnings:['Synthetic diagnostic fixture; not a real-terrain acceptance test.']}};
+const world={schemaVersion:1,id:'SYNTHETIC-ADAPTER-PROBE',units:'metres',crs:'local-xz',seed:177,bounds:{minX:0,minZ:0,maxX:span,maxZ:span},terrain:{width:n,height:n,originX:0,originZ:0,spacingM:spacing,heights,source:{id:'synthetic-adapter-probe-NOT-infinite-diffusion',version:'1',sourceLOD:0,nativeSpacingM:spacing}},fields,materials,diagnostics:{warnings:['Synthetic diagnostic fixture; not a real-terrain acceptance test.']}};
 const path=process.argv[2]??new URL('../captures/probe.json',import.meta.url);
 mkdirSync(new URL('../captures/',import.meta.url),{recursive:true});
 writeFileSync(path,JSON.stringify({world,candidates}));

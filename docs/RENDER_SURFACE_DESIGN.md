@@ -8,7 +8,7 @@ This document describes the initial design. The state of the code, evidence actu
 
 The first vertical slice targets the **2D and 3D role-playing maps and plans** produced by Magna Urbis: chosen styles, orthographic projection, perspective views, and usable exports. It is tested in a separate local application over an area of approximately **40 × 40 km**, observable down to **1–5 cm per pixel**, with an experimental extension to **5 mm/px**. This separation helps qualify the engine; it does not determine its final role. Web integration and transfer to Neural Earth follow validation of this complete slice.
 
-**Infinite Generation remains the reference for producing heightfields and their detail on demand.** The 40 × 40 km area defines the initial rendering validation window, not a generator limit or a requirement to freeze the world into a heightmap. Godot and Terrain3D are initially evaluated as consumers of that terrain. An additional or alternative height source remains possible if it provides a demonstrated benefit while preserving the desired generation, continuity, and multi-scale refinement capabilities.
+**InfiniteDiffusion remains the reference for producing heightfields and their detail on demand.** The 40 × 40 km area defines the initial rendering validation window, not a generator limit or a requirement to freeze the world into a heightmap. Godot and Terrain3D are initially evaluated as consumers of that terrain. An additional or alternative height source remains possible if it provides a demonstrated benefit while preserving the desired generation, continuity, and multi-scale refinement capabilities.
 
 ## 1. Objective and proposed decisions
 
@@ -25,11 +25,11 @@ The proposed design decisions are:
 5. **Start locally.** First option to evaluate: Godot + Terrain3D, with a dedicated surface shader and independent data compiler. This recommendation is an engineering hypothesis to validate at milestone J0, not a performance result already demonstrated.
 6. **Finish a vertical slice before expanding the catalog.** A rocky landscape with scree, river, grassland, and forest, followed by a coast and a settled area. The hundreds of catalog variants are a target for progressive coverage.
 
-The choice of terrain provider and renderer remain independent: adopting Godot does not require replacing Infinite Generation, and testing another generator does not require changing the renderer.
+The choice of terrain provider and renderer remain independent: adopting Godot does not require replacing InfiniteDiffusion, and testing another generator does not require changing the renderer.
 
 **Magna Urbis remains a city generator and mapping tool.** Its purpose is a map and city with a chosen style and a richer surface representation; the viewer does not turn it into a game application. Palettes, ink, road hierarchy, silhouettes, native materials, labels, and final composition belong to the product. Physically based aerial rendering is one presentation among others. Existing cartographic styles remain reference outputs, evaluated alongside the close ground view.
 
-Godot/Terrain3D is a **candidate for the main rendering engine**, evaluated on these mapping uses as well as on the aerial view. Adoption and scope will be decided from results: quality of styles and plans, orthographic rendering, exports, city integration, navigation, and maintenance cost. The canonical model, recipes, presentation choices, and interchange formats remain independent of the engine. The current local implementation is a qualification prototype; existing outputs remain available during evaluation. Any extension to the Web or Neural Earth consumes the same descriptions. The save format and the Infinite Generation provider remain decisions separate from the renderer choice.
+Godot/Terrain3D is a **candidate for the main rendering engine**, evaluated on these mapping uses as well as on the aerial view. Adoption and scope will be decided from results: quality of styles and plans, orthographic rendering, exports, city integration, navigation, and maintenance cost. The canonical model, recipes, presentation choices, and interchange formats remain independent of the engine. The current local implementation is a qualification prototype; existing outputs remain available during evaluation. Any extension to the Web or Neural Earth consumes the same descriptions. The save format and the InfiniteDiffusion provider remain decisions separate from the renderer choice.
 
 The first delivery must show differences in terrain character from the regional view, then reveal corresponding structures when zooming in. A beautiful isolated square of gravel does not validate this product.
 
@@ -99,7 +99,7 @@ Required changes: one physical description feeds map, perspective, and capture; 
 
 ```mermaid
 flowchart TD
-    A[Infinite Generation heightfields<br/>and Magna Urbis hydrology] --> C[Local context compilation]
+    A[InfiniteDiffusion heightfields<br/>and Magna Urbis hydrology] --> C[Local context compilation]
     B[Regional climate and bedrock<br/>enriched preset or Neural Earth import] --> C
     C --> D[Geomorphology and process domains]
     D --> E[Substrate, deposits, drainage, and soils]
@@ -390,17 +390,17 @@ Project references: [Godot](https://github.com/godotengine/godot), [Terrain3D](h
 
 Terrain3D is clipmap- and region-based terrain with a replaceable shader. Its [documentation](https://terrain3d.readthedocs.io/en/stable/docs/introduction.html) states a limit of 32 × 32 regions and a maximum extent of 65.536 km per side at base spacing. This geometrically covers the 40 km requirement, but does not make a 1 m grid loaded everywhere reasonable. Its [base shader](https://terrain3d.readthedocs.io/en/stable/docs/shader_design.html) supplies height; contextual composition remains to be developed.
 
-**Generation capability checked on October 23, 2026.** Terrain3D can import external heightmaps and offers procedural background noise for areas without regions. Its [heightmap documentation, including the development version](https://terrain3d.readthedocs.io/en/latest/docs/heightmaps.html), points to external generators; the [integrated generation issue #101](https://github.com/TokisanGames/Terrain3D/issues/101) remains open. The maintainer distinguishes the existing infinite world noise from more complete heightmap generation to be integrated. These features therefore do not, by themselves, demonstrate an equivalent alternative to Infinite Generation's terrain and refinement.
+**Generation capability checked on October 23, 2026.** Terrain3D can import external heightmaps and offers procedural background noise for areas without regions. Its [heightmap documentation, including the development version](https://terrain3d.readthedocs.io/en/latest/docs/heightmaps.html), points to external generators; the [integrated generation issue #101](https://github.com/TokisanGames/Terrain3D/issues/101) remains open. The maintainer distinguishes the existing infinite world noise from more complete heightmap generation to be integrated. These features therefore do not, by themselves, demonstrate an equivalent alternative to InfiniteDiffusion's terrain and refinement.
 
 Distinguish three configurations:
 
-- **Reference:** Infinite Generation supplies heightfields; Terrain3D represents them and receives updates.
+- **Reference:** InfiniteDiffusion supplies heightfields; Terrain3D represents them and receives updates.
 - **Complement:** Terrain3D or another tool adds an explicitly bounded local residual. This does not silently replace detail requested from the generator; its effects on water, supports, and hydrology are addressed as in §8.2.
 - **Alternative:** another terrain provider is compared on geomorphological diversity, quality at different scales, consistency between levels/neighbors, hydrology, determinism, latency, and memory. Adoption is a separate decision based on this comparison; a large noise terrain is not enough to establish equivalence.
 
 Terrain3D region limits apply to the rendering adapter. They must not become limits of the existing generator. Test loading, replacement, and refinement of data in the active window; if the adapter requires entirely prebaked terrain or blocks these uses, replace that display component. The initial 40 km objective does not yet require planetary navigation, but must not remove terrain-provider capabilities.
 
-J0 must decide using measurements: input from Infinite Generation, on-demand loading and refinement of a real 40 km map, centimeter zoom at center and edges, camera stability, stochastic PBR shader, water, and 100,000 object candidates distributed in the world with selection of only visible ones. Check that a new source level integrates without being replaced by mere interpolation of the previous level. Record the exact engine/addon version and tested GPU backend. If a structural failure occurs, choose the separate WebGPU viewer; do not maintain two complete new renderers simultaneously.
+J0 must decide using measurements: input from InfiniteDiffusion, on-demand loading and refinement of a real 40 km map, centimeter zoom at center and edges, camera stability, stochastic PBR shader, water, and 100,000 object candidates distributed in the world with selection of only visible ones. Check that a new source level integrates without being replaced by mere interpolation of the previous level. Record the exact engine/addon version and tested GPU backend. If a structural failure occurs, choose the separate WebGPU viewer; do not maintain two complete new renderers simultaneously.
 
 ### 9.2. Avoiding the uniform fine-grid trap
 
@@ -473,11 +473,11 @@ For radiance, compare at constant lighting/exposure and compatible pixel size; a
 | ID | Priority / size | Work | Dependencies | Deliverable and acceptance |
 | --- | --- | --- | --- | --- |
 | B01 | P0 / S | pin examined sources, choose real terrains, and export configurations | none | snapshot and scene manifest without modifying shared branches |
-| B02 | P0 / M | adapt Infinite Generation heightfields to a neutral on-demand provider; also export water, network, land use, and buildings for benchmarks | B01 | extent/resolution requests, source levels, cancellation, and reproducible import; units and coordinate systems checked |
+| B02 | P0 / M | adapt InfiniteDiffusion heightfields to a neutral on-demand provider; also export water, network, land use, and buildings for benchmarks | B01 | extent/resolution requests, source levels, cancellation, and reproducible import; units and coordinate systems checked |
 | B03 | P0 / M | evaluate Godot/Terrain3D over 40 km, generator updates, shader, precision, and close navigation; qualify any alternative source separately | B02 | written engine choice, genuine source refinement retained, 40 km → 1 cm/px video; no phase drift at edges |
 | B04 | P0 / M | integrate one real stochastic PBR material and a limited visible population | B03 | same scene with ground, water, shadows, and instances; time/memory instrumented |
 
-**Exit decision:** qualify Godot/Terrain3D as the RPG 2D/3D map/plan renderer if Infinite Generation input, updates, addressing, styles, orthographic projection, exports, and shader cost are controlled. Its role may then become primary. If a structural obstacle remains, port the same slice to the WebGPU candidate before continuing. Any alternative generation source needs its own comparison; it does not follow from the engine choice. General UI migration must follow this decision and its measurements.
+**Exit decision:** qualify Godot/Terrain3D as the RPG 2D/3D map/plan renderer if InfiniteDiffusion input, updates, addressing, styles, orthographic projection, exports, and shader cost are controlled. Its role may then become primary. If a structural obstacle remains, port the same slice to the WebGPU candidate before continuing. Any alternative generation source needs its own comparison; it does not follow from the engine choice. General UI migration must follow this decision and its measurements.
 
 ### 11.2. J1 — Build the context explaining materials
 
@@ -555,7 +555,7 @@ Use the Rust core for available terrain processing. Initial analysis prototypes 
 | Question | Initial choice | Evidence expected to confirm or change it |
 | --- | --- | --- |
 | Does the local engine actually accelerate delivery? | Godot/Terrain3D | J0: import, precision, shader, objects, water, and port cost |
-| Which terrain provider? | Infinite Generation as reference; complements and alternatives allowed | preserve on-demand input; compare any alternative on terrain, multi-scale behavior, hydrology, and cost, separately from renderer |
+| Which terrain provider? | InfiniteDiffusion as reference; complements and alternatives allowed | preserve on-demand input; compare any alternative on terrain, multi-scale behavior, hydrology, and cost, separately from renderer |
 | What context resolution is useful? | coarse regional + ~10–40 m local fields depending on source + fine geometry | J1: diagnostic stability and readable boundaries without excessive memory |
 | Is centimeter geometry necessary? | materials/objects first; small patches if silhouettes require them | J2/J3: matched oblique views and GPU profile |
 | Is virtual texturing necessary? | bounded simple cache first | residency and stutters measured after real material diversity |

@@ -1,6 +1,6 @@
 # Neural model release workflow
 
-The first public **Infinite Generation distillé** release is
+The first public **Terrain Diffusion distillé** release is
 [`dunkean/neural-earth-distilled`](https://huggingface.co/dunkean/neural-earth-distilled),
 at commit `b1782a3f80f5001de5ac701c1ff37128f128b9d7`, tagged `v0.1.0`. The desktop
 catalogue uses that immutable revision by default. All eight inference checkpoints

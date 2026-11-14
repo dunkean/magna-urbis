@@ -58,7 +58,7 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
           reply(response, 400, { error: 'Expected finite region x/y/extent and integer resolution 4..1024' }); return;
         }
         const client = body.sessionId ?? [...clients.keys()].at(-1);
-        if (!clients.has(client)) { reply(response, 503, { error: 'Open Terrain Bench in this server to connect Infinite Generation' }); return; }
+        if (!clients.has(client)) { reply(response, 503, { error: 'Open Terrain Bench in this server to connect InfiniteDiffusion' }); return; }
         const id = randomUUID(), timer = setTimeout(() => cancel(id, 'Surface generation timed out', 504), timeoutMs);
         pending.set(id, { client, response, timer });
         response.on('close', () => { if (!response.writableEnded) cancel(id, 'Viewer cancelled generation'); });

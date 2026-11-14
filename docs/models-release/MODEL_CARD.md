@@ -7,13 +7,13 @@ tags:
 - distillation
 - pytorch
 - magna-urbis
-- infinite-generation
+- terrain-diffusion
 - neural-earth
 ---
 
-# Neural Earth — distilled Infinite Generation
+# Neural Earth — distilled Terrain Diffusion
 
-Neural Earth — distilled Infinite Generation (*Infinite Generation distillé*) is a collection of eight PyTorch inference checkpoints from [Neural Earth](https://github.com/dunkean/neural-earth), distilled from the [Terrain Diffusion 30m](https://huggingface.co/xandergos/terrain-diffusion-30m) teacher's terrain-generation pipeline. These learned student components are distinct from the original teacher checkpoints; they are not a renamed copy of the original model. They run within the Neural Earth and Magna Urbis **Python** runtime, not as a standalone Diffusers pipeline or in the browser WASM model format. The checkpoints contain selected inference weights rather than optimizer states.
+Neural Earth — distilled Terrain Diffusion (*Terrain Diffusion distillé*) is a collection of eight PyTorch inference checkpoints from [Neural Earth](https://github.com/dunkean/neural-earth), distilled from the [Terrain Diffusion 30m](https://huggingface.co/xandergos/terrain-diffusion-30m) teacher's terrain-generation pipeline. These learned student components are distinct from the original teacher checkpoints; they are not a renamed copy of the original model. They run within the Neural Earth and Magna Urbis **Python** runtime, not as a standalone Diffusers pipeline or in the browser WASM model format. The checkpoints contain selected inference weights rather than optimizer states.
 
 The upstream Neural Earth revision is [`919550498b3fd7c9d4c53e575f6a2d5475f9be2d`](https://github.com/dunkean/neural-earth/tree/919550498b3fd7c9d4c53e575f6a2d5475f9be2d); the teacher revision is [`9ef8030cb805b433b98ec25c5dddefbac07a9e26`](https://huggingface.co/xandergos/terrain-diffusion-30m/tree/9ef8030cb805b433b98ec25c5dddefbac07a9e26). Individual source revisions, model configuration, selected raw or EMA weights and training steps are recorded in `model-inventory.json`.
 

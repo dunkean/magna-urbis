@@ -83,7 +83,7 @@ Rust natif et navigateur : ils ne sont pas automatiquement interchangeables.
 - [x] Préparer une première model card avec les origines, licences et limites.
 - [ ] Compléter la model card avec les exemples de chargement et le matériel
   réellement essayé.
-- [ ] Distinguer les modèles continus Infinite Generation du modèle résiduel à
+- [ ] Distinguer les modèles continus Terrain Diffusion du modèle résiduel à
   fenêtre finie : ce dernier ne remplace pas la base originale dans le pipeline
   continu. Ne proposer au téléchargement comme utilisables que les combinaisons
   prises en charge par le moteur sélectionné.

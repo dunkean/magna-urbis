@@ -5,7 +5,7 @@
 the web renderer and Godot. The same resulting SurfaceWorld serves the mapper,
 city editor, existing styles and optional native adapter.
 
-`options.terrain` preserves a primary Infinite Generation heightfield and source
+`options.terrain` preserves a primary InfiniteDiffusion heightfield and source
 identity unchanged. Regional climate/geology are sampled in that terrain's
 explicit shared frame. Fine heights are never invented from climate or replaced
 with noise. The caller must reproject external packages before import; the current
