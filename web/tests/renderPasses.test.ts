@@ -20,10 +20,11 @@ describe('render passes', () => {
     expect(Object.keys(PASSES).sort()).toEqual([...PASS_ORDER].sort());
     for (const spec of Object.values(PASSES)) expect(spec.inputs.length).toBeGreaterThan(0);
   });
-  it('a season change repaints the vector map, a lighting change only the terrain look', async () => {
+  // The season also sets the water regime (dry beds, ice), so the water pass follows it.
+  it('a season change repaints the vector map and the water, a lighting change only the terrain look', async () => {
     const withEffects = (change: (c: CompositionRecipe) => void): AppearanceInput => { const composition = presetComposition('parchment'); change(composition); return { ...v2, composition }; };
     const plain = withEffects(() => undefined);
-    expect(await reruns(plain, withEffects(c => { c.effects.season = .9; }))).toEqual(['terrainLook', 'cartography']);
+    expect(await reruns(plain, withEffects(c => { c.effects.season = .9; }))).toEqual(['terrainLook', 'water', 'cartography']);
     expect(await reruns(plain, withEffects(c => { c.effects.lighting.azimuth = 200; }))).toEqual(['terrainLook']);
   });
   it('water colours re-run the look (shared uniform) and the water pass, never the upload, forest or cartography', async () => {
