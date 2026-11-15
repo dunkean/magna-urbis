@@ -129,14 +129,17 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
         .collect();
     // Consolidated yards can reach a different street from their house. Only
     // retained contacts justify fringe frontage; urban properties keep their yards.
-    let lots = part.parcels.iter().filter(|p| !empty.get(p.block).copied().unwrap_or(false)).filter(|p| roles.get(p.id.as_str()).is_some_and(|role|street_use(p,role,layout,&walls))
-        || urban(p,layout,&walls) && p.access.as_ref().is_some_and(|a|a.kind == "attached")
-            && p.parent_ids.iter().any(|id|roles.get(id.as_str()).is_some_and(|role|!role.starts_with("open.")))).flat_map(|p| {
+    // Pure per lot: in parallel, flattened in lot order.
+    let lots = super::par::map(&part.parcels, |_, p| -> Vec<Shape> {
+        let kept = !empty.get(p.block).copied().unwrap_or(false) && (roles.get(p.id.as_str()).is_some_and(|role|street_use(p,role,layout,&walls))
+            || urban(p,layout,&walls) && p.access.as_ref().is_some_and(|a|a.kind == "attached")
+                && p.parent_ids.iter().any(|id|roles.get(id.as_str()).is_some_and(|role|!role.starts_with("open."))));
+        if !kept { return vec![]; }
         if urban(p,layout,&walls) && !config.street_frontage { return vec![p.shape.clone()]; }
         let fronts: Vec<_> = p.contacts.iter().map(|c| [c.a,c.b]).chain(p.front.filter(|_| p.contacts.is_empty())).collect();
         if fronts.is_empty() { vec![p.envelope.as_ref().unwrap_or(&p.shape).clone()] }
         else { fronts.into_iter().map(|f| Shape { outer:f.to_vec(), holes:vec![] }).collect() }
-    }).collect();
+    }).into_iter().flatten().collect();
     // The lots that carry a building (any role but open land): what a town circuit must hold.
     let built_lots = part.parcels.iter().filter(|p| used(p) && !empty.get(p.block).copied().unwrap_or(false)).map(|p| p.shape.clone()).collect();
     laps.lap("blocks+lots");
@@ -230,7 +233,8 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
     let audited = |role: &str| frontage_road(role) && !(door_mode && matches!(role, "outbound" | "peripheral"))
         || strict && matches!(role,"track"|"gate-street"|"processional");
     let blocks = &layout.blocks;
-    let keep: Vec<bool> = layout.streets.iter().map(|s| {
+    // Pure per street: in parallel, in street order.
+    let keep: Vec<bool> = super::par::map(&layout.streets, |_, s| {
         if !interior(&s.role) || s.path.len() < 2 {
             return true;
         }
@@ -239,7 +243,7 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
             y: (s.path[0].y + s.path[s.path.len() - 1].y) * 0.5,
         };
         !open_boxes.iter().any(|&(i, b)| m.x >= b.0 && m.x <= b.2 && m.y >= b.1 && m.y <= b.3 && g::contains(&blocks[i].shape, m))
-    }).collect();
+    });
     // Fronts follow their street's new index.
     let remap = |d: &[Vec<[Point; 2]>]| -> Fronts { (0..keep.len()).filter(|&i| keep[i]).map(|i| d.get(i).cloned().unwrap_or_default()).collect() };
     let fronts: Option<(Fronts, Fronts)> = doors.map(|(d, s)| (remap(d), remap(s)));
@@ -281,7 +285,7 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
     const FRONT_CELL: f64 = 32.0;
     let front_cell = |x: f64, y: f64| ((x / FRONT_CELL).floor() as i64, (y / FRONT_CELL).floor() as i64);
     let index = |list: &Fronts| -> Vec<HashMap<(i64, i64), Vec<usize>>> {
-        list.iter().map(|fronts| {
+        super::par::map(list, |_, fronts| {
             let mut cells: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
             for (k, f) in fronts.iter().enumerate() {
                 let (x0, y0) = front_cell(f[0].x.min(f[1].x), f[0].y.min(f[1].y));
@@ -289,17 +293,13 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
                 for cx in x0..=x1 { for cy in y0..=y1 { cells.entry((cx, cy)).or_default().push(k); } }
             }
             cells
-        }).collect()
+        })
     };
     let front_index = fronts.as_ref().map(|(d, sd)| (index(d), index(sd)));
-    for (si, s) in layout.streets.iter().enumerate() {
-        first_seg.push(segs.len());
-        // Strict: field paths, gate streets and processional ways must earn their place too.
-        // Village exits (outbound, peripheral) never go.
-        let exit = village_exits && matches!(s.role.as_str(), "outbound" | "peripheral");
-        let can = prunable(&s.role) || strict && matches!(s.role.as_str(), "track" | "gate-street" | "processional")
-            || bridgeheads && s.role == "approach" && at_bridgehead(s) && !road_ramp(s) || exit;
-        for i in 1..s.path.len() {
+    // Whether each piece serves a door and is lined by a lot: pure per street,
+    // measured in parallel, in street order.
+    let lined_pieces: Vec<Vec<(bool, bool)>> = super::par::map(&layout.streets, |si, s| {
+        (1..s.path.len()).map(|i| {
             let (p, q) = (s.path[i - 1], s.path[i]);
             let w = s.widths.get(i - 1).or(s.widths.first()).copied().unwrap_or(4.0);
             let reach = w * 0.5 + 3.0;
@@ -312,10 +312,22 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
                 let (x1, y1) = front_cell(p.x.max(q.x) + reach, p.y.max(q.y) + reach);
                 (x0..=x1).any(|cx| (y0..=y1).any(|cy| cells.get(&(cx, cy)).is_some_and(|ks| ks.iter().any(|&k| hit(&fronts[k])))))
             });
-            let (serves, lined) = match (&fronts, &front_index) {
+            match (&fronts, &front_index) {
                 (Some((d, sd)), Some((di, sdi))) => (near(d, di), near(sd, sdi)),
                 _ => { let t = touches(&hash, p, q, reach); (t, t) }
-            };
+            }
+        }).collect()
+    });
+    for (si, s) in layout.streets.iter().enumerate() {
+        first_seg.push(segs.len());
+        // Strict: field paths, gate streets and processional ways must earn their place too.
+        // Village exits (outbound, peripheral) never go.
+        let exit = village_exits && matches!(s.role.as_str(), "outbound" | "peripheral");
+        let can = prunable(&s.role) || strict && matches!(s.role.as_str(), "track" | "gate-street" | "processional")
+            || bridgeheads && s.role == "approach" && at_bridgehead(s) && !road_ramp(s) || exit;
+        for i in 1..s.path.len() {
+            let (p, q) = (s.path[i - 1], s.path[i]);
+            let (serves, lined) = lined_pieces[si][i - 1];
             segs.push(Seg { street: si, a: node(p), b: node(q), prunable: can, serves, lined, alive: true, exit });
         }
         if s.path.len() >= 2 {

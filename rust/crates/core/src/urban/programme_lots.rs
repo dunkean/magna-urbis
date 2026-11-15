@@ -46,13 +46,17 @@ pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
     }
     let passage: Vec<_> = part.parcels.iter().map(|p| matches!(p.use_kind.as_str(), "court" | "path")).collect();
     // Shared courts connect a compound's rear land too; streets never do.
+    // Each round reads the owners of the previous one only: its lots are
+    // resolved in parallel, in index order.
     loop {
-        let next: Vec<_> = (0..spare.len()).filter(|&i| (spare[i] || passage[i]) && owners[i].is_none()).filter_map(|i| {
-            neighbours[i].iter().copied().filter(|&j| (part.parcels[j].block == part.parcels[i].block || wall_land[i] || wall_land[j]) && owners[j].is_some())
+        let open_lots: Vec<usize> = (0..spare.len()).filter(|&i| (spare[i] || passage[i]) && owners[i].is_none()).collect();
+        let owners_now = &owners;
+        let next: Vec<_> = super::super::par::map(&open_lots, |_, &i| {
+            neighbours[i].iter().copied().filter(|&j| (part.parcels[j].block == part.parcels[i].block || wall_land[i] || wall_land[j]) && owners_now[j].is_some())
                 .max_by(|&a,&b| shared(&part.parcels[i].shape, &part.parcels[a].shape)
                     .total_cmp(&shared(&part.parcels[i].shape, &part.parcels[b].shape)).then_with(|| b.cmp(&a)))
-                .map(|j| (i, owners[j].unwrap()))
-        }).collect();
+                .map(|j| (i, owners_now[j].unwrap()))
+        }).into_iter().flatten().collect();
         if next.is_empty() { break; }
         for (i, owner) in next { owners[i] = Some(owner); }
     }
@@ -65,11 +69,18 @@ pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
     }
     let mut removed = BTreeSet::new();
     let mut redirects = HashMap::new();
-    for (owner, cells) in groups {
-        let shapes: Vec<_> = std::iter::once(part.parcels[owner].shape.clone())
-            .chain(cells.iter().map(|&i| part.parcels[i].shape.clone())).collect();
+    // An owner is never a spare cell, so every group reads only lots no other
+    // group changes: the unions are computed up front, in parallel, in group order.
+    let groups: Vec<(usize, Vec<usize>)> = groups.into_iter().collect();
+    let unions: Vec<Vec<Shape>> = super::super::par::map(&groups, |_, (owner, cells)| {
         // Final reconciliation attaches new yards without re-cutting the house.
-        let merged = if layout.is_none() || cells.iter().any(|&i|wall_land[i]) { g::union(&shapes) } else { vec![] };
+        if layout.is_none() || cells.iter().any(|&i|wall_land[i]) {
+            let shapes: Vec<_> = std::iter::once(part.parcels[*owner].shape.clone())
+                .chain(cells.iter().map(|&i| part.parcels[i].shape.clone())).collect();
+            g::union(&shapes)
+        } else { vec![] }
+    });
+    for ((owner, cells), merged) in groups.into_iter().zip(unions) {
         if merged.len() == 1 {
             let ids: Vec<_> = cells.iter().map(|&i| part.parcels[i].id.clone()).collect();
             let root = &mut part.parcels[owner];
@@ -110,9 +121,13 @@ pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
         if fields.contains(&p.id) { open.entry(p.block).or_default().push(p.clone()); false } else { true }
     });
     pr.allocations.retain(|a|!fields.contains(&a.parcel_id));
-    for cells in open.values() {
-        let mut shapes = g::union(&cells.iter().map(|p|p.shape.clone()).collect::<Vec<_>>());
-        if shapes.is_empty() { shapes = cells.iter().map(|p|p.shape.clone()).collect(); }
+    // Each block's field union is its own: in parallel, kept in block order.
+    let open: Vec<Vec<Parcel>> = open.into_values().collect();
+    let fields_shapes: Vec<Vec<Shape>> = super::super::par::map(&open, |_, cells| {
+        let shapes = g::union(&cells.iter().map(|p|p.shape.clone()).collect::<Vec<_>>());
+        if shapes.is_empty() { cells.iter().map(|p|p.shape.clone()).collect() } else { shapes }
+    });
+    for (cells, shapes) in open.iter().zip(fields_shapes) {
         for (i,shape) in shapes.into_iter().enumerate() {
             let mut p = cells[0].clone();
             p.id = format!("{}/field/{i}",p.id);

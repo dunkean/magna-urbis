@@ -1331,8 +1331,8 @@ fn graph(partition: &Partition) -> (Vec<Adjacency>, Vec<Vec<usize>>) {
         }
     }
     entries.sort_unstable();
-    let mut edges = vec![];
-    let mut neighbours = vec![vec![]; partition.parcels.len()];
+    // The cells, as ranges of `entries`, in (x, y) order.
+    let mut cells: Vec<(usize, usize)> = vec![];
     let mut start = 0;
     while start < entries.len() {
         let (cx, cy, _) = entries[start];
@@ -1340,8 +1340,15 @@ fn graph(partition: &Partition) -> (Vec<Adjacency>, Vec<Vec<usize>>) {
         while end < entries.len() && entries[end].0 == cx && entries[end].1 == cy {
             end += 1;
         }
-        let ids = &entries[start..end];
+        cells.push((start, end));
         start = end;
+    }
+    // Each cell tests its own pairs (pure), in parallel; the pairs are then
+    // recorded in cell order, as a serial scan would.
+    let found = super::par::map(&cells, |_, &(start, end)| {
+        let ids = &entries[start..end];
+        let (cx, cy, _) = entries[start];
+        let mut pairs: Vec<(usize, usize, f64)> = vec![];
         for (at, &(_, _, a)) in ids.iter().enumerate() {
             for &(_, _, b) in &ids[at + 1..] {
                 // Disjoint boxes cannot share an edge: skip the exact test.
@@ -1357,16 +1364,22 @@ fn graph(partition: &Partition) -> (Vec<Adjacency>, Vec<Vec<usize>>) {
                 }
                 let length = shared(&partition.parcels[a].shape, &partition.parcels[b].shape);
                 if length > 0.1 {
-                    neighbours[a].push(b);
-                    neighbours[b].push(a);
-                    edges.push(Adjacency {
-                        a: partition.parcels[a].id.clone(),
-                        b: partition.parcels[b].id.clone(),
-                        shared_length: length,
-                    });
+                    pairs.push((a, b, length));
                 }
             }
         }
+        pairs
+    });
+    let mut edges = vec![];
+    let mut neighbours = vec![vec![]; partition.parcels.len()];
+    for (a, b, length) in found.into_iter().flatten() {
+        neighbours[a].push(b);
+        neighbours[b].push(a);
+        edges.push(Adjacency {
+            a: partition.parcels[a].id.clone(),
+            b: partition.parcels[b].id.clone(),
+            shared_length: length,
+        });
     }
     (edges, neighbours)
 }
@@ -1970,16 +1983,14 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         out.sort_unstable();
         out
     };
-    let land_areas = parcels.iter().map(|p| area(&p.shape)).collect::<Vec<_>>();
-    let centres = parcels
-        .iter()
-        .map(|p| centroid(&p.shape))
-        .collect::<Vec<_>>();
+    // Pure per parcel: in parallel, in parcel order.
+    let land_areas = super::par::map(parcels, |_, p| area(&p.shape));
+    let centres = super::par::map(parcels, |_, p| centroid(&p.shape));
     let center_distances = centres
         .iter()
         .map(|&c| dist(c, layout.center))
         .collect::<Vec<_>>();
-    let prime = parcels.iter().map(prime_frontage).collect::<Vec<_>>();
+    let prime = super::par::map(parcels, |_, p| prime_frontage(p));
     // Whether a parcel centre lies inside an enclosure (any circuit, a later
     // epoch's wall included), read once for every parcel through an index.
     let enclosure_shapes: Vec<super::geometry::ContainmentIndex> = layout
@@ -2250,15 +2261,16 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         }
         let spacing = frame.radius * 1.6 / (d.sites as f64).sqrt();
         let target = d.target_area.max(1.0);
-        let mut candidates: Vec<(usize, f64)> = (0..parcels.len())
-            .filter(|&pi| {
-                assignments[pi].is_none()
-                    && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
-                        || d.function == "common" && parcels[pi].use_kind == "garden")
-                    && !reserved_for.contains_key(&parcels[pi].block)
-                    && roles::site_admissible(&d.site, &facts[pi])
-            })
-            .map(|pi| {
+        // Pure per parcel (the service cost tests the circuits for each): in
+        // parallel, in parcel order.
+        let free_now = &assignments;
+        let mut candidates: Vec<(usize, f64)> = super::par::range(parcels.len(), |pi| {
+            (free_now[pi].is_none()
+                && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
+                    || d.function == "common" && parcels[pi].use_kind == "garden")
+                && !reserved_for.contains_key(&parcels[pi].block)
+                && roles::site_admissible(&d.site, &facts[pi]))
+            .then(|| {
                 let district = district_of(&parcels[pi])
                     .is_some_and(|x| !d.district.is_empty() && x.role.starts_with(&d.district));
                 let size = (capacity(land_areas[pi], d) / target).ln().abs().min(3.0);
@@ -2273,7 +2285,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                         + if open_front { 2.0 } else { 0.0 },
                 )
             })
-            .collect();
+        })
+        .into_iter()
+        .flatten()
+        .collect();
         // Only the best few hundred admissible candidates compete for the
         // spread penalty; eligibility is tested in cost order until then, so
         // the candidates leave a heap in (cost, index) order instead of being
@@ -2336,24 +2351,24 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         cap: Option<u32>,
         storeys: [f64; 2],
     }
-    // Keyed by block, culture and the lot's dithered zone (`zone_blend::lot_zone`).
-    let mut tissues: HashMap<(usize, &str, Option<&str>), Tissue> = HashMap::new();
-    let densify = super::footprint::capacity::of(layout)
-        .filter(|_| {
-            part.config
-                .as_ref()
-                .is_none_or(super::footprint::capacity::parcels_enabled)
-        })
-        .map_or(0.0, |c| c.densify);
-    let household_caps = parcels
-        .iter()
-        .enumerate()
-        .map(|(pi, p)| {
-            if !dwelling.iter().any(|&di| admission[di][pi]) {
-                return 0.0;
-            }
+    // Keyed by block, culture and the lot's dithered zone (`zone_blend::lot_zone`),
+    // and resolved from the first housing lot of each key, in parcel order.
+    type TissueKey<'a> = (usize, &'a str, Option<&'a str>);
+    let keys: Vec<Option<TissueKey<'_>>> = super::par::map(parcels, |pi, p| {
+        dwelling.iter().any(|&di| admission[di][pi])
+            .then(|| (p.block, parcel_culture(layout, p), super::zone_blend::lot_zone(layout, p)))
+    });
+    let mut slots: HashMap<TissueKey<'_>, usize> = HashMap::new();
+    let mut firsts: Vec<usize> = vec![];
+    let tissue_slot: Vec<Option<usize>> = keys.iter().enumerate().map(|(pi, key)| key.map(|k| *slots.entry(k).or_insert_with(|| {
+        firsts.push(pi);
+        firsts.len() - 1
+    }))).collect();
+    // Each tissue is a pure function of its key's first lot: in parallel.
+    let tissues: Vec<Tissue> = super::par::map(&firsts, |_, &pi| {
+            let p = &parcels[pi];
             let culture = parcel_culture(layout, p);
-            let tissue = *tissues.entry((p.block, culture, super::zone_blend::lot_zone(layout, p))).or_insert_with(|| {
+            {
                 let (coverage, raw, longhouse, households, blend) =
                     super::culture::lot_morph(layout, part, culture, p)
                         .map(|(zone, m)| {
@@ -2374,7 +2389,23 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 // Near another phase (`zoneDensity: gradient`) the range leans toward its storeys.
                 let storeys = super::zone_blend::mix(capped(raw), blend.map(|(w, o)| (w, capped(o))));
                 Tissue { coverage, longhouse, households, cap, storeys }
-            });
+            }
+    });
+    let densify = super::footprint::capacity::of(layout)
+        .filter(|_| {
+            part.config
+                .as_ref()
+                .is_none_or(super::footprint::capacity::parcels_enabled)
+        })
+        .map_or(0.0, |c| c.densify);
+    let household_caps = parcels
+        .iter()
+        .enumerate()
+        .map(|(pi, p)| {
+            let Some(slot) = tissue_slot[pi] else {
+                return 0.0;
+            };
+            let tissue = tissues[slot];
             let zone_village = layout
                 .blocks
                 .get(p.block)
@@ -2507,10 +2538,8 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             pr.demands[di].requested
         };
         let base_slot = usize::from(commercial);
-        if base_cache[base_slot].is_none() { base_cache[base_slot] = Some(parcels
-            .iter()
-            .enumerate()
-            .map(|(pi, p)| {
+        // Pure per parcel (the gate activity tests the circuits for each): in parallel.
+        if base_cache[base_slot].is_none() { base_cache[base_slot] = Some(super::par::map(parcels, |pi, p| {
                 let front = p.access.as_ref().map_or(0.0, |a| a.front_length);
                 let quarter = district_of(p).map_or(0.0, |d| {
                     if commercial && (d.role == "market" || d.role.starts_with("craft:")) {
@@ -2535,8 +2564,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                     + street
                     + 2.0 * PRIME_TIER * core
                     + 2.4 * PRIME_TIER * super::composition::gate_activity(layout, centres[pi])
-            })
-            .collect::<Vec<_>>()); }
+            })); }
         let base = base_cache[base_slot].as_ref().expect("base filled above");
         let mut row = admission[di].clone();
         if commercial {

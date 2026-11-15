@@ -707,10 +707,8 @@ pub fn quay_contacts(layout: &Layout) -> Vec<f64> {
                     .any(|w| g::distance(p, w[0], w[1]).0 <= *reach)
         })
     };
-    layout
-        .blocks
-        .iter()
-        .map(|block| {
+    // Pure per block: in parallel, in block order.
+    super::par::map(&layout.blocks, |_, block| {
             let (x0, y0, x1, y1) = g::bbox(&block.shape);
             if !quays
                 .iter()
@@ -735,7 +733,6 @@ pub fn quay_contacts(layout: &Layout) -> Vec<f64> {
                 })
                 .sum()
         })
-        .collect()
 }
 
 /// The quay apron belongs to the waterfront: its street-side blocks keep
@@ -744,13 +741,13 @@ pub(super) fn quay_water_fronts(layout: &Layout, surface: super::Surface<'_>) ->
     let contact = quay_contacts(layout);
     let quays: Vec<_> = layout.streets.iter().filter(|s| s.role == "quay")
         .filter_map(|s| super::macroplan::harbour::front_water(surface, &s.path).map(|water| (s, water))).collect();
-    layout.blocks.iter().enumerate().map(|(i, b)| {
+    super::par::map(&layout.blocks, |i, b| {
         if contact[i] < QUAY_FRONT { return None; }
         let c = g::interior_point(&b.shape);
         quays.iter().map(|(s, water)| (s.path.windows(2).map(|w| g::distance(c, w[0], w[1]).0)
             .fold(f64::INFINITY, f64::min), *water))
             .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, water)| water)
-    }).collect()
+    })
 }
 
 /// A `quay` service in a town with quays may only stand on a block that a

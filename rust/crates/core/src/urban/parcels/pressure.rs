@@ -6,7 +6,8 @@ use std::collections::BinaryHeap;
 
 pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
     let mut nodes = Vec::<Point>::new();
-    let mut ids = BTreeMap::new();
+    // Node interning only (never iterated): a hash map gives the same ids.
+    let mut ids = std::collections::HashMap::<(i64, i64), usize>::new();
     let mut graph = Vec::<Vec<(usize, f64)>>::new();
     let mut paths = Vec::new();
     let mut stations = Vec::new();
