@@ -115,7 +115,7 @@ async function editHouse(before) {
   const next = selected.roof === 'flat' ? 'RF-GABLE' : 'RF-FLAT';
   assert(options.includes(next), `No supported roof alternative: ${options.join(', ')}`);
   await roof.fill(next); await roof.dispatchEvent('change');
-  assert(await page.locator('[data-urban-selection] path[stroke="#e52b36"]').getAttribute('d'), 'Red selection outline missing');
+  assert(await page.locator('#map > [data-urban-selection] path[stroke="#e52b36"]').getAttribute('d'), 'Red selection outline missing');
   await run('03-house-roof', '#house-native-apply');
   const after = await project('edited');
   const changed = after.buildings.find(b => b.nativeRequestId === selected.nativeRequestId);
