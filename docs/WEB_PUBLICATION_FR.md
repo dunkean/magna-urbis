@@ -108,3 +108,5 @@ site et l’architecture du GPU ; il ne certifie pas les autres matériels.
 fichier de recette ou projet à reproduire, et `MAGNA_V2_LIVE_PROFILE` permet de
 réutiliser un profil de test. Sous Windows, `MAGNA_TEST_ADAPTER_LUID` peut imposer
 le GPU des tests sans modifier les préférences du navigateur de l’utilisateur.
+
+Dernière qualification : [15 novembre 2026](WEB_QUALIFICATION_2026-11-15.md).
