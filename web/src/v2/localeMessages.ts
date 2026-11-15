@@ -3,6 +3,9 @@ import { localeExtraAsia } from './localeExtraAsia';
 import { localeExtraArRu } from './localeExtraArRu';
 import { localeNaming } from './localeNaming';
 import { localeUnderdark } from './localeUnderdark';
+import { localeRuntimeSource } from './localeRuntimeSource';
+import { localeExtraFill } from './localeExtraFill';
+import { localeExtraCultures } from './localeExtraCultures';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
 export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
@@ -8347,3 +8350,6 @@ for (const [language, messages] of Object.entries({ ...localeExtraLatin, ...loca
 }
 for(const [language,messages] of Object.entries(localeUnderdark))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeNaming))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
+for(const [language,messages] of Object.entries(localeRuntimeSource))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
+for(const [language,messages] of Object.entries(localeExtraFill))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
+for(const [language,messages] of Object.entries(localeExtraCultures))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);

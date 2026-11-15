@@ -342,8 +342,10 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
 
   // ---- urban names
   if (u) {
-    const pickFrom = (list: string[], r: Rng): string | null => list.length ? r.pick(list) : null;
-    const use = (s: string | null): string | null => s;
+    // One town never repeats a street, square or district name: the map reader takes a repeated name for one place.
+    const used = new Set<string>();
+    const pickFrom = (list: string[], r: Rng): string | null => { const free = list.filter((s) => !used.has(s)); return free.length ? r.pick(free) : null; };
+    const use = (s: string | null): string | null => { if (s && !used.has(s)) { used.add(s); return s; } return null; };
     const saintOf = (label: string): string => V.saint(rng.fork('saint:' + label));
 
     // churches & other landmarks
@@ -417,11 +419,17 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       pairs.sort((a, b) => a.d - b.d);
       const gDest = new Map<number, RoadInfo>(), rUsed = new Set<number>();
       for (const pr of pairs) if (!gDest.has(pr.g) && !rUsed.has(pr.r)) { gDest.set(pr.g, roadInfos[pr.r]); rUsed.add(pr.r); }
+      const gateDirs = new Set<Dir4>(), gateNames = new Set<string>();
       gs.forEach((g, gi) => {
-        const road = gDest.get(gi);
-        let text = road ? (V.gateOf ? V.gateOf(road.dest) : `${road.dest} Gate`) : V.gateDir(V.dirs[dirOf(center, g.p)]);
+        const road = gDest.get(gi), dir = dirOf(center, g.p);
         gatePts.push({ p: g.p, dest: road?.dest ?? null, target: road?.target });
-        add({ kind: 'gate', text, parts: partsFor('gate', road?.dest ?? V.dirs[dirOf(center, g.p)], text), rank: 3, anchor: g.p, sub: String(g.i), ...(road?.target ? { reference: referenceTo(road.target, 'gate') } : {}) });
+        const text = road ? (V.gateOf ? V.gateOf(road.dest) : `${road.dest} Gate`) : V.gateDir(V.dirs[dir]);
+        // A compass name is kept for one gate per side; the other gates of that side stay unnamed rather than repeat it.
+        if (gateNames.has(text) || (!road && gateDirs.has(dir))) return;
+        gateNames.add(text); if (!road) gateDirs.add(dir);
+        const parts = road ? partsFor('gate', road.dest, text)
+          : { ...partsFor('gate', V.dirs[dir], text), meaning: { concept: 'direction', qualifier: (['north', 'east', 'south', 'west'] as const)[dir] } };
+        add({ kind: 'gate', text, parts, rank: 3, anchor: g.p, sub: String(g.i), ...(road?.target ? { reference: referenceTo(road.target, 'gate') } : {}) });
       });
     }
 

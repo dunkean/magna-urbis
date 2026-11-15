@@ -90,6 +90,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   choice('composition.buildings.look', 'Building look', 'Aspect des bâtiments', [['footprints', 'Footprints', 'Emprises'], ['cartographic-roofs', 'Cartographic roofs', 'Toits cartographiques'], ['simple-volumes', 'Simple volumes', 'Volumes simples'], ['detailed-volumes', 'Detailed volumes', 'Volumes détaillés']]),
   flag('composition.buildings.parcels', 'Parcels', 'Parcelles'), flag('composition.buildings.blocks', 'Blocks', 'Îlots'), flag('composition.buildings.districts', 'Districts', 'Quartiers'),
   flag('composition.text.visible', 'Text', 'Textes'),
+  { ...choice('composition.text.amount', 'Amount of labels', 'Quantité de labels', [['few', 'Few', 'Peu'], ['normal', 'Normal', 'Normale'], ['many', 'Many', 'Beaucoup'], ['all', 'All', 'Tous']]), defaultValue: 'normal', help: copy('Scales every category below at once. Labels you placed or edited are always shown.', 'Règle toutes les catégories ci-dessous à la fois. Les labels placés ou modifiés à la main restent toujours affichés.') },
   ...NAME_LEVELS.map(category=>({...number(`composition.text.levels.${category}`,...NAME_LEVEL_LABELS[category],0,100,1),defaultValue:nameLevelValue(DEFAULT_TEXT,category),help:category==='places'?copy('0: none · 1: most important · 100: all candidates. Zoom and overlap still control legibility.','0 : aucun · 1 : le plus important · 100 : tous les noms. Le zoom et les collisions préservent la lisibilité.'):undefined})),
   ...TEXT_GROUPS.map(group => flag(`composition.text.groups.${group}`, ...TEXT_GROUP_LABELS[group])),
   choice('composition.text.look', 'Style', 'Style', fontEntries),
@@ -109,7 +110,7 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.visible', 'composition.networks.water.look', 'composition.networks.water.waves'],
   buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
-  text: ['composition.text.visible', ...NAME_LEVELS.map(g=>`composition.text.levels.${g}`), 'composition.text.look', 'composition.text.size', 'composition.text.density', 'composition.text.halo', ...TEXT_GROUPS.map(g => `composition.text.groups.${g}`)],
+  text: ['composition.text.visible', 'composition.text.amount', 'composition.text.look', 'composition.text.size', 'composition.text.halo', 'composition.text.density', ...NAME_LEVELS.map(g=>`composition.text.levels.${g}`), ...TEXT_GROUPS.map(g => `composition.text.groups.${g}`)],
   diagnostics: [],
 };
 /** Semantic display of land use, kept apart from the physical cover: hiding it never hides fields, forests or marshes. */

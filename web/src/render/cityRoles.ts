@@ -3,6 +3,8 @@
  * `roles::label` does), so `worship.mosque.friday` reads "Friday mosque" and
  * never "friday". The French names follow the engine's `services.json` labels. */
 import services from '../../../rust/crates/core/src/urban/services.json';
+import { functionName, roleText, streetName, translateRole, translateState, uiRoleLocale, type RoleLocale } from './cityRolesLocale';
+export { uiRoleLocale, type RoleLocale };
 
 export const ROLE_LABELS: Record<string, string> = {
   // Housing.
@@ -58,8 +60,6 @@ export const ROLE_LABELS: Record<string, string> = {
 export function funeraryLandFill(role?: string): string | undefined {
   return role === 'open.cemetery' || role === 'open.necropolis' ? '#b6b2a0' : undefined;
 }
-export const FUNCTION_LABELS: Record<string, string> = { domestic: 'habitat', mixed: 'mixte (boutique et habitat)', workshop: 'atelier', warehouse: 'entrepôt',
-  collective: 'équipement collectif', open_space: 'espace ouvert', market: 'marché', common: 'commun' };
 
 /** English names of the role ids of `ROLE_LABELS` and of `services.json` `labels`. */
 export const ROLE_LABELS_EN: Record<string, string> = {
@@ -132,15 +132,10 @@ export const FAMILY_ROLE_LABELS_EN: Record<string, Record<string, string>> = {
   clan: { 'dwelling.house': 'Family house', 'dwelling.compound': 'Clan household', 'civic.council-house': 'Clan meeting house', 'storage.granary': 'Cache or granary on posts', 'craft.workshop': 'Drying rack and workshop', 'open.plaza': 'Gathering ground' },
   insular: { 'elite.palace': 'Kraton (palace)', 'commerce.market': 'Pasar (market)', 'worship.temple.major': 'Candi (great temple)', 'worship.shrine': 'Neighbourhood pura', 'civic.hall': 'Pendopo (assembly pavilion)', 'commerce.inn': 'Pesanggrahan (rest house)', 'civic.bathhouse': 'Petirtaan (sacred pool)', 'storage.granary': 'Lumbung (granary)', 'dwelling.compound': 'Pekarangan (family compound)', 'craft.dyer': 'Batik workshop', 'commerce.tavern': 'Warung' },
 };
-export type RoleLocale = 'en' | 'fr';
 const servicesLabels = services as unknown as { labels: Record<string, string>; familyLabels: Record<string, Record<string, string>>; cultures: Record<string, string>; states: Record<string, { suffix: string; label: string }> };
 /** French names: the engine's labels, completed by the web table for roles the engine does not name. */
 const ROLE_LABELS_FR: Record<string, string> = { ...ROLE_LABELS, ...servicesLabels.labels };
 const STATE_SUFFIX_EN: Record<string, string> = { '.ruin': ' in ruins', '.abandoned': ' (abandoned)' };
-/** Locale of role labels: the page's UI language (V2 and benches set `<html lang>`); French or English, English by default. */
-export function uiRoleLocale(): RoleLocale {
-  return typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('fr') ? 'fr' : 'en';
-}
 /** Service family (`services.json` `cultures`) of a culture id; a family id passes through. */
 export function roleFamily(culture?: string | null): string | undefined {
   if (!culture) return undefined;
@@ -150,9 +145,9 @@ export function roleFamily(culture?: string | null): string | undefined {
  * names come first. An unknown role takes its longest known prefix (dot or `craft:` separated), as Rust `roles::label`;
  * a state suffix (`.ruin`, `.abandoned`) is kept as words. */
 export function roleLabel(role?: string | null, locale: RoleLocale = uiRoleLocale(), family?: string | null): string {
-  if (!role) return locale === 'fr' ? 'Sans rôle' : 'No role';
-  const table = locale === 'fr' ? ROLE_LABELS_FR : ROLE_LABELS_EN, fam = roleFamily(family);
-  const own = fam ? (locale === 'fr' ? servicesLabels.familyLabels[fam] : FAMILY_ROLE_LABELS_EN[fam]) : undefined;
+  if (!role) return roleText('No role', locale);
+  const fr = locale === 'fr', table = fr ? ROLE_LABELS_FR : ROLE_LABELS_EN, fam = roleFamily(family);
+  const own = fam ? (fr ? servicesLabels.familyLabels[fam] : FAMILY_ROLE_LABELS_EN[fam]) : undefined;
   const lookup = (id: string): string | undefined => {
     for (let key = id; key;) {
       const found = own?.[key] ?? table[key]; if (found) return found;
@@ -160,17 +155,16 @@ export function roleLabel(role?: string | null, locale: RoleLocale = uiRoleLocal
     }
     return undefined;
   };
-  const exact = own?.[role] ?? table[role]; if (exact) return exact;
+  const exact = own?.[role] ?? table[role]; if (exact) return fr ? exact : translateRole(exact, locale);
   const state = Object.values(servicesLabels.states).find(s => s.suffix && role.endsWith(s.suffix));
   const base = state ? role.slice(0, -state.suffix.length) : role;
-  const text = lookup(base) ?? (locale === 'fr' ? 'Bâtiment' : 'Building');
-  return state ? text + (locale === 'fr' ? state.label : STATE_SUFFIX_EN[state.suffix] ?? '') : text;
+  const found = lookup(base), name = found ? (fr ? found : translateRole(found, locale)) : roleText('Building', locale);
+  if (!state) return name;
+  return fr ? name + state.label : name + (translateState(state.suffix, locale) ?? STATE_SUFFIX_EN[state.suffix] ?? '');
 }
-/** Street roles of the plan (network.rs) in French. */
-export const STREET_LABELS: Record<string, string> = { street: 'rue', lane: 'ruelle', main: 'grand-rue', regional: 'route régionale', market: 'rue du marché', processional: 'voie processionnelle',
-  ring: 'boulevard de ceinture', 'gate-street': 'rue de la porte', quay: 'quai', 'wall-lane': 'chemin de ronde', collective: 'passage collectif', private: 'passage privé', stairs: 'escalier', 'port-stairs': 'escalier du port', 'port-street': 'rue du port', bridge: 'pont', ford: 'gué', causeway: 'chaussée' };
-export const streetLabel = (role: string): string => STREET_LABELS[role] ?? role.replace(/[-_]/g, ' ');
-export const functionLabel = (fn?: string | null): string => FUNCTION_LABELS[fn ?? ''] ?? (fn ?? '');
+/** Street roles of the plan (network.rs) in the UI language. */
+export const streetLabel = (role: string, locale: RoleLocale = uiRoleLocale()): string => streetName(role, locale);
+export const functionLabel = (fn?: string | null, locale: RoleLocale = uiRoleLocale()): string => fn ? functionName(fn, locale) : '';
 
 // ---------------------------------------------------------------- choices
 interface ServiceEntry { role: string; function: string }

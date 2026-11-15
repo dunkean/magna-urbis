@@ -20,7 +20,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
     queue=queue.then(async()=>{
       try{
         const world=retained.resolve(request.retainedWorldId,unpackWorldPartitions(request.world));
-        if(!world)throw new Error('Aucune carte à traiter.');
+        if(!world)throw new Error('No map to process.');
         scope.postMessage({id,type:'resources',payload:await(await import('./region')).regionResources(world,settings)} satisfies V2WorkerResponse);
       }catch(error){scope.postMessage({id,type:'error',error:error instanceof Error?error.message:String(error)} satisfies V2WorkerResponse);}
     });
@@ -35,16 +35,16 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       // A world sent by the page carries its town partitions packed (urbanPack.ts).
       let world = retained.resolve(request.retainedWorldId,unpackWorldPartitions(request.world));
       if (action === 'terrain' || action === 'all') world = await generateTerrain(settings, progress, undefined, request.assetBase, request.terrainStage);
-      if (!world) throw new Error('Aucune carte à traiter.');
+      if (!world) throw new Error('No map to process.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress, action === 'all');
       if (action === 'roads') world = await rerouteRegion(world, settings, progress);
       if (action === 'towns' || action === 'all') world = await generateTowns(world, settings, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined);
       if (action === 'town') {
-        if (!request.key) throw new Error('Choisissez un lieu.');
+        if (!request.key) throw new Error('Choose a settlement.');
         world = request.townStage ? await generateTownStage(world, settings, request.key, request.townStage, progress)
           : await generateTown(world, settings, request.key, progress);
       }
-      if (!['terrain', 'region', 'roads', 'towns', 'town', 'settlements', 'all'].includes(action)) throw new Error('Action inconnue.');
+      if (!['terrain', 'region', 'roads', 'towns', 'town', 'settlements', 'all'].includes(action)) throw new Error('Unknown action.');
       world = renameMap(world, settings);
       if (request.cityOutput) world = showCityStageOutput(world, request.cityOutput, request.key ? [request.key] : request.keys);
       else if (world.stats['v2.cityOutput']) { world = { ...world, stats: { ...world.stats } }; delete world.stats['v2.cityOutput']; delete world.stats['v2.cityOutputKeys']; }

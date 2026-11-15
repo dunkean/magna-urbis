@@ -25,3 +25,24 @@
 .map-area .city-shape-toolbar button{background:#ffffff08;border-color:#ffffff25;color:#eee9db}
 .map-area .city-shape-toolbar button:hover{background:#dcb86f22}
 @media(max-width:720px){.map-area .city-shape-toolbar{top:122px}.v2-edit-actions button{min-height:36px}}
+/* Names panel: towns, the picked label, then the full list. */
+.map-label-editor{display:grid;gap:10px;margin:4px 0 12px}
+.map-label-editor .map-label-status{margin:0;padding:8px 10px;border-radius:6px;background:#dcb86f1a;border:1px solid #dcb86f44}
+.map-label-editor details{border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.map-label-editor summary{cursor:pointer;font-weight:600;padding:2px 0}
+.map-label-editor input[type=text],.map-label-editor input[type=search],.map-label-editor select{width:100%;min-width:0;box-sizing:border-box}
+.map-label-town-rows{display:grid;gap:6px;margin-top:6px}
+.map-label-card{display:grid;gap:8px;border:1px solid #dcb86f88;border-radius:8px;padding:10px;background:#dcb86f0d}
+.map-label-card-head{display:flex;justify-content:space-between;gap:8px;font-size:.85em;opacity:.85}
+.map-label-kind{font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.map-label-check{display:flex;gap:6px;align-items:flex-start;font-size:.9em}
+.map-label-actions{display:flex;flex-wrap:wrap;gap:6px}
+.map-label-style-row{display:flex;flex-wrap:wrap;gap:8px 12px;margin:6px 0}
+.map-label-field{display:flex;gap:6px;align-items:center}
+.map-label-style .map-label-field:last-child{display:grid;gap:4px;margin-top:4px}
+.map-label-size input,.map-label-style input[type=number]{width:4.5rem}
+.map-label-list{display:grid;gap:6px}
+.map-label-list[open]{display:grid}
+.map-label-list select[size]{min-height:12rem}
+.map-label-marker{position:fixed;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid #e0533d;border-radius:50%;box-shadow:0 0 0 3px #fff9,0 0 12px #e0533d88;pointer-events:none;z-index:40}
+.map-label-marker[hidden]{display:none}

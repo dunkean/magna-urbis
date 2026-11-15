@@ -64,7 +64,7 @@ describe('City Bench canvas scene', () => {
     expect(scene.blocks[0].district?.role).toBe('religious');
     expect(scene.blocks[15].district).toMatchObject({ role: 'poor', wealth: 0.1 });
     expect(scene.landmarks).toHaveLength(1);
-    expect(scene.landmarks[0]).toMatchObject({ family: 'worship', label: 'Église' });
+    expect(scene.landmarks[0]).toMatchObject({ family: 'worship', label: 'Parish church' });
     // Wall: broken at the gate, with two gate towers and the contract tower.
     expect(scene.walls[0].pieces.length).toBeGreaterThan(1);
     expect(scene.walls[0].gateTowers).toHaveLength(2);
@@ -92,6 +92,15 @@ describe('City Bench canvas scene', () => {
     expect(roleFamily('commerce.inn')).toBe('commerce');
     expect(roleFamily('religious.temple')).toBe('worship');
     expect(roleFamily(undefined, 'workshop')).toBe('craft');
-    expect(districtRoleLabel('craft:tanners')).toBe('Artisanat · tanneurs');
+    expect(districtRoleLabel('craft:tanners')).toBe('Crafts · tanners');
+    expect(districtRoleLabel('craft:tanners', undefined, 'fr')).toBe('Artisanat · tanneurs');
+    // The engine's French label never reaches a non-French UI: it is mapped back to its role and translated.
+    expect(districtRoleLabel('', 'Quartier des tanneurs', 'es')).toBe('Artesanía · curtidores');
+    expect(districtRoleLabel('commoner', 'Quartier populaire', 'en')).toBe('Commoners');
+    // The page language (`<html lang>`) picks the locale; Spanish and Japanese are translated.
+    for (const [lang, expected] of [['es', 'Artesanía · curtidores'], ['ja', '工房 · 皮なめし職人']] as const) {
+      vi.stubGlobal('document', { documentElement: { lang } });
+      try { expect(districtRoleLabel('craft:tanners', 'Quartier des tanneurs')).toBe(expected); } finally { vi.unstubAllGlobals(); }
+    }
   });
 });

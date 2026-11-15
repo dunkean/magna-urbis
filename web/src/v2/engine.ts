@@ -131,7 +131,7 @@ export function retainedTerrainMatchesSettings(world: World, settings: V2Setting
 export function resolveModelAssets(value: string | undefined, assetBase?: string): string {
   const base = assetBase ?? (typeof location === 'undefined' ? undefined : location.href);
   try { return new URL(value ?? './neural/', base).href; }
-  catch { throw new Error('Lâ€™adresse de base des modÃ¨les neuronaux doit Ãªtre transmise au worker.'); }
+  catch { throw new Error('The neural model base URL must be passed to the worker.'); }
 }
 
 export async function generateTerrain(settings: V2Settings, onProgress?: ProgressCallback,
@@ -153,18 +153,18 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     };
   }
   const nativeEngine = !!settings.runtime && (settings.runtime.backend !== 'typescript' || settings.runtime.source !== 'procedural');
-  if (!nativeEngine && (options.mapSize! < 600 || options.mapSize! > 40000)) throw new Error('The classic TypeScript engine supports 600â€“40,000 m. Select the Rust engine for 500â€“100,000 m.');
+  if (!nativeEngine && (options.mapSize! < 600 || options.mapSize! > 40000)) throw new Error('The classic TypeScript engine supports 600–40,000 m. Select the Rust engine for 500–100,000 m.');
   // The classic engine keeps the dormant Rust recipe so switching engines never erases the user's draft.
-  report(onProgress, 'terrain-cache', 'Recherche du relief et de lâ€™hydrologie conservÃ©sâ€¦', 0, 3);
+  report(onProgress, 'terrain-cache', 'Looking for retained terrain and hydrology…', 0, 3);
   const preview = previewKey && stagePreviews.get(previewKey);
   const hit = preview ? {terrain:structuredClone(preview),source:'memory' as const} : terrainStage && !includeCover ? undefined : await cache.get(key);
   let terrain: TerrainLayer, persisted = false;
   if (hit) {
     terrain = hit.terrain;
-    report(onProgress, 'terrain', 'Relief et hydrologie rÃ©utilisÃ©s', 1, 3, hit.source);
+    report(onProgress, 'terrain', 'Terrain and hydrology reused', 1, 3, hit.source);
     if(preview&&output)report(onProgress,`pipeline:${output}:cached`,'Sortie intermédiaire conservée',1,1,'memory');
   } else {
-    report(onProgress, 'terrain', 'Calcul du relief, du drainage, des riviÃ¨res et des lacsâ€¦', 0, 3, 'miss');
+    report(onProgress, 'terrain', 'Computing terrain, drainage, rivers and lakes…', 0, 3, 'miss');
     let engineStats: Record<string, string | number> = { backend: 'typescript-cpu' };
     let nativeTerrain: TerrainLayer | undefined;
     if (settings.decor) {
@@ -187,7 +187,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         // must not hold up their model loading.
         if(remoteNeural)compute='gpu';
         else{
-          report(onProgress,'compute','DÃ©tection des capacitÃ©s CPU et WebGPUâ€¦',0,0);
+          report(onProgress,'compute','Detecting CPU and WebGPU capabilities…',0,0);
           try {const adapter=await gpuSetupDeadline(globalThis.navigator?.gpu?.requestAdapter({powerPreference:'high-performance'})??Promise.resolve(null));compute=adapter?'gpu':'cpu';softwareGpu=!!adapter?.info?.isFallbackAdapter;if(['procedural','procedural-phasor'].includes(runtime!.source)&&softwareGpu)compute='cpu';}catch { compute = 'cpu'; }
         }
       }
@@ -219,13 +219,13 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       let generated;
       try { generated = await execute(); } catch (error) {
         if (runtime!.compute !== 'auto' || compute !== 'gpu' || !['procedural', 'procedural-phasor'].includes(runtime!.source) || configuration.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '')) throw error;
-        report(onProgress, 'relief-engine', 'GPU indisponible : reprise du relief procÃ©dural sur CPUâ€¦', 0, 3);
+        report(onProgress, 'relief-engine', 'GPU unavailable: restarting procedural terrain on the CPU…', 0, 3);
         compute = 'cpu'; generated = await execute();
       }
       options.importedHeight = generated.importedHeight; options.heightScale = generated.heightScale; options.importSea = generated.importSeaLevel;
       engineStats = generated.stats;
       if (!generated.terrain) throw new Error('The Rust adapter did not return the retained terrain and water network.');
-      report(onProgress,'terrain-projection','PrÃ©paration de la carte, des cÃ´tes et du rÃ©seau hydrographiqueâ€¦',0,0);
+      report(onProgress,'terrain-projection','Preparing the map, coastlines and water network…',0,0);
       nativeTerrain = projectEngineTerrain(generated.terrain);
       // Overlap style-independent display fields with cover, regional and urban generation.
       if (includeCover) startTerrainDisplayPreparation(nativeTerrain, options.mapSize!);
@@ -236,7 +236,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     // Rust results retain their own hydrology; only the explicitly selected classic engine runs TS drainage.
     (terrain as TerrainLayer & { v2EngineStats?: Record<string, string | number> }).v2EngineStats = engineStats;
     if (includeCover) startTerrainDisplayPreparation(terrain, options.mapSize!);
-    report(onProgress, 'terrain-cache', 'Enregistrement du relief et de lâ€™hydrologieâ€¦', 1, 3);
+    report(onProgress, 'terrain-cache', 'Saving terrain and hydrology…', 1, 3);
     if (!terrainStage || includeCover) persisted = await cache.put(key, terrain);
   }
   if (!includeCover) {
@@ -247,7 +247,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         ...((terrain as V2TerrainLayer).v2EngineStats ?? {}), 'v2.cache': hit?.source ?? 'miss', 'v2.persisted': 0, 'ms.total': Math.round(performance.now() - t0) } };
   }
   startTerrainDisplayPreparation(terrain, options.mapSize!);
-  report(onProgress, 'biome', 'Classification du biome et du couvert naturelâ€¦', 2, 3);
+  report(onProgress, 'biome', 'Classifying the biome and natural cover…', 2, 3);
   const retained = terrain as V2TerrainLayer;
   if (nativeEngine) {
     const forestKey = key + stableStringify(configuration.forest), cachedForest = forestFields.get(forestKey);
@@ -282,14 +282,14 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       ...((terrain as TerrainLayer & { v2EngineStats?: Record<string, string | number> }).v2EngineStats ?? {}),
       'v2.cache': hit?.source ?? 'miss', 'v2.persisted': persisted ? 1 : 0, 'ms.total': Math.round(performance.now() - t0) } };
   refreshCavernMask(world);
-  report(onProgress, 'terrain', 'Topographie prÃªte', 3, 3, hit?.source ?? 'miss');
+  report(onProgress, 'terrain', 'Topography ready', 3, 3, hit?.source ?? 'miss');
   return world;
 }
 
 function assertTerrain(world: World, settings: V2Settings): void {
   // Auto is a recommendation at terrain creation time, not permission to resize an already retained map.
   if (!retainedTerrainMatchesSettings(world, settings))
-    throw new Error('Les paramÃ¨tres du terrain ont changÃ©. RÃ©gÃ©nÃ©rez la topographie avant de poursuivre.');
+    throw new Error('Terrain settings have changed. Regenerate the topography before continuing.');
 }
 function nameWorld(world: World, mainOptions?: Partial<Options>): void {
   const root = new Rng('magna-urbis:' + world.seed);
@@ -325,14 +325,14 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
     for(const spec of native.settlements)if(spec.name){const place=world.settlements!.find(s=>s.key===spec.key);if(place){place.name=spec.name;if(place.main){world.names!.town=spec.name;const entry=world.names!.entries.find(e=>e.kind==='town');if(entry)entry.text=spec.name;}else{const entry=world.names!.entries.find(e=>e.sub==='settlement:'+place.key);if(entry)entry.text=spec.name;}}}
     refreshCavernMask(world);return world;
   }
-  report(onProgress, 'sites', 'Recherche des sites habitablesâ€¦', 0, 4);
+  report(onProgress, 'sites', 'Finding suitable settlement sites…', 0, 4);
   const cprefs = getCulture(mainOptions.culture).sitePrefs;
   const siteRuntime = settings.runtime?.backend === 'native' ? { profile: 'local' as const, server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined;
   world.site = await chooseSiteRust(world.terrain, mainOptions.sitePrefs || !cprefs ? mainOptions : { ...mainOptions, sitePrefs: cprefs }, world.mapSize, root, siteRuntime);
-  report(onProgress, 'roads', 'TracÃ© des axes rÃ©gionauxâ€¦', 1, 4);
+  report(onProgress, 'roads', 'Routing regional connections…', 1, 4);
   const roads = routeRoads(world.terrain, world.site, mainOptions, world.mapSize, roadRoot);
   world.roads = roads.roads; world.bridges = roads.bridges;
-  report(onProgress, 'sites', 'Implantation de la hiÃ©rarchie des lieuxâ€¦', 2, 4);
+  report(onProgress, 'sites', 'Placing the settlement hierarchy…', 2, 4);
   if (Object.keys(settings.local).some(key => key !== 'main')) {
     // Feed local positioning and site preferences into the real planner before geometry is committed.
     const t = world.terrain, count = t.height.w * t.height.h;
@@ -357,7 +357,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
     world.stats['v2.culture:' + settlement.key] = settlement.culture;
   }
   for (const settlement of world.settlements) if (!settlement.main && settlement.detail !== 'farmstead') settlement.detail = 'lazy';
-  report(onProgress, 'network', 'Connexion des lieux par le rÃ©seau routierâ€¦', 3, 4);
+  report(onProgress, 'network', 'Connecting settlements with the road network…', 3, 4);
   if (world.settlements.length > 1) {
     const net = routeNetwork(world, world.settlements, roadRoot);
     world.roads.push(...net.roads); world.bridges.push(...net.bridges);
@@ -375,7 +375,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   world.stats['ms.region'] = Math.round(performance.now() - t0);
   nameWorld(world, mainOptions);
   refreshCavernMask(world);
-  report(onProgress, 'network', 'Implantations et routes prÃªtes', 4, 4);
+  report(onProgress, 'network', 'Settlement sites and roads ready', 4, 4);
   return world;
 }
 
@@ -418,11 +418,11 @@ function localOverrides(options: Partial<Options>): SettlementOverrides {
 }
 function assertRegion(world: World, settings: V2Settings): void {
   assertTerrain(world, settings);
-  if (!world.site || !world.settlements?.length) throw new Error('Implantez dâ€™abord les lieux et les routes.');
+  if (!world.site || !world.settlements?.length) throw new Error('Place the settlement sites and roads first.');
   const legacyClassic = typeof world.stats['v2.terrainKey'] === 'string'
     && world.stats['v2.terrainKey'].startsWith(`["${LEGACY_TS_KEY}",`) && classicTerrain(settings);
   if (world.stats['v2.planKey'] !== regionKey(settings) && !(legacyClassic && world.stats['v2.planKey'] === historicalClassicRegionKey(settings)))
-    throw new Error('Les paramÃ¨tres dâ€™implantation ont changÃ©. Recalculez les lieux et les routes.');
+    throw new Error('Placement settings have changed. Recalculate settlement sites and roads.');
 }
 
 /** Independent native cities computed at once (the engine has one thread per connection). */
@@ -471,7 +471,7 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
     // The page draws the cities on this ground: the worker's cached settlement raster, not a second build on the main thread.
     (await import('./rustUrban')).retainCityGround(world);
   } else if (requestedStage !== 'buildings') {
-    throw new Error('Les Ã©tapes urbaines indÃ©pendantes requiÃ¨rent le moteur Rust. Le moteur classique gÃ©nÃ¨re le plan complet.');
+    throw new Error('Independent urban stages require the Rust engine. The classic engine generates the complete plan.');
   } else if (settlement.main) {
     const sub: World = { seed: localSeed, options, mapSize: world.mapSize, terrain: world.terrain,
       site: structuredClone(world.site), roads: structuredClone(world.roads), bridges: structuredClone(baseBridges), stats: {} };
@@ -505,7 +505,7 @@ export function namesRenamedAfterActions(): void { renamedAfterActions = true; }
 async function finishTowns(world: World, settings: V2Settings, onProgress?: ProgressCallback): Promise<void> {
   // Rebuild cultivation from the retained plans, never from the expensive terrain stage.
   await (await import('./region')).settleRegionSite(world);
-  report(onProgress, 'landuse', 'Mise Ã  jour des terres cultivÃ©es et des nomsâ€¦', 0, 1);
+  report(onProgress, 'landuse', 'Updating cultivated land and names…', 0, 1);
   world.options = { ...effectiveOptions(settings, world.mapSize), workflow: world.options.workflow };
   const nativeRegion = world.debug?.v2RustRegion as import('./region').RustRegionSnapshot | undefined;
   const nativeCities = Object.values((world.debug?.v2RustCities ?? {}) as Record<string, import('./rustUrban').RustTownSnapshot>);
@@ -538,20 +538,20 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
   refreshCavernMask(world);
   // Isolated buildings (farms, mills, chapels…) follow the architecture in use, like the towns.
   await (await import('./activitySites')).planActivityArchitecture(world, settings);
-  report(onProgress, 'complete', 'Lieux gÃ©nÃ©rÃ©s', 1, 1);
+  report(onProgress, 'complete', 'Settlements generated', 1, 1);
 }
 /** One town with the never-built neighbours it needs first and the built neighbours that follow it. */
 async function buildTownRun(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback, stage?: V2TownStage): Promise<void> {
   const run = townRun(world, settings, [key]), order = run?.order ?? [key], stages = runStages(world, run, order, stage);
   for (const [i, place] of order.entries()) {
-    if (order.length > 1) { const s = world.settlements!.find(s => s.key === place)!; report(onProgress, 'town', `${s.name ?? s.key} : plan, rues, parcelles et bâtiments…`, i, order.length); }
+    if (order.length > 1) { const s = world.settlements!.find(s => s.key === place)!; report(onProgress, 'town', `${s.name ?? s.key}: plan, streets, parcels and buildings…`, i, order.length); }
     await buildTown(world, settings, place, onProgress, stages.get(place));
   }
 }
 export async function generateTown(regionWorld: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
   validateSettings(settings); assertRegion(regionWorld, settings);
   const world = cloneV2WorldForGeneration(regionWorld), t0 = performance.now();
-  report(onProgress, 'town', 'Plan â†’ quartiers â†’ rues â†’ Ã®lots â†’ parcelles â†’ bÃ¢timentsâ€¦', 0, 1);
+  report(onProgress, 'town', 'Plan → quarters → streets → blocks → parcels → buildings…', 0, 1);
   await buildTownRun(world, settings, key, onProgress);
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
@@ -572,7 +572,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
   const stages = runStages(world, run, places.map(place => place.key), through);
   if (backend === 'typescript' || places.length < 2 || TOWN_CONCURRENCY < 2) {
     for (let i = 0; i < places.length; i++) {
-      report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, places.length);
+      report(onProgress, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, places.length);
       await buildTown(world, settings, places[i].key, onProgress, stages.get(places[i].key));
     }
   } else {
@@ -610,7 +610,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     try {
       for (let i = 0; i < n; i++) {
         leader = i;
-        report(onProgress, 'town', `${places[i].name ?? places[i].key} : plan, rues, parcelles et bÃ¢timentsâ€¦`, i, n);
+        report(onProgress, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, n);
         if (last[i]) onProgress?.(last[i]!);
         const outcome = await outcomes[i];
         if (!outcome.ok) throw outcome.error;

@@ -9,6 +9,8 @@ export async function openWorkshopPreferences(page) {
 }
 
 export async function chooseWorkshopPreference(page, preference, value) {
+  // The interface language sits in the page header; the other preferences stay in the settings dialog.
+  if (preference === 'language') { await page.locator('#language-select').selectOption(value); return; }
   const wasOpen = await openWorkshopPreferences(page);
   await page.locator(`#${preference}-select`).selectOption(value);
   if (!wasOpen) await page.locator('#hardware-dialog [data-close]').first().click();

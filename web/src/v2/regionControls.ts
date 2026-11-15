@@ -7,7 +7,22 @@ import { registerMessages,setText,bindTree } from './i18n';
 const messages:Record<string,{en:string;fr:string}>={};
 const copy=(en:string,fr:string):string=>{messages[en]={en,fr};return en;};
 const enumFrench:Record<string,string>={auto:'Automatique',primitive:'Primitif',rural:'Rural',developed:'Développé',imperial:'Impérial',dirt:'Terre',gravel:'Gravier',paved:'Pavé',flagstone:'Dalles',medieval:'Médiéval',roman:'Romain','east-asian':'Est-asiatique',caravan:'Caravanier',andean:'Andin',mesoamerican:'Mésoaméricain',tribal:'Tribal',elven:'Elfe',dwarven:'Nain'};
-const choice=(values:readonly string[])=>values.map(value=>({value,label:copy(value,enumFrench[value]??value)}));
+/** Site labels shared by the regional selects and native site-rule suggestions. */
+export const siteArchetypeNames: Record<string, readonly [string, string]> = {
+  "bridge": ["Bridge", "Pont"],
+  "confluence": ["Confluence", "Confluence"],
+  "meander": ["Meander", "Méandre"],
+  "harbor": ["Harbour", "Port"],
+  "estuary": ["Estuary", "Estuaire"],
+  "valley": ["Valley", "Vallée"],
+  "hilltop": ["Hilltop", "Sommet de colline"],
+  "plain": ["Plain", "Plaine"],
+  "lakeshore": ["Lakeshore", "Rive de lac"],
+  "island": ["Island", "Île"],
+  "spur": ["Spur", "Éperon"],
+  "pass": ["Mountain pass", "Col de montagne"],
+};
+const choice=(values:readonly string[])=>values.map(value=>({value,label:copy(...(siteArchetypeNames[value]??[value,enumFrench[value]??value] as const))}));
 const n=(path:string,en:string,fr:string,min=0,max=10,step=.1,help?:string):ParameterField=>({path,label:copy(en,fr),type:'number',min,max,step,help});
 export const regionControlFields:ParameterField[]=[
   {path:'placement.mode',label:copy('Regional composition','Composition régionale'),type:'select',options:[{value:'auto',label:copy('Automatic composition','Composition automatique')},{value:'counts',label:copy('Counts by settlement class','Effectifs par classe de lieu')},{value:'list',label:copy('Explicit list and positions','Liste explicite et positions')}]},

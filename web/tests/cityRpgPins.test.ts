@@ -32,8 +32,8 @@ function fixture() {
 describe('RPG map annotations', () => {
   it('labels actual programme features and gates, preserving native names and ignoring unmet demands and ordinary dwellings', () => {
     const { layout, partition } = fixture(), labels = nativeLandmarkLabels([layout], [partition]);
-    expect(labels.map(l => l.text)).toEqual(['Porte', 'Cathédrale du fleuve', 'Marché', 'Donjon']);
-    expect(labels.find(l => l.text === 'Donjon')).toMatchObject({ x: 920, y: 520, kind: 'castle' });
+    expect(labels.map(l => l.text)).toEqual(['Gate', 'Cathédrale du fleuve', 'Market square', 'Keep']);
+    expect(labels.find(l => l.text === 'Keep')).toMatchObject({ x: 920, y: 520, kind: 'castle' });
     expect(nativeLandmarkLabels([layout])).toHaveLength(2);
     layout.programme!.reservations.push({ ...layout.programme!.reservations[0], id: 'bad', shape: square(NaN, 0) });
     expect(nativeLandmarkLabels([layout])).toHaveLength(2);

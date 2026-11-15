@@ -10,7 +10,7 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 const reveal=selector=>page.locator(selector).evaluate(element=>{for(let p=element.parentElement;p;p=p.parentElement){if(p.tagName==='DETAILS')p.open=true;if(p.classList.contains('stage-body')&&p.hidden)document.querySelector(`[aria-controls="${p.id}"]`)?.click();}});
 try{
   await page.goto(`${process.env.MAGNA_V2_URL??'http://127.0.0.1:5174'}/v2.html?lang=en`);
-  await page.locator('#labels-open').waitFor();
+  await page.locator('#labels-open').waitFor({state:'attached'});
   await reveal('#import-open');await page.locator('#import-open').click();
   await page.locator('#project-file').setInputFiles(`${out}/fixture.json`);
   await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false'&&document.querySelector('#map-name').textContent==='Editor fixture');
@@ -38,19 +38,20 @@ try{
   await page.screenshot({path:`${out}/roads.png`});
   await page.locator('#labels-open').click();
   const labels=page.locator('.map-label-editor');
-  await labels.getByRole('button',{name:'+ Free label',exact:true}).click();
+  // A new label is placed by one click on the map, then typed in place.
+  await labels.getByRole('button',{name:'+ Add a label',exact:true}).click();
+  await page.mouse.click(point(320,270).x,point(320,270).y);
   const text=labels.getByRole('textbox',{name:'Label text',exact:true});
   await text.fill('North watch');await text.dispatchEvent('change');
   await page.waitForTimeout(350);
+  await labels.locator('.map-label-style summary').click();
   await labels.locator('input[type=color]').fill('#aa3322');await labels.locator('input[type=color]').dispatchEvent('change');
-  await labels.locator('input[type=number]').nth(0).fill('320');await labels.locator('input[type=number]').nth(0).dispatchEvent('change');
   await page.waitForTimeout(350);
-  await labels.locator('input[type=number]').nth(1).fill('270');await labels.locator('input[type=number]').nth(1).dispatchEvent('change');
-  await page.waitForTimeout(350);
+  assert(await page.locator('.map-label-marker:not([hidden])').count()===1,'the selected label is marked on the map');
   await reveal('#expert-open');await page.locator('#expert-open').click();
   const settings=JSON.parse(await page.locator('#expert-json').inputValue());
   const entry=Object.values(settings.naming.labels).find(e=>e.text==='North watch');
-  assert(entry);assert.deepEqual(entry.anchor,{x:320,y:270});assert.equal(entry.style.color,'#aa3322');
+  assert(entry);assert(Math.hypot(entry.anchor.x-320,entry.anchor.y-270)<3,'placed where clicked');assert.equal(entry.style.color,'#aa3322');
   await page.locator('[data-close="expert-dialog"]').first().click();
   await reveal('#export-open');await page.locator('#export-open').click();await page.locator('#export-format').selectOption('project');
   const downloaded=page.waitForEvent('download');await page.locator('#export-go').click();const download=await downloaded;

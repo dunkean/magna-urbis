@@ -9,6 +9,39 @@ import { localeMessages } from './localeMessages';
 export type RuntimeLanguage = Language;
 
 const entries: readonly (readonly [string, string])[] = [
+  ["Créez d’abord le relief.", "Create the terrain first."],
+  ["Chargement du moteur Rust/WASM (threads)…", "Loading the Rust/WASM engine (threads)…"],
+  ["Presqu’île indisponible dans le neuronal navigateur : île unique.", "Peninsula unavailable in the browser neural engine: single island."],
+  ["La recette décomposée couvre les reliefs régionaux ; les formes finies et les cavernes gardent leur générateur normal.", "The decomposed recipe covers regional reliefs; finite shapes and caverns keep their normal generator."],
+  ["Procédural Phasor : choisir un relief de plaine, collines, vallée, canyon ou montagnes.", "Procedural Phasor: choose a plains, hills, valley, canyon or mountains relief."],
+  ["Rust natif · pipeline procédural…", "Native Rust · procedural pipeline…"],
+  ["Rust CPU/WASM · pipeline procédural…", "Rust CPU/WASM · procedural pipeline…"],
+  ["Pipeline procédural Rust natif · étapes partagées avec la génération globale.", "Native Rust procedural pipeline · stages shared with global generation."],
+  ["Pipeline procédural Rust WASM · étapes partagées avec la génération globale.", "WASM Rust procedural pipeline · stages shared with global generation."],
+  ["Zones → conditionnement régional et relief local neuronal, puis opération mer.", "Zones → regional conditioning and local neural relief, then sea operation."],
+  ["GPU · relief compact, érosion régionale et Phasor…", "GPU · compact relief, regional erosion and Phasor…"],
+  ["CPU · érosion régionale et Phasor…", "CPU · regional erosion and Phasor…"],
+  ["Outreterre · creusement des cavernes et des tunnels…", "Underdark · carving caverns and tunnels…"],
+  ["Langue de l’interface", "Interface language"],
+  ["Chargement HD…", "HD loading…"],
+  ["Render indisponible : WebGL2 n’a pas pu démarrer. Choisissez un style cartographique.", "Render unavailable: WebGL2 could not start. Choose a cartographic style."],
+  ["Fermer l’aperçu", "Close preview"],
+  ["Ouverture de la vue 3D…", "Opening the 3D view…"],
+  ["Fond de carte", "Map ground"],
+  ["Moteur 3D et shaders", "3D engine and shaders"],
+  ["Chargement de la vue 3D…", "Loading the 3D view…"],
+  ["Relief, bâtiments et arbres", "Terrain, buildings and trees"],
+  ["Heightmap chargée. Créez le relief pour l’utiliser.", "Heightmap loaded. Create the relief to use it."],
+  ["Nouvelle variation", "Reroll house"],
+  ["Retour à la ville", "Back to city"],
+  ["Style des maisons de cette parcelle", "House style for this parcel"],
+  ["Position enregistrée. Relancez les implantations.", "Position saved. Run placement to apply it."],
+  ["Import : code de génération", "Import: generation code"],
+  ["Restauration : dernière recette", "Restore: latest recipe"],
+  ["Les champs affichent les valeurs actuelles. Les étapes précédentes et les autres lieux sont conservés.", "The fields show the current values. Previous stages and other settlements are retained."],
+  ["Rétablir les réglages par défaut", "Restore default settings"],
+  ["Les coordonnées de shape sont en mètres.", "The shape coordinates are in metres."],
+  ["Configuration de Python et des modèles :", "Python and model configuration:"],
   ["Ville de pente : des parcelles plus petites et des maisons plus hautes, dans les limites de la culture, ont été essayées avant l’extension sur les versants.", "Slope town: smaller plots and taller houses within the culture's limits were tried before extending onto the slopes."],
   ["Ville de pente : des terrasses suivant les courbes de niveau, sur fondations en gradins, étendent l’habitat sur les versants que la ville avait laissés de côté.", "Slope town: contour terraces with stepped foundations extend housing onto the flanks the town had left aside."],
   ["Ville de pente : des parcelles en terrasses bordent les deux côtés des routes existantes sur les versants.", "Slope town: terraced plots line both sides of the existing roads on the flanks."],
@@ -327,6 +360,21 @@ function escapeRegex(value: string): string { return value.replace(/[.*+?^${}()|
 
 /** Only the named message slots below are variable. Their contents are retained verbatim. */
 const templatePairs: readonly (readonly [string, string])[] = [
+  ["Service Rust local · calcul du champ physique {size} × {total}", "Local Rust service · computing the {size} × {total} physical field"],
+  ["Rust/WASM · champ physique {size} × {total}", "Rust/WASM · {size} × {total} physical field"],
+  ["Rust/WASM · source physique {size}² à {spacing} m", "Rust/WASM · {size}² physical source at {spacing} m"],
+  ["Source {size}² : le coût fixe du GPU dépasse le calcul CPU estimé.", "Source {size}²: the fixed GPU cost exceeds the estimated CPU compute."],
+  ["{reason} Génération Rust CPU à {spacing} m…", "{reason} Rust CPU generation at {spacing} m…"],
+  ["Génération GPU limitée à {max}² cellules ; pas demandé {spacing} m ({size}²). Choisissez CPU ou natif.", "GPU generation is limited to {max}² cells; requested spacing {spacing} m ({size}²). Choose CPU or native."],
+  ["{version} · préréglage compact · grille {size}² · {climate} · Phasor actif.", "{version} · compact preset · {size}² grid · {climate} · Phasor enabled."],
+  ["{version} · préréglage compact · grille {size}² · {climate} · Phasor désactivé.", "{version} · compact preset · {size}² grid · {climate} · Phasor disabled."],
+  ["{version} · Rust CPU + Phasor scalaire · {climate} ; topographie indépendante du GPU.", "{version} · Rust CPU + scalar Phasor · {climate}; GPU-independent topography."],
+  ["Rust natif · échantillonnage du relief {size} × {total}…", "Native Rust · sampling the terrain {size} × {total}…"],
+  ["Terminé en {seconds} s · relief {backend}", "Finished in {seconds} s · relief {backend}"],
+  ["{count} demande(s) de construction refusée(s) par le moteur : consultez le rapport du lieu.", "{count} construction request(s) refused by the engine: see the settlement report."],
+  ["{count} construction(s) refusée(s). Le rapport de chaque lieu explique les contraintes.", "{count} construction(s) refused. Each settlement report explains the constraints."],
+  ["Échec : {message}", "Failed: {message}"],
+  ["Bâtiments isolés · {count}", "Isolated buildings · {count}"],
   ['Population cible non atteinte : {achieved}/{target} habitants.', 'Population target not reached: {achieved}/{target} inhabitants.'],
   ['Villes voisines : l’enceinte n’est pas élevée, son tracé traverserait les terres de {name}.', 'Neighbouring towns: the enclosure is not raised, its circuit would cross the land of {name}.'],
   ['Villes voisines : il ne reste aucune terre libre à côté de {name} ; la ville est annoncée vide.', 'Neighbouring towns: no free land is left beside {name}; the town is announced empty.'],
@@ -398,6 +446,8 @@ const templatePairs: readonly (readonly [string, string])[] = [
   ['Export : {format}', 'Export: {format}'],
   ['Export PNG : {phase}', 'PNG export: {phase}'],
   ['Heightmap 8 bits : noir {min} m, blanc {max} m. Projet JSON pour conserver FP32.', '8-bit heightmap: black {min} m, white {max} m. Use a JSON project to retain FP32.'],
+  ['Terminé en {seconds} s · relief {backend} · villes {urban}', 'Finished in {seconds} s · relief {backend} · cities {urban}'],
+  ['{kind} · {count} bâtiments · {residents} habitants', '{kind} · {count} buildings · {residents} inhabitants'],
 ];
 const toEnglish = templatePairs.map(([fr, en]) => compileTemplate(fr, en));
 const toFrench = templatePairs.map(([fr, en]) => compileTemplate(en, fr));
@@ -478,3 +528,6 @@ export function runtimeDiagnosticLabel(language: RuntimeLanguage = 'en'): string
 
 /** Exposed for catalogue validation; no execution state or map data enters the dictionaries. */
 export const RUNTIME_MESSAGE_COUNT = entries.length;
+
+/** Read-only list of the English runtime sources (exact messages and templates), for coverage checks. */
+export function runtimeEnglishSources(): string[] { return [...entries.map(([, en]) => en), ...templatePairs.map(([, en]) => en)]; }

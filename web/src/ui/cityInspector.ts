@@ -11,6 +11,7 @@ import { programmeOutcomeRows } from '../render/programmeOutcome';
 import { retainedBodyInventoryRows } from '../render/retainedBuildingInventory';
 import { DISTRICT_ROLES, districtRoleLabel, type CityParcel, type CityPick, type CityScene } from '../render/cityCanvas';
 import { functionLabel, lotRoleChoices, roleLabel, streetLabel, uiRoleLocale } from '../render/cityRoles';
+import { roleText } from '../render/cityRolesLocale';
 import type { CityEdits, HouseEdit, LotEdit, QuarterEdit } from './cityEdits';
 import { ensureEditStyles, type Pt } from './cityShapeEditor';
 import { localizeCityInspector } from './cityInspectorLocale';
@@ -128,7 +129,7 @@ function quarterSection(target: CityInspectorTarget, plan: CityScene, hooks: Cit
   const culture = phase?.culture ?? layout.culture, stats = quarterStats(plan, li, q);
   const population = stats.households * householdSize(culture), ha = stats.area / 1e4;
   const body = rows([
-    ['Rôle', district?.role ? districtRoleLabel(district.role, district.label) : 'non attribué'],
+    [roleText('Role'), district?.role ? districtRoleLabel(district.role, district.label) : roleText('Unassigned')],
     ['Richesse', district?.wealth !== undefined ? pct(district.wealth) : undefined],
     ['Culture', hooks.cultures[culture] ?? culture],
     ['Tissu', district ? hooks.tissues[district.tissue] ?? district.tissue : undefined],
@@ -137,10 +138,10 @@ function quarterSection(target: CityInspectorTarget, plan: CityScene, hooks: Cit
     ['Population prévue', stats.households ? `≈ ${Math.round(population).toLocaleString('fr-FR')} hab. · ${stats.households.toFixed(0)} ménages` : 'aucun ménage attribué'],
     ['Densité', ha > 0 && stats.households ? `${(population / ha).toFixed(0)} hab./ha` : undefined],
     ['Îlots / parcelles', `${stats.blocks} / ${stats.lots}`],
-    ...(district ? [['Groupe de quartiers', `Q${district.id + 1} · ${layout.structure?.districts.find(d => d.id === district.id)?.quarters.length ?? 1} secteur(s)`] as [string, string]] : []),
+    ...(district ? [[roleText('District group'), `Q${district.id + 1} · ${layout.structure?.districts.find(d => d.id === district.id)?.quarters.length ?? 1} secteur(s)`] as [string, string]] : []),
   ]);
   const roles = { ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([id, r]) => [id, r.label])), ...Object.fromEntries(TRADES.map(t => [`craft:${t}`, districtRoleLabel(`craft:${t}`)])) };
-  const fields = `<label>Rôle<select data-field="role">${options(roles, edit?.role)}</select></label>
+  const fields = `<label>${roleText('Role')}<select data-field="role">${options(roles, edit?.role)}</select></label>
     <label>Richesse (0–1)<input data-field="wealth" type="number" min="0" max="1" step="0.05" value="${edit?.wealth ?? ''}" placeholder="${district?.wealth?.toFixed(2) ?? ''}"></label>
     <label>Culture<select data-field="culture">${options(hooks.cultures, edit?.culture)}</select></label>
     <label>Tissu<select data-field="tissue">${options(Object.fromEntries(Object.entries(hooks.tissues).filter(([id]) => id !== 'culture')), edit?.tissue)}</select></label>
@@ -155,7 +156,7 @@ function lotSection(target: CityInspectorTarget, plan: CityScene, hooks: CityIns
   const edit = parcel.id ? hooks.edits().parcels[parcel.id] : undefined;
   const body = rows([
     ['Usage', `${USES[parcel.use] ?? parcel.use}${src.family ? ` · ${src.family}` : ''}`],
-    ['Rôle', a ? `${roleLabel(a.role, uiRoleLocale(), a.culture)}${a.landmark ? ' · monument' : ''}` : undefined],
+    [roleText('Role'), a ? `${roleLabel(a.role, uiRoleLocale(), a.culture)}${a.landmark ? ` · ${roleText('monument')}` : ''}` : undefined],
     ['Fonction', a ? functionLabel(a.function) : undefined],
     ['Surface', m2(area(src.shape))],
     ['Façade × profondeur', frontage !== undefined || depth !== undefined ? `${frontage?.toFixed(1) ?? '?'} × ${depth?.toFixed(1) ?? '?'} m` : undefined],
@@ -166,7 +167,7 @@ function lotSection(target: CityInspectorTarget, plan: CityScene, hooks: CityIns
   ]);
   if (!parcel.id) return section('lot', 'Parcelle', false, body, '');
   const choices = lotRoleChoices(a?.culture ?? layout?.culture);
-  const fields = `<label>Rôle<select data-field="role">${options(Object.fromEntries(choices.map(c => [c.role, c.label])), edit?.role)}</select></label>
+  const fields = `<label>${roleText('Role')}<select data-field="role">${options(Object.fromEntries(choices.map(c => [c.role, c.label])), edit?.role)}</select></label>
     <label>Ménages<input data-field="households" type="number" min="0" max="500" step="1" value="${edit?.households ?? ''}" placeholder="${a?.households?.toFixed(0) ?? ''}"></label>
     <small>Recalcule les parcelles, le programme et les bâtiments.</small>`;
   // A merge survivor names the lots it absorbed (engine `parentIds`), each restorable.
@@ -193,7 +194,7 @@ function houseSection(target: CityInspectorTarget, hooks: CityInspectorHooks): s
   const materials = Object.entries(info.materials.bySlot).filter(([, ids]) => ids.length).map(([slot, ids]) => `${SLOTS[slot] ?? slot} : ${ids.join(', ')}`).join(' · ');
   const capacity = info.capacity.status === 'native' ? `${info.capacity.domesticUnits} logement(s) · ${Math.round(info.capacity.usefulAreaM2 ?? 0)} m² utiles` : 'inconnue (plan sans intérieur)';
   const body = rows([
-    ['Rôle', programme?.role ? `${roleLabel(programme.role)}${programme.archetype ? ` · ${programme.archetype.replace(/_/g, ' ')}` : ''}${programme.landmark ? ' · monument' : ''}` : functionLabel(info.function)],
+    [roleText('Role'), programme?.role ? `${roleLabel(programme.role)}${programme.archetype ? ` · ${programme.archetype.replace(/_/g, ' ')}` : ''}${programme.landmark ? ` · ${roleText('monument')}` : ''}` : functionLabel(info.function)],
     ['Validation', VALIDATION[info.validation] ?? info.validation],
     ['Modèle', info.validation === 'preview' ? undefined : `${info.label ?? info.recipeId}${info.variantLabel ? ` · ${info.variantLabel}` : info.variantId !== 'default' ? ` · ${info.variantId}` : ''}`],
     ['Culture / pack', `${hooks.cultures[info.culture.culture] ?? info.culture.culture} · ${info.culture.pack}`],

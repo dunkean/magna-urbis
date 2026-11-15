@@ -28,7 +28,7 @@ const T = {
   family: copy('Run the {family} stages', 'Exécuter les étapes : {family}'), place: copy('Place', 'Lieu'), noPlace: copy('Choose a place on the right', 'Choisissez un lieu à droite'),
   needTerrain: copy('Create the relief first', 'Créez d’abord le relief'), needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
   needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'), procedural: copy('Procedural', 'Procédural'), neural: copy('Neural', 'Neuronal'),
-  heightmap: copy('Heightmap', 'Heightmap'), source: copy('Relief source', 'Source du relief'),
+  heightmap: copy('Heightmap', 'Carte de hauteurs'), source: copy('Relief source', 'Source du relief'),
   view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'),
   noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),

@@ -18,6 +18,8 @@ let language:Language=resolveLanguage(typeof location==='undefined'?'':location.
 const listeners=new Set<()=>void>();
 const dynamicBindings=new Map<Element,()=>string>();
 const registeredMessages:Record<string,{en:string;fr:string}>=Object.create(null);
+/** English source strings that exist in the interface catalogue: French is the reverse lookup of interfaceEnglish. */
+const reverseInterface=new Map<string,string>();for(const [fr,en] of Object.entries(interfaceEnglish))if(!reverseInterface.has(en))reverseInterface.set(en,fr);
 /** Feature modules register intentional UI copy without translating user values. */
 export function registerMessages(messages:Record<string,{en:string;fr:string}>):void{
   for (const [key, message] of Object.entries(messages)) {
@@ -25,6 +27,8 @@ export function registerMessages(messages:Record<string,{en:string;fr:string}>):
     registeredMessages[key.trim()]=normalized;registeredMessages[normalized.en]=normalized;registeredMessages[normalized.fr]=normalized;
   }
 }
+/** English texts of every registered message, for coverage checks. */
+export function registeredEnglishMessages():string[]{return [...new Set(Object.values(registeredMessages).map(message=>message.en))];}
 registerMessages({
   'Magna Urbis · V2 Workshop': { en: 'Magna Urbis · V2 Workshop', fr: 'Magna Urbis · Atelier V2' },
   'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.': { en: 'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.', fr: 'Magna Urbis V2 : du relief à la maison, un atelier de cartographie procédurale.' },
@@ -39,6 +43,7 @@ export function translate(source:string,target:Language=language):string{
   if(Object.hasOwn(registeredMessages,body))translated=registeredMessages[body][bilingualTarget];
   else if(Object.hasOwn(interfaceEnglish,body))translated=target==='fr'?body:interfaceEnglish[body];
   else if(Object.hasOwn(interfaceFrench,body))translated=target==='fr'?interfaceFrench[body]:body;
+  else if(target==='fr'&&reverseInterface.has(body))translated=reverseInterface.get(body)!;
   else {
     if(target!=='en'&&target!=='fr'&&Object.hasOwn(localeMessages[target],body))return leading+localeMessages[target][body]+trailing;
     translated=translateRuntimeMessage(body,target);

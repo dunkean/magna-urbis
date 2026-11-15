@@ -264,7 +264,7 @@ export const STAGES: readonly StageDef[] = [
     label: { en: 'Map title and toponyms', fr: 'Titre et toponymes' }, summary: { en: 'Name the map and its places without rebuilding the region', fr: 'Nommer la carte et ses lieux sans reconstruire la région' },
     controls: ['widget:naming'], quick: [] },
   { id: 'map-export', family: 'map', optional: false, when: always, run: display,
-    label: { en: 'Export', fr: 'Export' }, summary: { en: 'Image, SVG, heightmap, project or reusable recipe', fr: 'Image, SVG, heightmap, projet ou recette réutilisable' },
+    label: { en: 'Export', fr: 'Exporter' }, summary: { en: 'Image, SVG, heightmap, project or reusable recipe', fr: 'Image, SVG, heightmap, projet ou recette réutilisable' },
     controls: ['widget:export'], quick: [] },
 ];
 

@@ -14,6 +14,7 @@ import { buildingColors, urbanFunctionColor, type UrbanBuildingAppearance } from
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { buildingHeat, roofSnowPatches, roofSnowRidgeMelt, roofSnowShare } from './roofSnow';
 import { funeraryLandFill, roleLabel, uiRoleLocale, type RoleLocale } from './cityRoles';
+import { DISTRICT_NAMES_EN, buildingFamilyName, districtName, districtRoleFromLabel, roleText, specialityName } from './cityRolesLocale';
 import { COVER_GRAINS, MATERIALS, coverGrainFrame, coverGrainPattern, coverLayer, roofGrain as roofGrainFamily, layerExtent, layerPattern, materialImagesNow, placeLayer, streetLayer, wallStoneLayer, type MaterialImages } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { planPanLight } from './roofPlaneLight';
@@ -59,28 +60,25 @@ export function selectCityLod(mpp: number, previous?: CityLod, hysteresis = 0.15
 const atLeast = (lod: CityLod, level: CityLod): boolean => LOD_ORDER.indexOf(lod) <= LOD_ORDER.indexOf(level);
 
 // ---------------------------------------------------------------- roles
-export const DISTRICT_ROLES: Record<string, { label: string; labelEn: string; color: string }> = {
-  shanty: { label: 'Habitat informel', labelEn: 'Informal housing', color: '#b69274' },
-  civic: { label: 'Civique', labelEn: 'Civic', color: '#d9a55b' }, market: { label: 'Marché', labelEn: 'Market', color: '#e8c35f' }, religious: { label: 'Religieux', labelEn: 'Religious', color: '#b79bd1' },
-  craft: { label: 'Artisanat', labelEn: 'Crafts', color: '#cf9270' }, port: { label: 'Port', labelEn: 'Port', color: '#7eb2cc' }, elite: { label: 'Notables', labelEn: 'Notables', color: '#d98c8c' },
-  commoner: { label: 'Commun', labelEn: 'Commoners', color: '#dccaa2' }, poor: { label: 'Pauvre', labelEn: 'Poor', color: '#b9ae98' }, garrison: { label: 'Garnison', labelEn: 'Garrison', color: '#919c89' },
-  gardens: { label: 'Jardins', labelEn: 'Gardens', color: '#a6c28a' }, foreign: { label: 'Étrangers', labelEn: 'Foreigners', color: '#9cc6b6' },
-};
-export const BUILDING_FAMILIES: Record<string, { label: string; color: string }> = {
-  worship: { label: 'Culte', color: '#7a54a8' }, commerce: { label: 'Commerce', color: '#c8862a' }, craft: { label: 'Artisanat', color: '#a2513a' },
-  civic: { label: 'Civique', color: '#356fa3' }, defence: { label: 'Défense', color: '#4a505b' }, dwelling: { label: 'Habitat', color: '#8b7761' },
-  garden: { label: 'Jardin', color: '#5c9a4b' },
-};
-const SPECIALITIES: Record<string, string> = { tanners: 'tanneurs', dyers: 'teinturiers', smiths: 'forgerons', potters: 'potiers', weavers: 'tisserands', butchers: 'bouchers', masons: 'maçons', millers: 'meuniers', fishers: 'pêcheurs', boatmen: 'bateliers', merchants: 'marchands', clergy: 'clergé' };
+const DISTRICT_COLORS: Record<string, string> = { shanty: '#b69274', civic: '#d9a55b', market: '#e8c35f', religious: '#b79bd1', craft: '#cf9270', port: '#7eb2cc', elite: '#d98c8c',
+  commoner: '#dccaa2', poor: '#b9ae98', garrison: '#919c89', gardens: '#a6c28a', foreign: '#9cc6b6' };
+/** `label` is the name in the UI language (`<html lang>`, English by default), read on access; `labelEn` is the English source. */
+export const DISTRICT_ROLES: Record<string, { label: string; labelEn: string; color: string }> = Object.fromEntries(Object.entries(DISTRICT_COLORS).map(([id, color]) =>
+  [id, { get label(): string { return districtName(id, uiRoleLocale()) ?? id; }, labelEn: DISTRICT_NAMES_EN[id], color }]));
+const FAMILY_COLORS: Record<string, string> = { worship: '#7a54a8', commerce: '#c8862a', craft: '#a2513a', civic: '#356fa3', defence: '#4a505b', dwelling: '#8b7761', garden: '#5c9a4b' };
+/** `label` is the name in the UI language, read on access. */
+export const BUILDING_FAMILIES: Record<string, { label: string; color: string }> = Object.fromEntries(Object.entries(FAMILY_COLORS).map(([id, color]) =>
+  [id, { get label(): string { return buildingFamilyName(id, uiRoleLocale()); }, color }]));
 /** District role id (`craft:tanners` → craft). */
 export const districtRoleKey = (role?: string): string | undefined => role?.split(/[.:/]/)[0]?.toLowerCase() || undefined;
-/** District role label with its speciality in `locale`; the engine's French `label` is used in French only. */
+/** District role label with its speciality in `locale`. The engine's French `label` is shown in French only; elsewhere it is mapped back to its role
+ * (or to a plain "District") and translated, so a non-French UI never shows it. */
 export function districtRoleLabel(role: string, label?: string, locale: RoleLocale = uiRoleLocale()): string {
   if (label && locale === 'fr') return label;
-  const [head, tail] = role.split(/[.:/]/), entry = DISTRICT_ROLES[head?.toLowerCase()];
-  const base = (locale === 'fr' ? entry?.label : entry?.labelEn) ?? head;
-  const speciality = tail && (locale === 'fr' ? SPECIALITIES[tail] : undefined) || tail?.replace(/[-_]/g, ' ');
-  return speciality ? `${base} · ${speciality}` : base;
+  const key = role || districtRoleFromLabel(label) || '';
+  if (!key) return roleText('District', locale);
+  const [head, tail] = key.split(/[.:/]/), id = head?.toLowerCase(), base = districtName(id, locale) ?? head;
+  return tail ? `${base} · ${specialityName(tail, locale)}` : base;
 }
 const FAMILY_ALIASES: Record<string, string> = { religious: 'worship', religion: 'worship', temple: 'worship', market: 'commerce', trade: 'commerce', shop: 'commerce', inn: 'commerce',
   military: 'defence', defense: 'defence', garrison: 'defence', fort: 'defence', housing: 'dwelling', domestic: 'dwelling', residential: 'dwelling', house: 'dwelling',
@@ -94,7 +92,7 @@ export function roleFamily(role?: string | null, fn?: string): string {
   return FUNCTION_FAMILY[fn ?? ''] ?? 'dwelling';
 }
 /** Name of a landmark role in the UI language (the engine's `label` only without a role); never a raw id tail such as « friday ». */
-export const landmarkName = (role?: string, fallback = 'Monument', label?: string): string => role ? roleLabel(role) : label || fallback;
+export const landmarkName = (role?: string, fallback = 'Monument', label?: string, locale: RoleLocale = uiRoleLocale()): string => role ? roleLabel(role, locale) : (locale === 'fr' ? label : undefined) || roleText(fallback, locale);
 
 // ---------------------------------------------------------------- geometry
 const EMPTY: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -275,7 +273,7 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       if (allocation?.landmark || parcel.use === 'market') {
         const point = centroid([parcel.shape]);
         if (point) landmarks.push({ point, parcel: index, box: { minX: point.x, minY: point.y, maxX: point.x, maxY: point.y },
-          family: parcel.use === 'market' && !allocation?.role ? 'commerce' : roleFamily(allocation?.role, allocation?.function), label: landmarkName(allocation?.role, parcel.use === 'market' ? 'Marché' : 'Monument', allocation?.label) });
+          family: parcel.use === 'market' && !allocation?.role ? 'commerce' : roleFamily(allocation?.role, allocation?.function), label: landmarkName(allocation?.role, parcel.use === 'market' ? 'Market' : 'Monument', allocation?.label) });
       }
     });
   });

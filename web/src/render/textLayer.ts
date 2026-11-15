@@ -15,8 +15,12 @@ export const TEXT_GROUPS = ['places', 'water', 'nature', 'countryside', 'city', 
 export type TextGroup = typeof TEXT_GROUPS[number];
 export const NAME_LEVELS = ['places','rivers','water','nature','districts','streets','buildings','landmarks','pins'] as const;
 export type NameLevel = typeof NAME_LEVELS[number];
-const levelDefaults:Record<NameLevel,number>={places:70,rivers:55,water:70,nature:55,districts:45,streets:45,buildings:15,landmarks:70,pins:100};
-export interface TextSettings { visible: boolean; groups: Record<TextGroup, boolean>; look: 'inherit' | 'serif' | 'sans'; size: number; density: 'low' | 'normal' | 'high'; halo: 'inherit' | 'strong'; /** 0 = none, 1 = principal feature, 100 = every candidate (collisions still apply). */ levels?: Partial<Record<NameLevel,number>> }
+const levelDefaults:Record<NameLevel,number>={places:70,rivers:55,water:70,nature:55,districts:30,streets:30,buildings:10,landmarks:40,pins:100};
+export const TEXT_AMOUNTS = ['few', 'normal', 'many', 'all'] as const;
+export type TextAmount = typeof TEXT_AMOUNTS[number];
+/** One simple control scales every category; 'all' shows every candidate (collisions still apply). */
+const amountFactor:Record<TextAmount,number>={few:.6,normal:1,many:1.45,all:Infinity};
+export interface TextSettings { visible: boolean; groups: Record<TextGroup, boolean>; look: 'inherit' | 'serif' | 'sans'; size: number; density: 'low' | 'normal' | 'high'; halo: 'inherit' | 'strong'; /** 0 = none, 1 = principal feature, 100 = every candidate (collisions still apply). */ levels?: Partial<Record<NameLevel,number>>; amount?: TextAmount }
 export const TEXT_SOURCE_GROUP: Record<NameKind | 'district' | 'landmark' | 'rpg' | 'site', TextGroup> = {
   town: 'places', village: 'places', sea: 'water', lake: 'water', river: 'water', hill: 'nature', forest: 'nature', farm: 'countryside', road: 'countryside', bridge: 'countryside', quarter: 'city', street: 'city', square: 'city', district: 'city', castle: 'landmarks', church: 'landmarks', gate: 'landmarks', landmark: 'landmarks', building:'landmarks', rpg: 'pins', site: 'pins',
 };
@@ -36,19 +40,44 @@ export function nameLevel(kind:string):NameLevel {
   return 'landmarks';
 }
 export function nameLevelValue(text:Readonly<TextSettings>,category:NameLevel):number {return text.levels?.[category] ?? levelDefaults[category];}
+/** The level actually applied: the category level scaled by the global amount. */
+export function effectiveNameLevel(text:Readonly<TextSettings>,category:NameLevel):number {
+  const level=nameLevelValue(text,category);if(level<=0)return 0;
+  return Math.min(100,Math.round(level*amountFactor[text.amount ?? 'normal']));
+}
+/** Same text in the same town and category is one map feature for the reader: show it once. */
+const duplicateKey=(l:MapLabel):string=>`${l.scope ?? ''}|${l.text.trim().toLocaleLowerCase()}`;
+/** Town features repeat generic names (gates, craft streets); natural features legitimately share theirs along a river or across a region. */
+const DEDUPLICATED:ReadonlySet<NameLevel>=new Set(['districts','streets','buildings','landmarks']);
+/** Town names beyond the level are not dropped: they wait for a closer zoom, so a town view stays readable and lanes still show up close in. */
+const DEFERRED_ZOOM=3,DEFERRED_MIN_SCALE=.5;
+/** The closer zoom a deferred name waits for; undefined when that leaves it no useful zoom range (area names of quarters). */
+function deferredMinScale(st:KindStyle):number|undefined{
+  const minScale=Math.max(st.minScale*DEFERRED_ZOOM,DEFERRED_MIN_SCALE);
+  return minScale<st.maxScale*.75?minScale:undefined;
+}
 /** Monotone selection by semantic importance, then size, then stable id. Never random sampling. */
 export function selectNameLevels(labels:MapLabel[],text:Readonly<TextSettings>):MapLabel[] {
-  if(!text.levels)return labels; // Old compositions keep their historical visibility.
-  const selected=new Set<MapLabel>();
+  const selected=new Set<MapLabel>(labels.filter(l=>l.manual)),deferred=new Set<MapLabel>();
   for(const category of NAME_LEVELS){
-    const level=nameLevelValue(text,category);if(level<=0)continue;
-    const candidates=labels.filter(l=>nameLevel(l.kind)===category).sort((a,b)=>
+    const level=text.levels ? effectiveNameLevel(text,category) : 100;if(level<=0)continue;
+    const sorted=labels.filter(l=>!l.manual&&nameLevel(l.kind)===category).sort((a,b)=>
       (a.detail??defaultDetail(a))-(b.detail??defaultDetail(b)) || labelExtent(b)-labelExtent(a) || a.id.localeCompare(b.id));
+    const seen=new Set<string>(),candidates:MapLabel[]=[];
+    for(const l of sorted){
+      const key=duplicateKey(l);
+      if(DEDUPLICATED.has(category)&&l.text.trim()){if(seen.has(key))continue;seen.add(key);}
+      candidates.push(l);
+    }
     // The first step shows only the most important object; every further step adds candidates.
     const count=level>=100?candidates.length:Math.min(candidates.length,1+Math.floor((candidates.length-1)*Math.pow((level-1)/99,2)));
-    for(let i=0;i<count;i++)selected.add(candidates[i]);
+    for(let i=0;i<candidates.length;i++)if(i<count)selected.add(candidates[i]);else if(DEDUPLICATED.has(category))deferred.add(candidates[i]);
   }
-  return labels.filter(l=>selected.has(l));
+  return labels.flatMap(l=>{
+    if(selected.has(l))return [l];
+    const minScale=deferred.has(l)?deferredMinScale(l.st):undefined;
+    return minScale===undefined?[]:[{...l,st:{...l.st,minScale}}];
+  });
 }
 function defaultDetail(l:MapLabel):number {
   if(l.kind==='town'||l.kind==='sea')return 0;
@@ -56,6 +85,8 @@ function defaultDetail(l:MapLabel):number {
   if(l.kind==='farm'||l.kind==='building')return .95;
   if(l.kind==='river')return (l.rank??3)/10;
   if(l.kind==='street'||l.kind==='road')return (l.rank??3)/5;
+  if(l.kind==='gate')return .6;
+  if(l.kind==='square')return .5;
   return .4;
 }
 function labelExtent(l:MapLabel):number {return l.path?.reduce((n,p,i,ps)=>n+(i?Math.hypot(p.x-ps[i-1].x,p.y-ps[i-1].y):0),0) ?? l.span ?? 0;}
@@ -69,7 +100,8 @@ export function textStyle(st: KindStyle, text: Readonly<TextSettings>, pal: Pale
 }
 export function styleTextLabels(labels: MapLabel[], text: Readonly<TextSettings>, pal: Palette): MapLabel[] {
   if (!text.visible) return [];
-  return selectNameLevels(labels.filter(l => text.groups[textGroup(l.kind)]),text).map(l => ({ ...l, st: textStyle(l.st, text, pal) }));
+  // Author labels are explicit choices: group toggles and importance levels never hide them.
+  return selectNameLevels(labels.filter(l => l.author || text.groups[textGroup(l.kind)]),text).map(l => ({ ...l, st: textStyle(l.st, text, pal) }));
 }
 export function textPlacement(text: Readonly<TextSettings>): { maxLabels: number; pad: number } { return { maxLabels: text.density === 'low' ? 100 : text.density === 'high' ? 480 : 320, pad: text.density === 'low' ? 6 : text.density === 'high' ? 1.5 : 2.5 }; }
 const cityCache = new WeakMap<CityScene, { key: string; labels: MapLabel[] }>();

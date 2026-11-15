@@ -3,6 +3,7 @@ import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGe
 import type { V2Settings, V2UrbanControls } from './contracts';
 import type { HouseMix } from '../../../rust/bridge/urbanArchitecture';
 import { SITE_ARCHETYPES } from '../gen/options';
+import { siteArchetypeNames } from './regionControls';
 import { defaultParcelConfig } from '../../../rust/bridge/urbanConfig';
 import type { CatalogueBundle, HouseConfig } from '../../../rust/bridge/housesContract';
 import type { Options } from '../gen/types';
@@ -327,7 +328,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
         button(row, 'Remove site rule', () => { const next = { ...rules }; delete next[id]; set('layout.siteArchetypes', next); }); rows.append(row);
       }
     });
-    const list = document.createElement('datalist'); list.id = `urban-${scopeId}-archetypes`; for (const archetype of SITE_ARCHETYPES) list.append(new Option(archetype, archetype)); box.append(list);
+    const list = document.createElement('datalist'); list.id = `urban-${scopeId}-archetypes`; for (const archetype of SITE_ARCHETYPES) { const option = new Option('', archetype); setText(option, siteArchetypeNames[archetype][0]); list.append(option); } box.append(list);
     const id = document.createElement('input'); id.placeholder = translate('Settlement identifier'); id.setAttribute('aria-label', 'Settlement identifier'); box.append(id);
     button(box, 'Add site rule', () => { if (!id.value.trim()) return; set('layout.siteArchetypes', { ...effective('layout.siteArchetypes') as object ?? {}, [id.value.trim()]: 'auto' }); id.value = ''; });
     button(box, 'Reset field', () => set('layout.siteArchetypes', undefined));

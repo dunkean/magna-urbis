@@ -11,7 +11,7 @@ import { View, worldToScreen } from './view';
 import type { Layout, Partition } from '../../../rust/bridge/urban';
 import { roleLabel } from './cityRoles';
 
-export const RPG_PIN_KINDS = { stable: 'Écuries', cave: 'Entrée de grotte', inn: 'Auberge', quest: 'Quête', label: 'Étiquette' };
+export const RPG_PIN_KINDS = { stable: 'Stables', cave: 'Cave entrance', inn: 'Inn', quest: 'Quest', label: 'Label' };
 export type RpgPinKind = keyof typeof RPG_PIN_KINDS;
 export interface RpgPin { id: string; kind: RpgPinKind; text: string; x: number; y: number }
 export interface LandmarkLabel { id: string; kind: 'castle' | 'church' | 'square' | 'gate'; text: string; x: number; y: number }
@@ -28,12 +28,12 @@ export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partiti
     const anchor = Math.abs(area) > 1e-8 ? { x: x / (3 * area), y: y / (3 * area) }
       : { x: points.reduce((n, p) => n + p.x, 0) / points.length, y: points.reduce((n, p) => n + p.y, 0) / points.length };
     const kind = role?.startsWith('defence.') || role?.startsWith('elite.') ? 'castle' : role?.startsWith('worship.') ? 'church' : 'square';
-    out.push({ id, kind, text: role ? roleLabel(role) : label || (market ? roleLabel('commerce.market') : 'Monument'), ...anchor });
+    out.push({ id, kind, text: label || (role ? roleLabel(role) : market ? roleLabel('commerce.market') : 'Monument'), ...anchor });
   };
   const major = (role?: string): boolean => !!role && /^(defence\.(keep|castle|kasbah|fort|fortress)|elite\.palace|worship\.(cathedral|temple\.major)|commerce\.market)(\.|$)/.test(role);
   for (const l of layouts) {
     l.enclosures?.forEach((e, ei) => e.gates.forEach((p, i) => {
-      if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: `${l.key}:gate:${ei}:${i}`, kind: 'gate', text: 'Porte', ...p });
+      if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: `${l.key}:gate:${ei}:${i}`, kind: 'gate', text: roleLabel('defence.gate'), ...p });
     }));
     const partition = partitions.find(p => p.key === l.key), programme = partition?.programme ?? l.programme;
     const allocations = new Map((programme?.allocations ?? []).map(a => [a.parcelId, a as typeof a & { label?: string; landmark?: boolean }]));
@@ -58,6 +58,12 @@ export interface MapLabel {
   x: number; y: number; path?: Vec2[]; span?: number;
   /** Street rank when kind === 'street'. */
   rank?: number;
+  /** Explicit annotation: importance levels and de-duplication never drop it. */
+  manual?: boolean;
+  /** Placed or written by the author in the names panel: group toggles never hide it either. */
+  author?: boolean;
+  /** Town that owns the feature; identical texts are shown once per town and category. */
+  scope?: string;
 }
 /** Text width in px of `text` at `size` px for the given style (italic/bold matter). */
 export type Measure = (text: string, size: number, st: KindStyle) => number;
@@ -71,20 +77,20 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
   const out: MapLabel[] = [];
   for (const e of names?.entries ?? []) {
     let st = styles[e.kind];
-    if (!st) continue;
+    if (!st || (e as typeof e & { hidden?: boolean }).hidden || !e.text?.trim()) continue;
     if(e.kind==='church'&&(e.parts?.role||e.parts?.generic)&&!/^church$|^cathedral$/.test(e.parts?.generic??'')&&!/church|cathedral|parish|minster/.test(e.parts?.role??''))st={...st,symbol:'ring'};
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     // Underdark caverns reuse the hill entry but have no summit: no triangle.
     if (e.parts?.role === 'terrain.cavern') st = { ...st, symbol: undefined };
     if (e.manual) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
-    out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail });
+    out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail, manual: e.manual || undefined, author: e.manual || undefined, scope: e.cityKey ?? 'main' });
   }
   if (world.mapAnnotations?.enabled) {
-    for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });
+    for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, manual: true, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });
     for (const p of world.mapAnnotations.pins ?? []) {
       if (!p.text.trim()) continue;
       const symbol = ({ stable: 'square', cave: 'tri', inn: 'ring', quest: 'cross', label: undefined } as const)[p.kind];
-      out.push({ ...p, id: `rpg:${p.id}`, kind: `rpg:${p.kind}`, st: { ...styles.gate, minScale: 0, maxScale: Infinity, priority: 110, italic: false, color: pal.ink, symbol } });
+      out.push({ ...p, id: `rpg:${p.id}`, kind: `rpg:${p.kind}`, manual: true, st: { ...styles.gate, minScale: 0, maxScale: Infinity, priority: 110, italic: false, color: pal.ink, symbol } });
     }
   }
   if (world.site && !world.urban) out.push({ id: 'site', kind: 'site', text: ' ', ...world.site.center, st: { ...styles.village, symbol: 'ring', minPx: 18, maxPx: 18, minScale: 0, maxScale: Infinity, priority: 105 } }); // fixed px size: the ring never follows the zoom

@@ -13,6 +13,15 @@ export interface LabelEdit {
   style?: { color?: string; size?: number; bold?: boolean; italic?: boolean };
   /** New free labels and names attached to previously unnamed native city objects. */
   kind?: 'free' | 'quarter' | 'parcel' | 'building';
+  /** Kept in the project and in the names list, never drawn. */
+  hidden?: boolean;
+}
+/** The settlement a town or village label names, if any: renaming it renames the settlement. */
+export function settlementKeyOf(entry: NameEntry): string | undefined {
+  if (entry.reference?.form === 'name' && (entry.kind === 'town' || entry.kind === 'village')) return entry.reference.key;
+  if (entry.sub?.startsWith('settlement:')) return entry.sub.slice(11);
+  if (entry.kind === 'town' && (entry.entityKey === 'settlement:main' || entry.id === 'settlement:main')) return 'main';
+  return undefined;
 }
 export interface LabelCandidate { id: string; text: string; anchor: Vec2; kind: string }
 const center = (points: Vec2[]): Vec2 | undefined => points.length ? ({ x: points.reduce((a,p) => a+p.x,0)/points.length, y: points.reduce((a,p) => a+p.y,0)/points.length }) : undefined;
@@ -50,7 +59,7 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
       }
       for (const district of layout.structure?.districts ?? []) {
         const anchor=centroid(districtRings.get(district.id) ?? []);
-        if (anchor && (district.label || district.role)) out.push({id:`urban:${prefix}:district:${encodeURIComponent(layout.key)}:${district.id}`, text:district.role ? districtRoleLabel(district.role, district.label) : district.label!, anchor, kind:'district'});
+        if (anchor && (district.label || district.role)) out.push({id:`urban:${prefix}:district:${encodeURIComponent(layout.key)}:${district.id}`, text:districtRoleLabel(district.role ?? '', district.label), anchor, kind:'district'});
       }
     }
     for (const partition of city.partitions ?? []) {
@@ -72,7 +81,8 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
   return out;
 }
 export function labelCandidates(world: World): LabelCandidate[] {
-  const entries = (world.names?.entries ?? []).map(e => ({ id: e.id, text: e.text, anchor: e.anchor, kind: e.sub ?? e.kind }));
+  // The entry kind, not its generator tag (`sub` holds exits, lengths, saints…); author labels keep their 'free' tag.
+  const entries = (world.names?.entries ?? []).map(e => ({ id: e.id, text: e.text, anchor: e.anchor, kind: e.sub === 'free' ? 'free' : e.kind }));
   const ids = new Set(entries.map(e => e.id));
   return [...entries, ...nativeLabelCandidates(world).filter(e => !ids.has(e.id))];
 }
@@ -96,7 +106,8 @@ export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>)
       }
       if (edit.anchor) { existing.anchor = edit.anchor; existing.path = undefined; existing.span = undefined; existing.manual = true; }
       existing.labelStyle = edit.style;
-    } else if (edit.text?.trim() && (candidate || edit.kind === 'free') && (edit.anchor || candidate?.anchor)) {
+      (existing as NameEntry & { hidden?: boolean }).hidden = edit.hidden || undefined;
+    } else if (!edit.hidden && edit.text?.trim() && (candidate || edit.kind === 'free') && (edit.anchor || candidate?.anchor)) {
       const entry: NameEntry = { id, kind: candidate?.kind === 'quarter' ? 'quarter' : candidate?.kind==='building'?'building':'square', text: edit.text, rank: 0,
         anchor: edit.anchor ?? candidate!.anchor, manual: true, labelStyle: edit.style, sub: candidate?.kind ?? 'free', ...(candidate?.text ? { replacedAnchor:candidate.anchor } : {}) };
       world.names.entries.push(entry);
