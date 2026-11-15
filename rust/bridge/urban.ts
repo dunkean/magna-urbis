@@ -244,6 +244,8 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     retain_partitions_pack(bytes: Uint8Array): number;
     urban_built_capacity_resident(partitionsId: number, scene: string): Uint8Array;
   };
+  // A boolean, not a type guard: with the current package every terrain has the pack calls, and a guard would
+  // type the branches kept for a package built before them (threads and release variants rebuild separately) as unreachable.
   const packs = (t: SettlementTerrain): boolean => typeof (t as Partial<PackTerrain>).urban_parcels_resident_pack === 'function';
   /** A pack out of WASM; its header names the resident id of exactly these partitions. */
   const wasmPack = (bytes: Uint8Array): { pack: ArrayBuffer; rust: number } => {
