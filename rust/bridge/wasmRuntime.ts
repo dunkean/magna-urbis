@@ -49,12 +49,21 @@ const initWith = async (init: unknown, module_or_path: WebAssembly.Module | Arra
   return exports;
 };
 
+/** The local file behind a Vite `/@fs/` URL when running under Node (no `document`), else undefined: browsers keep fetching. */
+function nodeWasmFile(url: string): string | undefined {
+  if (typeof process === 'undefined' || !process.versions?.node || 'document' in globalThis) return undefined;
+  const match = /^\/@fs\/([^?#]+)/.exec(url);
+  return match ? (/^[A-Za-z]:/.test(match[1]) ? match[1] : '/' + match[1]) : undefined;
+}
 /**
  * Streaming compilation: the module compiles while it downloads, and the browser
  * keeps the optimised code in its cache for the next visit (array-buffer
  * compiles are never code-cached). Falls back when the server sends another MIME type.
  */
 export async function compileWasm(url: string): Promise<WebAssembly.Module> {
+  // Node (vitest, scripts): the bundler hands over a file URL path (`/@fs/D:/…/x.wasm?inline`) that `fetch` cannot parse, so read the file.
+  const file = nodeWasmFile(url);
+  if (file) return WebAssembly.compile(await (await import(/* @vite-ignore */ 'node:fs/promises')).readFile(file));
   const response = await fetch(url);
   if (!response.ok) throw new Error(`WASM download failed: HTTP ${response.status} (${url.slice(0, 80)})`);
   if (typeof WebAssembly.compileStreaming === 'function' && /^application\/wasm/.test(response.headers.get('content-type') ?? '')) return WebAssembly.compileStreaming(response);
