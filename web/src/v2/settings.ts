@@ -3,7 +3,7 @@ import type { V2Settings } from './contracts';
 import { TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
 
 export function defaultSettings(): V2Settings {
-  return { options: makeOptions({ seed: 'magna-urbis-v2', population: 2500, biome: 'temperate', relief: 'valley', coast: 'S' }),
+  return { options: makeOptions({ seed: 'magna-urbis-v2', population: 2500, biome: 'temperate', relief: 'hills', coast: 'S' }),
     extent: 6000, settlementCount: 4, local: {}, generation: 'procedural',
     // Explicit defaults belong to new recipes; absent fields in saved recipes keep their historical defaults.
     terrain: { motifSize: 10000, hydrology: { engine: 'vector' } },

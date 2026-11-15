@@ -200,7 +200,15 @@ if(localEdition){settings.generation='procedural';settings.runtime={...settings.
 setHTML($('#app'), `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>L’atelier des régions</p></div><span class="version">V2 · ALPHA</span>
-  <nav class="project-links"><a href="./scientific/index.html" target="_blank" rel="noopener">How it works? ↗</a><a href="https://v1.magna-urbis.org/" target="_blank" rel="noopener">V1 ↗</a><a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a><span id="build-info"></span></nav><div class="project-actions"><button id="import-open">Ouvrir</button><button id="export-open">Exporter ↗</button></div>
+  <nav class="project-links">
+    <a href="./scientific/index.html" target="_blank" rel="noopener">How it works? ↗</a>
+    <a href="https://v1.magna-urbis.org/" target="_blank" rel="noopener">V1 ↗</a>
+    <a href="https://github.com/dunkean/magna-urbis" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+    <a href="https://github.com/dunkean/magna-urbis/discussions" target="_blank" rel="noopener noreferrer">Discussions ↗</a>
+    <a href="https://github.com/dunkean/magna-urbis/releases" target="_blank" rel="noopener noreferrer">Releases ↗</a>
+    <a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a>
+    <span id="build-info"></span>
+  </nav><div class="project-actions"><button id="import-open">Ouvrir</button><button id="export-open">Exporter ↗</button></div>
   <div class="header-tools"><span class="edition">${localEdition ? 'Édition locale' : 'Édition web'}</span><button id="hardware-open" title="Réglages, moteurs et activité">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Réglages</span></button></div>
 </header>
 <section class="workbench-bar" aria-label="Scene and editing tools">
