@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, clearTerrainPreviews } from './engine';
+import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, clearTerrainPreviews, namesRenamedAfterActions } from './engine';
 import type { V2WorkerRequest, V2WorkerResponse, V2ResourceRequest, ProgressCallback } from './contracts';
 import { WorkerWorld } from './workerWorld';
 import { renameMap } from './mapNaming';
@@ -12,6 +12,8 @@ const scope = self as unknown as DedicatedWorkerGlobalScope;
 // Serialize actions; the procedural cores retain per-thread scratch buffers.
 let queue = Promise.resolve();
 const retained=new WorkerWorld();
+// Every action below ends with renameMap: the town stage need not name its result first.
+namesRenamedAfterActions();
 scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceRequest|{type:'release'}>) => {
   if('type'in request&&request.type==='resources'){
     const {id,settings}=request;

@@ -109,6 +109,10 @@ const minDistToPts = (pl: Polyline, pts: Vec2[]): number => {
   return m;
 };
 const areaOf = (p: Polygon): number => Math.abs(polygonArea(p));
+type Box = ReturnType<typeof bbox>;
+const inBox = (p: Vec2, b: Box, margin = 0): boolean => p.x >= b.minX - margin && p.x <= b.maxX + margin && p.y >= b.minY - margin && p.y <= b.maxY + margin;
+/** polygonContains behind its bounding box (a point outside the box is never inside): the same answer, without the edge scan. */
+const boxedContains = (poly: Polygon, box: Box, p: Vec2): boolean => inBox(p, box) && polygonContains(poly, p);
 
 type Dir4 = 0 | 1 | 2 | 3; // N E S W
 const dirOf = (from: Vec2, to: Vec2): Dir4 => {
@@ -233,11 +237,12 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   };
   // regional road labels outside the footprint
   {
+    const footprintBoxes = (u?.footprint ?? []).map(f => bbox(f));
     for (const r of roadInfos) {
       if (polylineLength(r.path) < 25) continue;
       let bestRun: Polyline = [], run: Polyline = [];
       for (const p of r.path) {
-        if (u?.footprint.some((f) => polygonContains(f, p))) { if (run.length > bestRun.length) bestRun = run; run = []; } else run.push(p);
+        if (u?.footprint.some((f, k) => boxedContains(f, footprintBoxes[k], p))) { if (run.length > bestRun.length) bestRun = run; run = []; } else run.push(p);
       }
       if (run.length > bestRun.length) bestRun = run;
       if (bestRun.length >= 2) add({ entityKey:r.key,kind: 'road', text: V.st.road(r.dest), parts: partsFor('road', r.dest, V.st.road(r.dest)), rank: r.kind==='major'?1:4, anchor: pathMid(bestRun), path: bestRun, ...(r.target ? { reference: referenceTo(r.target, 'road') } : {}) });
@@ -430,14 +435,18 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
     const bridgePts = (world.bridges ?? []).map((b) => ({ x: (b.a.x + b.b.x) / 2, y: (b.a.y + b.b.y) / 2 }));
     const crafts = Object.keys(V.crafts);
     const flags = { main: false, market: false, bridge: false, riverside: 0, wall: 0, ring: 0, quay: 0 };
-    const nearSet = (pl: Polyline, pts: Vec2[], d: number): boolean => pts.length > 0 && minDistToPts(pl, pts) < d;
+    // Any point pair closer than d (the minimum distance is below d exactly when one pair is).
+    const nearSet = (pl: Polyline, pts: Vec2[], d: number): boolean => pl.some(p => pts.some(q => Math.hypot(p.x - q.x, p.y - q.y) < d));
+    // Per-street scans made cheap with the same answers: quarter and river boxes, the church labels (all added above).
+    const quarterBoxes = u.quarters.map(q => bbox(q.poly.outer)), riverBoxes = mainRivers.map(rv => bbox(rv.path));
+    const churchEntries = entries.filter((e) => e.kind === 'church');
     let named = 0;
     const longestRank0 = cands.filter((c) => c.s.rank === 0).map((c) => ({ c, d: minDistToPts(c.s.path, squareCenters.length ? squareCenters : [center]) })).sort((a, b) => a.d - b.d)[0]?.c;
     for (const { s, i, len } of cands) {
       if (named >= maxNamed) break;
-      const r = rng.fork('street:' + shapeKey(s.path));
+      const sk = shapeKey(s.path), r = rng.fork('street:' + sk);
       const mid = pathMid(s.path);
-      const quarter=u.quarters.find(q => polygonContains(q.poly.outer,mid));
+      const quarter=u.quarters.find((q, k) => boxedContains(q.poly.outer, quarterBoxes[k], mid));
       const localCulture = (s as typeof s & {culture?:string}).culture ?? quarter?.culture ?? opts.culture;
       const localProfile=quarter?.nameProfile ?? opts.language,localSource=quarter?.nameSource ?? opts.nameSource;
       const V = vocabulary(localCulture,localProfile,localSource);
@@ -455,9 +464,9 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       if (!text && s.role === 'ring' && flags.ring < 3) { text = use(pickFrom(V.st.ring, r)); if (text) flags.ring++; }
       if (!text && s.role === 'wall-lane' && flags.wall < 2) { text = use(pickFrom(V.st.wall, r)); if (text) flags.wall++; }
       if (!text && !flags.market && nearSet(s.path, squareCenters, 35)) { text = use(pickFrom(V.st.market, r)); if (text) flags.market = true; }
-      if (!text && nearSet(s.path, churchPts, 35)) { const ch = entries.find((e) => e.kind === 'church' && dist(e.anchor, mid) < 120); if (ch?.sub) text = use(V.st.church(ch.sub)); }
+      if (!text && nearSet(s.path, churchPts, 35)) { const ch = churchEntries.find((e) => dist(e.anchor, mid) < 120); if (ch?.sub) text = use(V.st.church(ch.sub)); }
       if (!text && !flags.bridge && nearSet(s.path, bridgePts, 40)) { text = use(pickFrom(V.st.bridge, r)); if (text) flags.bridge = true; }
-      if (!text && s.rank >= 1 && flags.riverside < 3 && mainRivers.some((rv) => s.path.some((p) => distToPolyline(p, rv.path) < 30))) {
+      if (!text && s.rank >= 1 && flags.riverside < 3 && mainRivers.some((rv, k) => s.path.some((p) => inBox(p, riverBoxes[k], 30) && distToPolyline(p, rv.path) < 30))) {
         if (s.rank >= 2 && r.chance(0.6)) text = use(V.st.craft(V.crafts[r.chance(0.5) ? 'tanner' : 'dyer']));
         if (!text) text = use(pickFrom(V.st.riverside, r));
         if (text) flags.riverside++;
@@ -470,7 +479,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       for (let a = 0; !text && a < 8; a++) {
         const rr = r.fork('fb' + a);
         const roll = rr.float();
-        const cand = roll < 0.45 ? V.st.craft(V.crafts[rr.pick(crafts)]) : roll < 0.55 ? V.st.church(saintOf('st:' + shapeKey(s.path) + ':' + a)) : V.st.minor(rr);
+        const cand = roll < 0.45 ? V.st.craft(V.crafts[rr.pick(crafts)]) : roll < 0.55 ? V.st.church(saintOf('st:' + sk + ':' + a)) : V.st.minor(rr);
         text = use(cand);
       }
       if (!text) { text = V.st.minor(r); }
@@ -478,7 +487,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       named++;
       const described = V.describeName?.(text);
       if(reference){reference.culture=localCulture;reference.language=localProfile;reference.family=familyFor(localCulture,localProfile,world.seed);}
-      add({ entityKey:featureNameKey(s,'street',shapeKey(s.path)), parentKey:quarter?.nameScope, kind: 'street', text, parts: reference
+      add({ entityKey:featureNameKey(s,'street',sk), parentKey:quarter?.nameScope, kind: 'street', text, parts: reference
         ? { ...partsFor('street',roadInfos.find(road => road.target === reference?.key)?.dest ?? text,text), profile:resolveToponymProfile(localCulture,localProfile).id, ...(reference.form==='gate-street'?{meaning:{concept:'destination',viaGate:true}}:{}) }
         : { ...partsFor('street',described?.proper ?? text,text,described?.opaque ?? true), meaning:described?.meaning, profile:resolveToponymProfile(localCulture,localProfile).id,sourceMode:localSource }, rank: s.rank, anchor: mid, path: s.path, sub: String(len | 0), ...(reference ? { reference } : {}) });
     }

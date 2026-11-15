@@ -498,6 +498,10 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
   world.stats['v2.stage'] = 'towns';
 }
 
+/** Set by the engine worker, which renames every result after its action (mapNaming.renameMap, from the same geometry):
+ * the town stage then skips its own names pass, which that rename replaced entirely (0.6 s for a town of 100,000). */
+let renamedAfterActions = false;
+export function namesRenamedAfterActions(): void { renamedAfterActions = true; }
 async function finishTowns(world: World, settings: V2Settings, onProgress?: ProgressCallback): Promise<void> {
   // Rebuild cultivation from the retained plans, never from the expensive terrain stage.
   await (await import('./region')).settleRegionSite(world);
@@ -530,7 +534,7 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
       settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined);
     world.landuse = rural.layer;
   }
-  nameWorld(world, settings.local.main);
+  if (!renamedAfterActions) nameWorld(world, settings.local.main);
   refreshCavernMask(world);
   // Isolated buildings (farms, mills, chapels…) follow the architecture in use, like the towns.
   await (await import('./activitySites')).planActivityArchitecture(world, settings);
