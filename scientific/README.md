@@ -1,6 +1,6 @@
 # Magna Urbis documentation
 
-Published at <https://dunkean.github.io/magna-urbis/scientific/index.html>; the V2 "How it works?" link
+Published at <https://magna-urbis.org/scientific/index.html>; the V2 "How it works?" link
 and every stage "?" button open it there.
 
 | Page | English | French |
