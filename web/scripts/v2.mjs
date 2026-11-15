@@ -7,6 +7,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stageUv } from './v2_uv.mjs';
 import { buildWasmVariant } from '../../rust/scripts/wasmVariants.mjs';
+import { stageTerrainPythonScripts } from './v2_release_resources.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const root = resolve(web, '..'), rust = join(root, 'rust'), desktop = join(rust, 'desktop-v2');
@@ -176,7 +177,7 @@ async function resources() {
   if (!windows) await chmod(neural, 0o755);
   await cp(join(root, 'illustration'), join(dir, 'illustration'), { recursive: true,
     filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests') && !source.includes('output') });
-  for (const name of ['neural_python.py', 'neural_model_catalog.py', 'neural_refinement.py']) await copyFile(join(web, 'scripts', name), join(dir, 'web/scripts', name));
+  await stageTerrainPythonScripts(web, join(dir, 'web/scripts'));
   await cp(join(web, 'scripts/neural_earth_tile40'), join(dir, 'web/scripts/neural_earth_tile40'), { recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') });
   for (const folder of ['python_runtime', 'rust/models/neural-earth', 'docs/models-release']) {
     await cp(join(root, folder), join(dir, folder), { recursive: true,

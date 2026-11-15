@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, writeFile, readFile, readdir, realpath, rm } from 'node
 import { dirname, join, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { requiredResources } from './v2_release_resources.mjs';
+import { checkResources, requiredResources, stageTerrainPythonScripts } from './v2_release_resources.mjs';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const temporary = join(root, '.tmp'); await mkdir(temporary, { recursive: true });
 const base = await mkdtemp(join(temporary, 'release-collection-'));
@@ -16,6 +16,21 @@ try {
     for (const name of requiredResources(platform)) {
       const path = join(resources, name); await mkdir(dirname(path), { recursive: true }); await writeFile(path, 'fixture');
     }
+    // The real staged entrypoint must include every adjacent neural helper it
+    // imports. A fixture built from the resource list alone cannot catch this.
+    const pythonScripts = join(resources, 'web/scripts');
+    await stageTerrainPythonScripts(join(root, 'web'), pythonScripts);
+    for (const name of await readdir(pythonScripts)) if (name.endsWith('.py')) {
+      const imports = (await readFile(join(pythonScripts, name), 'utf8')).matchAll(/^\s*(?:from|import)\s+(neural_[A-Za-z0-9_]+)/gm);
+      for (const [, module] of imports) {
+        const adjacent = module === 'neural_earth_tile40' ? 'neural_earth_tile40' : `${module}.py`;
+        assert.ok((await readdir(pythonScripts)).includes(adjacent), `${name} imports missing local module ${module}`);
+      }
+    }
+    await checkResources(resources, platform);
+    await rm(join(pythonScripts, 'neural_sampling.py'));
+    await assert.rejects(checkResources(resources, platform), /neural_sampling\.py/);
+    await stageTerrainPythonScripts(join(root, 'web'), pythonScripts);
     const extensions = platform === 'windows-x64' ? ['x64-setup.exe'] : ['amd64.deb', 'amd64.AppImage'];
     for (const extension of extensions) await writeFile(join(bundle, `Magna Urbis V2_${version}_${extension}`), 'installer fixture');
     const binary = join(base, 'app.exe'); await writeFile(binary, 'desktop fixture');

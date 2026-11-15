@@ -64,7 +64,10 @@ impl Modules {
         });
         let weights = std::env::var_os("MAGNA_NEURAL_WEIGHTS_DIR").map(PathBuf::from)
             .unwrap_or_else(|| self.data.join("models/distilled"));
-        command.current_dir(&self.resources).env("UV_CACHE_DIR", self.cache.join("uv"))
+        // AppImage launchers export paths for their bundled Python helpers.
+        // A configured interpreter must resolve its own stdlib and site-packages.
+        command.env_remove("PYTHONHOME").env_remove("PYTHONPATH")
+            .current_dir(&self.resources).env("UV_CACHE_DIR", self.cache.join("uv"))
             .env("UV_PYTHON_INSTALL_DIR", self.data.join("python"))
             .env("HF_HOME", hf_home)
             .env("MAGNA_RUNTIME_DATA", &self.data).env("MAGNA_RUNTIME_CACHE", &self.cache)

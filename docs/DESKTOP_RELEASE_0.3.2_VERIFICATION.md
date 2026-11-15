@@ -47,7 +47,13 @@ Host: Ubuntu 22.04.5 LTS, WSL2 kernel `6.18.54.1-microsoft-standard-WSL2`, WebKi
 
 The DEB remains installed in this WSL distribution. Test profiles are separate from normal user data. Tests closed their own applications and services.
 
-Vulkan enumeration exposed only `llvmpipe (LLVM 15.0.7, 256 bits)`, a CPU adapter. These results qualify procedural use on this WSL installation; Linux native GPU inference and other distributions remain unqualified.
+Vulkan enumeration exposed only `llvmpipe (LLVM 15.0.7, 256 bits)`, a CPU adapter. These results qualify procedural use on this WSL installation; Linux native Rust/Vulkan GPU inference and other distributions remain unqualified. CUDA is separate: the existing Neural Earth venv has PyTorch 2.11.0+cu128 and successfully executes CUDA tensors on the RTX 5090.
+
+### Follow-up: existing Python/CUDA environment
+
+The optional Python/CUDA path was tested after the initial qualification. The published 0.3.2 package fails to import its service because `neural_sampling.py` is missing. Its AppImage launcher also exports an internal `PYTHONHOME`/`PYTHONPATH`, which prevents the configured venv from resolving its standard library (`No module named 'encodings'`).
+
+A diagnostic copy of the AppImage resource tree, with the missing module staged and those environment variables removed for the Python subprocess, successfully generated a 40 km terrain through the packaged interface on the RTX 5090. It reused cached original/distilled weights with Hugging Face offline mode enabled, retained exact heights across save/reopen and stopped its owned Python service on close. This is a corrected-candidate test, not a qualification of the immutable 0.3.2 Python/CUDA package. Alpha 0.3.3 includes both fixes and requires validation of its own final packages.
 
 ## Web
 
