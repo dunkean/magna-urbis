@@ -77,8 +77,8 @@ try {
     return Array.from(new Uint8Array(await image.arrayBuffer()));
   });
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-  const expectedLogo = await readFile(join(root, 'rust/desktop-v2/assets/app-icon.png'));
-  assert.equal(hash(Buffer.from(splashBytes)), hash(expectedLogo), 'Desktop splash must use the requested detailed logo');
+  const expectedLogo = await readFile(join(root, 'web/src/ui/assets/app-icon-256.webp'));
+  assert.equal(hash(Buffer.from(splashBytes)), hash(expectedLogo), 'Desktop splash must use the current V2 logo');
   await page.waitForFunction(() => /Magna Urbis/.test(document.title), null, { timeout });
   assert.match(await page.title(), /Magna Urbis/);
   const url = new URL(page.url());
