@@ -6,7 +6,7 @@
 - Browser neural generation asks before downloading models, verifies same-origin model chunks and reuses verified model and runtime caches. Native desktop and optional Python model downloads remain separate.
 - Improve desktop download links, map relief controls and small-settlement generation.
 
-Source validation: 683 Rust urban tests passed; TypeScript integration tests and the native V2 browser editing scenario cover local roof changes, retained footprints and atomic refusals. CI qualifies packaging and procedural startup. This version has no new packaged-app GPU inference certification; GitHub-hosted runners do not validate GPU inference or every Linux distribution.
+Source validation: 683 Rust urban tests and 156 TypeScript integration tests passed. Packaged Windows 11 tests cover procedural generation, exact save/reopen, verified model download, real native inference on an NVIDIA GeForce RTX 4090, deterministic offline restart and owned-service shutdown. Ubuntu 22.04.5 under WSL2 passes the DEB and AppImage tests, including direct FUSE launch, procedural generation, exact save/reopen and shutdown. Linux GPU inference is not qualified: this WSL installation exposes only a software Vulkan adapter. All 14 public downloads match their SHA-256 digests and expected sizes. See the [release verification record](https://github.com/dunkean/magna-urbis/blob/main/docs/DESKTOP_RELEASE_0.3.2_VERIFICATION.md) for methods and limits. GitHub-hosted runners do not validate GPU inference or every Linux distribution.
 
 Magna Urbis V2 is an experimental alpha for Windows x64 and Linux x64.
 
