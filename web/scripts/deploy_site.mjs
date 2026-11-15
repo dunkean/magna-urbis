@@ -1,6 +1,6 @@
 /** Publish a committed source snapshot to one of the two custom domains. */
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,10 @@ function run(command, args, cwd = root, capture = false) {
 }
 
 const revision = run('git', ['rev-parse', 'HEAD'], root, true);
-const temporary = mkdtempSync(join(tmpdir(), 'magna-urbis-publish-'));
+// Vite's HTML proxy cache needs one path spelling. Windows TEMP can use an
+// 8.3 alias while Vite resolves imports to the long user-directory path.
+const temporaryRoot = realpathSync.native(tmpdir());
+const temporary = mkdtempSync(join(temporaryRoot, 'magna-urbis-publish-'));
 const source = join(temporary, 'source'), site = join(temporary, 'site');
 let worktreeAdded = false;
 try {
@@ -75,6 +78,6 @@ try {
   console.log(`Published ${version.toUpperCase()}: https://${target.domain}/ (${revision})`);
 } finally {
   if (worktreeAdded) run('git', ['worktree', 'remove', '--force', source]);
-  if (dirname(resolve(temporary)) !== resolve(tmpdir())) throw new Error('Unexpected temporary directory');
+  if (dirname(resolve(temporary)) !== temporaryRoot) throw new Error('Unexpected temporary directory');
   rmSync(temporary, { recursive: true, force: true });
 }
