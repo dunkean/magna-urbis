@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "engine": "magna-urbis-neural",
+  "engineRevision": "08f3e61a0cbe2090f8933e3070005fb12a5c1ba4",
+  "runtimeSha256": "4405772c7d8a4e5a04876f1864ce16ea8966d5e2cb405a102102ee4faa594610",
+  "precision": "adaptive-fp16-fp32",
+  "profile": "coarse4-nf4-b75-t2-distilled-decoder",
+  "models": {
+    "coarse": {
+      "file": "coarse.safetensors",
+      "bytes": 5946824,
+      "sha256": "8000e86ed879bcfc1afdd0fc112b8dc882e4342004a39c11a43570bcc0b914da",
+      "chunks": [
+        {
+          "file": "coarse.safetensors.part0",
+          "bytes": 5946824,
+          "sha256": "8000e86ed879bcfc1afdd0fc112b8dc882e4342004a39c11a43570bcc0b914da"
+        }
+      ]
+    },
+    "base": {
+      "file": "base.nf4",
+      "bytes": 149638301,
+      "sha256": "a8458a80638761cf5336fe37e5eb228a65fbb02c15e9584cc81a2ca66dd49f34",
+      "selection": "nf4_b75",
+      "release": "base-nf4-b75-v1",
+      "sourceSha256": "4f84df2853aecb830b7cf4bee60572e08e2503232a25d7ebaaee0231930d6dd2",
+      "format": "nf4-anchored-fp32",
+      "solverSteps": 2,
+      "chunks": [
+        {
+          "file": "base.nf4.part0",
+          "bytes": 40000000,
+          "sha256": "683d2f59fe74d483f4b7a8c2898da90f6a9a24ca28fbe7f810a3514926c795f6"
+        },
+        {
+          "file": "base.nf4.part1",
+          "bytes": 40000000,
+          "sha256": "70edf8aa314e5c17a35a90d2053565f37dd3d3ef812313c01d61d82492236481"
+        },
+        {
+          "file": "base.nf4.part2",
+          "bytes": 40000000,
+          "sha256": "11a7a97cd5a99d94aad82fbe532ef2dd720136729341393e09caf91b6470521e"
+        },
+        {
+          "file": "base.nf4.part3",
+          "bytes": 29638301,
+          "sha256": "5a2bb8cb44484a3b9f10139ad7344c7bcef7fc65ca0c38eb3ecfeaa1da2ec6c1"
+        }
+      ]
+    },
+    "decoder": {
+      "file": "decoder.safetensors",
+      "bytes": 6679980,
+      "sha256": "38716e8538be1edd726c46517363a22048b8ee27479ee1df66bfb2cb80f0338a",
+      "chunks": [
+        {
+          "file": "decoder.safetensors.part0",
+          "bytes": 6679980,
+          "sha256": "38716e8538be1edd726c46517363a22048b8ee27479ee1df66bfb2cb80f0338a"
+        }
+      ]
+    }
+  },
+  "upstreamRuntimeSha256": "c9af8f00035c0b92470992e2354af7b03c0300e94624558080521f3e8cbb2eb0",
+  "runtimeJsSha256": "94bb91127280641f33a4dffeabe371311bcc30aed89f00ee2419784a049efff3"
+}
