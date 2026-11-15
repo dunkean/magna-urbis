@@ -443,5 +443,36 @@ D.runtime = () => {
   return svg(1000, 306, ['Runtime: what computes where', 'Exécution : qui calcule quoi, et où'], s);
 };
 
+/** Neural inference chain: four stages, then the native and browser lanes that run them. */
+D.neuralchain = () => {
+  let s = '';
+  const W = 225, G = 17, X = i => 10 + i * (W + G), mid = i => X(i) + W / 2;
+  const stages = [
+    [[['Coarse', 'Grossier'], ['7.68 km cells', 'cellules de 7,68 km'], ['64² windows, stride 48', 'fenêtres 64², pas 48'], ['EDM2 UNet, 128 channels', 'U-Net EDM2, 128 canaux']], 'relief'],
+    [[['Base', 'Base'], ['240 m latent cells', 'cellules latentes de 240 m'], ['64² windows, stride 32', 'fenêtres 64², pas 32'], ['EDM2 UNet, attention, 58 inputs', 'U-Net EDM2, attention, 58 entrées']], 'relief'],
+    [[['Decoder', 'Décodeur'], ['30 m residual', 'résidu à 30 m'], ['512² windows, stride 384', 'fenêtres 512², pas 384'], ['distilled student, width 64', 'élève distillé, largeur 64']], 'ochre'],
+    [[['Reconstruction', 'Reconstruction'], ['metres above sea level', 'mètres au-dessus de la mer'], ['Laplacian: low frequency', 'laplacienne : basse fréquence'], ['plus decoder residual', 'plus résidu du décodeur']], 'bx'],
+  ];
+  s += text(10, 22, ['Shared: portable noise, finite window plan, blending, reconstruction', 'Communs : bruit portable, plan de fenêtres fini, fusion, reconstruction'], 't-head');
+  stages.forEach(([lines, cls], i) => { s += box(X(i), 34, W, 92, lines, cls, { lh: 17 }); if (i) s += arrow(X(i) - G, 80, X(i) - 2, 80, 'thin'); });
+  const lane = (y, title, cells, cls) => {
+    s += text(10, y, title, 't-head');
+    s += `<rect x="6" y="${y + 8}" width="${4 * W + 3 * G + 8}" height="50" rx="8" class="bx ${cls}" style="fill:var(--paper-2)"/>`;
+    cells.forEach((c, i) => { s += label(mid(i), y + 33, c, { head: false, lh: 15 }); });
+  };
+  lane(158, ['Native engine: Burn on wgpu (Vulkan, Metal, DX12), neural serve on :8792', 'Moteur natif : Burn sur wgpu (Vulkan, Metal, DX12), neural serve sur :8792'], [
+    [['coarse4: 1 window × 4 steps', 'coarse4 : 1 fenêtre × 4 pas'], ['DPM-Solver++ (2M)', 'DPM-Solver++ (2M)']],
+    [['original base, 1 evaluation', 'base originale, 1 évaluation'], ['64 windows', '64 fenêtres']],
+    [['16 windows, one pass each', '16 fenêtres, une passe chacune'], ['FP16 convolutions', 'convolutions FP16']],
+    [['Rust on the CPU', 'Rust sur le CPU'], ['FP32 heights', 'hauteurs FP32']]], 'relief');
+  lane(240, ['Browser: direct WGSL kernels on WebGPU, Rust compiled to WebAssembly', 'Navigateur : noyaux WGSL directs sur WebGPU, Rust compilé en WebAssembly'], [
+    [['coarse4: 4 steps', 'coarse4 : 4 pas'], ['FP16 if shader-f16, else FP32', 'FP16 si shader-f16, sinon FP32']],
+    [['NF4 B75 base, 2 evaluations', 'base NF4 B75, 2 évaluations'], ['per window, batches of 16', 'par fenêtre, lots de 16']],
+    [['same student', 'même élève'], ['FP32 accumulation', 'accumulation FP32']],
+    [['Rust in WebAssembly', 'Rust en WebAssembly'], ['window cache ≈ 128 MiB', 'cache de fenêtres ≈ 128 Mio']]], 'ochre');
+  s += text(10, 326, ['Native evaluations for one 40 km map: 4 / 64 / 16. Browser weights: 162.27 MB in all, checked by SHA-256 and kept in Cache Storage.', 'Évaluations natives pour une carte de 40 km : 4 / 64 / 16. Poids du navigateur : 162,27 Mo au total, vérifiés par SHA-256 et gardés dans le Cache Storage.']);
+  return svg(1000, 338, ['Neural inference chain and its two engines', 'Chaîne d’inférence neuronale et ses deux moteurs'], s);
+};
+
 export function diagram(name, lang) { L = lang; uid = name.length * 100 + (lang === 'fr' ? 50 : 0) + Object.keys(D).indexOf(name) * 1000; return D[name](); }
 export const DIAGRAMS = Object.keys(D);
