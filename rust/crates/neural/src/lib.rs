@@ -4,6 +4,7 @@
 //! Native builds run on Vulkan/Metal/DX12 through wgpu; browser builds use WebGPU.
 //! Convolutions run in FP16 (production used BF16), statistics in FP32.
 pub use burn;
+pub const MODEL_PROFILE: &str = "coarse4-original-base-1-step-decoder-student200k";
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cli;
 pub mod edm;

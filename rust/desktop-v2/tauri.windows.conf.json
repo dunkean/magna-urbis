@@ -3,7 +3,7 @@
     "targets": ["nsis"],
     "windows": {
       "allowDowngrades": true,
-      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "webviewInstallMode": { "type": "offlineInstaller" },
       "nsis": { "installMode": "currentUser", "compression": "zlib" }
     }
   }

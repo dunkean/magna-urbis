@@ -1,5 +1,9 @@
 # Magna Urbis V2 · web et application installable
 
+**Desktop alpha 0.3 and newer:** the [maintained desktop release guide](../../docs/DESKTOP_RELEASE.md)
+documents the included native neural service, verified model downloads and repeatable GitHub Actions releases.
+The Python/CUDA instructions below describe separate optional modules.
+
 Cette application Tauri est indépendante du lanceur V1 dans `rust/desktop`.
 Elle ouvre la nouvelle interface V2 et démarre son moteur Rust natif sur un port
 loopback libre. Son identifiant d’application et sa distribution sont distincts.

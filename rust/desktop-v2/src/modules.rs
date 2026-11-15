@@ -125,7 +125,7 @@ fn tail(path: &Path) -> String {
     let mut bytes = Vec::new(); let _ = file.take(12000).read_to_end(&mut bytes);
     String::from_utf8_lossy(&bytes).into_owned()
 }
-fn service_status(port: u16) -> Option<Value> {
+pub(crate) fn service_status(port: u16) -> Option<Value> {
     let mut socket = std::net::TcpStream::connect_timeout(&format!("127.0.0.1:{port}").parse().ok()?, std::time::Duration::from_millis(150)).ok()?;
     socket.set_read_timeout(Some(std::time::Duration::from_millis(250))).ok()?;
     socket.set_write_timeout(Some(std::time::Duration::from_millis(250))).ok()?;

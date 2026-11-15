@@ -8,6 +8,7 @@ use std::time::Duration;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 mod modules;
 mod updates;
+mod neural;
 
 /// Own only processes started by this window. Reused services outlive it.
 struct Services(Mutex<Vec<Child>>);
@@ -53,10 +54,13 @@ fn hidden(command: &mut Command) {
 
 fn native(binary: PathBuf) -> Result<(Child, u16), Box<dyn std::error::Error>> {
     let mut command = Command::new(binary);
-    command.args(["--port", "0"]).env("MAGNA_LOCAL_ADDR", "127.0.0.1:0")
-        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::inherit());
-    hidden(&mut command);
-    let mut child = command.spawn()?;
+    command.args(["--port", "0"]).env("MAGNA_LOCAL_ADDR", "127.0.0.1:0");
+    ready_child(&mut command).map_err(Into::into)
+}
+fn ready_child(command: &mut Command) -> Result<(Child, u16), String> {
+    command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::inherit());
+    hidden(command);
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or("Sortie du moteur absente")?;
     let (sender, receiver) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
@@ -70,13 +74,13 @@ fn native(binary: PathBuf) -> Result<(Child, u16), Box<dyn std::error::Error>> {
     });
     match receiver.recv_timeout(Duration::from_secs(30)) {
         Ok(port) => Ok((child, port)),
-        Err(error) => { let _ = child.kill(); let _ = child.wait(); Err(error.into()) }
+        Err(error) => { let _ = child.kill(); let _ = child.wait(); Err(error.to_string()) }
     }
 }
 
 fn main() {
     tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![modules::desktop_status, modules::desktop_configure, modules::desktop_action, updates::desktop_release_info, updates::desktop_open_download])
+    .invoke_handler(tauri::generate_handler![modules::desktop_status, modules::desktop_configure, modules::desktop_action, updates::desktop_release_info, updates::desktop_open_download, neural::desktop_neural_status, neural::desktop_neural_download, neural::ensure_neural])
     .on_window_event(|window, event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
             if let Some(services) = window.try_state::<Services>() { services.stop(); }
@@ -90,6 +94,7 @@ fn main() {
         let (engine, port) = native(binary)?;
         app.manage(Services(Mutex::new(vec![engine])));
         // Optional modules never prevent the procedural application from opening.
+        app.manage(neural::Neural::new(resources.clone(), app.path().app_local_data_dir()?));
         app.manage(modules::Modules::new(resources, app.path().app_local_data_dir()?, app.path().app_cache_dir()?));
         let handle = app.handle().clone();
         std::thread::spawn(move || handle.state::<modules::Modules>().start_existing(&handle));

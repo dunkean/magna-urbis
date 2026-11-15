@@ -14,7 +14,7 @@ describe('desktop native neural startup', () => {
   it('keeps a reachable configured service without invoking Tauri', async () => {
     const invoke = vi.fn();
     vi.stubGlobal('window', { __TAURI_INTERNALS__: { invoke } });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ service: 'magna-urbis-neural', profile: 'coarse4-nf4-b75-t2-decoder' }) }));
     expect(await ensureDesktopNeuralServer(server, vi.fn())).toBe(server);
     expect(invoke).not.toHaveBeenCalled();
   });
@@ -33,5 +33,12 @@ describe('desktop native neural startup', () => {
     vi.stubGlobal('window', { __TAURI__: { core: { invoke: vi.fn().mockRejectedValue('Missing weights') } } });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
     await expect(ensureDesktopNeuralServer(server, vi.fn())).rejects.toThrow('Could not start the neural service: Missing weights');
+  });
+  it('does not reuse an unrelated service returning HTTP 200', async () => {
+    const invoke = vi.fn().mockResolvedValue('http://127.0.0.1:49152');
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: { invoke } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ service: 'other' }) }));
+    expect(await ensureDesktopNeuralServer(server, vi.fn())).toBe('http://127.0.0.1:49152');
+    expect(invoke).toHaveBeenCalledWith('ensure_neural');
   });
 });

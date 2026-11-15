@@ -7,6 +7,7 @@ Start with the [technical and scientific overview](TECHNICAL_AND_SCIENTIFIC_OVER
 - [Contribution guide](../CONTRIBUTING.md): setup, checks and documentation policy.
 - [V2 desktop and web setup](../rust/desktop-v2/README.md).
 - [Web publication and custom domains](WEB_PUBLICATION_FR.md).
+- [Repeatable desktop releases with GitHub Actions](DESKTOP_RELEASE.md).
 - [Rust engine](../rust/README.md) and [workshop workflow](RUST_BENCH_PIPELINE.md).
 - [Generation and rendering methods](methods/README.md).
 - [Stage registry contract](stage-registry-contract.md).

@@ -51,6 +51,7 @@ import { stagesForAction, stageById, type StageDef, type StageFamily } from './s
 import { mountHeightmapSource } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus } from './settingsPanel';
 import { mountNeuralModelManager } from './neuralModelManager';
+import { mountDesktopNeural } from './desktopNeural';
 import { mountDesktopModules } from './desktopModules';
 import { mountDesktopUpdates } from './desktopUpdates';
 import { mountV2Illustration } from './illustration';
@@ -514,7 +515,8 @@ const urbanParts:[string,UrbanControlParts][]=[
 $('#hardware-dialog .dialog-actions').before($('#settings-endpoints-box'));
 const neuralModelHost = document.createElement('div');
 $('#hardware-dialog .dialog-actions').before(neuralModelHost);
-const neuralModelManager = mountNeuralModelManager(neuralModelHost, () => new URL(settings.runtime?.neuralAssets ?? './neural/', location.href).href);
+const nativeNeuralManager = mountDesktopNeural(neuralModelHost);
+const neuralModelManager = nativeNeuralManager ? { dispose() {} } : mountNeuralModelManager(neuralModelHost, () => new URL(settings.runtime?.neuralAssets ?? './neural/', location.href).href);
 const modelShortcut = document.createElement('button'); modelShortcut.type = 'button'; modelShortcut.className = 'small'; modelShortcut.id = 'neural-models-open';
 setText(modelShortcut, 'Downloaded neural models'); chain.body('relief-neural-base').append(modelShortcut);
 modelShortcut.onclick = () => { dialog('#hardware-dialog'); requestAnimationFrame(() => $('#neural-model-manager').scrollIntoView({ block: 'start' })); };

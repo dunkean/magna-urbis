@@ -168,6 +168,12 @@ async function resources() {
   const engine = join(dir, `magna-urbis-local${windows ? '.exe' : ''}`);
   await copyFile(await nativeBinary(), engine);
   if (!windows) await chmod(engine, 0o755);
+  // Shared direct GPU engine, prepared from the pinned Neural Earth integration.
+  await run(process.execPath, ['tools/wasm/prepare-engine.mjs'], resolve(root, '../infinite_map'));
+  if (!flags.includes('--no-build')) await run(cargo, ['build', '--locked', '--release', '--manifest-path', 'crates/neural-native/Cargo.toml', '--target-dir', 'target'], rust);
+  const neural = join(dir, `magna-urbis-neural${windows ? '.exe' : ''}`);
+  await copyFile(join(rust, 'target/release', `magna-urbis-neural${windows ? '.exe' : ''}`), neural);
+  if (!windows) await chmod(neural, 0o755);
   await cp(join(root, 'illustration'), join(dir, 'illustration'), { recursive: true,
     filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests') && !source.includes('output') });
   for (const name of ['neural_python.py', 'neural_model_catalog.py', 'neural_refinement.py']) await copyFile(join(web, 'scripts', name), join(dir, 'web/scripts', name));
@@ -202,6 +208,7 @@ try {
     console.log(`\nMagna Urbis V2 : ${url}\nCtrl+C arrête uniquement les services démarrés ici.`);
     await Promise.race(services.filter(Boolean).map(service => service.done));
   } else if (action === 'desktop-dev' || action === 'desktop-build') {
+    env.MAGNA_DESKTOP_BUILD = '1';
     requireWasm();
     await requireConditioning();
     await resources();

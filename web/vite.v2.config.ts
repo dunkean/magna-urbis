@@ -86,7 +86,8 @@ function v2Resources(): Plugin {
       // Copy only the optional neural runtime, never local model caches or Python environments.
       for (const source of sources) if (existsSync(source.directory)) await cp(source.directory, resolve(output, source.prefix.slice(1)), {
         recursive: true,
-        filter: path => !path.endsWith('.gitignore') && !path.endsWith('.ts') && !path.endsWith('.mjs'),
+        filter: path => !path.endsWith('.gitignore') && !path.endsWith('.ts') && !path.endsWith('.mjs')
+          && !(process.env.MAGNA_DESKTOP_BUILD === '1' && source.prefix === '/neural/' && path.split(sep).includes('models')),
       });
       // GitHub Pages must not run Jekyll over the bundled asset tree.
       const { writeFile } = await import('node:fs/promises');

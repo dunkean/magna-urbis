@@ -203,8 +203,9 @@ fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) 
         output.heights.iter().filter(|&&h| h > 0.0).count() as f64 / output.heights.len() as f64;
     let c = &output.coarse;
     let edited = query.contains_key("sketch");
+    let profile = crate::MODEL_PROFILE;
     let meta = format!(
-        r#"{{"edited":{edited},"sketchRegion":{edited},"resolution":{},"extent":{},"nativeCellM":30,"nativeResolution":{},"outputCellM":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"coarse{} \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
+        r#"{{"edited":{edited},"sketchRegion":{edited},"resolution":{},"extent":{},"nativeCellM":30,"nativeResolution":{},"outputCellM":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"{profile}"}}"#,
         output.resolution,
         request.extent_m,
         output.native_n,
@@ -222,7 +223,6 @@ fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) 
         c.relief_m,
         c.relief_used_m,
         c.cells,
-        request.tuning.coarse_steps,
     );
     Ok((output.heights, meta))
 }
@@ -346,7 +346,8 @@ fn handle(
         "/status" => {
             let s = status.lock().unwrap().clone();
             let body = format!(
-                r#"{{"state":"{}","message":"{}","generated":{},"extent":40000,"resolution":1334,"maxExtent":200000,"nativeCellM":30}}"#,
+                r#"{{"service":"magna-urbis-neural","profile":"{}","state":"{}","message":"{}","generated":{},"extent":40000,"resolution":1334,"maxExtent":200000,"nativeCellM":30}}"#,
+                crate::MODEL_PROFILE,
                 s.state,
                 json_escape(&s.message),
                 s.generated

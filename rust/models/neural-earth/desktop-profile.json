@@ -1,0 +1,9 @@
+{
+  "profile": "coarse4-nf4-b75-t2-decoder",
+  "engineSourceRevision": "f39b361b54313d68e506a7ea5d6bb11ba397988c",
+  "models": [
+    { "file": "coarse.safetensors", "bytes": 5946824, "sha256": "8000e86ed879bcfc1afdd0fc112b8dc882e4342004a39c11a43570bcc0b914da" },
+    { "file": "base.nf4", "bytes": 149638301, "sha256": "a8458a80638761cf5336fe37e5eb228a65fbb02c15e9584cc81a2ca66dd49f34" },
+    { "file": "decoder.safetensors", "bytes": 6679980, "sha256": "38716e8538be1edd726c46517363a22048b8ee27479ee1df66bfb2cb80f0338a" }
+  ]
+}

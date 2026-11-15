@@ -412,6 +412,16 @@ pub struct Sources<'a> {
     pub decoder: &'a Path,
 }
 
+/// Prepare the two small student networks without reading the original base.
+pub fn students(coarse: &Path, decoder: &Path, out: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    let coarse = prepare_edm(read_torch(coarse, "model")?, "solver.net.", "coarse4");
+    std::fs::write(out.join("coarse.safetensors"), coarse.serialize()).map_err(|e| e.to_string())?;
+    let decoder = prepare_student(read_torch(decoder, "model")?, "student200k");
+    std::fs::write(out.join("decoder.safetensors"), decoder.serialize()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Writes `coarse.safetensors`, `base.safetensors` and `decoder.safetensors`.
 pub fn export(sources: Sources<'_>, out: &Path) -> Result<(), String> {
     std::fs::create_dir_all(out).map_err(|e| e.to_string())?;

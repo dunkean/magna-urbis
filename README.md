@@ -18,6 +18,8 @@ PREVIEW Magna Urbis V2 (gallery of every culture, village and town, 2D and 3D): 
 
 `npm run build:v2` produces `web/dist-v2` for static hosting, including GitHub Pages subdirectories. `npm run app:v2:build` builds a separate desktop application and installer. A fresh checkout needs the Rust/WASM preparation described in the [V2 launch and packaging guide](rust/desktop-v2/README.md). The [V2 usage and verification guide](docs/V2_ATELIER_FR.md) describes project composition, exports, caching and current limits.
 
+The [desktop release guide](docs/DESKTOP_RELEASE.md) describes repeatable Windows/Linux alpha releases through GitHub Actions, the included native neural inference engine, and the approximately 162 MB of models downloaded on first use. No Rust or Python installation is required for native terrain generation. macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 **Magna Urbis is inspired by [TownGeneratorOS by Watabou (Oleg Dolya)](https://github.com/watabou/TownGeneratorOS) and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator).** The project began as a Python port of TownGeneratorOS; that prototype has since been retired, and the TypeScript and Rust implementations continue the exploration.
 
 **Work in progress. Alpha. Prototype.** Magna Urbis generates pre-modern settlements and their surrounding landscapes for maps and tabletop role-playing games. Its output, performance and interfaces are still evolving. This is an experimental project, not a finished application.

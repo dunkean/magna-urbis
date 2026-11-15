@@ -244,7 +244,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     retain_partitions_pack(bytes: Uint8Array): number;
     urban_built_capacity_resident(partitionsId: number, scene: string): Uint8Array;
   };
-  const packs = (t: SettlementTerrain): t is PackTerrain => typeof (t as Partial<PackTerrain>).urban_parcels_resident_pack === 'function';
+  const packs = (t: SettlementTerrain): boolean => typeof (t as Partial<PackTerrain>).urban_parcels_resident_pack === 'function';
   /** A pack out of WASM; its header names the resident id of exactly these partitions. */
   const wasmPack = (bytes: Uint8Array): { pack: ArrayBuffer; rust: number } => {
     const pack = packBuffer(bytes);
