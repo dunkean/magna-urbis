@@ -1,31 +1,36 @@
 # Contributing
 
-Magna Urbis is an experimental project. Interfaces, recipes and saved formats may change during development. Start with the [project README](README.md) and [documentation index](docs/README.md).
+Magna Urbis V2 is an alpha. Interfaces, recipes and saved formats may change between versions. Start with the [project README](README.md) and the [documentation index](docs/README.md).
+
+## Feedback
+
+- Questions, ideas and generated maps: [Discussions](https://github.com/dunkean/magna-urbis/discussions).
+- Bugs: open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, the browser or desktop edition, and a screenshot if possible.
 
 ## Setup
 
-For the TypeScript application, install a recent Node.js LTS release and npm:
+Install Node.js LTS and npm, Rust through rustup and `wasm-pack`. From `web/`:
 
 ```sh
-cd web
 npm ci
-npm run dev
+npm run prepare:v2
+npm run dev:v2
 ```
 
-For V2, follow the [launch and packaging guide](rust/desktop-v2/README.md), including Rust and WASM preparation. Run `npm run dev:v2` from `web/` after preparation. Native engine details are in the [Rust README](rust/README.md).
+The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, neural relief and optional Python modules. Engine details are in the [Rust README](rust/README.md).
 
 ## Changes and verification
 
 Keep changes focused and explain the behavior they affect. Include reproduction steps and relevant check results with a pull request. Use screenshots when changing visible output; distinguish measured behavior from proposed improvements.
 
-From `web/`, use `npm run typecheck` and the tests relevant to the change (`npm run test:v2` for V2, or `npm test -- <test-file>` for a focused suite). For Rust, run the affected crate's tests from `rust/`; consult its README for build requirements. Avoid concurrent Rust builds sharing `rust/target`.
+From `web/`, run `npm run typecheck` and the tests relevant to the change (`npm run test:v2` for V2, or `npx vitest run <test-file>` for a focused suite). For Rust, run the affected crate's tests from `rust/`; consult its README for build requirements. Avoid concurrent Rust builds sharing `rust/target`.
 
 V2 and the benches must share generation and rendering decisions. Update shared modules rather than applying the same behavior separately in each page. Document new generation methods, sources and limitations in `docs/methods/`.
 
 ## Repository contents
 
 - Keep public documentation in `docs/`, component instructions beside their code, and durable interface specifications in `docs/design/`.
-- Write new and updated documentation in English. Preserve a French-only reference until its complete content has an English replacement. The bilingual application and illustrated atlas retain their localization resources.
+- Write new and updated documentation in English. Preserve a French-only reference until its complete content has an English replacement. The bilingual application, the illustrated atlas and the project README (`README_FR.md`) keep their French versions.
 - Commit source, tests, reproducible fixtures, designs, references, licenses and asset provenance. Keep required documentation figures and metadata with their publication.
 - Keep AI session instructions (`AGENTS.md`, `CLAUDE.md`), conversations, prompts, reviews, task diaries, machine settings and generated validation captures local. Use `.local-archive/`, `.codex/`, `.claude/` or the existing ignored output directories. `.gitignore` records these boundaries.
 - Check `git status` and the diff before submitting. Do not commit secrets, downloaded models, build products or another contributor's unrelated changes.

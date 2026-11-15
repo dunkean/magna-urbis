@@ -1,8 +1,8 @@
 # Magna Urbis - Rust / WASM engine
 
-**Alpha, under development.** This experimental engine is gradually catching up with the TypeScript implementation. Relief, erosion, coasts, hydrology, regional roads, urban footprints, street fabrics, blocks, parcels and buildings are available in the benches. Full application integration remains separate work.
+**Alpha.** This engine powers Magna Urbis V2: relief, erosion, coasts, hydrology, settlements, regional roads, towns, parcels, programmes and buildings, compiled to WebAssembly for [magna-urbis.org](https://magna-urbis.org/) and as a native local service for the desktop app (`desktop-v2/`). The older TypeScript generators remain in `web/` where they are still faster or not yet ported.
 
-The [main README](../README.md) introduces the project and shows screenshots of the TypeScript application. The long-term goal is integration into [Neural Earth](https://github.com/dunkean/neural-earth), developed in Infinite Map.
+The [main README](../README.md) introduces the project. The long-term goal is integration into [Neural Earth](https://github.com/dunkean/neural-earth), developed in Infinite Map.
 
 ## Development
 

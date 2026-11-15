@@ -69,6 +69,7 @@ web/dist-v2/
 **/*.prompt.md
 **/*.result.md
 /CLAUDE.md
+/CONTRIBUTING_FR.md
 /ROADMAP_NAMEBENCH_TOPONYMES.md
 /TODO.md
 /assets/materials/buildings/README_FR.md

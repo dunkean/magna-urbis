@@ -1,6 +1,6 @@
 # Documentation
 
-Start with the [technical and scientific overview](TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) and the [illustrated methods atlas](scientific/README.md).
+Start with the [project README](../README.md), the illustrated atlas [How it works?](https://magna-urbis.org/scientific/index.html) (sources in [scientific/](scientific/README.md)), the [architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html) and the [technical and scientific overview](TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md).
 
 ## Development and usage
 

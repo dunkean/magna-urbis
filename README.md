@@ -1,382 +1,184 @@
-# Magna Urbis
-
 <p align="center">
-  <img src="docs/logo_magna_urbis.png" alt="Magna Urbis — city map and compass logo" width="360">
+  <img src="docs/logo_magna_urbis.png" alt="Magna Urbis logo: a city map inside a compass" width="220">
 </p>
 
-See the [documentation index](docs/README.md) and [contribution guide](CONTRIBUTING.md) for project structure, setup and collaboration.
+<h1 align="center">Magna Urbis</h1>
 
-DEMO V2: https://magna-urbis.org/
+<p align="center">
+  <b>Procedural regions, towns and cities for maps and tabletop role-playing games.</b><br>
+  Relief, rivers, roads, countryside and 115 urban cultures, from the first hill to the last roof, in 2D and 3D.
+</p>
 
-DEMO V1: https://v1.magna-urbis.org/
+<p align="center">
+  <a href="https://magna-urbis.org/"><b>Open the V2 alpha</b></a> ·
+  <a href="https://magna-urbis.org/scientific/index.html">How it works?</a> ·
+  <a href="https://github.com/dunkean/magna-urbis/releases">Desktop downloads</a> ·
+  <a href="https://magna-urbis.org/gallery/v2/">Gallery</a> ·
+  <a href="https://github.com/dunkean/magna-urbis/discussions">Discussions</a> ·
+  <a href="README_FR.md">Français</a>
+</p>
 
-See the [web publication guide](docs/WEB_PUBLICATION_FR.md) for deployment commands.
+<p align="center">
+  <img src="docs/images/readme/hero-italian-comune-3d.webp" alt="3D view of a walled Italian comune of 10,000 inhabitants, with red tile roofs, towers and a river crossing the town" width="100%">
+</p>
 
-PREVIEW Magna Urbis V2 (gallery of every culture, village and town, 2D and 3D): https://magna-urbis.org/gallery/v2/
+---
 
-**New V2 workshop:** a separate application at `web/src/ui/v2.html`, with a new interface inspired by V1. From `web/`, run `npm run dev:v2` and open **http://127.0.0.1:5174/v2.html**. It separates topography, regional sites/routes, and global or individual town construction. The Rust urban path exposes independent layout, cadastral, programme and architectural stages, with settings down to individual buildings. The classic engine remains selectable.
+## Magna Urbis V2 is in alpha
 
-`npm run build:v2` produces `web/dist-v2` for static hosting, including GitHub Pages subdirectories. `npm run app:v2:build` builds a separate desktop application and installer. A fresh checkout needs the Rust/WASM preparation described in the [V2 launch and packaging guide](rust/desktop-v2/README.md). The [V2 usage and verification guide](docs/V2_ATELIER_FR.md) describes project composition, exports, caching and current limits.
+**Magna Urbis V2 is now available as an alpha**, in the browser and as a desktop application for Windows and Linux. Create a region, place its settlements, grow their towns, then explore and edit the result as a map or in 3D.
 
-The [desktop release guide](docs/DESKTOP_RELEASE.md) describes repeatable Windows/Linux alpha releases through GitHub Actions, the included native neural inference engine, and the approximately 162 MB of models downloaded on first use. No Rust or Python installation is required for native terrain generation. macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+- **Web:** [magna-urbis.org](https://magna-urbis.org/). No account and no install. Generation runs in your browser (Rust compiled to WebAssembly, with WebGPU when available).
+- **Desktop:** [GitHub releases](https://github.com/dunkean/magna-urbis/releases) for Windows x64 (installer or portable ZIP) and Linux x64 (AppImage or DEB). It includes the native Rust engine and native neural relief; you do not need Rust, Node.js or Python. macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+- **V1:** the first version stays online at [v1.magna-urbis.org](https://v1.magna-urbis.org/).
 
-**Magna Urbis is inspired by [TownGeneratorOS by Watabou (Oleg Dolya)](https://github.com/watabou/TownGeneratorOS) and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator).** The project began as a Python port of TownGeneratorOS; that prototype has since been retired, and the TypeScript and Rust implementations continue the exploration.
+This is an alpha. Results, settings and saved projects may still change between versions. If something breaks, a report with the share code helps a lot.
 
-**Work in progress. Alpha. Prototype.** Magna Urbis generates pre-modern settlements and their surrounding landscapes for maps and tabletop role-playing games. Its output, performance and interfaces are still evolving. This is an experimental project, not a finished application.
+## What it generates
 
-There are two implementations: **TypeScript**, currently the most complete, and **Rust / WebAssembly**, which is still behind in features but is gradually catching up.
+One chain, from the ground up. Every stage can be rerun, tuned or edited on its own.
 
-**The Rust version is actively being implemented.** Its dedicated benches already expose terrain, erosion, hydrology, settlement placement, regional roads, streets, blocks and parcels. A separate Rust house generator is also under development; assembling these stages into the complete application is ongoing.
+1. **Relief**: procedural terrain with erosion, painted zones (plains, hills, mountains), volcanoes and calderas, or **neural relief** from Terrain Diffusion. You can also import a heightmap.
+2. **Water and climate**: drainage, rivers, lakes from a climate water budget, river mouths and coasts, then climate-driven vegetation and land cover. An optional **Underdark** layer carves caverns, tunnels and lakes into any relief.
+3. **Settlements and roads**: site choice, a rank-size hierarchy, one regional road network, farms, hamlets, chapels, inns, ferries and remote places on summits, islets or cliff ledges.
+4. **Towns and cities**: composition and growth phases, quarters and streets, walls, gates and castles, bridges, parcels, a programme of who lives and works where, then building volumes with storeys and composed roofs. Neighbouring towns share their edges. The engine scales from a lone building to a metropolis of a million inhabitants.
+5. **Maps**: parchment, atlas, topographic, cadastre, satellite and painted satellite styles, day or night, through the seasons, with names and labels as their own layer. Orbit, walk or fly in 3D.
+6. **Edit and export**: change styles per quarter, parcel or building, reroll a scope, edit roads, rivers and labels. Export PNG, SVG, heightmaps, projects and recipes. With the optional local module, turn a view into an illustration or a battlemap.
 
-Read the [technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, research sources, implementation boundaries and Rust/WASM stack.
+**115 cultures:** 79 historical, fantasy and camp traditions (medieval Europe, bastides, medinas, Chinese and Japanese plans, Maya, Inca, Swahili, dwarven, elven, drow and many more), 27 modern, 8 futuristic and 1 alien. You can blend them in hybrid style sheets. Browse them all in the [architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html).
 
-The illustrated documentation is published at [dunkean.github.io/magna-urbis/scientific](https://dunkean.github.io/magna-urbis/scientific/index.html): the [atlas of methods](docs/scientific/index.html) follows a world from the height field to the last roof, stage by stage, and the [architectural styles catalogue](docs/scientific/catalogue-architecture.html) shows the 115 cultures. Both exist in English and French and are built from `docs/scientific/src/`. The V2 application also defaults to English and provides a live language selector; both remember an explicit language choice. The atlas works offline.
+## Gallery
 
-The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
+All images below are unretouched V2 screenshots.
 
-## TypeScript prototype screenshots
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/readme/venetian-lagoon-3d.webp" alt="Venetian lagoon town on both banks of a river, with canals and red roofs"><br><sub>Venetian lagoon town, 10,000 inhabitants</sub></td>
+    <td width="50%"><img src="docs/images/readme/dwarven-3d.webp" alt="Dwarven town inside an angular stone enclosure, split by a river"><br><sub>Dwarven hold behind its angular wall</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/readme/chinese-3d.webp" alt="Rectangular walled Chinese city on an orthogonal grid, crossed by canals"><br><sub>Planned Chinese city, rectangular plan</sub></td>
+    <td><img src="docs/images/readme/bastide-3d.webp" alt="Dense medieval bastide with red roofs in a polygonal wall"><br><sub>Bastide, polygonal plan</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/readme/wizard-city-night-3d.webp" alt="Wizard city at night with lit streets and tall towers"><br><sub>Wizard city at night</sub></td>
+    <td><img src="docs/images/readme/tibetan-monastery-3d.webp" alt="Tibetan monastery town of white buildings in snow"><br><sub>Tibetan monastery town in winter</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/readme/persian-3d.webp" alt="Round Persian city inside a circular wall, crossed by a river"><br><sub>Persian round city</sub></td>
+    <td><img src="docs/images/readme/drow-enclave-3d.webp" alt="Drow enclave of pale buildings on dark rock"><br><sub>Drow enclave</sub></td>
+  </tr>
+</table>
 
-Actual captures from the TypeScript application: three cities of 30,000 inhabitants and a village of 600. They show different urban layouts and the **Parchment** and **Atlas** map styles, including the prototype's current imperfections.
+### Villages, camps and the countryside
 
-### Medieval city - Parchment
+<table>
+  <tr>
+    <td width="25%"><img src="docs/images/readme/village-norse-ringfort-3d.webp" alt="Norse ringfort village with longhouses inside a palisade"><br><sub>Norse ringfort</sub></td>
+    <td width="25%"><img src="docs/images/readme/camp-mongol-ordu-3d.webp" alt="Mongol ordu camp of white yurts on the steppe"><br><sub>Mongol ordu</sub></td>
+    <td width="25%"><img src="docs/images/readme/village-venetian-lagoon-3d.webp" alt="Venetian lagoon village with red roofs along a canal"><br><sub>Lagoon village</sub></td>
+    <td width="25%"><img src="docs/images/readme/village-elven-3d.webp" alt="Elven village hidden under a dense forest canopy"><br><sub>Elven village</sub></td>
+  </tr>
+</table>
 
-![Medieval city and river in the Parchment map style](docs/images/medieval-city.png)
+### Map styles
 
-### Desert medina - Atlas
+<table>
+  <tr>
+    <td width="25%"><img src="docs/scientific/assets/atlas/style-parchment.webp" alt="Town in the parchment style"><br><sub>Parchment</sub></td>
+    <td width="25%"><img src="docs/scientific/assets/atlas/style-topographic.webp" alt="Town in the topographic style with contour lines"><br><sub>Topographic</sub></td>
+    <td width="25%"><img src="docs/scientific/assets/atlas/style-cadastre.webp" alt="Town in the cadastre style"><br><sub>Cadastre</sub></td>
+    <td width="25%"><img src="docs/scientific/assets/atlas/style-satellite.webp" alt="Town in the satellite style"><br><sub>Satellite</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/readme/metropolis-150k-topographic.webp" alt="Dense European metropolis on a river, topographic style"><br><sub>150,000-inhabitant metropolis</sub></td>
+    <td><img src="docs/images/readme/medina-150k-atlas.webp" alt="Medina quarters along a river, atlas style"><br><sub>Persian and medina hybrid, atlas</sub></td>
+    <td><img src="docs/scientific/assets/atlas/style-night.webp" alt="Town at night with lit streets along a river"><br><sub>Night</sub></td>
+    <td><img src="docs/scientific/assets/atlas/underdark.webp" alt="Underdark map of caverns, tunnels and underground lakes"><br><sub>Underdark</sub></td>
+  </tr>
+</table>
 
-![Medina in a desert landscape in the Atlas map style](docs/images/desert-medina.png)
+Many more in the [V2 gallery](https://magna-urbis.org/gallery/v2/).
 
-### Planned Chinese city - Atlas
+## How it works
 
-![Planned Chinese city in the Atlas map style](docs/images/chinese-city.png)
+- **[How it works? The illustrated atlas](https://magna-urbis.org/scientific/index.html)** ([français](https://magna-urbis.org/scientific/fr.html)): follows one world from the height field to the last roof, stage by stage, with diagrams and sources. Every **?** button in the app opens the matching chapter.
+- **[Architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html)** ([français](https://magna-urbis.org/scientific/catalogue-architecture-fr.html)): the 115 cultures in 2D and 3D.
+- [Technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md): system layers, erosion, hydrology, neural terrain, settlements, references.
+- [Method notes](docs/methods/README.md): one short note per implemented technique, with its sources and limits.
+- [Documentation index](docs/README.md): rendering, recipes, cultures, designs and studies.
 
-### Village and countryside - Parchment
+Under the hood: a **Rust** engine (terrain, water, settlements, cities, buildings) compiled twice, as **WebAssembly** for the browser and as a **native** local service for the desktop app. The interface and renderers are **TypeScript** with **WebGL2** and **WebGPU**. Neural relief runs in Rust too, with [Burn](https://burn.dev/) on the desktop and a small dedicated WGSL engine in the browser.
 
-![Village surrounded by countryside in the Parchment map style](docs/images/village.png)
+## Inspired by Watabou
 
-The [capture seeds, settings and views](docs/images/screenshots.json) let you reproduce these examples with the corresponding version. Rust does not generate these cities yet.
+Magna Urbis is inspired by **[Watabou (Oleg Dolya)](https://watabou.itch.io/)** and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator) ([TownGeneratorOS](https://github.com/watabou/TownGeneratorOS)). The project began as a Python port of TownGeneratorOS. That prototype is long gone, but Watabou's generators remain the reference for what a generated town should feel like: legible, varied and fun to read. Thank you.
 
-## A first look at the Rust landscapes
+## Related projects
 
-**The next chapter of Magna Urbis is taking shape.** From tropical islands to snow-covered volcanic craters, the Rust prototype is already exploring landscapes for future settlements and adventures. These five captures show its current terrain renders, with coastlines, rivers, lakes, settlement locations and regional routes.
+Magna Urbis is part of a small family of worldbuilding tools.
 
-### Snow-covered volcanic island
+### Neural Earth
 
-![Rust prototype: volcanic island with snowy slopes, crater lake and coastal settlements](docs/rust_images/volcano-cold.jpg)
+**[Neural Earth](https://github.com/dunkean/neural-earth)** generates whole procedural planets, from tectonic plates to local terrain. It combines [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation) planetary geography with the learned refinement of [Terrain Diffusion](https://arxiv.org/abs/2512.08309) (Goslin), and adds climate, hydrology, biomes, soils and seasonal rendering, with Python/CUDA or browser Rust/WASM/WebGPU paths.
 
-| Tropical island | Arid hills |
-| --- | --- |
-| ![Rust prototype: green tropical island with coastal villages and routes](docs/rust_images/island-tropical.jpg) | ![Rust prototype: arid hills crossed by rivers and regional roads](docs/rust_images/hills-arid.jpg) |
-| **Mountains by the ocean** | **Cold plateau** |
-| ![Rust prototype: snowy mountains, lakes and winding routes above an ocean coastline](docs/rust_images/oceanic-mountains.jpg) | ![Rust prototype: snowy plateau overlooking a valley with lakes and settlements](docs/rust_images/plateau-cold.jpg) |
+Magna Urbis's neural relief comes from this work: the Rust port of the Terrain Diffusion chain and the distilled, quantised models published on [Hugging Face](https://huggingface.co/dunkean/neural-earth-distilled). The long-term goal is to place Magna Urbis towns and roads into Neural Earth worlds. That integration has not been delivered yet.
 
-These are snapshots of the Rust prototype in development. Detailed towns and buildings are the next part of the picture as the terrain and urban stages come together. See the [Rust engine documentation](rust/README.md) for its current status.
+### Other projects
 
-## TypeScript and Rust
+- **[Namebench](https://github.com/dunkean/namebench)**: a sandbox for personal names and place names. Magna Urbis embeds an extract of it (about 550,000 place names and 51 name generators, linked to its cultures) to name settlements, rivers, lakes, relief and regions.
+- **[Lineage Lab](https://github.com/dunkean/lineage-lab)**: a sandbox for population histories and genealogies.
+- **[Chronos](https://github.com/dunkean/chronos)**: a deterministic Rust history generator and chronology workshop for procedural worlds.
+- **[AI RPG Generator](https://github.com/dunkean/AI_RPG_Generator)**: an earlier experiment in RPG content generation with language models and latent diffusion.
 
-| | TypeScript - `web/` | Rust / WASM - `rust/` |
-| --- | --- | --- |
-| Status | Most complete prototype and reference application | New engine under development |
-| Landscape | Relief, biomes, coasts, rivers, lakes and rural land use | Relief, erosion, coasts, lakes and river networks |
-| Settlements | Hamlets, villages and cities; quarters, streets, plots, buildings and landmarks | Settlement placement, regional roads, urban footprints, street fabrics, blocks and parcels in Terrain / Urban Bench |
-| Interface | Interactive map, settings, seeds, sharing and SVG / PNG / JSON exports | Browser integration in progress |
-| Computation | TypeScript in the browser, without a generation server | Rust compiled to WebAssembly, with WebGPU paths for selected stages |
+## Run from source
 
-TypeScript explores organic street patterns, bastides, medinas, Chinese and Japanese plans, and fantasy cultures. Cultures can be combined through successive growth phases. Large populations and progressive detail remain experimental.
-
-Rust is gradually taking over generation responsibilities. Performance and precision still depend on calculation grids, terrain and the browser's CPU/GPU capabilities. It is not yet a complete replacement for TypeScript.
-
-The current interface is intended to be retained. The existing renderer is a temporary integration aid; the future rendering engine remains to be developed.
-
-In the Rust benches, select **Carte V1** in the urban view tabs, then **V1 · Parchemin** or **V1 · Atlas**, for the original map's terrain colours, classic vegetation, field textures and regional road styling. The V2 houses keep their current renderer. This separate 2D display layer restyles the retained terrain and land use without regenerating them; land use must already have been generated. The diagnostic tabs restore the previous appearance. Capture links can select the layer with `v1=parchment` or `v1=atlas`.
-
-## Run the TypeScript application
-
-Requirements: a recent Node.js LTS release and npm.
+Requirements: Node.js LTS and npm, Rust through rustup (the toolchain is pinned in `rust/rust-toolchain.toml`) and `wasm-pack`. On Windows, also install the Visual Studio C++ build tools.
 
 ```sh
 cd web
 npm ci
-npm run dev
+npm run prepare:v2   # build the Rust terrain and houses WebAssembly packages
+npm run dev:v2       # open http://127.0.0.1:5174/v2.html
 ```
 
-Open the address printed by Vite, usually **http://localhost:5173/**. Choose the environment, then the settlements, their populations and cultures. Generate the map and explore it by zooming. The same seed and settings reproduce a generation within the same engine version.
+Other commands, from `web/`:
 
 ```sh
-npm run build
+npm run build:v2       # static site in web/dist-v2
+npm run app:v2:dev     # desktop app in development
+npm run app:v2:build   # desktop app and installer for this OS
+npm run test:v2        # V2 tests
 ```
 
-The build produces `web/dist/index.html`, a self-contained page that can run offline. TypeScript development and builds do not require Rust.
-
-In **Share & export**, choose the SVG / PNG layers independently: relief, water, vegetation and fields, buildings and town grounds, town streets, regional roads, names, and decoration. Presets export the complete map, town only, relief only, or roads and streets only. Disable **Paper background** for transparent overlays; the relief image itself remains opaque. These choices affect downloads without regenerating the map. JSON exports retain all world data.
-
-SVG and PNG exports open a crop preview: draw a rectangle, drag it to move it, or enter its position and dimensions in meters. Choose **Carte entière** to reset the selection, then **Exporter** to download it. Rectangular exports keep their proportions, with a longest edge of 3000 px (4096 px for Fantasy exports in Terrain Bench and Urban Bench).
-
-## Illustrate the current view
-
-The **✦ Illustrer** button captures the current view in the TypeScript application,
-Terrain / Settlements Bench, City Bench and the urban workshop. Choose **Local · FLUX · édition** (the default), **Local · SDXL · ControlNet**,
-or **API externe**, then a style (including automatic inheritance from the map),
-fidelity and optional instructions. Results include a comparison slider, a local
-history, PNG downloads and a JSON recipe containing the actual model, seed,
-controls and provenance. Illustrations do not change the generated world.
-
-**Description et prompt** previews the prose sent to the selected model before
-generation: camera angle, settlement scale and culture, relief, climate/biome,
-and known visible roof forms, storeys and construction materials. The cloud edit
-instruction explicitly treats the screenshot as the primary reference and asks
-to restyle the same scene while retaining its layout and details. Context JSON
-stays in the connector and recipe; it is compiled into prose for the model.
-SDXL encodes the complete caption in CLIP-sized chunks instead of silently
-discarding the end. Local captions put the style and concrete subject first,
-including the camera view, settlement population, cultural tradition and broad
-historical period, followed by relief and climate/biome.
-3D captures measure the actual downward angle and height above the target;
-orthographic maps describe a vertical view and map extent without inventing an
-altitude from zoom. An explicit house era takes precedence over the cultural
-preset's broad period.
-Snow and weather are not inferred from the cultural preset alone.
-The default style follows the visible layer; cadastre, parchment, geographic map,
-satellite, fine art and other presets can restyle the same frozen reference image.
-**Modifier le prompt** opens the complete editable text. Edited drafts are kept
-for each combination of engine/style/fidelity/instructions during the session;
-**Revenir au template** restores the automatic template. The recipe records the
-exact edited prompt. Long overrides are validated, never silently truncated.
-**Illustration PNG** opens **Save As** with a `.png` filename where supported.
-Otherwise it downloads the complete original PNG and points to the browser's
-download list (Ctrl+J) to locate the file. Cancelling Save As creates no file.
-
-Install the optional connector once, from `web/` (Python 3.12 and a CUDA-compatible
-NVIDIA GPU are required for the built-in local models):
-
-```sh
-npm run illustration:setup
-npm run illustration:serve
-```
-
-`npm run dev:local` and `npm run app:dev` start the connector automatically when
-its environment exists, as do `start-terrainbench.bat`, `npm run start:benches`
-and `start-terrainbench.sh`. The bench stop command also stops its illustration
-connector. The connector listens only on `127.0.0.1:8794`; keep it
-running when using the ordinary web build or a deployed static page. The advanced
-settings let you change its loopback address. The first local generation downloads
-model weights into the standard Hugging Face cache and takes longer than later
-generations. Weights are external assets, not bundled into the web application.
-
-- **SDXL:** complete SDXL Base 1.0 with Xinsir Union ControlNet, 20/30/40/50 steps,
-  editable CFG and negative prompt. By default only the structural guides constrain
-  synthesis. Optionally start from the color capture with editable image-to-image
-  transformation strength to retain more source forms and colors. This can also
-  preserve placeholder cubes; use guides alone for more architectural freedom.
-  Changing this starting point reuses the loaded weights. Lightning
-  remains available with its matching 4- or 8-step checkpoint for quick previews.
-- **FLUX:** [FLUX.2 Klein Base 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B),
-  a complete local image editor with 20/30/40/50 steps, real CFG and an editable
-  negative prompt. The distilled [four-step version](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
-  remains available with fixed CFG. Choose a color capture, capture + contours,
-  capture + depth, or contours alone as visual references. Capture + contours
-  reinforces the road/block layout; capture + depth reinforces volumes. These
-  are image references, not FLUX ControlNets. No API call is made. New sessions
-  use the complete model, 30 steps, 1 MP and capture + contours. Saved preferences
-  are retained. The panel checks the connector before submitting a capture.
-- **API:** [OpenAI GPT Image edits](https://developers.openai.com/api/docs/guides/image-generation)
-  or [Gemini Image](https://ai.google.dev/gemini-api/docs/image-generation), using the captured image and its
-  factual scene description. Enter a private API key for the current session, or
-  set `OPENAI_API_KEY` / `GEMINI_API_KEY` in the connector environment. Keys are never
-  saved in browser preferences, recipes or local image history. The provider bills
-  requests made with that key. Cancelling an already transmitted request cannot
-  guarantee that the provider stops or refunds it.
-
-3D captures include a camera-aligned depth guide with visible building geometry,
-normalized over the visible scene (near geometry is light, sky is black).
-2D views use structural contours where available, with Canny extraction as the
-fallback. Automatic control combines depth and edges with SDXL when depth is
-available. **Contrôles du modèle** exposes separate weights and start/end fractions
-for each SDXL guide, plus guide resolution and four presets. The balanced preset
-uses contours at 0.3 until 45% of denoising and depth at 0.6 until 70%, leaving late
-steps free to resolve facades and materials. Increasing control duration/weight
-improves structural adherence but can preserve the source's placeholder cubes;
-reducing it can alter the plan. FLUX exposes reference and guide resolution instead.
-**Aperçu des guides / références** shows the actual preprocessed images before
-generation without creating an image job. Recipes record all effective settings.
-Choose an artistic style independently of the map layer: fine-art photorealism,
-RPG illustration, watercolor, black graphite, oil painting, engraving, or a
-cartographic style. Every engine receives the visible scene, cultural architecture,
-biome, camera direction and measured ground footprint in metres. Visible native
-buildings supply a typical footprint span as an additional scale anchor. Population
-describes the whole settlement, not how many buildings to fit into a close crop.
-V2 samples visible terrain for local elevations and water, without sending rasters.
-Recapturing a view starts a new prompt draft so an old crop's custom wording cannot
-silently describe a different place.
-
-**Battlemap** is available for measured 2D views and 3D orbit views looking down at
-least 75 degrees. Cells default to 1.50 m and can be set from 0.5 to 100 m. Square
-and hexagonal grids use one thin stroke with no outline; hex size measures opposite
-faces (also neighbouring centres). Grids are drawn after generation and resizing,
-with the same world origin across views. Gridded jobs also retain a gridless PNG.
-The wider framing limit is 512 cells per side and 3 native generation pixels per
-cell. Below 12 pixels the panel advises a larger generation or wider cells, without
-blocking. Export upscaling does not relax this native-detail check.
-In 3D the grid is projected onto the horizontal target plane: slopes and elevated
-roofs are not terrain measurements. Provider outputs with substantially changed
-aspect ratios are rejected for battlemaps. Restart the connector after updating.
-
-Generation resolution and exported PNG size are separate. Complete local models
-offer up to 4 MP. OpenAI GPT Image offers custom sizes up to 3840 pixels per edge
-and 8,294,400 pixels total (larger outputs are experimental); the panel offers
-1 MP, 2 MP, 4 MP and up to 4K. Native provider output is preserved instead of being
-reduced to the request budget. Optional 4/8/16 MP exports enlarge the artwork with
-Lanczos before drawing the grid, and explicitly report the original dimensions.
-This resizing does not add generated detail.
-
-For a completed OpenAI 2D battlemap, **Explorer / prolonger la battlemap** opens a
-scrollable mosaic. Drag, scroll or use the compass buttons to generate neighbouring
-tiles. Each new tile captures the same retained world at the same scale with a
-20% overlap, sends an alpha mask plus the new procedural layout to OpenAI's edit
-endpoint, then restores the known overlap pixels before drawing the aligned grid.
-Each finished illustration has compass controls that continue from that view.
-The explorer's controls follow the selected/central tile, including generated
-neighbours restored from history. Known neighbours remain navigable while another
-tile is being generated. Revisiting tiles reuses their images. New tiles use the initial style, model and
-cell size; each is a provider-billed generation. Individual PNGs and recipes remain
-in history. Continuous extension is limited to 2D OpenAI maps and 128 tiles per
-mosaic; FLUX/SDXL extension is deferred.
-**Exporter la carte globale PNG** assembles all finished tiles into one image at
-their original pixel density, with overlaps counted once and ungenerated holes
-left transparent. The connector composes strips and streams the PNG to disk and
-the browser; it does not require a browser canvas large enough for the full map.
-Exporting and reopening existing tiles do not generate another image.
-In V2's 3D view, **Cadrer la vue 3D pour une battlemap** points the camera at
-least 80° down, adjusts the distance when needed for the selected cell size and
-generation resolution, then recaptures and selects Battlemap. It keeps the same
-target and azimuth. This framing action does not start image generation.
-Strong fidelity remains a generative constraint, not a
-guarantee of geometrically exact output. Seed reproducibility also depends on
-runtime, hardware and model versions. Cloud output may use the provider's nearest
-supported aspect ratio.
-
-Generated images and metadata are stored outside Git under
-`%LOCALAPPDATA%/MagnaUrbis/illustrations` on Windows, or
-`~/.local/share/MagnaUrbis/illustrations` elsewhere. Override with
-`MAGNA_ILLUSTRATION_OUTPUT`. `MAGNA_ILLUSTRATION_PYTHON` selects a separate Python
-interpreter; it should not upgrade the terrain inference environment. The current
-local model stays in memory between generations, including after long pauses.
-Weights are released when switching model/checkpoint, recovering from GPU memory
-exhaustion, or stopping the connector. FLUX still stages modules between CPU
-and GPU to fit VRAM; this does not reload the model files from disk.
-Model licenses remain separate: SDXL base and Lightning use CreativeML Open
-RAIL++-M, while FLUX.2 Klein 4B (including the base variant) and the selected
-ControlNet Union use Apache 2.0. See the model sources and pinned revisions in
-[third-party notices](THIRD_PARTY_NOTICES.md#models-and-external-services).
-
-The build-free client in `illustration/web/` and the versioned Python job service
-are shared with Neural Earth. Verification: `npm run illustration:test`,
-`npx vitest run tests/illustration.test.ts`, and `node scripts/illustration_smoke.mjs`
-with the local benches running and the City Bench decor catalogue present.
-`MAGNA_ILLUSTRATION_BENCH` selects the bench origin. The browser smoke simulates
-provider responses; it does not make paid API calls. The focused WebGL test is
-`node scripts/illustration_depth_smoke.mjs`. With Neural Earth running,
-`NEURAL_EARTH_URL=http://127.0.0.1:8765` selects the server for
-`node scripts/illustration_neural_smoke.mjs` and `node scripts/illustration_panel_smoke.mjs`.
-`node scripts/illustration_main_smoke.mjs` checks the TypeScript application and
-its HUD/minimap exclusion.
-`node scripts/illustration_city_layers_smoke.mjs` checks the stacked GPU/2D city
-canvases and Canvas fallback. `node scripts/illustration_city_smoke.mjs` verifies
-native roofs in the real City Bench, using the existing native-house fixture and
-the decor catalogue. Native raster views derive Canny from the complete capture.
-`node scripts/illustration_prompt_smoke.mjs` checks the live prose preview and
-explicit cloud editing instruction without starting an image job.
-`node scripts/illustration_zoom_smoke.mjs` checks real wheel zoom through the
-viewer and battlemap selection on Full HD and 4K displays. The 2D viewer allows
-up to 128 CSS pixels per metre, including cartographic backgrounds.
-`node scripts/illustration_atlas_smoke.mjs` checks real neighbouring viewer captures,
-scroll-triggered extension and cached revisits against a mocked connector.
-The opt-in `python -m illustration.tests.smoke_real --mode fast` runs a real GPU
-job through the connector; `--depth path.png --control both` exercises dual
-conditioning, `--variant base --steps 30` selects complete SDXL, and
-`--mode quality --reference source+edges` tests complete FLUX.2 Klein editing.
-
-## Develop the Rust engine
-
-Install the toolchain pinned in `rust/rust-toolchain.toml`, the `wasm32-unknown-unknown` target and `wasm-pack`. On Windows, install the Visual Studio C++ build tools and Windows SDK.
-
-After installing npm dependencies, run these commands from `web/`:
-
-```sh
-npm run wasm:terrain   # Compile the WebAssembly module
-npm run check:terrain  # Check Rust code and WASM compilation
-```
-
-Generated modules stay in `rust/pkg/wasm/`, which Git ignores. See the [Rust README](rust/README.md) for the engine's organization.
-
-The [sharing recipe guide](docs/MAP_RECIPES.md) explains how to export and import workshop settings and maps, including the limits of replay across generator versions. The [Rust workshop workflow](docs/RUST_BENCH_PIPELINE.md) documents stage transfers, generation zones and heightmaps. The [rendering guide](docs/RENDERING.md) describes styles, layers, materials and diagnostics.
-
-The [urban redesign study](docs/REFONTE_GENERATION_URBAINE_2026-10-13.md) covers the earlier workflows, literature and proposals. The [native implementation report](docs/REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) records its methods, validation and limitations as of October 2026.
-
-The [river synthesis study](docs/synthese_rivieres_heightmap.md) reviews hydrology methods, references and the October 2026 implementation.
-
-The [building texture library](docs/BUILDING_TEXTURE_LIBRARY.md) documents the offline collection, provenance and material coverage; it is not yet integrated into the renderer.
-
-
-The [world architectural styles atlas](docs/styles_architecturaux_mondiaux_city_mapper.md) surveys regional building and settlement forms. The [settlement and building catalog](docs/catalogue_settlements_antiquite_moyen_age_rpg.md) covers historical and fantasy archetypes.
-
-The [City Bench culture guide](docs/CITY_CULTURES.md) describes the urban catalogue, its architectural mappings and known gaps. The [settlement variation inventory](docs/CITY_VARIATION_VARIABLES.md) documents available controls, recipes and their limits.
-
-The [ground material study](docs/GROUND_MATERIAL_MAPPING.md) and [ground texture proposal](docs/GROUND_TEXTURE_MAPPING_V1.md) document the inputs, limitations and candidate assets.
-
-The [surface rendering design](docs/RENDER_SURFACE_DESIGN.md) describes the proposed architecture, validation criteria and delivery milestones; the [rendering research review](docs/RENDER_REVIEW.md) surveys the underlying techniques, and the [natural materials atlas](docs/MATERIALS_REVIEW.md) catalogs landscape forms and patterns.
-
-The optional [local SurfaceWorld viewer](viewer-local/README.md) documents the Godot preview, its setup and rendering limitations.
-
-The terrain bench also supports **neural relief** through a local native Rust service using Burn and Terrain Diffusion's coarse → base → decoder models. Start it from `web/` with `npm run neural:serve`. This optional source requires model weights and a compatible GPU; it is separate from the serverless TypeScript application. Magna Urbis's browser neural-inference crate remains experimental and is not connected to the bench. See the [execution paths and limitations](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md#7-rust-webassembly-webgpu-and-neural-inference).
-
-## Repository layout
+The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, browser neural relief and the optional Python modules. The [Rust README](rust/README.md) describes the engine crates. Releases follow the [desktop release guide](docs/DESKTOP_RELEASE.md); the web build follows the [web publication guide](docs/WEB_PUBLICATION_FR.md).
 
 ```text
-web/src/gen/      TypeScript generation
-web/src/render/   Current SVG and Canvas rendering
-web/src/ui/       Interface and workers
-web/tests/        TypeScript tests
-web/scripts/      Captures and verification tools
-rust/crates/core/ Rust engine without browser dependencies
-rust/crates/wasm/ WebAssembly bindings
-rust/bridge/      Temporary interface and rendering adapters
-rust/scripts/     Rust development commands
-docs/images/     README screenshots and reproduction settings
-docs/rust_images/ Rust prototype landscape screenshots
+rust/crates/terrain/   relief, erosion, hydrology, Underdark
+rust/crates/core/      settlements, roads, cities and buildings (re-exports terrain)
+rust/crates/local/     native local engine service
+rust/crates/neural*/   neural relief: native and browser inference
+rust/desktop-v2/       Tauri desktop application
+web/src/v2/            V2 application
+web/src/render/        shared 2D/3D renderers
+docs/                  documentation, method notes and the illustrated atlas
 ```
 
-## Contributing
+## Contributing and feedback
 
-From `web/`, use `npm run typecheck`, `npm run test:fast` and `npm run build` to check changes. `npm test` also includes the exhaustive city and culture matrix and can take several dozen minutes.
+Ideas, questions and generated maps are welcome in [Discussions](https://github.com/dunkean/magna-urbis/discussions). For bugs, open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, and a screenshot if you can. Read the [contribution guide](CONTRIBUTING.md) before a pull request.
 
-When reporting a problem, include the version, seed, settings and shared link, with a screenshot if possible. The application supports pins and copying a bug report. Formats, results and generation links may change during this alpha.
+Magna Urbis is mostly written by AI coding agents (Claude and Codex) under one human architect and reviewer. The [Ko-fi devlogs](docs/devlog/kofi-devlogs.md) tell how it is built, what broke and what worked.
 
-## Credits and license
+## License and credits
 
-Thank you to **Watabou** for TownGeneratorOS and Medieval Fantasy City Generator, the starting point for this project and an ongoing reference.
+Magna Urbis is free software under the **GNU Affero General Public License v3 only** (`AGPL-3.0-only`); see [LICENSE](LICENSE). Commercial use is allowed. If you run a modified version as a network service, you must offer its source to its users (section 13).
 
-Magna Urbis code is distributed under **GNU Affero GPL v3 only** (`AGPL-3.0-only`); see
-[LICENSE](LICENSE). Third-party code, data, textures and model weights retain
-their respective terms. The earlier Python port of TownGeneratorOS has been
-removed from the working tree; its credits and license still matter when
-redistributing historical versions or any surviving adaptations.
+Third-party code, data, textures and model weights keep their own terms: see the [third-party notices](THIRD_PARTY_NOTICES.md), the [locked dependency inventory](licenses/dependency-inventory.json) and the [retained license texts](licenses/DEPENDENCY_LICENSES.txt). Neural relief models derive from [Terrain Diffusion](https://huggingface.co/xandergos/terrain-diffusion-30m) (MIT). Thank you to Watabou, Alexander Goslin, and every author of the papers, datasets and libraries this project builds on.
 
-The AGPL provides strong copyleft, including an obligation to offer corresponding
-source to users interacting remotely with a modified version over a network
-(section 13). Commercial use remains allowed. The source is available in the
-[Magna Urbis repository](https://github.com/dunkean/magna-urbis); distributors and
-operators must provide the source corresponding to their actual version.
-Third-party GPL v3 portions retain their GPL terms and are combined under the
-GPL/AGPL section 13 provisions; the [GPL v3 text](licenses/GPL-3.0.txt) is retained.
+## Links
 
-- [Third-party credits, licenses and scope](THIRD_PARTY_NOTICES.md): browser,
-  Rust/WASM, desktop, Python, textures, vegetation, models and external services.
-- [Exact locked dependency inventory](licenses/dependency-inventory.json) and
-  [retained upstream license texts](licenses/DEPENDENCY_LICENSES.txt), including
-  development, optional and other-platform packages.
-
-After changing dependency versions, regenerate the inventory from the repository
-root with `python scripts/license_inventory.py --refresh` (Python 3.11+; network
-access may be needed). Verify it offline with
-`python scripts/license_inventory.py --check`.
+- **Magna Urbis V2:** [magna-urbis.org](https://magna-urbis.org/)
+- **Magna Urbis V1:** [v1.magna-urbis.org](https://v1.magna-urbis.org/) ([source](https://github.com/dunkean/magna-urbis-v1))
+- **How it works?** [magna-urbis.org/scientific](https://magna-urbis.org/scientific/index.html)
+- **Support the project on Ko-fi:** [ko-fi.com/dunkean](https://ko-fi.com/dunkean). The code stays free with no premium tier; donations help pay for the AI agents that build it.
