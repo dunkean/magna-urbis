@@ -6,9 +6,13 @@
 
 See the [documentation index](docs/README.md) and [contribution guide](CONTRIBUTING.md) for project structure, setup and collaboration.
 
-DEMO: https://dunkean.github.io/magna-urbis/
+DEMO V2: https://magna-urbis.org/
 
-PREVIEW Magna Urbis V2 (gallery of every culture, village and town, 2D and 3D): https://dunkean.github.io/magna-urbis/gallery/v2/
+DEMO V1: https://v1.magna-urbis.org/
+
+See the [web publication guide](docs/WEB_PUBLICATION_FR.md) for deployment commands.
+
+PREVIEW Magna Urbis V2 (gallery of every culture, village and town, 2D and 3D): https://magna-urbis.org/gallery/v2/
 
 **New V2 workshop:** a separate application at `web/src/ui/v2.html`, with a new interface inspired by V1. From `web/`, run `npm run dev:v2` and open **http://127.0.0.1:5174/v2.html**. It separates topography, regional sites/routes, and global or individual town construction. The Rust urban path exposes independent layout, cadastral, programme and architectural stages, with settings down to individual buildings. The classic engine remains selectable.
 

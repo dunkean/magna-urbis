@@ -3,7 +3,7 @@
   const integration = document.currentScript;
   const endpoint = integration?.dataset.goatcounter;
   // Local previews and offline exports must not contribute to the live count.
-  if (!endpoint || location.hostname !== 'dunkean.github.io') return;
+  if (!endpoint || !['dunkean.github.io', 'magna-urbis.org', 'v1.magna-urbis.org'].includes(location.hostname)) return;
 
   // Exclude map IDs, seeds and other query parameters from the statistics.
   window.goatcounter = {

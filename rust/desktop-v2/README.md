@@ -112,13 +112,14 @@ deux préparations ne se substituent pas l’une à l’autre.
 
 ## Distribution Web
 
-Publier **le contenu de `web/dist-v2`** sous le chemin `/magna-urbis/v2/` sur
-GitHub Pages conserve les liens relatifs, les workers, les binaires WASM et la
+Publier **le contenu de `web/dist-v2`** à la racine de https://magna-urbis.org/
+conserve les liens relatifs, les workers, les binaires WASM et la
 documentation scientifique sous `scientific/`. `index.html` et `v2.html` ouvrent
 la même application. Aucune API locale n’est contactée en profil Web.
 
-`web/dist-v2` constitue l’artifact statique prêt à héberger; une publication
-GitHub Pages par artifact doit déposer son contenu sous `v2/` à côté de la V1.
+`web/dist-v2` constitue l’artifact statique prêt à héberger. La V1 est publiée
+séparément sur https://v1.magna-urbis.org/ ; voir le
+[guide de publication](../../docs/WEB_PUBLICATION_FR.md).
 La construction ne publie rien. Le contrôle `node scripts/v2_static_check.mjs`
 sert exactement cet artifact sous `/magna-urbis/v2/` et vérifie les workers,
 une génération réelle et les ressources illustrées de la documentation.

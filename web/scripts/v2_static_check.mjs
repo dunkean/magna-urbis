@@ -22,7 +22,8 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolveReady => server.listen(0, '127.0.0.1', resolveReady));
 const base = `http://127.0.0.1:${server.address().port}${prefix}`;
-const result = { time: new Date().toISOString(), base, errors: [], missing: [], checks: {} };
+const neuralManifestBundled = await stat(resolve(output, 'neural/models/manifest.json')).then(() => true, () => false);
+const result = { time: new Date().toISOString(), base, errors: [], missing: [], optionalMissing: [], checks: {} };
 let browser;
 try {
   browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true,
@@ -31,22 +32,36 @@ try {
   const page = await context.newPage();
   page.setDefaultTimeout(90000); page.setDefaultNavigationTimeout(120000);
   page.on('pageerror', error => result.errors.push(error.message));
-  page.on('response', response => { if (response.status() >= 400) result.missing.push(response.url()); });
+  page.on('response', response => {
+    if (response.status() < 400) return;
+    // The ordinary prepare:v2 build deliberately excludes optional neural models.
+    if (!neuralManifestBundled && response.status() === 404 && response.url() === `${base}neural/models/manifest.json`) {
+      result.optionalMissing.push(response.url()); return;
+    }
+    result.missing.push(response.url());
+  });
   await page.goto(`${base}index.html?lang=fr`, { waitUntil: 'domcontentloaded' });
-  await page.locator('#terrain-only').waitFor();
+  await page.locator('#generate-region').waitFor();
   assert.equal(await page.locator('#progress-card').isVisible(),false);
   const reveal=async selector=>page.locator(selector).evaluate(node=>{for(let parent=node.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;});
-  await reveal('#terrain-backend');await page.locator('#terrain-backend').selectOption('rust');
-  await reveal('#terrain-compute');await page.locator('#terrain-compute').selectOption('cpu');
+  await page.locator('#hardware-open').click();
+  await page.locator('#exec-engine').selectOption('rust');
+  await page.locator('#exec-compute').selectOption('cpu');
+  await page.locator('#hardware-dialog [data-close]').first().click();
+  await page.locator('#relief-advanced-open').click();
   const resolution='#terrain-controls [data-setting-path="terrain.resolution"]';await reveal(resolution);await page.locator(resolution).fill('128');
-  const generation='#terrain-controls [data-setting-path="terrain.generationCompute"]';await reveal(generation);await page.locator(generation).selectOption('cpu');
-  await page.locator('#terrain-only').click();
+  await page.locator('#relief-advanced .relief-advanced-head button').click();
+  await page.locator('#generate-region').click();
   await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 180000 });
   assert.match(await page.locator('#footer-status').textContent(), /Carte prête/);
   assert.match(await page.locator('#job-log').textContent(), /rust-wasm-cpu/);
   await page.locator('#hardware-open').click();
   await page.locator('.preferences-section summary').click();
-  const [science] = await Promise.all([context.waitForEvent('page'), page.locator('.science-link').click()]);
+  const scienceHref = await page.locator('.science-link').getAttribute('href');
+  assert(scienceHref.startsWith('https://magna-urbis.org/scientific/'));
+  // Inspect the bundled atlas locally, independently of public DNS and CDN caches.
+  const science = await context.newPage();
+  await science.goto(new URL(scienceHref.replace('https://magna-urbis.org/', ''), base).href);
   await page.locator('#hardware-dialog [data-close]').first().click();
   await science.waitForLoadState('networkidle');
   assert.match(await science.locator('body').textContent(), /Magna Urbis/);
