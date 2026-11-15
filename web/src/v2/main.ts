@@ -61,6 +61,7 @@ import { effectiveRegion } from './regionSettings';
 import { cityStageValidityKeys } from './stageValidity';
 import { SmallPlaceQueue } from './smallPlaces';
 import { mountMapControls } from './mapControls';
+import { mountNameOriginControls } from './nameOriginControls';
 import { mountMapLabelEditor } from './mapLabelEditor';
 import { applyLabelEdits } from './mapLabels';
 import { mountNetworkEditor } from './networkEditor';
@@ -466,6 +467,8 @@ const mapControls=mountMapControls(chain.body('map-naming'),chain.body('map-expo
   getSettings:()=>settings,getWorld:()=>world,busy:()=>busy,
   onNames:()=>{void redrawNames();},onExport:()=>dialog('#export-dialog'),
 });
+const nameOrigins:ReturnType<typeof mountNameOriginControls>[]=[];
+function syncNameOrigins():void{nameOrigins.forEach(form=>form.sync());}
 let labelBaseline:World|undefined;
 const labelEditor=mountMapLabelEditor($('#edit-labels'),{
   getWorld:()=>previewBase?undefined:world,getSettings:()=>settings,onChange:redrawEditedLabels,onNames:()=>{void redrawNames();},
@@ -514,11 +517,11 @@ function redrawNames():Promise<void>{
   $('#map-names-apply').setAttribute('aria-busy','true');
   namingWork=namingWork.catch(()=>{}).then(async()=>{
     if(revision!==namingRevision||busy)return;
-    if(!world){mapControls.sync();return;}
+    if(!world){mapControls.sync();syncNameOrigins();return;}
     pristine=renameMap(pristine??world,settings,getLanguage());
     world=applyBuildingEdits(pristine,mods).world;
     await client.show(world,true);
-    if(revision===namingRevision)updateWorld();
+    if(revision===namingRevision){updateWorld(true);syncNameOrigins();inspectorForms.forEach(form=>form.sync());await refresh3dWorld();}
   }).catch(reportAppearanceError).finally(()=>{if(revision===namingRevision)$('#map-names-apply').setAttribute('aria-busy','false');});
   return namingWork;
 }
@@ -586,7 +589,7 @@ function syncControls(): Promise<void> {
   $<HTMLInputElement>('#python-server').value=settings.runtime?.pythonServer??bootRuntime.pythonServer??'';
   terrainControls.sync();regionControls.sync();urbanControls.sync();syncUrbanBackend();updateExtent();
   syncDisplayWidgets();
-  renderControls.sync();mapControls.sync();return client.setAppearance(settings).catch(reportAppearanceError);
+  renderControls.sync();mapControls.sync();syncNameOrigins();return client.setAppearance(settings).catch(reportAppearanceError);
 }
 function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'region':tab==='map'?'map':tab==='cities'?'cities':'settlements'); }
 function updateProgress(p: V2Progress): void {
@@ -609,7 +612,7 @@ function setBusy(value: boolean): void {
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
   terrainControls.sync();regionControls.sync();urbanControls.sync();inspectorForms.forEach(form=>form.sync());if(!value)syncUrbanBackend();
   $<HTMLButtonElement>('#cancel-job').disabled=false;
-  syncCitySelection();mapControls.sync();riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();workbenchLayout?.sync();
+  syncCitySelection();mapControls.sync();syncNameOrigins();riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();workbenchLayout?.sync();
 }
 function labelEditorHostInert(value:boolean):void{const panel=document.querySelector<HTMLElement>('.map-label-editor');if(panel)panel.inert=value;}
 // ── Small places built in the background (smallPlaces.ts) ───────────────────────────────
@@ -746,6 +749,8 @@ function showInspector(key: string, focus = false): void {
   $('#inspector .close').onclick = ()=>{ $('#inspector').hidden=true; selectedBuilding=null; selectedSubdivision=undefined; selectionOutline.set(); };
   for (const name of ['culture','population','sprawl','walls']) { const input = $<HTMLInputElement|HTMLSelectElement>(`#local-${name}`); input.value = String(current[name] ?? ''); input.onchange=()=>{ const next = { ...settings.local[key] } as Record<string,unknown>; if (input.value==='') delete next[name]; else next[name]=name==='population'||name==='sprawl'?Number(input.value):input.value; settings.local[key]=next; touchRecipe(); }; }
   groupCultureSelector($<HTMLSelectElement>('#local-culture'));
+  const origin=document.createElement('section');$('#build-town').before(origin);
+  inspectorForms.push(mountNameOriginControls(origin,'city-name-origin',{getSettings:()=>settings,busy:()=>busy,city:key,getCulture:()=>settings.local[key]?.culture ?? s.culture,changed:()=>{void redrawNames();}}));
   $('#build-town').onclick=()=>void generate('town',key);
   const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';
   if(backend!=='typescript'){
@@ -1033,6 +1038,11 @@ setText($('label[for="seed"]'),'General seed');
 $<HTMLInputElement>('#seed').maxLength=65536;
 initializeLanguage();
 workbenchLayout=mountWorkbenchLayout({getSettings:()=>settings,getWorld:()=>world,changed:touchRecipe,appearance:()=>{projectRevision++;void refreshAppearance();},syncForms:()=>regionControls.sync()});
+for(const family of ['region','settlements']){
+  const host=document.createElement('section');host.id=`${family}-name-origin`;
+  document.querySelector(`#family-${family} .family-general`)!.append(host);
+  nameOrigins.push(mountNameOriginControls(host,`${family}-name-origin`,{getSettings:()=>settings,busy:()=>busy,changed:()=>{syncNameOrigins();void redrawNames();}}));
+}
 // Roads as plan, hidden or rendered: next to the urban plan field of the top bar.
 roadDisplay=mountRoadDisplayControl(document.querySelector('[data-setting-path="appearance.city.plan"]')?.closest('.parameter-field')??null,$('.view-strip'),{getSettings:()=>settings,onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 setText($('#build-info'),`${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);

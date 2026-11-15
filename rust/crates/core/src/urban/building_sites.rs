@@ -163,6 +163,25 @@ fn drawn_culture(architecture_culture: Option<&str>, seed: &str, layout: &Layout
     super::forms::sheet::houses(layout, seed, &parcel.id, parcel.block, role.starts_with("dwelling.farm")).map(|c| (c.to_owned(), true))
 }
 
+/// Every procedural site, including civic water buildings and shanties, keeps
+/// its footprint when a scope changes only the roof or storeys.
+fn apply_massing_overrides(request: &mut Value, layout: &Layout, partition: &Partition,
+    parcel: &super::Parcel, architecture_culture: Option<&str>) -> Result<(), String> {
+    let quarter = layout.blocks.get(parcel.block).map(|block| block.quarter.to_string());
+    let quarter_edit = quarter.as_ref().and_then(|id| layout.config.as_ref()?.overrides.quarters.get(id)?.house_config.as_ref());
+    let parcel_edit = partition.config.as_ref().and_then(|cfg| cfg.overrides.parcels.get(&parcel.id)).and_then(|edit| edit.house_config.as_ref());
+    let profile = super::house_mix::HouseSettings::parse(architecture_culture);
+    let id = request["id"].as_str().ok_or("Missing procedural building identifier")?;
+    let keys: Vec<String> = quarter.map(|id| format!("q:{id}")).into_iter()
+        .chain([format!("p:{}", parcel.id), format!("b:{id}")]).collect();
+    let selected = keys.iter().filter_map(|key| profile.as_ref()?.massing.get(key));
+    for patch in [quarter_edit, parcel_edit].into_iter().flatten().chain(selected).filter(|patch| super::massing::is_shape_edit(patch)) {
+        let shapes: Vec<super::Shape> = serde_json::from_value(request["preview"].clone()).map_err(|error| error.to_string())?;
+        super::massing::apply_edit(&mut request["programme"]["massing"], &shapes, patch)?;
+    }
+    Ok(())
+}
+
 /// The same hierarchy is used by native consumers and the V2 edit replay.
 fn inherit_house_config(request: &mut Value, layout: &Layout, partition: &Partition, parcel: &super::Parcel) {
     fn merge(target: &mut Value, patch: &Value) {
@@ -873,6 +892,7 @@ impl BuildingSiteIndex {
             if with_grid {
                 request["terrain"]["grid"] = ground_patch(surface, &parcel.shape);
             }
+            apply_massing_overrides(&mut request, layout, partition, parcel, architecture_culture)?;
             return Ok(request);
         }
         if let Some(water) = super::springs::site(layout, &parcel.id) {
@@ -881,6 +901,7 @@ impl BuildingSiteIndex {
             if with_grid {
                 request["terrain"]["grid"] = ground_patch(surface, &water.shape);
             }
+            apply_massing_overrides(&mut request, layout, partition, parcel, architecture_culture)?;
             return Ok(request);
         }
         // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
@@ -1585,19 +1606,7 @@ impl BuildingSiteIndex {
             }] = json!(candidates);
         }
         inherit_house_config(&mut request, layout, partition, parcel);
-        let quarter = layout.blocks[parcel.block].quarter;
-        for patch in [layout.config.as_ref().and_then(|cfg|cfg.overrides.quarters.get(&quarter.to_string())).and_then(|o|o.house_config.as_ref()), partition.config.as_ref().and_then(|cfg|cfg.overrides.parcels.get(&parcel.id)).and_then(|o|o.house_config.as_ref())].into_iter().flatten().filter(|patch|super::massing::is_shape_edit(patch)) {
-            let shapes: Vec<super::Shape> = serde_json::from_value(request["preview"].clone()).map_err(|e|e.to_string())?;
-            super::massing::apply_edit(&mut request["programme"]["massing"],&shapes,patch)?;
-        }
-        if let Some(profile) = super::house_mix::HouseSettings::parse(architecture_culture) {
-            for key in [format!("q:{quarter}"),format!("p:{}",parcel.id),format!("b:{}/building",parcel.id)] {
-                if let Some(patch) = profile.massing.get(&key) {
-                    let shapes: Vec<super::Shape> = serde_json::from_value(request["preview"].clone()).map_err(|e| e.to_string())?;
-                    super::massing::apply_edit(&mut request["programme"]["massing"],&shapes,patch)?;
-                }
-            }
-        }
+        apply_massing_overrides(&mut request, layout, partition, parcel, architecture_culture)?;
         funerary::apply(&mut request, &parcel.shape, parcel.axis);
         Ok(request)
     }

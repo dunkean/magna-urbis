@@ -84,3 +84,27 @@ Les publications ne réécrivent pas l'historique de la branche `gh-pages`.
 
 Le script `deploy_gallery.sh` continue de publier la galerie sur
 https://magna-urbis.org/gallery/v2/.
+
+## Contrôle réel après publication
+
+Depuis `web/`, `npm run test:v2:live` ouvre le site public dans un profil Edge
+de test et utilise les contrôles ordinaires de l’atelier. Il vérifie le refus
+du neuronal CPU avant téléchargement, le téléchargement vérifié, une génération
+neuronale WebGPU réelle, la chaîne complète avec les villes depuis la vue 3D, la sélection d’une
+maison et le passage à un toit différent sans modifier son emprise, l’export et
+la réouverture du projet, la 3D, les styles et la langue. Il annule également une
+inférence GPU commencée, relance la génération, puis génère avec les adresses de
+modèles bloquées pour vérifier le cache hors connexion. Aucun moteur n’est simulé.
+Le parcours règle aussi le profil des noms avant génération, puis remplace celui
+du peuplement principal en vérifiant que le relief, les bâtiments et la provenance
+des noms régionaux restent inchangés.
+`?test=1` désactive seulement la restauration automatique de la recette précédente ;
+le test n’utilise pas les hooks de génération réservés aux captures.
+
+Le rapport, les projets et les captures sont dans `web/out/v2-live/`. La machine
+doit disposer d’un vrai périphérique WebGPU. Le rapport identifie la version du
+site et l’architecture du GPU ; il ne certifie pas les autres matériels.
+`MAGNA_V2_URL` sélectionne une instance candidate, `MAGNA_V2_RECIPE` fournit un
+fichier de recette ou projet à reproduire, et `MAGNA_V2_LIVE_PROFILE` permet de
+réutiliser un profil de test. Sous Windows, `MAGNA_TEST_ADAPTER_LUID` peut imposer
+le GPU des tests sans modifier les préférences du navigateur de l’utilisateur.

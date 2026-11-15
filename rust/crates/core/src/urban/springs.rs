@@ -360,6 +360,14 @@ mod tests {
         assert!(!request["programme"]["label"].as_str().unwrap().is_empty());
         assert_eq!(request["preview"].as_array().unwrap().len(),1);
         assert_eq!(request["programme"]["massing"].as_array().unwrap().len(),1);
+        let profile = json!({"houses":{"massing":{format!("b:{}",request["id"].as_str().unwrap()):{
+            "overrides":{"roof":"RF-FLAT","floors":2}
+        }}}}).to_string();
+        let edited = building_sites::requests("spring-test",&retained,&rebuilt,surface,&levels,Some(&profile)).unwrap();
+        let edited = edited.iter().find(|r|r["id"]==request["id"]).unwrap();
+        assert_eq!(edited["preview"],request["preview"],"civic roof edits retain the exact existing footprint");
+        assert_eq!(edited["programme"]["massing"][0]["roof"],"flat");
+        assert_eq!(edited["programme"]["massing"][0]["floors"],2);
         assert!(!request["accesses"].as_array().unwrap().is_empty());
         let programme=rebuilt[0].programme.as_ref().unwrap();
         assert!(programme.demands.iter().any(|d|d.id==water.id && d.role=="civic.bathhouse"));

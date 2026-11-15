@@ -3,6 +3,8 @@ import { obtainNeuralRuntime } from '../../../rust/bridge/neuralRuntime';
 import { setText, getLanguage, numberLocale } from './i18n';
 import { desktopReleasesUrl, getLatestDesktopRelease } from './desktopUpdates';
 import type { V2Progress } from './contracts';
+import type { ComputePreference } from './platform';
+import { assertNeuralCompute } from './neuralExecution';
 
 export const NEURAL_NOTICE_KEY = 'magna-urbis-browser-neural-consent-v1';
 
@@ -49,7 +51,8 @@ export async function confirmNeuralDownload(signal?: AbortSignal): Promise<void>
   signal?.throwIfAborted();
 }
 
-export async function prepareBrowserNeuralDownload(assets: string, signal: AbortSignal, progress: (event: V2Progress) => void): Promise<void> {
+export async function prepareBrowserNeuralDownload(assets: string, signal: AbortSignal, progress: (event: V2Progress) => void, compute: ComputePreference = 'auto'): Promise<void> {
+  assertNeuralCompute(true, compute);
   await confirmNeuralDownload(signal);
   progress({ stage: 'neural-download', label: 'Verifying neural models…', completed: 0, total: 0 });
   try {

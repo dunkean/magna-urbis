@@ -6,6 +6,12 @@ import { LANGUAGES } from '../../src/v2/languages';
 
 afterEach(() => vi.unstubAllGlobals());
 describe('on-demand browser neural downloads', () => {
+  it('rejects CPU-only generation before GPU setup, consent, storage or model transfers', async () => {
+    const fetch = vi.fn(), requestAdapter = vi.fn(), persist = vi.fn(), progress = vi.fn();
+    vi.stubGlobal('fetch', fetch); vi.stubGlobal('navigator', { gpu: { requestAdapter }, storage: { persist } });
+    await expect(prepareBrowserNeuralDownload('https://example.test/neural/', new AbortController().signal, progress, 'cpu')).rejects.toThrow('Le relief procédural fonctionne sur CPU.');
+    expect(fetch).not.toHaveBeenCalled(); expect(requestAdapter).not.toHaveBeenCalled(); expect(persist).not.toHaveBeenCalled(); expect(progress).not.toHaveBeenCalled();
+  });
   it('does not contact the network or request storage when WebGPU is unavailable', async () => {
     const fetch = vi.fn(), persist = vi.fn();
     vi.stubGlobal('fetch', fetch); vi.stubGlobal('navigator', { storage: { persist } });

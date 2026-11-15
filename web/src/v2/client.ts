@@ -193,7 +193,7 @@ export class StudioClient {
           const controller = new AbortController(); this.neuralDownload = controller;
           try {
             await prepareBrowserNeuralDownload(new URL(settings.runtime.neuralAssets ?? './neural/', document.baseURI).href,
-              controller.signal, event => (progress ?? this.onProgress)(event));
+              controller.signal, event => (progress ?? this.onProgress)(event), settings.runtime.compute);
           } finally { if (this.neuralDownload === controller) this.neuralDownload = undefined; }
         }
         if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural'

@@ -3,6 +3,7 @@ export type ComputePreference = 'auto' | 'cpu' | 'gpu';
 import type { ImportedHeight } from '../gen/terrain/import';
 import type { NeuralClimate, TerrainRelief, TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
 import { defaultTerrainSettings, DEFAULT_HYDROLOGY, DEFAULT_NEURAL_TUNING, validateTerrainSettings, type V2TerrainSettings } from './terrainSettings';
+import { assertNeuralCompute } from './neuralExecution';
 import { CLIMATE_VALUES, CLIMATE_ZONE_VALUES } from '../../../rust/bridge/terrainClimate';
 import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
 /** A zone's values, or a legacy preset's when the name is one of the V1 presets. */
@@ -186,7 +187,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   signal?.throwIfAborted();
   const usesNeural = !['procedural', 'procedural-phasor'].includes(request.source) && !request.terrain?.sketch?.processing;
   if (request.source === 'procedural-phasor' && request.native) throw new Error('Compact Phasor uses the browser Rust/WebGPU backend. Select Rust browser, with CPU or GPU compute.');
-  if (usesNeural && request.compute === 'cpu') throw new Error('Les moteurs neuronaux actuels nécessitent WebGPU ou un service GPU local. Le relief procédural fonctionne sur CPU.');
+  assertNeuralCompute(usesNeural, request.compute);
   sourceDefinition({ ...request.terrain, width: request.width, source: request.source });
   if (request.terrain) {
     // These fields are derived by the orchestrator, not user-editable recipe parameters.

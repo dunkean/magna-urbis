@@ -1068,7 +1068,9 @@ export class BenchRenderer {
   }
   backgroundUrl(): string | undefined {
     if (!this.backgroundHref) {
-      if (this.gpuActive) this.backgroundHref = this.groundBackground()!.toDataURL('image/png');
+      // The open 3D view also polls while a new world prepares its GPU look.
+      // Keep the background pending until the bitmap is ready; never cache a preview.
+      if (this.gpuActive) this.backgroundHref = this.groundBackground()?.toDataURL('image/png');
       else if (this.terrainSvg || this.vectors) {
         // Illustrated: the canvas-painted ground enters the 3D background draped, as in 2D: wash under the water, stamps over it.
         let painted = '', wash = '';

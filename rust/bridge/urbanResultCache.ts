@@ -1,6 +1,7 @@
 /** Browser (WASM profile) IndexedDB cache of urban results. Every access is
  * best effort: a failure simply behaves as a cache miss. */
-export const URBAN_CACHE_VERSION = 1;
+// Civic water sites and shanties now apply scoped roof/storey overrides too.
+export const URBAN_CACHE_VERSION = 2;
 export const URBAN_CACHE_MAX_BYTES = 300 * 1024 * 1024;
 const DB_NAME = 'magna-urbis-urban-cache', STORE = 'results';
 

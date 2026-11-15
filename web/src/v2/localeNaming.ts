@@ -1,5 +1,6 @@
 /** Naming and importance controls share the same catalog in all eight interface languages. */
 const rows = [
+  ['Names are independent of building styles.','Los nombres son independientes del estilo de los edificios.','Os nomes são independentes do estilo das construções.','名称与建筑风格相互独立。','الأسماء مستقلة عن أنماط المباني.','Названия не зависят от стиля зданий.','名前は建築様式とは独立しています。'],
   ['Naming scope','Ámbito de los nombres','Âmbito dos nomes','命名范围','نطاق التسمية','Область именования','命名の範囲'],
   ['Name profile','Perfil de nombres','Perfil dos nomes','名称风格','نمط الأسماء','Профиль названий','名前のプロファイル'],
   ['Inherit from culture','Heredar de la cultura','Herdar da cultura','继承文化设置','وراثة من الثقافة','Наследовать от культуры','文化から継承'],

@@ -33,6 +33,20 @@ function fixture(culture='bastide'):World {
 function settings(culture='bastide'){const s=defaultSettings();s.options.culture=culture;return s;}
 
 describe('unified names and durable edits',()=>{
+  it('chooses proper-name origin independently of architecture and localizes the whole generic construction',()=>{
+    const s=settings('european-organic');s.naming={profile:'english',source:'invented',mapLanguage:'en'};
+    const source=fixture('european-organic'),english=renameMap(source,s,'fr');
+    expect(english.names!.entries.find(e=>e.id==='settlement:main')!.parts!.profile).toBe('english');
+    expect(english.names!.regionParts!.profile).toBe('english');
+    const gate={kind:'gate' as const,proper:'Grahams',cultural:'Grahams Gate',opaque:false};
+    expect(presentName(gate,{mode:'localized',language:'en'})).toBe('Grahams Gate');
+    expect(presentName(gate,{mode:'localized',language:'fr'})).toBe('Porte de Grahams');
+    s.naming.local={main:{profile:'french'}};
+    const local=renameMap(english,s,'en');
+    expect(local.names!.entries.find(e=>e.id==='settlement:main')!.parts!.profile).toBe('french');
+    expect(local.names!.regionParts!.profile).toBe('english');
+    expect(local.terrain.height.data).toBe(source.terrain.height.data);
+  });
   it('localizes generated legacy descriptions in every interface language',()=>{
     for(const culture of ['bastide','medina','chinese','norse-ringfort','elven']){
       const w=renameMap(fixture(culture),settings(culture));
