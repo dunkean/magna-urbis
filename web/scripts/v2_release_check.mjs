@@ -36,14 +36,16 @@ const installers = extensions.map(ext => {
 });
 await mkdir(output, { recursive: true });
 if (platform === 'windows-x64') {
-  const portable = join(output, `Magna Urbis V2_${version}_x64-portable.zip`);
+  const portable = join(output, `Magna.Urbis.V2_${version}_x64-portable.zip`);
   await createPortable({ binary: options.binary ?? join(target, 'magna-urbis-v2-desktop.exe'), resources, output: portable });
   installers.push(portable);
 }
 const hashes = [];
 for (const installer of installers) {
   if (!(await stat(installer)).size) throw new Error(`Empty installer: ${installer}`);
-  const name = basename(installer);
+  // GitHub replaces spaces in uploaded asset names. Normalize before hashing
+  // and collecting so the published checksums name the files users download.
+  const name = basename(installer).replaceAll(' ', '.');
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(installer)) hash.update(chunk);
   hashes.push({ file: name, sha256: hash.digest('hex') });
