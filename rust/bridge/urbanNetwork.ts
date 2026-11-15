@@ -10,6 +10,37 @@ const overlaps = (a: Bounds, b: Bounds): boolean => a[0] <= b[2] + EPS && a[2] >
 const interpolate = (a: Point, b: Point, t: number): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 const same = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < EPS && Math.abs(a.y - b.y) < EPS;
 
+/** Uniform grid over boxes: the indices of the boxes whose cells meet a query box (grown by `pad`), ascending.
+ * A superset: callers keep their exact test, so a filter over the candidates equals the linear filter, in order. */
+function boxGrid(boxes: Bounds[]): (q: Bounds, pad: number) => number[] {
+  const finite = (b: Bounds): boolean => b.every(Number.isFinite);
+  const spans = boxes.filter(finite).map(b => Math.max(b[2] - b[0], b[3] - b[1])).sort((a, b) => a - b);
+  const cell = Math.max(1, 2 * (spans[spans.length >> 1] ?? 0)), K = 1 << 20;
+  const at = (v: number): number => Math.floor(v / cell);
+  const cells = new Map<number, number[]>(), wide: number[] = [];
+  boxes.forEach((b, i) => {
+    if (!finite(b)) return;
+    const x0 = at(b[0] - EPS), y0 = at(b[1] - EPS), x1 = at(b[2] + EPS), y1 = at(b[3] + EPS);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 256 || Math.max(-x0, -y0, x1, y1) >= K / 2) { wide.push(i); return; }
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const key = (y + K / 2) * K + x + K / 2, list = cells.get(key);
+      if (list) list.push(i); else cells.set(key, [i]);
+    }
+  });
+  return (q, pad) => {
+    const x0 = at(q[0] - pad), y0 = at(q[1] - pad), x1 = at(q[2] + pad), y1 = at(q[3] + pad);
+    if (!(Number.isFinite(x0) && Number.isFinite(y0) && Number.isFinite(x1) && Number.isFinite(y1))
+      || (x1 - x0 + 1) * (y1 - y0 + 1) > 4096 || Math.max(-x0, -y0, x1, y1) >= K / 2) return boxes.map((_, i) => i);
+    const out = [...wide];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const list = cells.get((y + K / 2) * K + x + K / 2);
+      if (list) for (const i of list) out.push(i);
+    }
+    out.sort((a, b) => a - b);
+    return out.filter((i, j) => j === 0 || out[j - 1] !== i);
+  };
+}
+
 function oriented(ring: Point[], positive: boolean): Point[] {
   const area = ring.reduce((sum, p, i) => {
     const q = ring[(i + 1) % ring.length];
@@ -34,9 +65,12 @@ export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
     // its span within half a road and 3 m of a block is owned too; in the fields the
     // regional layer keeps it.
     const blocks = layout.blocks.map(b => ({ ring: b.shape.outer, box: bounds(b.shape.outer) }));
-    const nearBlock = (p: Point, reach: number): boolean => blocks.some(({ ring, box }) =>
-      p.x >= box[0] - reach && p.x <= box[2] + reach && p.y >= box[1] - reach && p.y <= box[3] + reach
-      && ring.some((q, j) => segmentDistance(p, ring[(j + 1) % ring.length], q) <= reach));
+    const near = boxGrid(blocks.map(b => b.box));
+    const nearBlock = (p: Point, reach: number): boolean => near([p.x, p.y, p.x, p.y], reach).some(i => {
+      const { ring, box } = blocks[i];
+      return p.x >= box[0] - reach && p.x <= box[2] + reach && p.y >= box[1] - reach && p.y <= box[3] + reach
+        && ring.some((q, j) => segmentDistance(p, ring[(j + 1) % ring.length], q) <= reach);
+    });
     for (const street of layout.streets) {
       const regional = street.role === 'regional' || street.role === 'approach';
       if (!regional && !['bridge', 'ford', 'causeway'].includes(street.role)) continue;
@@ -158,13 +192,15 @@ export function prepareUrbanRoadClip(layouts: Layout[]): (streets: Street[]) => 
   // replaced it, so it is not drawn. A piece reaching the fields stays whole.
   const blocks = layouts.filter(l => l.structure && l.structure.mechanism !== 'legacy')
     .flatMap(l => l.blocks.filter(b => b.shape.outer.length >= 3).map(b => ({ shape: b.shape, bounds: bounds(b.shape.outer) })));
-  const inBlock = (p: Point): boolean => blocks.some(b => p.x >= b.bounds[0] && p.x <= b.bounds[2] && p.y >= b.bounds[1] && p.y <= b.bounds[3] && inShape(p, b.shape));
+  const blockGrid = boxGrid(blocks.map(b => b.bounds));
+  const inBlock = (p: Point): boolean => blockGrid([p.x, p.y, p.x, p.y], 0).some(i => { const b = blocks[i];
+    return p.x >= b.bounds[0] && p.x <= b.bounds[2] && p.y >= b.bounds[1] && p.y <= b.bounds[3] && inShape(p, b.shape); });
   const retired = (s: Street): boolean => s.path.every((p, i) => i === 0 || [0.02, 0.5, 0.98].every(t => inBlock(interpolate(s.path[i - 1], p, t))));
   return streets => clipUrbanStreets(streets, masks).filter(s => !blocks.length || !retired(s));
 }
 
 function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Bounds }[]): Street[] {
-  const result: Street[] = [], covered = new Map<string, [number, number][]>();
+  const result: Street[] = [], covered = new Map<string, [number, number][]>(), maskGrid = boxGrid(masks.map(mask => mask.bounds));
   for (const street of streets) {
     let path: Point[] = [], widths: number[] = [];
     const flush = (): void => {
@@ -175,7 +211,7 @@ function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Boun
       const a = street.path[i - 1], b = street.path[i];
       if (same(a, b)) continue;
       const segmentBounds: Bounds = [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
-      const relevant = masks.filter(mask => overlaps(mask.bounds, segmentBounds));
+      const relevant = maskGrid(segmentBounds, EPS).map(i => masks[i]).filter(mask => overlaps(mask.bounds, segmentBounds));
       const cuts = [0, 1];
       for (const { shape } of relevant) {
         cutsAtRing(a, b, shape.outer, cuts);

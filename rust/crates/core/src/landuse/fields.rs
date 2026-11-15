@@ -829,6 +829,9 @@ pub fn prune(net: &mut Net, connectors: &[(Polygon, f64)], tol: f64) -> (usize, 
         .filter(|(p, _)| p.len() >= 2)
         .map(|(p, w)| (p, *w, bbox(p).grow(2.0 * tol)))
         .collect();
+    // The connectors whose box holds a point (only `any` tests, so the order does not matter).
+    let con_index = BoxIndex::new(con.iter().map(|c| c.2).collect());
+    let con_at = |q: Point| con_index.query(Box2 { x0: q.x, y0: q.y, x1: q.x, y1: q.y });
     let mut kept: Vec<(Polygon, Box2)> = vec![];
     let mut dropped = 0;
     for pl in std::mem::take(&mut net.ways) {
@@ -845,8 +848,8 @@ pub fn prune(net: &mut Net, connectors: &[(Polygon, f64)], tol: f64) -> (usize, 
         let dup = ss
             .iter()
             .filter(|&&p| {
-                con.iter()
-                    .any(|(a, _, b)| b.contains(p) && line_dist(p, a) < 8.0)
+                con_at(p).into_iter()
+                    .any(|i| con[i].2.contains(p) && line_dist(p, con[i].0) < 8.0)
                     || kept
                         .iter()
                         .any(|(a, b)| b.contains(p) && line_dist(p, a) < 6.0)
@@ -865,7 +868,7 @@ pub fn prune(net: &mut Net, connectors: &[(Polygon, f64)], tol: f64) -> (usize, 
         .map(|(a, _)| {
             [a[0], *a.last().unwrap()]
                 .iter()
-                .any(|&p| con.iter().any(|(a, w, b)| b.contains(p) && joins(p, a, *w)))
+                .any(|&p| con_at(p).into_iter().any(|i| con[i].2.contains(p) && joins(p, con[i].0, con[i].1)))
         })
         .collect();
     loop {

@@ -94,6 +94,110 @@ impl Box2 {
         p.x >= self.x0 && p.x <= self.x1 && p.y >= self.y0 && p.y <= self.y1
     }
 }
+/// Uniform grid over boxes: the boxes that meet a query box without scanning them all.
+/// Answers are exact (`Box2::meets` on the boxes themselves) and in ascending index order,
+/// so a filter over the indexed slice keeps its order. Boxes that are not finite never
+/// meet a finite query and are left out.
+pub struct BoxIndex {
+    cell: f64,
+    cells: super::hash::HashMap<(i32, i32), Vec<u32>>,
+    wide: Vec<u32>,
+    boxes: Vec<Box2>,
+}
+impl BoxIndex {
+    /// Cells a box may cover before it goes to the list every query tests.
+    const MAX_CELLS: i64 = 256;
+    pub fn new(boxes: Vec<Box2>) -> Self {
+        let finite = |b: &Box2| b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite();
+        let mut spans: Vec<f64> =
+            boxes.iter().filter(|b| finite(b)).map(|b| (b.x1 - b.x0).max(b.y1 - b.y0)).collect();
+        // Twice the median extent: most boxes cover a few cells.
+        let cell = if spans.is_empty() {
+            1.0
+        } else {
+            let mid = spans.len() / 2;
+            (*spans.select_nth_unstable_by(mid, f64::total_cmp).1 * 2.0).max(1.0)
+        };
+        let mut index = Self { cell, cells: Default::default(), wide: vec![], boxes };
+        for i in 0..index.boxes.len() {
+            let b = index.boxes[i];
+            if !finite(&b) {
+                continue;
+            }
+            let (x0, y0, x1, y1) = index.range(b);
+            let keyed = |v: i64| v > i32::MIN as i64 && v < i32::MAX as i64;
+            if (x1 - x0 + 1).saturating_mul(y1 - y0 + 1) > Self::MAX_CELLS ||![x0, y0, x1, y1].into_iter().all(keyed) {
+                index.wide.push(i as u32);
+                continue;
+            }
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    index.cells.entry((x as i32, y as i32)).or_default().push(i as u32);
+                }
+            }
+        }
+        index
+    }
+    fn range(&self, b: Box2) -> (i64, i64, i64, i64) {
+        let at = |v: f64| (v / self.cell).floor() as i64;
+        (at(b.x0), at(b.y0), at(b.x1), at(b.y1))
+    }
+    /// Indices of the boxes that meet `q`, ascending.
+    pub fn query(&self, q: Box2) -> Vec<usize> {
+        if !(q.x0.is_finite() && q.y0.is_finite() && q.x1.is_finite() && q.y1.is_finite()) {
+            return (0..self.boxes.len()).filter(|&i| self.boxes[i].meets(q)).collect();
+        }
+        let (x0, y0, x1, y1) = self.range(q);
+        let keyed = |v: i64| v > i32::MIN as i64 && v < i32::MAX as i64;
+        if ![x0, y0, x1, y1].into_iter().all(keyed)
+            || (x1 - x0 + 1).saturating_mul(y1 - y0 + 1) > 4 * Self::MAX_CELLS.max(self.cells.len() as i64 / 4)
+        {
+            return (0..self.boxes.len()).filter(|&i| self.boxes[i].meets(q)).collect();
+        }
+        let mut out: Vec<usize> = self.wide.iter().map(|&i| i as usize).collect();
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if let Some(v) = self.cells.get(&(x as i32, y as i32)) {
+                    out.extend(v.iter().map(|&i| i as usize));
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out.retain(|&i| self.boxes[i].meets(q));
+        out
+    }
+}
+#[cfg(test)]
+mod box_index_tests {
+    use super::*;
+    #[test]
+    fn queries_match_the_linear_filter_in_order() {
+        // Small and long boxes, an empty ring's box, queries of every size.
+        let mut seed = 7_u64;
+        let mut next = move || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (seed >> 11) as f64 / (1_u64 << 53) as f64
+        };
+        let mut boxes = vec![bbox(&[])];
+        for i in 0..600 {
+            let (x, y) = (next() * 5000.0, next() * 5000.0);
+            let (w, h) = if i % 50 == 0 { (3000.0, 4.0) } else { (next() * 40.0, next() * 40.0) };
+            boxes.push(Box2 { x0: x, y0: y, x1: x + w, y1: y + h });
+        }
+        let index = BoxIndex::new(boxes.clone());
+        for i in 0..400 {
+            let (x, y) = (next() * 5200.0 - 100.0, next() * 5200.0 - 100.0);
+            let s = if i % 40 == 0 { 4000.0 } else { next() * 60.0 };
+            let q = Box2 { x0: x, y0: y, x1: x + s, y1: y + s * 0.5 };
+            let linear: Vec<_> = (0..boxes.len()).filter(|&i| boxes[i].meets(q)).collect();
+            assert_eq!(index.query(q), linear);
+        }
+        // Touching boxes meet (closed boxes), as `Box2::meets`.
+        let q = Box2 { x0: boxes[1].x1, y0: boxes[1].y1, x1: boxes[1].x1, y1: boxes[1].y1 };
+        assert!(index.query(q).contains(&1));
+    }
+}
 pub fn bbox(a: &[Point]) -> Box2 {
     let mut b = Box2 {
         x0: f64::INFINITY,

@@ -8,7 +8,9 @@ struct Plane {
     kind: String,
 }
 pub fn execute(header: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut lap = super::timing::Lap::new("landuse");
     let mut v = decode_header(header, bytes)?;
+    lap.lap("decode");
     // Move the large trees into Input instead of cloning and deserializing them twice.
     let geometry = v["geometry"].take();
     let options = v["options"].take();
@@ -68,8 +70,15 @@ pub fn execute(header: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
         }
         input.cost = crate::site::travel_cost(n, input.cell, start, &input.pass, &input.height);
     }
+    lap.lap("input");
     match s(&v["operation"]) {
-        "rural" => encode(&generate_rural(&input)?),
+        "rural" => {
+            let out = generate_rural(&input)?;
+            lap.lap("rural");
+            let bytes = encode(&out);
+            lap.lap("encode");
+            bytes
+        }
         "natural" => encode(&generate_natural_cover(&input)?),
         "landscape" => encode(&urban_landscape_ground(&input, yes(&v["appearance"]))),
         "natural-ground" => encode(&ground::urban_natural_ground(&input)),

@@ -267,9 +267,14 @@ pub fn retain(a: &[Region], b: &[Region], failures: &mut f64) -> Vec<Region> {
         }
     }
 }
-pub fn cuts_touching(r: &Region, cuts: &[Region]) -> Vec<Region> {
+/// Box index over the outer rings of `cuts`, for `cuts_touching` / `clear_roads`.
+pub fn cut_index(cuts: &[Region]) -> BoxIndex {
+    BoxIndex::new(cuts.iter().map(|c| bbox(&c.outer)).collect())
+}
+/// `index` is `cut_index(cuts)`: the candidates come in the order of `cuts`, as a linear filter.
+pub fn cuts_touching(r: &Region, cuts: &[Region], index: &BoxIndex) -> Vec<Region> {
     let rb = bbox(&r.outer);
-    let near: Vec<&Region> = cuts.iter().filter(|c| rb.meets(bbox(&c.outer))).collect();
+    let near: Vec<&Region> = index.query(rb).into_iter().map(|i| &cuts[i]).collect();
     if near.len() <= 16 {
         return near.into_iter().cloned().collect();
     }
@@ -327,10 +332,11 @@ pub fn cuts_touching(r: &Region, cuts: &[Region]) -> Vec<Region> {
         .cloned()
         .collect()
 }
-pub fn clear_roads(a: &[Region], cuts: &[Region], failures: &mut f64) -> Vec<Region> {
+/// `index` is `cut_index(cuts)`, built once for many calls.
+pub fn clear_roads(a: &[Region], cuts: &[Region], index: &BoxIndex, failures: &mut f64) -> Vec<Region> {
     a.iter()
         .flat_map(|r| {
-            let near = cuts_touching(r, cuts);
+            let near = cuts_touching(r, cuts, index);
             if near.is_empty() {
                 vec![r.clone()]
             } else {

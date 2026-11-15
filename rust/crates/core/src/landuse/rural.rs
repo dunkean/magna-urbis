@@ -100,6 +100,7 @@ fn neighbours(i: usize, n: usize) -> impl Iterator<Item = usize> {
 pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     input.validate(true)?;
     let clock = timing::Clock::new();
+    let mut lap = timing::Lap::new("rural");
     let (n, cell) = (input.w, input.cell);
     let total = n * n;
     let s_map = input.map_size;
@@ -134,6 +135,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         );
     }
     let (d_road, road_ang) = distance_field(&road_m, n, n, cell, Some(&road_ang_c));
+    lap.lap("roads");
     let secondary: Vec<_> = arr(&g["settlements"])
         .iter()
         .filter(|v| !yes(&v["main"]))
@@ -225,6 +227,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     } else {
         u_dist.fill(1e5);
     }
+    lap.lap("reserve");
     let mut cover_footprints = foot.clone();
     // Cells of farmstead settlements: their households farm the land around them.
     let mut farm_src = vec![0_u8; total];
@@ -319,6 +322,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
     }
+    lap.lap("secondary");
     let mut farm_reserve = reserve.clone();
     for u in ground::layers(input) {
         if u["macro"].is_object()
@@ -386,6 +390,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     );
     stats.insert("ms.lu.pre".into(), clock.ms());
     stats.insert("ms.lu.farms".into(), farm_clock.ms());
+    lap.lap("slope+farms");
     let class_clock = timing::Clock::new();
     let mut d_farm = vec![1e9_f32; total];
     for fm in &farmsteads {
@@ -616,6 +621,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         }
         *class = k;
     });
+    lap.lap("classes");
     let fm: Vec<_> = cls.iter().map(|&k| u8::from(k == 1 || k == 9)).collect();
     let (df, _) = distance_field(&fm, n, n, cell, None);
     for i in 0..total {
@@ -707,10 +713,12 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             );
         }
     }
+    lap.lap("smooth+components");
     let natural_ground = ground::urban_natural_ground(input);
     let landscape_ground = urban_landscape_ground(input, false);
     let mut cover_ground = natural_ground.clone();
     cover_ground.extend(landscape_cover_ground(input, &landscape_ground));
+    lap.lap("ground");
     if !cover_ground.is_empty() {
         if cover_reserve.is_none() {
             cover_reserve = Some(reserve.clone());
@@ -763,6 +771,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
     }
+    lap.lap("cover");
     if !input.natural_forest.is_empty() {
         let stands = blur(&input.natural_forest, n, n, 3, 2);
         let local = blur(
@@ -863,6 +872,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
     }
+    lap.lap("forest+wet");
     // Invariants on cultivated land (fields, enclosed fields, orchards, gardens):
     // - it is worked by people living within walking distance: a village works its open fields
     //   up to ~2.5 km, a farmstead its land up to ~1.5 km;
@@ -1018,6 +1028,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         farmsteads.extend(added);
     }
     stats.insert("ms.lu.classes".into(), class_clock.ms());
+    lap.lap("budget");
     let vector_clock = timing::Clock::new();
     let min_area = 1200.0_f64.max(2.2 * cell * cell);
     let mut areas = vec![];
@@ -1093,11 +1104,13 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     let mut failures = 0.0;
     let mut clip_dropped = 0.0;
     let windows: Vec<_> = (0..10_u8).map(|k| class_window(&cls, n, n, k)).collect();
+    // Box indexes: the operands near a region come in their slice order, as the linear filters did.
+    let road_index = bo::cut_index(&road_cuts);
+    let foot_index = bo::cut_index(&cover_foot);
+    let ground_index = bo::cut_index(&cover_ground);
     let pieces = par::map(&(1..10_u8).collect::<Vec<_>>(), |&k| {
-        let mut failures = 0.0;
-        let mut clip_dropped = 0.0;
         let Some(win) = windows[k as usize] else {
-            return (k, vec![], failures, clip_dropped);
+            return (k, vec![], 0.0, 0.0);
         };
         let ind: Vec<_> = cls
             .iter()
@@ -1108,8 +1121,11 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         } else {
             min_area
         };
-        let mut rs = vec![];
-        for r in vectorize(&ind, n, n, cell, threshold, win) {
+        // Regions are independent (no random draw): warped and clipped in parallel, kept in order.
+        let traced = vectorize(&ind, n, n, cell, threshold, win);
+        let done = par::map(&traced, |r| {
+            let mut failures = 0.0;
+            let mut clip_dropped = 0.0;
             let warped = Region {
                 outer: warp_ring(&r.outer),
                 holes: r.holes.iter().map(&warp_ring).collect(),
@@ -1117,11 +1133,8 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             let mut result = vec![warped.clone()];
             if cover_reserve.is_some() {
                 let box_ = bbox(&warped.outer);
-                let near: Vec<_> = cover_foot
-                    .iter()
-                    .filter(|r| box_.meets(bbox(&r.outer)))
-                    .cloned()
-                    .collect();
+                let near: Vec<_> =
+                    foot_index.query(box_).into_iter().map(|i| cover_foot[i].clone()).collect();
                 if !near.is_empty() {
                     let clipped = bo::safe(&[warped.clone()], &near, Op::Difference);
                     if clipped.is_empty() {
@@ -1150,10 +1163,10 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                         .filter(|r| region_area(r) >= 0.4 * min_area)
                         .collect();
                     if natural(k) {
-                        let permission: Vec<_> = cover_ground
-                            .iter()
-                            .filter(|r| box_.meets(bbox(&r.outer)))
-                            .cloned()
+                        let permission: Vec<_> = ground_index
+                            .query(box_)
+                            .into_iter()
+                            .map(|i| cover_ground[i].clone())
                             .collect();
                         result.extend(
                             bo::safe(&[warped], &permission, Op::Intersection)
@@ -1164,8 +1177,15 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                 }
             }
             if natural(k) {
-                result = bo::clear_roads(&result, &road_cuts, &mut failures);
+                result = bo::clear_roads(&result, &road_cuts, &road_index, &mut failures);
             }
+            (result, failures, clip_dropped)
+        });
+        let (mut rs, mut failures, mut clip_dropped) = (vec![], 0.0, 0.0);
+        for (result, failed, dropped) in done {
+            // Integer counts: the f64 sums do not depend on the order.
+            failures += failed;
+            clip_dropped += dropped;
             rs.extend(result);
         }
         (k, rs, failures, clip_dropped)
@@ -1201,6 +1221,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         }
     }
     stats.insert("ms.lu.vector".into(), vector_clock.ms());
+    lap.lap("vector");
     let fields_clock = timing::Clock::new();
     let hsm = blur(&input.height, n, n, 2, 2);
     let mut ft_rng = rr.fork("furlong");
@@ -1284,6 +1305,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         field_area += region_area(r);
         fields::partition(r, &mk_ctx(true), &mut ft_rng, &mut net);
     }
+    lap.lap("partition");
     let mut connectors: Vec<_> = roads.iter().map(|r| (r.path.clone(), r.width)).collect();
     for f in &farmsteads {
         let drive = poly(&f["drive"]);
@@ -1310,17 +1332,15 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             .chain(&close_regions)
             .chain(horticulture.iter().map(|(_, r)| r))
             .collect();
+        let protected_index = BoxIndex::new(protected_land.iter().map(|r| bbox(&r.outer)).collect());
         let linked = fields::connect(
             &mut net,
             &connectors,
             240.0_f64.min(65.0_f64.max(2.5 * cell)),
             |a, b| {
                 let box_ = bbox(&[a, b]);
-                let near: Vec<_> = protected_land
-                    .iter()
-                    .copied()
-                    .filter(|r| box_.meets(bbox(&r.outer)))
-                    .collect();
+                let near: Vec<_> =
+                    protected_index.query(box_).into_iter().map(|i| protected_land[i]).collect();
                 let steps = (dist(a, b) / 3.0_f64.min(cell / 2.0)).ceil().max(2.0) as usize;
                 for k in 1..steps {
                     let p = lerp(a, b, k as f64 / steps as f64);
@@ -1338,7 +1358,9 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         );
         stats.insert("ways.linked".into(), linked as f64);
     }
+    lap.lap("connect");
     let (dropped, demoted) = fields::prune(&mut net, &connectors, 1.6 * cell + 20.0);
+    lap.lap("prune");
     stats.insert("ways.dropped".into(), dropped as f64);
     stats.insert("ways.demoted".into(), demoted as f64);
     if planned {
@@ -1346,19 +1368,20 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     }
     if planned && !net.ways.is_empty() {
         let cuts: Vec<_> = net.ways.iter().map(|p| piece(ribbon(p, 4.4))).collect();
+        let cut_index = bo::cut_index(&cuts);
+        // Each holder is cut on its own (no random draw): in parallel, results kept in order.
+        let cut_away = |region: Region| {
+            let mut failed = 0.0;
+            let near: Vec<_> =
+                cut_index.query(bbox(&region.outer)).into_iter().map(|i| cuts[i].clone()).collect();
+            let pieces =
+                if near.is_empty() { vec![region] } else { bo::retain(&[region], &near, &mut failed) };
+            (pieces, failed)
+        };
+        let furlong_pieces = par::map(&net.furlongs, |fl| cut_away(fl.region.clone()));
         let mut kept = vec![];
-        for fl in net.furlongs {
-            let box_ = bbox(&fl.region.outer);
-            let near: Vec<_> = cuts
-                .iter()
-                .filter(|r| box_.meets(bbox(&r.outer)))
-                .cloned()
-                .collect();
-            let pieces = if near.is_empty() {
-                vec![fl.region.clone()]
-            } else {
-                bo::retain(&[fl.region.clone()], &near, &mut failures)
-            };
+        for (fl, (pieces, failed)) in net.furlongs.into_iter().zip(furlong_pieces) {
+            failures += failed;
             for r in pieces {
                 let (u0, u1, v0, v1) = fields::extents(&r.outer, fl.angle.cos(), fl.angle.sin());
                 let a = region_area(&r);
@@ -1373,23 +1396,16 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
         net.furlongs = kept;
+        let horticulture_kind = |a: &Area| ["garden", "orchard"].contains(&a.kind.as_str());
+        let area_pieces =
+            par::map(&areas, |a| horticulture_kind(a).then(|| cut_away(a.region())));
         let mut cleared = vec![];
-        for a in areas {
-            if !["garden", "orchard"].contains(&a.kind.as_str()) {
+        for (a, cut) in areas.into_iter().zip(area_pieces) {
+            let Some((pieces, failed)) = cut else {
                 cleared.push(a);
                 continue;
-            }
-            let box_ = bbox(&a.poly);
-            let near: Vec<_> = cuts
-                .iter()
-                .filter(|r| box_.meets(bbox(&r.outer)))
-                .cloned()
-                .collect();
-            let pieces = if near.is_empty() {
-                vec![a.region()]
-            } else {
-                bo::retain(&[a.region()], &near, &mut failures)
             };
+            failures += failed;
             for r in pieces {
                 cleared.push(Area {
                     poly: r.outer,
@@ -1406,6 +1422,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             areas.push(Area::new("pasture", r.clone()));
         }
     }
+    lap.lap("cut-ways");
     let (mut strip_count, mut furlong_count, mut close_count) = (0, 0, 0);
     let mut strip_rng = rr.fork("strips");
     for mut fl in net.furlongs {
@@ -1447,6 +1464,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         }
         areas.push(a);
     }
+    lap.lap("strips");
     if planned && !net.ways.is_empty() {
         let woods: Vec<_> = net
             .ways
@@ -1460,17 +1478,25 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             .map(|p| piece(ribbon(p, 3.0)))
             .filter(|r| r.outer.len() >= 3)
             .collect();
-        let mut cleared = vec![];
-        for a in areas {
+        let (woods_index, open_index) = (bo::cut_index(&woods), bo::cut_index(&open));
+        // Each area is cleared on its own: in parallel, results kept in order.
+        let area_pieces = par::map(&areas, |a| {
             if !["forest", "meadow", "pasture", "commons", "marsh"].contains(&a.kind.as_str()) {
+                return None;
+            }
+            let mut failed = 0.0;
+            let (cuts, index) =
+                if a.kind == "forest" { (&woods, &woods_index) } else { (&open, &open_index) };
+            Some((bo::clear_roads(&[a.region()], cuts, index, &mut failed), failed))
+        });
+        let mut cleared = vec![];
+        for (a, clear) in areas.into_iter().zip(area_pieces) {
+            let Some((pieces, failed)) = clear else {
                 cleared.push(a);
                 continue;
-            }
-            for r in bo::clear_roads(
-                &[a.region()],
-                if a.kind == "forest" { &woods } else { &open },
-                &mut failures,
-            ) {
+            };
+            failures += failed;
+            for r in pieces {
                 cleared.push(Area {
                     poly: r.outer,
                     holes: r.holes,
@@ -1481,6 +1507,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         areas = cleared;
     }
     stats.insert("ms.lu.fields".into(), fields_clock.ms());
+    lap.lap("clear-ways");
     let reserve_polys = if !foot.is_empty() {
         foot.into_iter().map(|r| r.outer).collect()
     } else {
