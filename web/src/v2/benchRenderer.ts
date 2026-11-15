@@ -54,7 +54,7 @@ import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { renderScene, type RenderScene } from './renderScene';
 import { PassState, ResourceCache, passKeys, type PassInput } from './passes/pass';
 import { buildScene, type SceneMask } from '../render/scene';
-import { createNativeCityMap, type NativeCityHooks } from './nativeCityMap';
+import { createNativeCityMapAsync, type NativeCityHooks, type NativeCityMap } from './nativeCityMap';
 import { drawRuralSemantic, drawUrbanSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
 import { contourDrawOf, type SemanticLook } from '../render/composition';
 import type { SemanticLegendEntry } from '../render/legend';
@@ -95,7 +95,7 @@ const clearingBuildings = (world: World) => [...nativeCitiesOf(world).flatMap(ci
 /** Reach of the overlay products derived from a changed shape (forest wash fringe 140 m, lone trees 120 m, clearings, sprites). */
 const DERIVED_REACH = 220;
 /** Resources a live renderer shares with its exports: derived products keyed by revisions, and the native city map. */
-export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: ReturnType<typeof createNativeCityMap> } }
+export interface SharedPassResources { cache: ResourceCache; city?: { key: string; map: NativeCityMap } }
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { svg: string; image?: HTMLCanvasElement; fantasy?: FantasyRaster };
 type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World }; physical?: PhysicalGround };
@@ -180,8 +180,8 @@ export class BenchRenderer {
   private resolved?: ResolvedAppearance;
   private paper = '#ffffff';
   private native?: TerrainData;
-  private city?: ReturnType<typeof createNativeCityMap>;
-  private exportCity?: ReturnType<typeof createNativeCityMap>;
+  private city?: NativeCityMap;
+  private exportCity?: NativeCityMap;
   private cartography?: CanvasRenderer;
   private physical?: PhysicalGround;
   private contourRevision = 0;
@@ -749,7 +749,9 @@ export class BenchRenderer {
   private async cityPass(): Promise<void> {
     const v = this.scene!.revisions, key = JSON.stringify([v.cities, v.settlements, v.terrain]), shared = this.shared;
     if (shared.city?.key === key) { this.city = shared.city.map; return; }
-    const map = createNativeCityMap(this.world!, () => { this.cityRevision++; this.restoredFrameKey = ''; this.invalidate(); });
+    const map = await createNativeCityMapAsync(this.world!, () => { this.cityRevision++; this.restoredFrameKey = ''; this.invalidate(); });
+    // Another pass prepared the same cities while the volumes were built: keep one map.
+    if (this.ownsShared && shared.city?.key === key) { map.dispose(); this.city = shared.city.map; return; }
     if (this.ownsShared) { shared.city?.map.dispose(); shared.city = { key, map }; } else { this.exportCity?.dispose(); this.exportCity = map; }
     this.city = map;
   }

@@ -134,6 +134,7 @@ export class StudioClient {
       else if (m.type === 'result' && m.heavy) {
         // A heavy town: free the worker's copy (its whole heap) before materialising the page's, then unpack.
         const p = this.pending!; this.pending = null; this.replaceEngine();
+        void import('../render/cityBuildingsParallel').then(module => module.releaseCityBuildingWorkers(), () => undefined);
         setTimeout(() => { try { p.resolve(internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world)))); } catch (error) { p.reject(error instanceof Error ? error : new Error(String(error))); } }, HEAVY_RELEASE_MS);
       }
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldPartitions(unpackWorldLanduse(m.world))); this.retained={id:m.id,world};p.resolve(world); }
@@ -180,6 +181,7 @@ export class StudioClient {
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
     void import('./benchRenderer').catch(() => undefined);
     void import('../ui/terrainRenderer').then(module => module.prewarmTerrainRenderer(), () => undefined);
+    if (['town', 'towns', 'all'].includes(action)) void import('../render/cityBuildingsParallel').then(module => module.prewarmCityBuildingWorkers(), () => undefined);
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject, progress };

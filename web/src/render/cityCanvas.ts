@@ -309,15 +309,45 @@ function idUnit(id: string, salt: number): number {
 /** Buildings of a scene, linked to their parcel allocation for roles. `roofs: false` keeps the items (footprints, roles,
  * materials) without the roof pans, snow patches and cast shadows: the far view of a very large town, whose detail is
  * built later for the visible area only (v2/nativeCityMap.ts). */
-export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene, options: { roofs?: boolean } = {}): CityBuildings {
+/** Plan links of a building item (parcel, role, family, landmark): shared by `buildCityBuildings` and the parallel
+ * build (cityBuildingsParallel.ts), whose workers have no plan. */
+export function cityBuildingLink(building: PlacedBuilding, plan?: CityScene): Pick<CityBuilding, 'parcel' | 'role' | 'family' | 'landmark'> & { allocation?: CityAllocation } {
+  const programme = (building as PlacedBuilding & { programme?: AllocationContract }).programme;
+  const parcel = plan?.parcelById.get(building.parcel_id), allocation = parcel === undefined ? undefined : plan!.parcels[parcel].allocation;
+  return { parcel, allocation, role: programme?.role ?? allocation?.role, family: roleFamily(programme?.role ?? allocation?.role, building.function), landmark: programme?.landmark === true || allocation?.landmark === true };
+}
+/** Material culture of a building: its own, else its parcel's allocation, else its town's. */
+export function cityBuildingCulture(building: PlacedBuilding, plan?: CityScene): string {
+  const { parcel, allocation } = cityBuildingLink(building, plan);
+  return building.culture?.culture || allocation?.culture || (parcel === undefined ? '' : plan?.layouts[plan.parcels[parcel].layout]?.culture) || '';
+}
+/** Snow line of each item: the mean ground of its town. */
+export function citySnowAltitudes(items: CityBuilding[], plan?: CityScene): void {
+  const altitudes = new Map<number, { sum: number; count: number }>();
+  for (const b of items) {
+    const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1;
+    const a = altitudes.get(town) ?? { sum: 0, count: 0 }; a.sum += b.building.ground_z_m || 0; a.count++; altitudes.set(town, a);
+  }
+  for (const b of items) {
+    const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1, a = altitudes.get(town)!;
+    b.snowAltitude = a.sum / a.count;
+  }
+}
+/** Spatial bins of the items (same boxes as `buildCityBuildings`). */
+export const cityBuildingBins = (items: readonly CityBuilding[]): SpatialBins => new SpatialBins(items.map(b => surfaceBox([...b.surface, ...b.footprint ?? []])), 64);
+/** `cultures`: the material culture of each building of the batch, given by the caller (a worker chunk has no plan);
+ * `rawRoofs`: the roof arrays are returned even when they hold no pan (a chunk's shadows stay aligned with its items). */
+export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene, options: { roofs?: boolean; cultures?: readonly string[]; rawRoofs?: boolean } = {}): CityBuildings {
   const withRoofs = options.roofs !== false;
   const items: CityBuilding[] = [], byId = new Map<string, number>();
   const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofWall: string[] = [], roofTone: number[] = [], roofDir: number[] = [], roofFlat: number[] = [], roofSnow: number[] = [], roofPatch: number[] = [], roofGrainOf: number[] = [], roofRim: number[] = [], roofTint: (string | undefined)[] = [], shadows: Shape[][] = [];
+  let bi = -1;
   for (const building of batch?.buildings ?? []) {
+    bi++;
     let surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
     const programme = (building as PlacedBuilding & { programme?: AllocationContract }).programme;
-    const parcel = plan?.parcelById.get(building.parcel_id), allocation = parcel === undefined ? undefined : plan!.parcels[parcel].allocation;
+    const link = cityBuildingLink(building, plan), parcel = link.parcel;
     const massing = readMassing(programme, building.footprint, building.id);
     const byPiece = massing && building.footprint.map((shape, i) => pieceVolumes(shape, massing[i])), volumes = byPiece?.flat(), first = volumes?.[0];
     if (volumes) {
@@ -325,10 +355,10 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
         ? [{ ...v.shape, outer: stiltDeck(v.shape.outer) }, ...stiltSupports(v.shape.outer).map(p => ({ outer: [{ x: p.x - 0.16, y: p.y - 0.16 }, { x: p.x + 0.16, y: p.y - 0.16 }, { x: p.x + 0.16, y: p.y + 0.16 }, { x: p.x - 0.16, y: p.y + 0.16 }], holes: [] }))]
         : [v.shape]);
     }
-    const culture = building.culture?.culture || allocation?.culture || (parcel === undefined ? '' : plan?.layouts[plan.parcels[parcel].layout]?.culture) || '';
+    const culture = options.cultures ? options.cultures[bi] : cityBuildingCulture(building, plan);
     byId.set(building.id, items.length);
-    items.push({ id: building.id, surface, footprint: massingFootprint(building.footprint, massing), fn: building.function, role: programme?.role ?? allocation?.role, family: roleFamily(programme?.role ?? allocation?.role, building.function),
-      landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building, ruins: ruinFootprint(building.footprint, programme, massing),
+    items.push({ id: building.id, surface, footprint: massingFootprint(building.footprint, massing), fn: building.function, role: link.role, family: link.family,
+      landmark: link.landmark, parcel, building, ruins: ruinFootprint(building.footprint, programme, massing),
       stilts: volumes?.some(v => (v.detail?.stilts_m ?? 0) > 0), age: idUnit(building.id, 0x51ed), marks: millMarks(volumes),
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5, tint: first?.tint } });
     if (!massing || !withRoofs) { shadows.push([]); continue; }
@@ -367,17 +397,9 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     shadows.push(terraced && casts.length ? differenceS(unionS(casts[0], ...casts.slice(1)),
       [...building.footprint, ...surface].map(s => ({ outer: s.outer, holes: [] }))) : casts);
   }
-  const altitudes = new Map<number, { sum: number; count: number }>();
-  for (const b of items) {
-    const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1;
-    const a = altitudes.get(town) ?? { sum: 0, count: 0 }; a.sum += b.building.ground_z_m || 0; a.count++; altitudes.set(town, a);
-  }
-  for (const b of items) {
-    const town = b.parcel === undefined ? -1 : plan?.parcels[b.parcel]?.layout ?? -1, a = altitudes.get(town)!;
-    b.snowAltitude = a.sum / a.count;
-  }
-  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), patch: Uint8Array.from(roofPatch), grain: Uint8Array.from(roofGrainOf), rim: Uint8Array.from(roofRim), tint: roofTint, shadows } : undefined;
-  return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox([...b.surface, ...b.footprint ?? []])), 64), ...(roofs ? { roofs } : {}) };
+  citySnowAltitudes(items, plan);
+  const roofs = roofShapes.length || options.rawRoofs ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, wall: roofWall, tone: Float32Array.from(roofTone), dir: Float32Array.from(roofDir), flat: Uint8Array.from(roofFlat), snow: Float32Array.from(roofSnow), patch: Uint8Array.from(roofPatch), grain: Uint8Array.from(roofGrainOf), rim: Uint8Array.from(roofRim), tint: roofTint, shadows } : undefined;
+  return { items, byId, bins: cityBuildingBins(items), ...(roofs ? { roofs } : {}) };
 }
 
 export interface CityPick { building?: CityBuilding; parcel?: CityParcel; block?: CityBlock }

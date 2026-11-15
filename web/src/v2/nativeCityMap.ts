@@ -21,6 +21,7 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCitiesOf } from './nativeProducts';
 import { cityGroundOf } from './rustUrban';
+import { buildCityBuildingsParallel, releaseCityBuildingWorkers } from '../render/cityBuildingsParallel';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 
 export interface NativeCityMapStats {
@@ -137,18 +138,34 @@ function materialFaces(building: PlacedBuilding, materials: ReadonlyMap<string, 
   return faces.sort((a, b) => a.z - b.z);
 }
 
-export function createNativeCityMap(world: World, onInvalidate: () => void): NativeCityMap {
-  let disposed = false, queued = false, layer: LayerCanvas | undefined, context: CanvasRenderingContext2D | undefined;
-  let lod: CityLod | undefined;
+/** Plans and city volumes of a world's native towns, built before the map (`createNativeCityMapAsync` spreads the
+ * volumes over workers; `createNativeCityMap` builds whatever is missing on this thread). */
+interface PreparedCities { plans: CityScene[]; buildings: (CityBuildings | undefined)[] }
+const largeTown = (city: ReturnType<typeof nativeCitiesOf>[number]): boolean => !usesNativeHouseRenderer(city.scene) && (city.scene?.buildings.length ?? 0) > LARGE_TOWN_BUILDINGS;
+function cityPlans(world: World): CityScene[] {
   const cities = nativeCitiesOf(world);
   // Keep snapshots separate: older archives may reuse a layout/parcel id in
   // another settlement. Their exact native identities must not be renamed.
   const raster = cities.length ? cityGroundOf(world) : undefined;
-  const entries: Entry[] = cities.map(city => {
-    const plan = buildCityScene(city.layouts, city.partitions ?? [], raster);
-    const large = !usesNativeHouseRenderer(city.scene) && (city.scene?.buildings.length ?? 0) > LARGE_TOWN_BUILDINGS
-      ? { base: buildCityBuildings(city.scene, plan, { roofs: false }), detail: new Map<string, CityBuildings>() } : undefined;
-    return { plan, canopyBuildings: city.scene?.buildings, buildings: large?.base ?? buildCityBuildings(city.scene, plan), ...(large ? { large } : {}), houses: usesNativeHouseRenderer(city.scene) ? new UrbanBuildingLodRenderer(city.scene!) : undefined,
+  return cities.map(city => buildCityScene(city.layouts, city.partitions ?? [], raster));
+}
+/** `createNativeCityMap` with the city volumes of the unedited native towns built over workers (same result). */
+export async function createNativeCityMapAsync(world: World, onInvalidate: () => void): Promise<NativeCityMap> {
+  const cities = nativeCitiesOf(world), plans = cityPlans(world);
+  const buildings = await Promise.all(cities.map((city, i) => usesNativeHouseRenderer(city.scene) ? undefined
+    : buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !largeTown(city) })));
+  releaseCityBuildingWorkers();
+  return createNativeCityMap(world, onInvalidate, { plans, buildings });
+}
+export function createNativeCityMap(world: World, onInvalidate: () => void, prepared?: PreparedCities): NativeCityMap {
+  let disposed = false, queued = false, layer: LayerCanvas | undefined, context: CanvasRenderingContext2D | undefined;
+  let lod: CityLod | undefined;
+  const cities = nativeCitiesOf(world), plans = prepared?.plans ?? cityPlans(world);
+  const entries: Entry[] = cities.map((city, i) => {
+    const plan = plans[i], ready = prepared?.buildings[i];
+    const large = largeTown(city)
+      ? { base: ready ?? buildCityBuildings(city.scene, plan, { roofs: false }), detail: new Map<string, CityBuildings>() } : undefined;
+    return { plan, canopyBuildings: city.scene?.buildings, buildings: large?.base ?? ready ?? buildCityBuildings(city.scene, plan), ...(large ? { large } : {}), houses: usesNativeHouseRenderer(city.scene) ? new UrbanBuildingLodRenderer(city.scene!) : undefined,
       materials: new Map((city.scene?.materials ?? []).map(material => [material.id, material])),
       refused: new Set(city.scene?.refusals.map(refusal => refusal.parcel_id)) };
   });
