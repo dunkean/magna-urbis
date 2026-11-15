@@ -7,7 +7,7 @@
 
   // Exclude map IDs, seeds and other query parameters from the statistics.
   window.goatcounter = {
-    path: location.pathname.replace(/index\.html$/, ''),
+    path: integration.dataset.goatcounterPath || location.pathname.replace(/index\.html$/, ''),
     no_events: true,
   };
   const tracking = document.createElement('script');
