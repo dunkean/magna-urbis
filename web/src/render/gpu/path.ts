@@ -427,6 +427,15 @@ export class RecPath2D extends Base implements RecordedPath, PathData {
   geometry(tolerance: number): PathGeometry { return pGeometry(this, tolerance); }
 }
 
+/** A RecPath2D whose native path stays empty: the same recorded commands, for paths that only a RecordingContext
+ * reads (the GPU engine never reads the native side). Chrome's native closePath walks the whole path, so building a
+ * many-ring path natively is quadratic in its rings (16,000 rings: 4.5 s). Never draw one on a native canvas. */
+export class RecOnlyPath2D extends RecPath2D {
+  moveTo(x: number, y: number): void { pMoveTo(this, x, y, null); }
+  lineTo(x: number, y: number): void { pLineTo(this, x, y, null); }
+  closePath(): void { pClose(this); }
+}
+
 /** Recording-only path (no native Path2D): the recorder's default path, rectangles and transformed copies. */
 export class PlainPath implements RecordedPath, PathData {
   cmds: number[] = [];

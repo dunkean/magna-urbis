@@ -1,7 +1,7 @@
 import { presetComposition, type CompositionRecipe } from '../src/render/composition';
 import { describe, expect, it } from 'vitest';
 import { resolveAppearance, type AppearanceInput } from '../src/render/appearanceRecipe';
-import { PASS_ORDER, PASSES, PassState, ResourceCache, passKeys, type PassName } from '../src/v2/passes/pass';
+import { BackgroundJob, PASS_ORDER, PASSES, PassState, ResourceCache, passKeys, type PassName } from '../src/v2/passes/pass';
 
 const revisions = { terrain: 1, roads: 2, landuse: 3, settlements: 4, names: 5, cities: { main: 6 } };
 const base = { mapStyle: 'parchment' as const };
@@ -66,6 +66,23 @@ describe('render passes', () => {
     await expect(state.run(() => keysOf(v2), runners)).rejects.toThrow('boom');
     fail = false;
     expect(await state.run(() => keysOf(v2), runners)).toEqual(['water', 'frame', 'cartography', 'overlays', 'semantic', 'city']);
+  });
+  it('a background pass product survives a later set() that keeps its key, and a rerun supersedes it', async () => {
+    // Forest race (satellite views without trees): a change that moves the forest key starts the live forest update,
+    // the next control (labels off) calls set() again before it lands. That set() skips the forest pass, so the
+    // update must still apply; the update it superseded must not.
+    const state = new PassState(), forest = new BackgroundJob(), applied: string[] = [];
+    const releases: ((value: string) => void)[] = [];
+    const runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
+    runners.forest = () => { forest.cancel(); forest.start(new Promise<string>(resolve => releases.push(resolve)), value => applied.push(value), () => {}, () => {}); };
+    const town = { ...revisions, cities: { main: 7 } };
+    await state.run(() => keysOf(v2), runners);
+    expect(await state.run(() => keysOf(v2, town), runners)).toContain('forest');
+    expect(await state.run(() => keysOf({ ...v2, labels: false }, town), runners)).toEqual(['overlays']);
+    expect(forest.running).toBeDefined();
+    releases[0]('old-field'); releases[1]('town-field'); await forest.running;
+    expect(applied).toEqual(['town-field']);
+    expect(forest.running).toBeUndefined();
   });
   it('the resource cache reuses by key and evicts the oldest', () => {
     const cache = new ResourceCache(2); let made = 0;

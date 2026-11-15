@@ -69,6 +69,23 @@ export class PassState {
   reset(...names: PassName[]): void { if (!names.length) this.keys = {}; else for (const name of names) delete this.keys[name]; }
 }
 
+/** Product of a pass that lands after set() returned (live forest update). PassState runs a pass again only when its
+ * key moves, so the latest job stays wanted across later set() calls that keep that key: only a new start (the pass
+ * ran again) or a cancel (rollback, disposal) supersedes it. Dropping it on any newer request would leave the pass
+ * recorded as current with its product never shown. */
+export class BackgroundJob {
+  private job?: Promise<void>;
+  /** The wanted job while it runs (exact consumers await it). */
+  get running(): Promise<void> | undefined { return this.job; }
+  /** `apply` / `failed` run only while this job is still the wanted one; `settled` runs once it is no longer pending. */
+  start<T>(work: Promise<T>, apply: (value: T) => void, failed: (error: unknown) => void, settled: () => void): Promise<void> {
+    const job: Promise<void> = work.then(value => { if (this.job === job) apply(value); }, error => { if (this.job === job) failed(error); })
+      .finally(() => { if (this.job === job) { this.job = undefined; settled(); } });
+    return this.job = job;
+  }
+  cancel(): void { this.job = undefined; }
+}
+
 /** Small keyed cache of heavy derived resources, shared between the live renderer and its exports. */
 export class ResourceCache {
   private entries = new Map<string, { value: unknown; dispose?: () => void }>();

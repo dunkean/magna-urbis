@@ -192,11 +192,14 @@ export function setRoadGround(landuse: LandUseLayer | undefined, size: number, t
     // canopyRuns), never a tint of the crowns, which turned it olive and hid it on the glades of a wooded parcel.
     for (const kind of ['meadow', 'pasture', 'commons', 'marsh', 'field', 'garden', 'orchard'] as const) {
       const tone = tones.kinds[kind]; if (!tone) continue;
-      ctx.fillStyle = rgbCss(shade(tone)); ctx.beginPath();
+      ctx.fillStyle = rgbCss(shade(tone));
+      // Each ring in its own Path2D, appended: the same contours, but Chrome's closePath walks the whole path it closes,
+      // which made one growing path quadratic in rings (1.8 s for a town of 100,000).
+      const path = new Path2D();
       for (const a of landuse?.areas ?? []) if (a.kind === kind) for (const ring of [a.poly, ...(a.holes ?? [])]) {
-        ring.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+        const r = new Path2D(); ring.forEach((p, i) => i ? r.lineTo(p.x, p.y) : r.moveTo(p.x, p.y)); r.closePath(); path.addPath(r);
       }
-      ctx.fill('evenodd');
+      ctx.fill(path, 'evenodd');
     }
     data = ctx.getImageData(0, 0, GRID, GRID).data;
   }

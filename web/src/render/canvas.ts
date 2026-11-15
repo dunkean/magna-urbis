@@ -62,7 +62,7 @@ import { appendUnderdarkMark, underdarkMark, underdarkTextureSpec } from './unde
 import { frameModel, panelMargin } from './frame';
 import { litDots } from './extras';
 import { displayQualityFor, type ResolvedDisplayQuality } from './displayQuality';
-import { RecPath2D } from './gpu/path';
+import { RecOnlyPath2D, RecPath2D } from './gpu/path';
 import { RecordingCanvas, RecordingContext } from './gpu/recorder';
 import type { DisplayList, Mat } from './gpu/displayList';
 import { noteLivePart, noteLiveCount, existingGpuRasterizer, getVectorEngine, noteCpuTile, noteGpuFailure, noteGpuFallback, noteGpuTile, vectorRasterizer } from './vectorEngine';
@@ -434,6 +434,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const furrowSize = deps.furrowReferenceSize ?? S;
   const now = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const P: new () => Path2D = deps.Path2D ?? RecPath2D;
+  /** Polygon paths built for a GPU recording only (their cache keys never meet the Canvas ones): no native path. */
+  const recordedP: new () => Path2D = P === RecPath2D ? RecOnlyPath2D : P;
   const makeCanvas = deps.createCanvas ?? defaultCreateCanvas;
   const canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome) ? new CanvasCanopy(world.seed, pal, makeCanvas) : undefined;
   let brushes: CanvasBrushes | undefined;
@@ -548,7 +550,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const ids: number[] = [];
       for (const t of tiles) for (const i of l.index.itemsOf(t)) ids.push(i);
       ids.push(...big);
-      return polyPath(P, l, ids, 0, recording ? undefined : rect);
+      return polyPath(recording ? recordedP : P, l, ids, 0, recording ? undefined : rect);
     });
   }
 
@@ -1298,12 +1300,13 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     recordingNow = ctx instanceof RecordingContext;
     const clipTo = recordingNow ? undefined : pathRect;
     const rectKey = recordingNow ? 'gpu' : `${pathRect.minX},${pathRect.minY},${pathRect.maxX},${pathRect.maxY}`;
+    const PP = recordingNow ? recordedP : P;
     const framePaths = new Map<PolyLayer, Path2D[]>();
     const polyPaths = (l: PolyLayer): Path2D[] => {
       const retained = framePaths.get(l); if (retained) return retained;
       const out: Path2D[] = [];
       for (const t of l.index.tilesInRect(pathRect)) {
-        const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ""}`, () => polyPath(P, l, l.index.itemsOf(t), minEdge, clipTo));
+        const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ""}`, () => polyPath(PP, l, l.index.itemsOf(t), minEdge, clipTo));
         if (p) { out.push(p); fs.tilesDrawn++; }
       }
       const big = l.index.bigInRect(pathRect);
@@ -1311,10 +1314,10 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       // than enqueueing thousands of identical multiply operations per stamp.
       if (l.name.includes('-edge-') || l.name.includes('-fringe-')) {
         const stamp = l.bigKeys?.join(';') ?? '';
-        const p = cached(`${l.name}|${band}|${rectKey}|big|${recordingNow ? big.join(',') + '|' : ''}${stamp}`, () => polyPath(P, l, big, minEdge, clipTo));
+        const p = cached(`${l.name}|${band}|${rectKey}|big|${recordingNow ? big.join(',') + '|' : ''}${stamp}`, () => polyPath(PP, l, big, minEdge, clipTo));
         if (p) { out.push(p); fs.bigDrawn += big.length; }
       } else for (const i of big) {
-        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ""}`, () => polyPath(P, l, [i], minEdge, clipTo));
+        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ""}`, () => polyPath(PP, l, [i], minEdge, clipTo));
         if (p) { out.push(p); fs.bigDrawn++; }
       }
       framePaths.set(l, out); return out;

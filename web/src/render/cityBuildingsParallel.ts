@@ -8,23 +8,33 @@ import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanA
 import type { Surface } from '../../../rust/bridge/housesContract';
 import type { Shape } from '../../../rust/bridge/urban';
 import { buildCityBuildings, cityBuildingBins, cityBuildingCulture, cityBuildingLink, citySnowAltitudes, type CityBuilding, type CityBuildings, type CityRoofs, type CityScene } from './cityCanvas';
-import { decodeCitySiteVisuals, siteVisualsPackOf } from './cityDisplayBuffers';
+import { decodeCitySiteVisuals, decodeCitySiteVisualsAt, siteVisualsPackOf } from './cityDisplayBuffers';
 import { siteVisualScene, siteVisualSceneSource } from '../ui/urbanSilhouettes';
 import type { UrbanSiteVisual } from '../ui/urbanSiteStore';
 
 /** Below this many buildings the one-thread build is as fast (a 20k town has about 6,500 and builds them in ~1.5 s;
  * a worker takes about 2 s to load its modules from the dev server and JIT them). */
 const PARALLEL_MIN_BUILDINGS = 12000;
+/** The same once the workers are started (`prewarmCityBuildingWorkers`): only their decode and JIT warm-up remain,
+ * less than the ~1.1 s a 20k town spends on its roofs and shadows on the page. */
+const PARALLEL_WARM_MIN_BUILDINGS = 3000;
 /** Budget of the site buffers copied to the workers (each decodes about three times its buffer in objects). */
 const PARALLEL_SITE_BYTES = 256 * 2 ** 20;
 /** A surface equal to the building's own footprint travels as this marker (the page puts its own object back). */
 const OWN_FOOTPRINT = 1;
-export interface CityBuildingsTask { buffer: ArrayBuffer; worker: number; workers: number; cultures: string[]; roofs: boolean }
+export interface CityBuildingsTask { buffer: ArrayBuffer; worker: number; workers: number; cultures: string[]; roofs: boolean;
+  /** Site indices of this worker's buildings, ascending: only those sites are decoded (absent: the whole town). */
+  sites?: Uint32Array }
 type ChunkItem = Omit<CityBuilding, 'building' | 'surface' | 'footprint' | 'ruins'> & { b: number; surface: Surface | typeof OWN_FOOTPRINT; footprint?: Surface | typeof OWN_FOOTPRINT; ruins?: Surface | typeof OWN_FOOTPRINT };
 export interface CityBuildingsChunk { items: ChunkItem[]; roofs: CityRoofs }
 
 /** Worker side: the items and roof arrays of buildings `worker`, `worker + workers`… of the scene rebuilt from `buffer`. */
 export function cityBuildingsChunk(task: CityBuildingsTask): CityBuildingsChunk {
+  // Each site makes at most one building, independently of the others: the share's sites make exactly its buildings.
+  if (task.sites) {
+    const own = siteVisualScene(decodeCitySiteVisualsAt(task.buffer, task.sites) as unknown as UrbanSiteVisual[]).buildings;
+    if (own.length === task.sites.length) return cityBuildingsShare(own, { ...task, worker: 0, workers: 1 });
+  }
   return cityBuildingsShare(siteVisualScene(decodeCitySiteVisuals(task.buffer) as unknown as UrbanSiteVisual[]).buildings, task);
 }
 /** The chunk of `task` from the scene's buildings (tests run it without a worker). */
@@ -91,6 +101,19 @@ function takeWorkers(n: number): Worker[] {
   while (pool.length < n) pool.push(spawn());
   return pool;
 }
+/** Per worker, the indices of the sites its buildings (`worker`, `worker + workers`…) come from: the scene keeps the
+ * sites' order and skips some (open spaces, empty surfaces), so each building is the next site with its id. Undefined
+ * when a building cannot be matched (the workers then decode the whole town). */
+function siteShares(buildings: readonly PlacedBuilding[], sites: readonly { id: string }[], workers: number): Uint32Array[] | undefined {
+  const shares = Array.from({ length: workers }, (_, w) => new Uint32Array(Math.ceil((buildings.length - w) / workers)));
+  let k = 0;
+  for (let g = 0; g < buildings.length; g++, k++) {
+    while (k < sites.length && sites[k].id !== buildings[g].id) k++;
+    if (k === sites.length) return undefined;
+    shares[g % workers][Math.floor(g / workers)] = k;
+  }
+  return shares;
+}
 /** The site visuals `scene` was built from, when it is the unedited silhouette scene of a decoded site buffer. */
 function sceneBuffer(scene: PlacementBatch | undefined, sites: unknown): ArrayBuffer | undefined {
   if (!scene || !Array.isArray(sites) || siteVisualSceneSource(scene) !== sites) return undefined;
@@ -100,13 +123,14 @@ function sceneBuffer(scene: PlacementBatch | undefined, sites: unknown): ArrayBu
  * or edited scene, a scene not built from binary site visuals): the caller then builds on its own thread. */
 export async function buildCityBuildingsParallel(scene: PlacementBatch | undefined, plan: CityScene | undefined, sites: unknown, options: { roofs?: boolean } = {}): Promise<CityBuildings | undefined> {
   const buffer = sceneBuffer(scene, sites);
-  if (!buffer || !scene || scene.buildings.length < PARALLEL_MIN_BUILDINGS || typeof Worker === 'undefined') return undefined;
+  if (!buffer || !scene || scene.buildings.length < (warm.length >= 2 ? PARALLEL_WARM_MIN_BUILDINGS : PARALLEL_MIN_BUILDINGS) || typeof Worker === 'undefined') return undefined;
   // Each worker holds a decoded copy of the sites, in the renderer's shared JS heap: the copies stay within a budget
   // (a town of 1,000,000 inhabitants, 325 MB of sites, keeps its one-thread build of the roofless base).
   const workers = Math.min(workerCount(), Math.floor(PARALLEL_SITE_BYTES / buffer.byteLength));
   if (workers < 2) return undefined;
   const cultures = Array.from({ length: workers }, () => [] as string[]);
   scene.buildings.forEach((building, g) => cultures[g % workers].push(cityBuildingCulture(building, plan)));
+  const shares = siteShares(scene.buildings, sites as readonly { id: string }[], workers);
   let pool: Worker[] = [];
   try {
     pool = takeWorkers(workers);
@@ -114,7 +138,7 @@ export async function buildCityBuildingsParallel(scene: PlacementBatch | undefin
       const w = pool[worker];
       w.onmessage = ({ data }: MessageEvent<{ chunk?: CityBuildingsChunk; error?: string }>) => data.chunk ? resolve(data.chunk) : reject(new Error(data.error ?? 'city buildings worker failed'));
       w.onerror = e => reject(new Error(e.message || 'city buildings worker failed'));
-      const task: CityBuildingsTask = { buffer: buffer.slice(0), worker, workers, cultures: list, roofs: options.roofs !== false };
+      const task: CityBuildingsTask = { buffer: buffer.slice(0), worker, workers, cultures: list, roofs: options.roofs !== false, ...(shares ? { sites: shares[worker] } : {}) };
       w.postMessage(task, [task.buffer]);
     })));
     return mergeCityBuildingChunks(scene, plan, chunks);

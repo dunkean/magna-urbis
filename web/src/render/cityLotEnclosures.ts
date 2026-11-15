@@ -544,10 +544,11 @@ function strokesOf(scene: CityScene): Stroke[] {
   const looks = new Map<string, Stroke>(), { runs, gates } = yardRuns(key);
   const strokeOf = (e: YardBoundary): Stroke => { const k = `${e.material}/${e.culture ?? ''}/${e.fenceStyle ?? ''}`; let s = looks.get(k); if (!s) looks.set(k, s = { source: e, path: new Path2D(), carts: new Path2D(), doors: new Path2D() }); return s; };
   for (const r of runs) {
-    const { path } = strokeOf(r.source);
+    const look = strokeOf(r.source).path, path = r.closed ? new Path2D() : look;
     path.moveTo(r.path[0].x, r.path[0].y);
     for (let i = 1; i < r.path.length; i++) path.lineTo(r.path[i].x, r.path[i].y);
-    if (r.closed) path.closePath();
+    // A closed run is closed in its own Path2D and appended (closePath walks the whole path it closes).
+    if (r.closed) { path.closePath(); look.addPath(path); }
   }
   for (const g of gates) {
     const s = strokeOf(g.source), l = length(minus(g.b, g.a)), n = { x: -(g.b.y - g.a.y) / l * JAMB, y: (g.b.x - g.a.x) / l * JAMB }, ticks = l >= CART ? s.carts : s.doors;
@@ -566,7 +567,8 @@ export function drawLotEnclosures(ctx: CanvasRenderingContext2D, scene: CityScen
   ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'butt'; ctx.setLineDash([]);
   if (scene.lotYards?.length) {
     let path = GROUND_PATHS.get(scene.lotYards);
-    if (!path) { path = new Path2D(); for (const y of scene.lotYards) { y.shape.outer.forEach((p, i) => i ? path!.lineTo(p.x, p.y) : path!.moveTo(p.x, p.y)); path.closePath(); } GROUND_PATHS.set(scene.lotYards, path); }
+    // One Path2D per yard, appended: Chrome's closePath walks the whole path it closes (quadratic over a town's yards).
+    if (!path) { path = new Path2D(); for (const y of scene.lotYards) { const r = new Path2D(); y.shape.outer.forEach((p, i) => i ? r.lineTo(p.x, p.y) : r.moveTo(p.x, p.y)); r.closePath(); path.addPath(r); } GROUND_PATHS.set(scene.lotYards, path); }
     ctx.fillStyle = mono ? '#d6c9a5' : '#b6ad84'; ctx.globalAlpha = .1; ctx.fill(path);
   }
   if (!o.groundOnly) {

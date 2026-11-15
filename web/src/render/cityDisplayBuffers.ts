@@ -85,7 +85,10 @@ export function decodeCitySiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
   siteVisualPacks.set(sites, buffer);
   return sites;
 }
-function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
+/** Only the sites at `indices` (ascending), each as the full decode makes it: a build worker that draws a share of a
+ * town decodes that share, not the whole town (cityBuildingsParallel.ts). */
+export function decodeCitySiteVisualsAt(buffer: ArrayBuffer, indices: ArrayLike<number>): CitySiteVisual[] { return decodeSiteVisuals(buffer, indices); }
+function decodeSiteVisuals(buffer: ArrayBuffer, only?: ArrayLike<number>): CitySiteVisual[] {
   const headLength = new DataView(buffer).getUint32(0, true);
   const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, headLength))) as {
     format: string; version: number; origin: { x: number; y: number }; count: number; tables: Record<string, string[]>; sections: Record<string, Section>;
@@ -110,7 +113,13 @@ function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
   // Version 1: one JSON array for the town. Version 2: `record,` per site (n+1 byte offsets), parsed by runs of sites
   // so that a large town never builds its whole programme text as one string.
   let programmes: (Record<string, unknown> | null)[] = [];
-  if (n && header.version === 1) programmes = JSON.parse(new TextDecoder().decode(view('sites.programme', 'u8'))) as (Record<string, unknown> | null)[];
+  // A selection parses its own `record,` texts only (version 2).
+  let programmeAt: ((i: number) => Record<string, unknown> | null) | undefined;
+  if (n && only && header.version !== 1) {
+    const offsets = view('sites.programme.offsets', 'u32'), text = view('sites.programme.text', 'u8'), decoder = new TextDecoder();
+    if (offsets.length !== n + 1) throw new Error('Section sites.programme.offsets mistyped.');
+    programmeAt = i => JSON.parse(decoder.decode(text.subarray(offsets[i], offsets[i + 1] - 1))) as Record<string, unknown> | null;
+  } else if (n && header.version === 1) programmes = JSON.parse(new TextDecoder().decode(view('sites.programme', 'u8'))) as (Record<string, unknown> | null)[];
   else if (n) {
     const offsets = view('sites.programme.offsets', 'u32'), text = view('sites.programme.text', 'u8'), decoder = new TextDecoder();
     if (offsets.length !== n + 1) throw new Error('Section sites.programme.offsets mistyped.');
@@ -122,14 +131,15 @@ function decodeSiteVisuals(buffer: ArrayBuffer): CitySiteVisual[] {
   const functions = header.tables.function ?? [''], cultures = (header.tables.culture ?? ['']).map(text => text ? JSON.parse(text) as CitySiteVisual['culture'] : null);
   const ring = (r: number) => { const out: { x: number; y: number }[] = []; for (let k = rings[r]; k < rings[r + 1]; k++) out.push({ x: coords[2 * k] + ox, y: coords[2 * k + 1] + oy }); return out; };
   const sites: CitySiteVisual[] = [];
-  for (let i = 0; i < n; i++) {
+  for (let k = 0, count = only ? only.length : n; k < count; k++) {
+    const i = only ? only[k] : k;
     const surface: CitySiteVisual['surface'] = [];
     for (let piece = polys[i]; piece < polys[i + 1]; piece++) {
       const outer = ring(pieces[piece]), holes: { x: number; y: number }[][] = [];
       for (let r = pieces[piece] + 1; r < pieces[piece + 1]; r++) holes.push(ring(r));
       surface.push({ outer, holes });
     }
-    const programme = programmes[i];
+    const programme = programmeAt ? programmeAt(i) : programmes[i];
     // Very large towns: the housing-need evidence (about a third of each programme) is dropped; no map or 3D view reads it.
     if (programme && n > LARGE_SITE_SET) programme.housing_floor_need = undefined;
     sites.push({ id: ids[i], parcel_id: parcels[i], offset: i, function: functions[fn[i]], culture: cultures[culture[i]]!,

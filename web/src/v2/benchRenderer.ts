@@ -52,7 +52,7 @@ import { registerFantasyBrushes, isFantasyStyle, renderFantasyTerrain, prepareFa
 import { drawFantasyRaster, fantasyClearance, fantasyRasterImages, prepareFantasyRaster, suspendFantasyRaster, KEEP_NONE, type FantasyRaster } from '../ui/fantasyRaster';
 import { decodeBrushes, type BrushImages } from '../render/brushes';
 import { renderScene, type RenderScene } from './renderScene';
-import { PassState, ResourceCache, passKeys, type PassInput } from './passes/pass';
+import { BackgroundJob, PassState, ResourceCache, passKeys, type PassInput } from './passes/pass';
 import { buildScene, type SceneMask } from '../render/scene';
 import { createNativeCityMapAsync, type NativeCityHooks, type NativeCityMap } from './nativeCityMap';
 import { drawRuralSemantic, drawUrbanSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../render/semanticLayer';
@@ -267,7 +267,8 @@ export class BenchRenderer {
     return this.exportLayers.terrain !== false && r.ground.layers.relief && !isFantasyStyle(r.ground.style) && !this.gpuUnavailable ? 'gpu' : 'cpu';
   }
   async set(world: World, settings: V2Settings, r: ResolvedAppearance, layers: Partial<ExportLayers> = {}, request = new RenderReadiness(r.target === 'export' ? 'capture' : '2d')): Promise<void> {
-    this.request = request; this.programError = undefined; this.programWork = undefined; this.forestJob = undefined; this.restoredFrameKey = '';
+    // A live forest update in flight stays wanted: this set() skips the forest pass unless its key moved (forestPass).
+    this.request = request; this.programError = undefined; this.programWork = undefined; this.restoredFrameKey = '';
     // Worker-prepared terrain products (shore ring, distances, mips) before the passes that would build them on the page.
     retainTerrainDisplayPreparation(world);
     if (r.target !== 'export') setDisplayAppearanceQuality(r.quality);
@@ -302,7 +303,7 @@ export class BenchRenderer {
     } catch (error) {
       // Restore the previous renderer state; every pass re-runs next time (a partial update must not look current).
       Object.assign(this, { ...previous, gpuActive: previous.gpuActive && !!this.gpu });
-      this.passes.reset(); this.vectorsDirty = false;
+      this.passes.reset(); this.vectorsDirty = false; this.forestUpdate.cancel();
       throw error;
     } finally {
       this.preparing = false; this.gpu?.setLivePaused(this.suspended);
@@ -467,9 +468,12 @@ export class BenchRenderer {
     return this.occupationCache.data;
   }
   /** Live forest update still running after set() returned (progressive display). */
-  private forestJob?: Promise<void>;
+  private forestUpdate = new BackgroundJob();
+  private get forestJob(): Promise<void> | undefined { return this.forestUpdate.running; }
   private forestShown = false;
   private async forestPass(): Promise<void> {
+    // The pass runs again: its key moved, an update still in flight is for an older key.
+    this.forestUpdate.cancel();
     // The natural road painter fades ways under the same canopy as the ground shader (roadStyle.ts setRoadCanopy).
     if (!this.gpuActive) {
       // Raster and Illustrated grounds carry the same forest product as the live GPU ground.
@@ -483,12 +487,13 @@ export class BenchRenderer {
     const job = Promise.all([v2DisplayForestAsync(this.world!, this.settings!, this.resolved!), this.groundOccupation()]);
     // Progressive display: a live map that already shows woods shows the new town at once, the woods follow when ready.
     if (this.forestShown && this.resolved!.target !== 'export') {
-      const gpu = this.gpu!, world = this.world, request = this.request;
-      const update: Promise<void> = job.then(([field, occupation]) => {
-        if (this.disposed || this.gpu !== gpu || this.world !== world || this.request !== request || !this.gpuActive) return;
+      // Applied for any later request that keeps this forest key (a newer world with the same revisions included):
+      // the pass will not run again for it. A moved key reruns the pass, which supersedes this job.
+      const gpu = this.gpu!;
+      this.forestUpdate.start(job, ([field, occupation]) => {
+        if (this.disposed || this.gpu !== gpu || !this.gpuActive) return;
         gpu.setForest(field, occupation); setRoadCanopy(field, occupation); this.dropBackground(); void this.preparePrograms(); this.invalidate();
-      }, error => { this.programError = error; }).finally(() => { if (this.forestJob === update) { this.forestJob = undefined; this.invalidate(); } });
-      this.forestJob = update;
+      }, error => { this.programError = error; this.passes.reset('forest'); }, () => this.invalidate());
       return;
     }
     const [field, occupation] = await job;
