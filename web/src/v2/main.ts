@@ -1,6 +1,6 @@
 import { setHTML, insertHTML, setText, setUserText, setDynamicText, bindTree, translate, getLanguage, setLanguage, onLanguageChange, initializeLanguage, numberLocale, nameHTML, numberHTML, registerMessages, LANGUAGES, type Language } from './i18n';
 import { getDistanceUnit, setDistanceUnit, onUnitsChange, formatDistance, unitFactor, type DistanceUnit } from './units';
-import { mapPresentation, settlementDisplayName } from './mapPresentation';
+import { mapPresentation, settlementDisplayName, featureDisplayName } from './mapPresentation';
 import './ui.css';
 import './editing.css';
 import './workbench.css';
@@ -53,7 +53,7 @@ import { mountSettingsPanel, refreshBackends, backendStatus } from './settingsPa
 import { mountNeuralModelManager } from './neuralModelManager';
 import { mountDesktopNeural } from './desktopNeural';
 import { mountDesktopModules } from './desktopModules';
-import { mountDesktopUpdates } from './desktopUpdates';
+import { mountDesktopReleaseLink, mountDesktopUpdates } from './desktopUpdates';
 import { mountV2Illustration } from './illustration';
 import { iconUrl, type IconId } from './stageIcons';
 import { mountRegionControls } from './regionControls';
@@ -67,6 +67,9 @@ import { mountNetworkEditor } from './networkEditor';
 import { mountTownMoveEditor } from './townMoveEditor';
 import { translateLand } from '../ui/urbanSnapshot';
 import { mountSubdivisionActions, mountDeletedSubdivisions } from './localUrbanEditor';
+import { createSelectionOverlay } from './selectionOverlay';
+import { resetSubdivisionChildren, rerollSubdivisionBuildings } from './subdivisionEdits';
+import { siteQuarter } from '../../../rust/bridge/urbanHouseEdits';
 import { renameMap } from './mapNaming';
 import type { V2Urban3d } from './urban3d';
 import { migrateUrbanSeeds, rerollUrbanSeeds } from './urbanSeeds';
@@ -81,6 +84,19 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]!));
 for(const cls of DEMOGRAPHIC_CLASSES)registerMessages({[cls.id]:{en:cls.label,fr:cls.labelFr}});
 registerMessages({'Modifier villes, quartiers et bâtiments':{en:'Edit towns, districts & buildings',fr:'Modifier villes, quartiers et bâtiments'}});
+registerMessages({
+  'House': { en: 'House', fr: 'Maison' },
+  'Always show this name': { en: 'Always show this name', fr: 'Toujours afficher ce nom' },
+  'Back to city': { en: 'Back to city', fr: 'Retour à la ville' },
+  'Reroll house': { en: 'Reroll house', fr: 'Nouvelle variation' },
+  'Apply selection': { en: 'Apply selection', fr: 'Appliquer à la sélection' },
+  'Choose a style, roof or storeys, then apply.': { en: 'Choose a style, roof or storeys, then apply.', fr: 'Choisissez un style, un toit ou des étages, puis appliquez.' },
+  'Update the Rust engine to edit the roof or storeys while retaining the existing footprint.': { en: 'Update the Rust engine to edit the roof or storeys while retaining the existing footprint.', fr: 'Actualisez le moteur Rust pour modifier le toit ou les étages en conservant l’emprise.' },
+  'This model does not fit the parcel. The previous building is retained.': { en: 'This model does not fit the parcel. The previous building is retained.', fr: 'Ce modèle ne tient pas dans la parcelle. Le bâtiment précédent est conservé.' },
+  'Replace descendant overrides': { en: 'Replace descendant overrides', fr: 'Remplacer les réglages des descendants' },
+  'Local choices take priority unless replaced. Only affected stages are rebuilt.': { en: 'Local choices take priority unless replaced. Only affected stages are rebuilt.', fr: 'Les choix locaux restent prioritaires, sauf remplacement. Seules les étapes concernées sont recalculées.' },
+  'House edit refused. The previous buildings have been retained.': { en: 'House edit refused. The previous buildings have been retained.', fr: 'Modification refusée. Les bâtiments précédents sont conservés.' },
+});
 registerMessages({'Cartographic maps':{en:'Cartographic maps',fr:'Cartes graphiques'},'Terrain materials':{en:'Terrain materials',fr:'Matériaux du terrain'},'Painted fantasy maps':{en:'Painted fantasy maps',fr:'Cartes fantasy peintes'},'Diagnostics':{en:'Diagnostics',fr:'Diagnostics'},'Fantasy · Encre N&B':{en:'Fantasy · Black & white ink',fr:'Fantasy · Encre N&B'},'Fantasy · Aquarelle':{en:'Fantasy · Watercolour',fr:'Fantasy · Aquarelle'},'Elevation · DEM':{en:'Elevation · DEM',fr:'Altitude · DEM'},'SVG · map / embedded render':{en:'SVG · map / embedded render',fr:'SVG · carte / rendu intégré'}});
 registerMessages({'Render3D · Multiscale':{en:'Render3D · Multiscale',fr:'Render3D · Multi-échelle'},'Render v2 - Satellite':{en:'Render v2 - Satellite',fr:'Render v2 - Satellite'},'Render v2 - Substrate':{en:'Render v2 - Substrate',fr:'Render v2 - Substrat'},'Render v2 - Moisture':{en:'Render v2 - Moisture',fr:'Render v2 - Humidité'},'Render v2 - Vegetation':{en:'Render v2 - Vegetation',fr:'Render v2 - Végétation'},'Render v2 - Snow / ice':{en:'Render v2 - Snow / ice',fr:'Render v2 - Neige / glace'}});
 registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Implanter et construire':{en:'Place and build',fr:'Implanter et construire'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redraw the map':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
@@ -187,6 +203,7 @@ function rerollStage(stage: StageDef): void {
   runStage(stage);
 }
 let selectedBuilding: { settlement: string; index: number; building: UrbanBuilding } | null = null;
+let selectedSubdivision: { key: string; kind: 'quarter' | 'parcel'; id: string; point: { x: number; y: number } } | undefined;
 let busy = false, cancelled = false, currentTab = 'terrain', toastTimer: ReturnType<typeof setTimeout>;
 let elapsedTimer: ReturnType<typeof setInterval> | undefined;
 const logs: {time:Date;message:string}[] = [];
@@ -258,6 +275,7 @@ const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minima
   const view = client.viewer.getView();
   setText($('#scale-label'), formatDistance(80 / view.scale, getDistanceUnit(), numberLocale()));
 });
+const selectionOutline = createSelectionOverlay($('#map'), () => client.viewer.getView());
 let city3d:V2Urban3d|undefined;
 let renderTimer:ReturnType<typeof setTimeout>|undefined,renderRevision=0;
 const sceneControls=mountSceneControls($('#scene-controls'),{getSettings:()=>settings,onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
@@ -384,6 +402,7 @@ const settingsPanel=mountSettingsPanel($('#hardware-details'),backendBindings);
 const desktopModulesHost=document.createElement('div');$('#hardware-details').after(desktopModulesHost);
 mountDesktopModules(desktopModulesHost,()=>void inspectHardware());
 mountDesktopUpdates($('.header-tools'),desktopModulesHost);
+mountDesktopReleaseLink($('.project-links'));
 mountV2Illustration({host:$('.header-tools'),getWorld:()=>world,getSettings:()=>settings,get3d:()=>city3d,getViewport:()=>({element:$('#map'),view:client.viewer.getView()}),beforeCapture2d:()=>client.prepareViewportCapture(),navigation:{getView:()=>client.viewer.getView(),setView:view=>client.viewer.setView(view),ready:()=>client.viewer.waitForFrame()}});
 let chainSyncFrame=0;
 function scheduleChainSync():void{if(chainSyncFrame)return;chainSyncFrame=requestAnimationFrame(()=>{chainSyncFrame=0;chain.sync();});}
@@ -530,7 +549,7 @@ const modelShortcut = document.createElement('button'); modelShortcut.type = 'bu
 setText(modelShortcut, 'Downloaded neural models'); chain.body('relief-neural-base').append(modelShortcut);
 modelShortcut.onclick = () => { dialog('#hardware-dialog'); requestAnimationFrame(() => $('#neural-model-manager').scrollIntoView({ block: 'start' })); };
 function syncPlacesPanel(family:StageFamily=chain.family()):void{document.body.dataset.workbenchFamily=family;$('#places-panel').hidden=!['settlements','cities'].includes(family);}
-$('#cities-select-all').onclick=()=>{selectedCities.clear();cityScope='all';selectedTown='';selectedBuilding=null;$('#inspector').hidden=true;document.querySelectorAll('[data-town]').forEach(button=>button.setAttribute('aria-pressed','false'));syncCitySelection();};
+$('#cities-select-all').onclick=()=>{selectedCities.clear();cityScope='all';selectedTown='';selectedBuilding=null;selectedSubdivision=undefined;selectionOutline.set();$('#inspector').hidden=true;document.querySelectorAll('[data-town]').forEach(button=>button.setAttribute('aria-pressed','false'));syncCitySelection();};
 $('#cities-select-none').onclick=()=>{selectedCities.clear();cityScope='selection';syncCitySelection();};
 $('#places-collapse').onclick=()=>{const panel=$('#places-panel'),collapsed=panel.dataset.collapsed!=='true';panel.dataset.collapsed=String(collapsed);$('#places-collapse').setAttribute('aria-expanded',String(!collapsed));setText($('#places-collapse'),collapsed?'+':'–');};
 
@@ -647,6 +666,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
   elapsedTimer = setInterval(()=>{ setText($('#progress-time'), `${Math.round((performance.now()-started)/1000)} s`); },500);
   log(`Started: ${action} · seed ${settings.options.seed}`);
   try {
+    const retainedSelection = selectedBuilding ? { ...selectedBuilding } : undefined, retainedSubdivision = selectedSubdivision;
     const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys,cityOutput);
     if (cancelled) return false;
     if (terrainStage && terrainStage !== 'cover-climate') {
@@ -666,10 +686,16 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     const refused=Object.entries(world.stats).filter(([name])=>name.startsWith('v2.urbanRefusals:')).reduce((count,[,value])=>count+Number(value||0),0);
     if(refused){log(`${refused} construction request(s) refused by the engine: see the settlement report.`);toast(`${refused} construction(s) refused. Each settlement report explains the constraints.`,true);}
     if(world.stats['settlements.warning']){log(String(world.stats['settlements.warning']));if(!refused)toast(String(world.stats['settlements.warning']));}
-    if (key) showInspector(key);
+    if (key && retainedSelection?.settlement === key) {
+      const buildings = townUrban(world, key)?.buildings ?? [], identity = retainedSelection.building as UrbanBuilding & { nativeRequestId?: string; nativeId?: string };
+      const index = buildings.findIndex(b => identity.nativeRequestId ? (b as typeof identity).nativeRequestId === identity.nativeRequestId : identity.nativeId ? (b as typeof identity).nativeId === identity.nativeId : buildingSignature(b) === buildingSignature(identity));
+      if (index >= 0) showBuilding({ settlement: key, index, building: buildings[index] }); else showInspector(key);
+    } else if (key && retainedSubdivision?.key === key) {
+      if (!inspectSubdivision(retainedSubdivision.kind, retainedSubdivision.point, key, retainedSubdivision.id)) showInspector(key);
+    } else if (key) showInspector(key);
     smallPlaceRecipe = ['town','towns','all'].includes(action) && !cityOutput && !terrainStage ? smallPlaceRecipeKey() : undefined;
     completed = true;
-  } catch (e) { if (!cancelled) { const message = e instanceof Error ? e.message : String(e); log(`Failed: ${message}`); toast(message,true); } }
+  } catch (e) { if (!cancelled) { const message = e instanceof Error ? e.message : String(e); log(`Failed: ${message}`); toast(message.startsWith('plan_refused:') ? 'This model does not fit the parcel. The previous building is retained.' : message,true); } }
   finally { chain.endRun(completed); setBusy(false); if (projectRevision !== revision) setText($('#footer-status'), 'New settings ready to generate'); if (completed) smallPlaces?.start(); }
   return completed;
 }
@@ -692,7 +718,7 @@ function updateWorld(keepInspector = false): void {
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(b=>b.onclick=()=>{selectedCities.clear();selectedCities.add(b.dataset.town!);cityScope='selection';syncCitySelection();showInspector(b.dataset.town!,true);});
   document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input=>input.onchange=()=>{const key=input.dataset.citySelect!;if(!input.checked)return;selectedCities.clear();selectedCities.add(key);cityScope='selection';smallPlaces?.prioritize(key);syncCitySelection();showInspector(key);});
   syncCitySelection();
-  if (!keepInspector) { $('#inspector').hidden = true; selectedBuilding = null; }
+  if (!keepInspector) { $('#inspector').hidden = true; selectedBuilding = null; selectedSubdivision = undefined; selectionOutline.set(); }
   syncPlacesPanel(); chain.sync();
 }
 /** Direct map edits replace the current snapshot; the full project saves that result. */
@@ -707,9 +733,9 @@ async function applyDirectMapEdit(next:World):Promise<void>{
 }
 function showInspector(key: string, focus = false): void {
   if (!world) return; const source = world.settlements?.find(s=>s.key===key); if (!source) return; const s={...source,name:settlementDisplayName(world,key,settings)};
-  if (!source.urban) smallPlaces?.prioritize(key);
+  if (!townUrban(world,key)) smallPlaces?.prioritize(key);
   window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'selection'}));
-  disposeInspectorForms();selectedTown = key; selectedBuilding = null;selectedCities.clear();selectedCities.add(key);cityScope='selection';syncCitySelection();
+  disposeInspectorForms();selectedTown = key; selectedBuilding = null; selectedSubdivision = undefined; selectionOutline.set();selectedCities.clear();selectedCities.add(key);cityScope='selection';syncCitySelection();
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.town===key)));$('#places-panel').hidden=false;chain.sync();
   const urban = townUrban(world,key), local = settings.local[key] ?? {};
   const current = { ...settings.options, sprawl: settings.options.sprawl ?? 1, population: s.population, culture: s.culture, ...local } as Record<string, unknown>;
@@ -717,7 +743,7 @@ function showInspector(key: string, focus = false): void {
   $('#inspector').dataset.scope='settlement';
   $('#inspector').hidden = false;
   setHTML($('#inspector'), `<button class="close" aria-label="Close inspector">×</button><span class="eyebrow">Local settings</span><h2>${nameHTML(s.name,s.main?'Main settlement':s.key)}</h2><p class="hint">${reachedPopulation(key,s.population)?populationMarkup(key,s.population):`${numberHTML(s.population)} inhabitants`} · <span>${esc(s.archetype)}</span></p>${populationShortfallText(reachedPopulation(key,s.population),popFormat())?`<p class="warning">${esc(populationShortfallText(reachedPopulation(key,s.population),popFormat()))}</p>`:''}<div class="breadcrumbs">Territory › ${nameHTML(s.name,s.key)}</div><p class="inspect-note">The fields show the current values. Previous stages and other settlements are retained.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="10" max="5000000" value="${current.population}"></div><div><label class="label">Sprawl</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Fortifications</label><select id="local-walls">${options([['none','None'],['single','Simple'],['double','Double'],['auto','Automatic']])}</select><button class="primary" id="build-town">${urban?'Rebuild this settlement':'Build this settlement'}</button><p class="hint" style="margin-top:8px">${urban ? `${urban.quarters.length} quarters · ${urban.parcels.length} parcels · ${urban.buildings.length} buildings` : 'Site reserved · build on demand'}</p><details class="section"><summary>This settlement’s stages</summary><ol class="pipeline-list"><li>Plan & footprint<span>Population, culture and site.</span></li><li>Quarters & streets<span>Growth, layout and hierarchy.</span></li><li>Blocks & parcels<span>Land, access and occupation.</span></li><li>Buildings & houses<span>Typologies, envelopes and landmarks.</span></li></ol></details><details class="section"><summary>Full local recipe</summary><p class="hint">All exposed urban settings: growth plans, landmarks, defences and preferences. Terrain settings are global.</p><textarea id="local-json" spellcheck="false">${esc(JSON.stringify(local,null,2))}</textarea><button id="local-apply" class="small">Apply</button><button id="local-reset" class="quiet small">Restore default settings</button></details><div id="building-inspector"></div>`);
-  $('#inspector .close').onclick = ()=>{ $('#inspector').hidden=true; };
+  $('#inspector .close').onclick = ()=>{ $('#inspector').hidden=true; selectedBuilding=null; selectedSubdivision=undefined; selectionOutline.set(); };
   for (const name of ['culture','population','sprawl','walls']) { const input = $<HTMLInputElement|HTMLSelectElement>(`#local-${name}`); input.value = String(current[name] ?? ''); input.onchange=()=>{ const next = { ...settings.local[key] } as Record<string,unknown>; if (input.value==='') delete next[name]; else next[name]=name==='population'||name==='sprawl'?Number(input.value):input.value; settings.local[key]=next; touchRecipe(); }; }
   groupCultureSelector($<HTMLSelectElement>('#local-culture'));
   $('#build-town').onclick=()=>void generate('town',key);
@@ -741,16 +767,18 @@ function showInspector(key: string, focus = false): void {
     const local={...settings.urban?.local},scope={...local[key]};
     if(kind==='quarter'){const quarters={...scope.layout?.overrides?.quarters},value={...quarters[id]};delete value.deleted;quarters[id]=value;scope.layout={...scope.layout,overrides:{...scope.layout?.overrides,quarters}};}
     else{const parcels={...scope.parcels?.overrides?.parcels},value={...parcels[id]};delete value.deleted;parcels[id]=value;scope.parcels={...scope.parcels,overrides:{...scope.parcels?.overrides,parcels}};}
-    local[key]=scope;const next={...settings,urban:{...settings.urban,backend:settings.urban?.backend??'rust' as const,local}};validateSettings(next);settings=next;touchRecipe();const stage=world?.stats[`v2.urbanStage:${key}`] as V2TownStage|undefined;void generate('town',key,stage??(kind==='quarter'?'layout':'parcels'));
+    local[key]=scope;const next={...settings,urban:{...settings.urban,backend:settings.urban?.backend??settings.runtime?.backend??'rust' as const,local}};validateSettings(next);settings=next;touchRecipe();const stage=world?.stats[`v2.urbanStage:${key}`] as V2TownStage|undefined;void generate('town',key,stage??(kind==='quarter'?'layout':'parcels'));
   }catch(e){toast(String(e),true);}});
   $('#local-apply').onclick=()=>{ try { const patch=JSON.parse($<HTMLTextAreaElement>('#local-json').value); const candidate={...settings,local:{...settings.local,[key]:patch}}; validateSettings(candidate); settings=candidate; touchRecipe(); toast('Local recipe saved. Rebuild this settlement to apply it.'); }catch(e){toast(String(e),true);} };
   $('#local-reset').onclick=()=>{delete settings.local[key];touchRecipe();showInspector(key);};
   organizeInspector($('#inspector'));
-  if (focus) client.viewer.setView({cx:s.center.x,cy:s.center.y,scale:Math.min(3,Math.min($('#map').clientHeight,$('#map').clientWidth)/Math.max(600,s.radius*3))});
+  if (focus && city3d?.active) city3d.focus(s.center, s.radius);
+  else if (focus) client.viewer.setView({cx:s.center.x,cy:s.center.y,scale:Math.min(3,Math.min($('#map').clientHeight,$('#map').clientWidth)/Math.max(600,s.radius*3))});
 }
 function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
   showInspector(hit.settlement); selectedBuilding = hit;$('#inspector').dataset.scope='house';
   const b=hit.building;
+  selectionOutline.set([b.poly, ...b.courtyards ?? []]);
   setHTML($('#building-inspector'), `<div class="edit-building"><span class="eyebrow">House ${hit.index+1}</span><h3>The last detail</h3><p class="hint">${esc(b.kind)} · ${esc(b.arch || 'generated typology')}</p><div class="control-grid"><div><label class="label">Storeys</label><input id="house-storeys" type="number" min="1" max="100" value="${b.storeys??1}"></div><div><label class="label"><span data-i18n="Height">${translate("Height")}</span> (<span data-house-height-unit>${getDistanceUnit()}</span>)</label><input id="house-height" data-distance-unit="${getDistanceUnit()}" type="number" min="${.5/unitFactor(getDistanceUnit())}" max="${1000/unitFactor(getDistanceUnit())}" step="any" value="${(b.height??3)/unitFactor(getDistanceUnit())}"></div></div><label class="label">Roof</label><select id="house-roof">${options(['gable','hip','flat','dome','pyramidal','pagoda','thatch-round','none','tiled-hip','conical','barrel','terraced'])}</select><label class="label">Material</label><input id="house-material" type="text" maxlength="100" value="${esc(b.material??'')}"><details class="section"><summary>Footprint & metadata</summary><textarea id="house-json" spellcheck="false">${esc(JSON.stringify(b,null,2))}</textarea><p class="hint">Footprint coordinates are in metres. Architectural metadata is exported; its appearance depends on the renderer.</p></details><button id="house-apply">Save house</button><button id="house-undo" class="quiet small">Undo the last edit</button></div>`);
   groupCultureSelector($<HTMLSelectElement>('#local-culture'));
   $<HTMLSelectElement>('#house-roof').value=b.roof??'gable';
@@ -769,66 +797,82 @@ function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
   $('#house-undo').onclick=()=>{if(!pristine)return;mods.pop();world=applyBuildingEdits(pristine,mods).world;client.show(world,true);touchRecipe();showInspector(hit.settlement);toast('Last edit undone.');};
   const requestId=(b as UrbanBuilding & {nativeRequestId?:string}).nativeRequestId;
   if(requestId){
+    // Native houses have one authoritative generation form; the metadata-only
+    // editor cannot change a retained native roof or its structural geometry.
+    $('#building-inspector').replaceChildren();
+    const nameId = `urban:${encodeURIComponent(hit.settlement)}:building:${encodeURIComponent((b as UrbanBuilding&{nativeId?:string}).nativeId ?? requestId)}`;
+    const named = featureDisplayName(world!, nameId, settings);
+    setHTML($('#building-inspector'), `<h3>${nameHTML(named,translate('House')+' '+(hit.index+1))}</h3>`);
+    if(named){
+      selectionOutline.set([b.poly,...b.courtyards??[]],named);
+      insertHTML($('#building-inspector'),'beforeend','<label class="label"><input type="checkbox" id="house-name-pin"> <span data-i18n="Always show this name">'+translate('Always show this name')+'</span></label>');
+      const pin=$<HTMLInputElement>('#house-name-pin');pin.checked=settings.naming?.labels?.[nameId]?.hidden===false;
+      pin.onchange=()=>{settings.naming??={};settings.naming.labels??={};settings.naming.labels[nameId]={...settings.naming.labels[nameId],hidden:!pin.checked};void redrawNames().then(()=>{if(world){const buildings=townUrban(world,hit.settlement)?.buildings??[],index=buildings.findIndex(building=>(building as UrbanBuilding&{nativeRequestId?:string}).nativeRequestId===requestId);if(index>=0)showBuilding({settlement:hit.settlement,index,building:buildings[index]});}});};
+    }
     const scopedId=`${hit.settlement}/${requestId}`,saved=settings.urban?.buildings?.[scopedId]??{};
     insertHTML($('#building-inspector'), 'beforeend', `<div class="edit-building"><span class="eyebrow">Rust house generator</span><p class="hint">Identifier: <code>${esc(requestId)}</code>. Adjust the recipe, materials, roof, storeys, rooms or variation. Terrain and cadastral stages are retained.</p><label class="label" for="house-native-json">Generation settings for this house</label><textarea id="house-native-json" spellcheck="false">${esc(JSON.stringify(saved,null,2))}</textarea><p class="hint">HouseConfig: seed, recipe, pack, mode, era, size, variation, wealth, overrides (roof, floors, frame, infill, coating, cladding, courtyard_ratio, roof_pitch_deg…). Missing values inherit the settlement recipe. Native placement determines orientation from parcel access.</p><button id="house-native-apply">Regenerate with these settings</button><button id="house-native-reset" class="quiet small">Inherit from the settlement</button></div>`);
-    const apply=(value:unknown)=>{const next={...settings,urban:{...settings.urban,backend:settings.urban?.backend??'rust' as const,buildings:{...settings.urban?.buildings,[scopedId]:value}}};validateSettings(next);settings=next;touchRecipe();void generate('town',hit.settlement,'buildings');};
+    const apply=(value:unknown)=>{const next={...settings,urban:{...settings.urban,backend:settings.urban?.backend??settings.runtime?.backend??'rust' as const,buildings:{...settings.urban?.buildings,[scopedId]:value}}};validateSettings(next);settings=next;touchRecipe();void generate('town',hit.settlement,'buildings');};
     insertHTML($('#house-native-json'),'beforebegin','<div id="house-native-controls"></div>');
     // The complete site stays in the engine: read it by id (native session) for the house defaults.
     const city=nativeCityRecords(world??undefined)?.[hit.settlement],site=city?.sites?.find(s=>s.id===requestId);
     let nativeRequest=city?.requests?.find(request=>request.id===requestId);
-    const mountHouseControls=()=>inspectorForms.push(mountUrbanControls($('#house-native-controls'),()=>settings,()=>{touchRecipe();$<HTMLTextAreaElement>('#house-native-json').value=JSON.stringify(settings.urban?.buildings?.[scopedId]??{},null,2);},{kind:'building',key:hit.settlement,id:requestId,defaults:nativeRequest?.config}));
+    const houseControls=$('#house-native-controls');
+    const mountHouseControls=()=>inspectorForms.push(mountUrbanControls(houseControls,()=>settings,()=>{touchRecipe();$<HTMLTextAreaElement>('#house-native-json').value=JSON.stringify(settings.urban?.buildings?.[scopedId]??{},null,2);},{kind:'building',key:hit.settlement,id:requestId,parcel:(b as UrbanBuilding&{nativeParcelId?:string}).nativeParcelId,quarter:city?siteQuarter(city.layouts,{surface:[{outer:b.poly,holes:b.courtyards??[]}]}):undefined,defaults:{...nativeRequest?.config,culture:nativeRequest?.culture.culture??site?.culture.culture}}));
     if(nativeRequest||!site||!city?.siteQuery)mountHouseControls();
     else void import('../../../rust/bridge/urbanBuildingSite').then(m=>m.readUrbanBuildingSite(city.siteQuery!,{profile:'local',server:backendBindings.localServer()},site.offset,site.id,city.sites!.length))
-      .then(request=>{nativeRequest=request;},()=>undefined).then(()=>{if($('#house-native-controls').isConnected)mountHouseControls();});
-    insertHTML($('#house-native-controls'),'beforebegin',`<div class="section"><button id="house-reroll" class="small">⚄ ${'Reroll house'}</button></div>`);
+      .then(request=>{nativeRequest=request;},()=>undefined).then(()=>{if(houseControls.isConnected)mountHouseControls();});
+    insertHTML($('#house-native-controls'),'beforebegin',`<div class="section"><button id="house-reroll" class="small">⚄ <span data-i18n="Reroll house">${translate('Reroll house')}</span></button></div>`);
     $('#house-reroll').onclick=()=>{try{const current=settings.urban?.buildings?.[scopedId]??{};const base=String(current.seed??nativeRequest?.config?.seed??settings.options.seed);apply({...current,seed:rerollSeed(base,['house'])});}catch(e){toast(String(e),true);}};
     $('#house-native-apply').onclick=()=>{try{apply(JSON.parse($<HTMLTextAreaElement>('#house-native-json').value));}catch(e){toast(String(e),true);}};
-    $('#house-native-reset').onclick=()=>{try{const buildings={...settings.urban?.buildings};delete buildings[scopedId];settings.urban={...settings.urban,backend:settings.urban?.backend??'rust',buildings};touchRecipe();void generate('town',hit.settlement,'buildings');}catch(e){toast(String(e),true);}};
+    $('#house-native-reset').onclick=()=>{try{const buildings={...settings.urban?.buildings};delete buildings[scopedId];settings.urban={...settings.urban,backend:settings.urban?.backend??settings.runtime?.backend??'rust',buildings};touchRecipe();void generate('town',hit.settlement,'buildings');}catch(e){toast(String(e),true);}};
+    const json=$('#house-native-json'), advanced=document.createElement('details'), summary=document.createElement('summary'), box=json.closest('.edit-building')!;advanced.className='section';setText(summary,'Generation settings for this house');advanced.append(summary);json.before(advanced);
+    const metadata=Array.from(box.querySelectorAll(':scope > p.hint'));box.querySelector('label[for="house-native-json"]')?.remove();advanced.append(...metadata,json);
+    const hint=document.createElement('p');hint.className='hint';setText(hint,'Choose a style, roof or storeys, then apply.');box.prepend(hint);
   }
   organizeInspector($('#building-inspector'));
   insertHTML($('#building-inspector'),'afterbegin','<button id="back-to-city" class="quiet small">← '+('Back to city')+'</button>');$('#back-to-city').onclick=()=>showInspector(hit.settlement);
   $('#building-inspector').scrollIntoView({block:'nearest',behavior:'smooth'});
 }
-function inspectSubdivision(kind:'quarter'|'parcel',p:{x:number;y:number}):boolean {
+function inspectSubdivision(kind:'quarter'|'parcel',p:{x:number;y:number},settlementKey?:string,selectedId?:string):boolean {
   if(!world)return false;
   for(const settlement of world.settlements??[]){
+    if(settlementKey && settlement.key!==settlementKey)continue;
     const urban=townUrban(world,settlement.key);if(!urban)continue;
     const items=kind==='quarter'?urban.quarters:urban.parcels;
-    const index=items.findIndex(item=>{const geometry=kind==='quarter'?(item as typeof urban.quarters[number]).poly.outer:(item as typeof urban.parcels[number]).poly;return pointInRing(geometry,p);});
+    const index=items.findIndex(item=>{if(selectedId)return (item as typeof item&{nativeId?:string}).nativeId===selectedId;const geometry=kind==='quarter'?(item as typeof urban.quarters[number]).poly.outer:(item as typeof urban.parcels[number]).poly;return pointInRing(geometry,p);});
     if(index<0)continue;
     const item=items[index] as typeof items[number]&{nativeId?:string},nativeId=item.nativeId;
     showInspector(settlement.key);$('#inspector').dataset.scope=kind;
+    selectedSubdivision={key:settlement.key,kind,id:nativeId??String(index),point:p};
+    selectionOutline.set(kind==='quarter'?[(item as typeof urban.quarters[number]).poly.outer,...(item as typeof urban.quarters[number]).poly.holes??[]]:[(item as typeof urban.parcels[number]).poly]);
     const mapKey=kind==='quarter'?'quarters':'parcels', controls=settings.urban?.local?.[settlement.key],saved=kind==='quarter'?controls?.layout?.overrides?.quarters?.[nativeId??String(index)]:controls?.parcels?.overrides?.parcels?.[nativeId??String(index)];
     const placeholder=kind==='quarter'?{density:1,wealth:0.5,salt:0}: {salt:0};
     setHTML($('#building-inspector'), `<div class="edit-building"><span class="eyebrow">${kind==='quarter'?'Quarter':'Parcel'} ${index+1}</span><h3>${kind==='quarter'?'A piece of the town':'A piece of the land'}</h3><p class="hint">${nativeId?`Engine identifier: <code>${esc(nativeId)}</code>`:'Classic-engine geometry. Per-quarter and per-parcel generation settings are available with the Rust engine.'}</p>${nativeId?`<label class="label" for="subdivision-json">${kind==='quarter'?'Density, fabric, wealth, culture, shape and local seed':'Function, households, shape, garden, merge and local seed'}</label><textarea id="subdivision-json" spellcheck="false">${esc(JSON.stringify(saved??placeholder,null,2))}</textarea><p class="hint">${kind==='quarter'?'Keys: culture, tissue, density, role, wealth, shape, deleted, salt.':'Keys: role, function, households, shape, deleted (merge or garden), salt.'} The shape coordinates are in metres.</p><button id="subdivision-apply">Apply & rebuild this settlement</button><button id="subdivision-reset" class="quiet small">Restore inheritance</button>`:''}</div>`);
+    const namingCity=nativeCityRecords(world)?.[settlement.key],nameId=nativeId&&namingCity?`urban:${encodeURIComponent(settlement.key)}:${kind}:${encodeURIComponent(kind==='quarter'?namingCity.layouts[0]?.key??settlement.key:namingCity.partitions?.[0]?.key??settlement.key)}:${kind==='quarter'?nativeId:encodeURIComponent(nativeId)}`:undefined;
+    const named=nameId?featureDisplayName(world,nameId,settings):undefined;
+    if(named){setHTML($('#building-inspector h3'),nameHTML(named,''));selectionOutline.set(kind==='quarter'?[(item as typeof urban.quarters[number]).poly.outer,...(item as typeof urban.quarters[number]).poly.holes??[]]:[(item as typeof urban.parcels[number]).poly],named);}
     if(nativeId){
+      const native=nativeCityRecords(world)?.[settlement.key];
+      const quarterId=kind==='quarter'?nativeId:native?siteQuarter(native.layouts,{surface:[{outer:(item as typeof urban.parcels[number]).poly,holes:[]}]}):undefined;
+      const parcelIds=new Set(kind==='parcel'?[nativeId]:urban.parcels.filter(parcel=>pointInRing((item as typeof urban.quarters[number]).poly.outer,parcel.poly[0])).map(parcel=>(parcel as typeof parcel&{nativeId?:string}).nativeId).filter((id):id is string=>!!id));
+      const children={parcels:[...parcelIds],requests:[...new Set([...(native?.sites??native?.requests??[]).filter(site=>parcelIds.has(site.parcel_id)).map(site=>site.id),...urban.buildings.filter(building=>parcelIds.has((building as UrbanBuilding&{nativeParcelId?:string}).nativeParcelId??'')).map(building=>(building as UrbanBuilding&{nativeRequestId?:string}).nativeRequestId)].filter((id):id is string=>!!id))]};
       const apply=(value:QuarterOverride|ParcelOverride|undefined)=>{
-        const backend=settings.urban?.backend??'rust',local={...settings.urban?.local},scope={...local[settlement.key]};
+        const backend=settings.urban?.backend??settings.runtime?.backend??'rust',local={...settings.urban?.local},scope={...local[settlement.key]};
         if(mapKey==='quarters'){scope.layout={...scope.layout,overrides:{...scope.layout?.overrides,quarters:{...scope.layout?.overrides?.quarters,[nativeId]:value as QuarterOverride}}};}
         else{scope.parcels={...scope.parcels,overrides:{...scope.parcels?.overrides,parcels:{...scope.parcels?.overrides?.parcels,[nativeId]:value as ParcelOverride}}};}
-        local[settlement.key]=scope;const next={...settings,urban:{...settings.urban,backend,local}};validateSettings(next);settings=next;touchRecipe();const stage=world?.stats[`v2.urbanStage:${settlement.key}`] as V2TownStage|undefined;void generate('town',settlement.key,stage??(kind==='parcel'?'parcels':'layout'));
+        local[settlement.key]=scope;const next={...settings,urban:{...settings.urban,backend,local}};
+        if($<HTMLInputElement>('#subdivision-descendants').checked){next.urban=structuredClone(next.urban);resetSubdivisionChildren(next,settlement.key,kind,children);}
+        validateSettings(next);settings=next;touchRecipe();const stage=world?.stats[`v2.urbanStage:${settlement.key}`] as V2TownStage|undefined;void generate('town',settlement.key,stage??(kind==='parcel'?'parcels':'layout'));
       };
+      insertHTML($('#subdivision-apply'),'beforebegin','<label class="label"><input type="checkbox" id="subdivision-descendants"> <span data-i18n="Replace descendant overrides">'+translate('Replace descendant overrides')+'</span></label><p class="hint" data-i18n="Local choices take priority unless replaced. Only affected stages are rebuilt.">'+translate('Local choices take priority unless replaced. Only affected stages are rebuilt.')+'</p>');
       insertHTML($('#subdivision-json'),'beforebegin','<div id="subdivision-actions" class="section"></div>');
-    mountSubdivisionActions($('#subdivision-actions'),{kind,actionsOnly:true,french:getLanguage()==='fr',get:()=>{const local=settings.urban?.local?.[settlement.key];return kind==='quarter'?local?.layout?.overrides?.quarters?.[nativeId]:local?.parcels?.overrides?.parcels?.[nativeId];},apply:value=>{try{apply(value);}catch(e){toast(String(e),true);}},shape:kind==='quarter'?(item as typeof urban.quarters[number]).poly:{outer:(item as typeof urban.parcels[number]).poly,holes:[]},map:$('#map'),getView:()=>client.viewer.getView()});
+    mountSubdivisionActions($('#subdivision-actions'),{kind,actionsOnly:true,french:getLanguage()==='fr',get:()=>{const local=settings.urban?.local?.[settlement.key];return kind==='quarter'?local?.layout?.overrides?.quarters?.[nativeId]:local?.parcels?.overrides?.parcels?.[nativeId];},apply:value=>{try{apply(value);}catch(e){toast(String(e),true);}},rerollBuildings:()=>{rerollSubdivisionBuildings(settings,settlement.key,children);touchRecipe();void generate('town',settlement.key,'buildings');},shape:kind==='quarter'?(item as typeof urban.quarters[number]).poly:{outer:(item as typeof urban.parcels[number]).poly,holes:[]},map:$('#map'),getView:()=>client.viewer.getView()});
     insertHTML($('#subdivision-json'),'beforebegin','<div id="subdivision-controls"></div>');
-      inspectorForms.push(mountUrbanControls($('#subdivision-controls'),()=>settings,()=>{touchRecipe();const local=settings.urban?.local?.[settlement.key];$<HTMLTextAreaElement>('#subdivision-json').value=JSON.stringify(kind==='quarter'?local?.layout?.overrides?.quarters?.[nativeId]:local?.parcels?.overrides?.parcels?.[nativeId],null,2);},{kind,key:settlement.key,id:nativeId,defaults:{shape:kind==='quarter'?(item as typeof urban.quarters[number]).poly:{outer:(item as typeof urban.parcels[number]).poly,holes:[]}}}));
-      if(kind==='parcel'){
-        const city=nativeCityRecords(world)?.[settlement.key];
-        const ids=[...new Set([
-          ...urban.buildings.filter(building=>(building as UrbanBuilding&{nativeParcelId?:string}).nativeParcelId===nativeId).map(building=>(building as UrbanBuilding&{nativeRequestId?:string}).nativeRequestId),
-          ...(city?.sites??[]).filter(site=>site.parcel_id===nativeId).map(site=>site.id),
-          ...(city?.requests??[]).filter(request=>request.parcel_id===nativeId).map(request=>request.id),
-        ].filter((id):id is string=>!!id))];
-        // Native building_sites.rs::request_one uses this stable id before any house is materialized.
-        if(!ids.length)ids.push(`${nativeId}/building`);
-        {
-          const style=document.createElement('div');style.id='parcel-house-style';$('#subdivision-controls').after(style);setHTML(style,'<h3>'+('House style for this parcel')+'</h3>');
-          const controls=document.createElement('div');style.append(controls);
-          inspectorForms.push(mountUrbanControls(controls,()=>settings,()=>{const source=settings.urban?.buildings?.[`${settlement.key}/${ids[0]}`];if(source)for(const id of ids.slice(1))settings.urban!.buildings![`${settlement.key}/${id}`]=structuredClone(source);touchRecipe();},{kind:'building',key:settlement.key,id:ids[0],defaults:city?.requests?.find(request=>request.id===ids[0])?.config}));
-        }
-      }
+      inspectorForms.push(mountUrbanControls($('#subdivision-controls'),()=>settings,()=>{touchRecipe();const local=settings.urban?.local?.[settlement.key];$<HTMLTextAreaElement>('#subdivision-json').value=JSON.stringify(kind==='quarter'?local?.layout?.overrides?.quarters?.[nativeId]:local?.parcels?.overrides?.parcels?.[nativeId],null,2);},{kind,key:settlement.key,id:nativeId,quarter:quarterId,defaults:{shape:kind==='quarter'?(item as typeof urban.quarters[number]).poly:{outer:(item as typeof urban.parcels[number]).poly,holes:[]}}}));
       $('#subdivision-apply').onclick=()=>{try{apply(JSON.parse($<HTMLTextAreaElement>('#subdivision-json').value));}catch(e){toast(String(e),true);}};
       $('#subdivision-reset').onclick=()=>{try{apply(undefined);}catch(e){toast(String(e),true);}};
+      setText($('#subdivision-apply'),'Apply selection');
+      const json=$('#subdivision-json'),advanced=document.createElement('details'),summary=document.createElement('summary'),box=json.closest('.edit-building')!;advanced.className='section';setText(summary,'Full local recipe');advanced.append(summary);json.before(advanced);box.querySelector('label[for="subdivision-json"]')?.remove();advanced.append(...Array.from(box.querySelectorAll(':scope > p.hint')).filter(p=>!p.hasAttribute('data-i18n')),json);
     }
     organizeInspector($('#building-inspector'));
     insertHTML($('#building-inspector'),'afterbegin','<button id="back-to-city" class="quiet small">← '+('Back to city')+'</button>');$('#back-to-city').onclick=()=>showInspector(settlement.key);
@@ -983,7 +1027,7 @@ const refreshPresentation=()=>{
   }).catch(reportAppearanceError);}
 };
 onUnitsChange(refreshPresentation);
-onLanguageChange(()=>{syncFullGenerationButton(chain.family());renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();refreshPresentation();});
+onLanguageChange(()=>{syncFullGenerationButton(chain.family());renderLog();document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-render-label]').forEach(group=>group.label=translate(group.dataset.renderLabel!));renderControls.sync();refreshPresentation();if(!busy){if(selectedBuilding)showBuilding(selectedBuilding);else if(selectedSubdivision)inspectSubdivision(selectedSubdivision.kind,selectedSubdivision.point,selectedSubdivision.key,selectedSubdivision.id);}});
 registerMessages({'General seed':{en:'General seed',fr:'Graine générale'}});
 setText($('label[for="seed"]'),'General seed');
 $<HTMLInputElement>('#seed').maxLength=65536;

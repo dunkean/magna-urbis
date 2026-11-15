@@ -82,8 +82,8 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     // Underdark caverns reuse the hill entry but have no summit: no triangle.
     if (e.parts?.role === 'terrain.cavern') st = { ...st, symbol: undefined };
-    if (e.manual) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
-    out.push({ id: e.id, kind: e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail, manual: e.manual || undefined, author: e.manual || undefined, scope: e.cityKey ?? 'main' });
+    if (e.manual || e.forceVisible) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
+    out.push({ id: e.id, kind: e.kind==='building'&&(e.detail??1)<.2?'landmark':e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail, manual: e.manual || e.forceVisible || undefined, author: e.manual || e.forceVisible || undefined, scope: e.cityKey ?? 'main' });
   }
   if (world.mapAnnotations?.enabled) {
     for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, manual: true, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });

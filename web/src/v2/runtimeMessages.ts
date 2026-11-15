@@ -6,9 +6,11 @@
  */
 import type { Language } from './languages';
 import { localeMessages } from './localeMessages';
+import { neuralDownloadMessages } from './neuralDownloadMessages';
 export type RuntimeLanguage = Language;
 
 const entries: readonly (readonly [string, string])[] = [
+  ...neuralDownloadMessages.map(([en, fr]) => [fr, en] as const),
   ["Créez d’abord le relief.", "Create the terrain first."],
   ["Chargement du moteur Rust/WASM (threads)…", "Loading the Rust/WASM engine (threads)…"],
   ["Presqu’île indisponible dans le neuronal navigateur : île unique.", "Peninsula unavailable in the browser neural engine: single island."],

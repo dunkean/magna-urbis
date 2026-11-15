@@ -37,6 +37,11 @@ dialog.workbench-illustration:not(:has([name=output] option[value=battlemap]:che
 dialog.workbench-illustration header h2{flex:1;min-width:0}dialog.workbench-illustration header button{margin-inline-start:0}dialog.workbench-illustration header [data-generate]{flex:none;white-space:nowrap}
 @media(max-width:720px){dialog.workbench-illustration header{flex-wrap:wrap}dialog.workbench-illustration header h2{font-size:22px}dialog.workbench-illustration header [data-generate]{order:3;flex:1 0 100%}dialog.workbench-illustration header [data-cancel]{order:4}}
 #app>.toast{top:auto;bottom:24px;max-width:min(520px,90vw);box-shadow:0 6px 30px #0005}
+#neural-download-warning{width:min(520px,90vw);padding:26px;color:#eee9db;background:#25271f;border:1px solid #dcb86f55;border-radius:12px;line-height:1.6}
+#neural-download-warning::backdrop{background:#161b15b8;backdrop-filter:blur(4px)}
+#neural-download-warning h2{font:26px Georgia,serif;margin:0 0 14px}
+#neural-download-warning a{color:var(--gold);display:inline-block;margin-bottom:18px}
+#neural-download-warning .row{justify-content:flex-end;gap:10px}
 .map-area .places-panel{bottom:auto;max-height:calc(100% - 150px)}
 .map-area>.city3d .city3d-bar{background:#272923ee;color:#eee9db;border-color:var(--line);border-radius:9px}.map-area>.city3d .city3d-bar :is(select,input,button){color:#eee9db;background:#20221c;border-color:var(--line)}
 @media(min-width:1700px){#app>.workspace{grid-template-columns:390px minmax(0,1fr)}}

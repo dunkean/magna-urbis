@@ -6,10 +6,15 @@ import { localeUnderdark } from './localeUnderdark';
 import { localeRuntimeSource } from './localeRuntimeSource';
 import { localeExtraFill } from './localeExtraFill';
 import { localeExtraCultures } from './localeExtraCultures';
+import { neuralDownloadMessages } from './neuralDownloadMessages';
+import { editingMessages } from './editingMessages';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
 export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
   "es": {
+    "Desktop app": "Aplicación de escritorio",
+    "Desktop app v{version}": "Aplicación de escritorio v{version}",
+    "Windows and Linux installers, native neural generation.": "Instaladores para Windows y Linux, generación neuronal nativa.",
     "New": "Nuevo",
     "Drop the restored state and start from an empty page": "Deje el estado restaurado y comience desde una página vacía",
     "Share": "Compartir",
@@ -1399,6 +1404,9 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "{distance} · {points} handles": "{distance} · {points} puntos de control"
   },
   "pt": {
+    "Desktop app": "Aplicativo para computador",
+    "Desktop app v{version}": "Aplicativo para computador v{version}",
+    "Windows and Linux installers, native neural generation.": "Instaladores para Windows e Linux, geração neural nativa.",
     "Automatic": "Automático",
     "Yes": "Sim",
     "No": "Não",
@@ -2788,6 +2796,9 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "{distance} · {points} handles": "{distance} · {points} pontos de controle"
   },
   "zh": {
+    "Desktop app": "桌面应用",
+    "Desktop app v{version}": "桌面应用 v{version}",
+    "Windows and Linux installers, native neural generation.": "Windows 和 Linux 安装程序，原生神经生成。",
     "Neural Earth source path (optional)": "神经地球源路径（可选）",
     "Save paths": "保存路径",
     "Install managed dependencies (several GB)": "安装托管依赖项（几 GB）",
@@ -4177,6 +4188,9 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "{distance} · {points} handles": "{distance} · {points} 个控制点"
   },
   "ar": {
+    "Desktop app": "تطبيق سطح المكتب",
+    "Desktop app v{version}": "تطبيق سطح المكتب v{version}",
+    "Windows and Linux installers, native neural generation.": "برامج تثبيت لويندوز ولينكس، وتوليد عصبي أصلي.",
     "Automatic": "تلقائي",
     "Yes": "نعم",
     "No": "لا",
@@ -5566,6 +5580,9 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "{distance} · {points} handles": "{distance} · {points} نقاط تحكم"
   },
   "ru": {
+    "Desktop app": "Настольное приложение",
+    "Desktop app v{version}": "Настольное приложение v{version}",
+    "Windows and Linux installers, native neural generation.": "Установщики для Windows и Linux, нативная нейрогенерация.",
     "Neural Earth source path (optional)": "Путь источника нейронной земли (опционально)",
     "Save paths": "Сохранить пути",
     "Install managed dependencies (several GB)": "Установите управляемые зависимости (несколько ГБ)",
@@ -6955,6 +6972,9 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
     "{distance} · {points} handles": "{distance} · контрольных точек: {points}"
   },
   "ja": {
+    "Desktop app": "デスクトップアプリ",
+    "Desktop app v{version}": "デスクトップアプリ v{version}",
+    "Windows and Linux installers, native neural generation.": "Windows・Linux 用インストーラー、ネイティブのニューラル生成。",
     "Automatic": "自動",
     "Yes": "はい",
     "No": "いいえ",
@@ -8353,3 +8373,7 @@ for(const [language,messages] of Object.entries(localeNaming))Object.assign(loca
 for(const [language,messages] of Object.entries(localeRuntimeSource))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeExtraFill))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeExtraCultures))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
+for (const [index, language] of (['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const).entries()) {
+  for (const row of neuralDownloadMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of editingMessages) localeMessages[language][row[0]] = row[index + 2];
+}

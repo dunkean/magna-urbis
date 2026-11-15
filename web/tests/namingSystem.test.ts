@@ -151,6 +151,27 @@ describe('unified names and durable edits',()=>{
 describe('importance sliders and international text',()=>{
   const st=kindStyles('atlas',PALETTES.atlas);
   const rivers:Array<MapLabel>=Array.from({length:20},(_,i)=>({id:`river:${i}`,kind:'river',text:`River ${i}`,x:0,y:0,detail:i/20,st:st.river,path:[{x:0,y:0},{x:1000-i*10,y:0}]}));
+  it('keeps houses and districts opt-in, with at most three streets and one landmark per city at every zoom',()=>{
+    const labels:MapLabel[]=[];
+    for(const scope of ['main','east'])for(let i=0;i<40;i++)for(const kind of ['street','building','quarter','castle'])labels.push({id:`${scope}/${kind}/${i}`,scope,kind,text:`${kind} ${i}`,x:i,y:0,detail:i/40,st:st[kind as 'street'|'building'|'quarter'|'castle']});
+    const selected=selectNameLevels(labels,defaultText());
+    expect(selected.some(l=>l.kind==='building'||l.kind==='quarter')).toBe(false);
+    for(const scope of ['main','east']){
+      expect(selected.filter(l=>l.scope===scope&&l.kind==='street')).toHaveLength(3);
+      expect(selected.filter(l=>l.scope===scope&&l.kind==='castle')).toHaveLength(1);
+    }
+    expect(selectNameLevels(labels,defaultText({amount:'all',levels:{buildings:100}})).filter(l=>l.kind==='building')).toHaveLength(80);
+  });
+  it('can pin one house name without enabling all houses or changing its proper name',()=>{
+    const w=fixture();
+    w.names!.entries.push({id:'selected-house',kind:'building',text:'Maison de Grahams',rank:5,anchor:{x:800,y:800},parts:{kind:'building',proper:'Grahams',cultural:'Grahams House',opaque:false}});
+    expect(buildMapLabels(w,'atlas',PALETTES.atlas).some(label=>label.id==='selected-house')).toBe(false);
+    applyLabelEdits(w,{'selected-house':{hidden:false}});
+    expect(buildMapLabels({...w},'atlas',PALETTES.atlas).some(label=>label.id==='selected-house')).toBe(true);
+    expect(w.names!.entries.at(-1)?.parts?.proper).toBe('Grahams');
+    applyLabelEdits(w,{'selected-house':{hidden:true}});
+    expect(buildMapLabels({...w},'atlas',PALETTES.atlas).some(label=>label.id==='selected-house')).toBe(false);
+  });
   it('selects none, the most important, and all candidates, monotonically',()=>{
     const text=defaultText();let previous:string[]=[];
     for(let level=0;level<=100;level++){

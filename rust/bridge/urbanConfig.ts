@@ -79,6 +79,9 @@ export interface UrbanEdits {
 /** A user-drawn polygon in world metres (outer ring, optional holes); rounded to 0.1 m by the UI. */
 export interface EditShape { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }
 export interface QuarterOverride {
+  /** Architecture inherited by the quarter's buildings, independently of its street culture. */
+  buildingCulture?: string;
+  houseConfig?: Partial<import('./housesContract').HouseConfig>;
   culture?: string; tissue?: string; density?: number; role?: string; wealth?: number;
   /** 'core': the quarter is city core, so a modern style's tall buildings (top of its height ladder) are allowed whatever the population. */
   zone?: string;
@@ -90,6 +93,9 @@ export interface QuarterOverride {
   salt?: number;
 }
 export interface ParcelOverride {
+  /** Architecture inherited by every building of this parcel. */
+  culture?: string;
+  houseConfig?: Partial<import('./housesContract').HouseConfig>;
   role?: string; function?: string; households?: number;
   /** New outline of the lot, clipped to its block. Neighbours give up or take back the difference. */
   shape?: EditShape;

@@ -80,6 +80,8 @@ describe('V2 native city inspector parity and scoped persistence', () => {
     expect((urbanInheritedValues(config, local) as any).layout.maxStreetGrade).toBe(defaultLayoutConfig().maxStreetGrade);
   });
   it('registers English and French control and policy labels without translating native identifiers', () => {
+    expect(translate('House style','fr')).toBe('Style de la maison');
+    expect(translate('Building style','fr')).toBe('Style des bâtiments');
     expect(translate('Footprint family', 'fr')).toBe('Famille d’emprise');
     expect(translate('Accessibility growth', 'fr')).toBe('Croissance par accessibilité');
     expect(translate('Strict historical', 'en')).toBe('Strict historical');

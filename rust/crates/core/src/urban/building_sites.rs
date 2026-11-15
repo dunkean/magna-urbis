@@ -137,7 +137,19 @@ fn shared_boundaries(a: &super::Shape, b: &super::Shape) -> Vec<[Point; 2]> {
 /// style sheet for a home (`houses` facet, `rural` for a farm). The flag
 /// tells a style-sheet draw: the lot then builds in that culture's whole
 /// tissue (plan, storeys, roofs, materials).
-fn drawn_culture(architecture_culture: Option<&str>, seed: &str, layout: &Layout, parcel: &super::Parcel, role: &str, function: &str) -> Option<(String, bool)> {
+fn drawn_culture(architecture_culture: Option<&str>, seed: &str, layout: &Layout, partition: &Partition, parcel: &super::Parcel, role: &str, function: &str) -> Option<(String, bool)> {
+    let profile = super::house_mix::HouseSettings::parse(architecture_culture);
+    let block = layout.blocks.get(parcel.block)?;
+    if let Some(h) = profile.as_ref().filter(|h| h.buildings.contains_key(&format!("{}/building", parcel.id)) || h.parcels.contains_key(&parcel.id) || h.quarters.contains_key(&block.quarter.to_string())) {
+        if let Some(culture) = h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone) {
+            return Some((culture.to_owned(), true));
+        }
+    }
+    let local = partition.config.as_ref().and_then(|c| c.overrides.parcels.get(&parcel.id)).and_then(|o| o.culture.as_deref())
+        .or_else(|| layout.config.as_ref().and_then(|c| c.overrides.quarters.get(&block.quarter.to_string())).and_then(|o| o.building_culture.as_deref()));
+    if let Some(culture) = local.filter(|c| !c.is_empty() && *c != "site") {
+        return Some((culture.to_owned(), true));
+    }
     let explicit = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
         let block = layout.blocks.get(parcel.block)?;
         h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone).map(str::to_owned)
@@ -149,6 +161,36 @@ fn drawn_culture(architecture_culture: Option<&str>, seed: &str, layout: &Layout
         return None;
     }
     super::forms::sheet::houses(layout, seed, &parcel.id, parcel.block, role.starts_with("dwelling.farm")).map(|c| (c.to_owned(), true))
+}
+
+/// The same hierarchy is used by native consumers and the V2 edit replay.
+fn inherit_house_config(request: &mut Value, layout: &Layout, partition: &Partition, parcel: &super::Parcel) {
+    fn merge(target: &mut Value, patch: &Value) {
+        if let (Some(target), Some(patch)) = (target.as_object_mut(), patch.as_object()) {
+            for (key, value) in patch {
+                if value.is_object() { merge(target.entry(key).or_insert_with(|| json!({})), value); }
+                else { target.insert(key.clone(), value.clone()); }
+            }
+        }
+    }
+    let quarter = layout.blocks.get(parcel.block).and_then(|b| layout.config.as_ref()?.overrides.quarters.get(&b.quarter.to_string())).and_then(|o| o.house_config.as_ref());
+    let lot = partition.config.as_ref().and_then(|c| c.overrides.parcels.get(&parcel.id)).and_then(|o| o.house_config.as_ref());
+    if quarter.is_none() && lot.is_none() { return; }
+    for patch in [quarter, lot].into_iter().flatten() {
+        if patch.get("pack").is_some_and(|pack| *pack != request["config"]["pack"]) && patch.get("recipe").is_none() {
+            request["config"]["recipe"] = Value::Null;
+            request["config"]["overrides"]["variant"] = Value::Null;
+        }
+        merge(&mut request["config"], patch);
+    }
+    if let Some(seed) = lot.and_then(|p| p["seed"].as_str()).or_else(|| quarter.and_then(|p| p["seed"].as_str())).map(|s| format!("{s}/{}/building", parcel.id)) {
+        request["seed"] = json!(seed);
+        request["config"]["seed"] = json!(seed);
+    }
+    request["config"]["count"] = json!(1);
+    request["culture"]["pack"] = request["config"]["pack"].clone();
+    request["culture"]["mode"] = request["config"]["mode"].clone();
+    request.as_object_mut().unwrap().remove("native_minimum_candidates");
 }
 /// Discrete native levels from the applied cultural/function profile. The actual
 /// recipe range remains authoritative; no height truncation occurs after placement.
@@ -843,7 +885,7 @@ impl BuildingSiteIndex {
         }
         // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
         // own; a pack that refuses the lot falls back to it, never a refusal.
-        let picked = drawn_culture(architecture_culture, seed, layout, parcel, &allocation.role, &allocation.function)
+        let picked = drawn_culture(architecture_culture, seed, layout, partition, parcel, &allocation.role, &allocation.function)
             .filter(|p| p.0 != allocation.culture);
         let from_sheet = picked.as_ref().is_some_and(|p| p.1);
         let drawn = picked.and_then(|(d, _)| super::culture::parcel_mapping(layout, parcel, &d, &allocation.function).map(|m| (d, m)));
@@ -1542,6 +1584,20 @@ impl BuildingSiteIndex {
                 "native_minimum_candidates"
             }] = json!(candidates);
         }
+        inherit_house_config(&mut request, layout, partition, parcel);
+        let quarter = layout.blocks[parcel.block].quarter;
+        for patch in [layout.config.as_ref().and_then(|cfg|cfg.overrides.quarters.get(&quarter.to_string())).and_then(|o|o.house_config.as_ref()), partition.config.as_ref().and_then(|cfg|cfg.overrides.parcels.get(&parcel.id)).and_then(|o|o.house_config.as_ref())].into_iter().flatten().filter(|patch|super::massing::is_shape_edit(patch)) {
+            let shapes: Vec<super::Shape> = serde_json::from_value(request["preview"].clone()).map_err(|e|e.to_string())?;
+            super::massing::apply_edit(&mut request["programme"]["massing"],&shapes,patch)?;
+        }
+        if let Some(profile) = super::house_mix::HouseSettings::parse(architecture_culture) {
+            for key in [format!("q:{quarter}"),format!("p:{}",parcel.id),format!("b:{}/building",parcel.id)] {
+                if let Some(patch) = profile.massing.get(&key) {
+                    let shapes: Vec<super::Shape> = serde_json::from_value(request["preview"].clone()).map_err(|e| e.to_string())?;
+                    super::massing::apply_edit(&mut request["programme"]["massing"],&shapes,patch)?;
+                }
+            }
+        }
         funerary::apply(&mut request, &parcel.shape, parcel.axis);
         Ok(request)
     }
@@ -1796,6 +1852,32 @@ mod tests {
             );
         }
         (layouts, partitions)
+    }
+
+    #[test]
+    fn local_house_styles_override_the_parcel_quarter_and_city_independently() {
+        let (mut layouts, mut partitions) = paging_fixture();
+        let id = partitions[0].parcels[0].id.clone();
+        layouts[0].config.as_mut().unwrap().overrides.quarters.insert("0".into(), serde_json::from_value(json!({
+            "culture":"medina", "buildingCulture":"medina", "houseConfig":{"wealth":0.8,"overrides":{"roof":"RF-FLAT"}}
+        })).unwrap());
+        partitions[0].config.as_mut().unwrap().overrides.parcels.insert(id.clone(), serde_json::from_value(json!({
+            "culture":"byzantine-greek", "houseConfig":{"pack":"AS-CHI","overrides":{"floors":2}}
+        })).unwrap());
+        let (layout, partition) = (&layouts[0], &partitions[0]);
+        let parcel = &partition.parcels[0];
+        assert_eq!(drawn_culture(None,"seed",layout,partition,parcel,"dwelling","domestic").unwrap().0,"byzantine-greek");
+        let profile = json!({"houses":{"buildings":{format!("{id}/building"):{"styles":[{"culture":"myconid-colony","weight":1}]}}}}).to_string();
+        assert_eq!(drawn_culture(Some(&profile),"seed",layout,partition,parcel,"dwelling","domestic").unwrap().0,"myconid-colony");
+        assert_eq!(layout.culture,"european-organic");
+        let mut request = json!({"config":{"pack":"EUR-MED","recipe":"old","mode":"historical_inspired","overrides":{}},"culture":{},"native_minimum_candidates":[{}]});
+        inherit_house_config(&mut request,layout,partition,parcel);
+        assert_eq!(request["config"]["wealth"],0.8);
+        assert_eq!(request["config"]["overrides"]["roof"],"RF-FLAT");
+        assert_eq!(request["config"]["overrides"]["floors"],2);
+        assert_eq!(request["config"]["recipe"],Value::Null);
+        assert_eq!(request["culture"]["pack"],"AS-CHI");
+        assert!(request.get("native_minimum_candidates").is_none());
     }
 
     #[test]
@@ -2704,7 +2786,7 @@ fn preview_site(
         if super::springs::site(layout, &parcel.id).is_some() {
             return Ok((!check_only).then(|| parcel.id.clone()));
         }
-        let picked = drawn_culture(architecture_culture, seed, layout, parcel, &allocation.role, &allocation.function)
+        let picked = drawn_culture(architecture_culture, seed, layout, partition, parcel, &allocation.role, &allocation.function)
             .filter(|p| p.0 != allocation.culture);
         let from_sheet = picked.as_ref().is_some_and(|p| p.1);
         let drawn = picked.and_then(|(d, _)| super::culture::parcel_mapping(layout, parcel, &d, &allocation.function).map(|m| (d, m)));

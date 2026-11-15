@@ -2,3 +2,5 @@
 .desktop-update-link{color:var(--gold);border:1px solid #dcb86f66;border-radius:6px;text-decoration:none;display:inline-block;padding:8px 11px;font-size:12px}
 .desktop-update-link[hidden]{display:none}
 .desktop-updates .desktop-update-link{margin:4px 0 8px}
+.project-links .desktop-release-link{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.desktop-release-link svg{flex-shrink:0}

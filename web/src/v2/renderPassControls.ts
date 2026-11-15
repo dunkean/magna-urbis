@@ -5,6 +5,7 @@ import type { PresetId } from '../render/composition';
 import { styleTraits } from '../render/terrainStyle';
 import { readSettingPath } from './parameterForm';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
+import { mountNameVisibilityControls } from './nameVisibilityControls';
 
 registerMessages({
   'Shaders & layers': { en: 'Shaders & layers', fr: 'Shaders et couches' },
@@ -52,6 +53,7 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
   const context = document.createElement('output'); context.className = 'render-context';
   const hint = document.createElement('p'); hint.className = 'hint'; setText(hint, 'Mix existing style components without adding render passes.');
   introduction.append(title, context, hint); panel.querySelector('header')!.after(introduction);
+  const names = mountNameVisibilityControls(panel, api);
   const cards: { pass: Pass; card: HTMLElement; status: HTMLElement; source?: HTMLSelectElement }[] = [];
   const homes: { field: HTMLElement; slot: HTMLElement; placeholder: HTMLElement }[] = [];
   const field = (path: string) => document.querySelector<HTMLElement>(`[data-setting-path="${path}"]`)?.closest<HTMLElement>('.parameter-field');
@@ -137,6 +139,7 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
   new MutationObserver(() => sync()).observe(document.getElementById('view3d')!, { attributes: true, attributeFilter: ['aria-pressed'] });
   onLanguageChange(sync);
   function sync() {
+    names.sync();
     if(!panel.matches(':popover-open'))return;
     const appearance=renderControlValues(api.getSettings()),recipe=appearance.composition!;
     const mode = document.getElementById('view3d')?.getAttribute('aria-pressed') === 'true' ? '3D' : '2D';

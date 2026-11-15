@@ -22,7 +22,7 @@ export function organizeUrbanForm(root: HTMLElement): void {
   if (!sections.length) return;
   const advanced = advancedPanel(root, 'Advanced');
   const main = document.createElement('div'); main.className = 'urban-primary'; root.prepend(main);
-  const primary = /^(architecture|through|layout\.(culture|tissue|density|recipe|phases)|parcels\.(culture|operator|density)|houses\.culture|culture|tissue|zone|density|role|function|households|recipe|pack|era|seed|salt)$/;
+  const primary = /^(architecture|through|layout\.(culture|tissue|density|recipe|phases)|parcels\.(culture|operator|density)|houses\.culture|buildingCulture|houseConfig\.(pack|recipe|mode)|overrides\.(roof|floors)|culture|tissue|zone|density|role|function|households|recipe|pack|era|seed|salt)$/;
   for (const field of Array.from(root.querySelectorAll<HTMLElement>('[data-field-path=architecture],[data-field-path=through]'))) main.append(field);
   for (const section of sections) {
     for (const field of Array.from(section.querySelectorAll<HTMLElement>('[data-field-path]'))) {

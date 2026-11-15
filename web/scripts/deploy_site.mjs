@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeF
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stageNeuralPublication } from './neural_publication.mjs';
 
 const version = process.argv[2] ?? 'v2';
 if (!['v1', 'v2'].includes(version)) throw new Error('Usage: node scripts/deploy_site.mjs v1|v2');
@@ -37,6 +38,9 @@ try {
   // Both current interfaces import the Rust/WASM bridge.
   run('npm', ['run', 'prepare:v2'], web);
   if (version === 'v2') {
+    // The detached worktree has no sibling infinite_map or generated neural package.
+    // Accept only the prepared main-checkout runtime and verified profile; never rebuild it here.
+    await stageNeuralPublication(join(root, 'rust/pkg/neural-web'), join(source, 'rust/pkg/neural-web'));
     run('npm', ['run', 'build:v2'], web);
     run('npm', ['run', 'test:v2:static'], web);
   } else run('npm', ['run', 'build'], web);

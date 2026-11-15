@@ -25,6 +25,7 @@ import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../.
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
 import { mapPresentation } from './mapPresentation';
 import { ensureDesktopNeuralServer } from './desktopNeural';
+import { prepareBrowserNeuralDownload } from './neuralDownload';
 
 /** Delay of the miniature after a new live frame (its first frame must not wait for it). */
 const MINI_DELAY_MS = 350;
@@ -57,6 +58,7 @@ export class StudioClient {
   private id = 0;
   private drawingId = 0;
   private pending: { id: number; resolve: (world: World) => void; reject: (error: Error) => void; progress?: (p: V2Progress) => void } | null = null;
+  private neuralDownload?: AbortController;
   /** Lazy resource payload requests (worker message `resources`), and the payload of the last terrain. */
   private resourceRequests = new Map<number, { resolve: (payload: ResourcePayload | undefined) => void; reject: (error: Error) => void }>();
   private resourceCache?: { key: string; payload: Promise<ResourcePayload | undefined> };
@@ -186,6 +188,14 @@ export class StudioClient {
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject, progress };
       const dispatch = async () => {
+        if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural-wasm'
+          && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
+          const controller = new AbortController(); this.neuralDownload = controller;
+          try {
+            await prepareBrowserNeuralDownload(new URL(settings.runtime.neuralAssets ?? './neural/', document.baseURI).href,
+              controller.signal, event => (progress ?? this.onProgress)(event));
+          } finally { if (this.neuralDownload === controller) this.neuralDownload = undefined; }
+        }
         if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural'
           && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
           const neuralServer = await ensureDesktopNeuralServer(settings.runtime.neuralServer ?? 'http://127.0.0.1:8792',
@@ -202,6 +212,7 @@ export class StudioClient {
     });
   }
   cancel(): void {
+    this.neuralDownload?.abort();
     if (!this.pending) return;
     this.pending.reject(new DOMException('Calcul annulé. La carte précédente est conservée.', 'AbortError'));
     this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();

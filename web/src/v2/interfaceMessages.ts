@@ -33,6 +33,9 @@ export const interfaceEnglish: Record<string,string> = {
 
 /** English source labels from the existing shared culture/style/site registries. */
 export const interfaceFrench: Record<string,string> = {
+  'Desktop app': 'Application de bureau',
+  'Desktop app v{version}': 'Application de bureau v{version}',
+  'Windows and Linux installers, native neural generation.': 'Installeurs Windows et Linux, génération neuronale native.',
   'Current values for this settlement. Plan, parcelling and houses each have their own configuration.':'Valeurs actuelles de ce lieu. Plan, parcellation et maisons ont chacun leur configuration.',
   'How it works? ↗':'Comment ça marche ? ↗','Language':'Langue','English':'Anglais','French':'Français','Parchment':'Parchemin','Plain (classic)':'Simple (classique)','Engraving':'Gravure','Cadastre 1:1250':'Cadastre 1:1250','Blueprint':'Plan bleu','Illuminated':'Enluminé','Topographic':'Topographique','Night':'Nuit',
   'bridge':'Pont','confluence':'Confluence','meander':'Méandre','harbor':'Havre','estuary':'Estuaire','valley':'Vallée','hilltop':'Sommet','plain':'Plaine','lakeshore':'Rive de lac','island':'Île','spur':'Éperon','pass':'Col',

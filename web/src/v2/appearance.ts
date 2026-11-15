@@ -76,7 +76,8 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     boolean(value.city.painted, 'appearance.city.painted'); boolean(value.city.plan, 'appearance.city.plan'); boolean(value.city.trees3d, 'appearance.city.trees3d');
     number(value.city.opacity, 'appearance.city.opacity', 0, 1);
     number(value.city.width, 'appearance.city.width', 0, 5);
-    number(value.city.exaggeration, 'appearance.city.exaggeration', 1, 5);
+    // New controls use .2–3; keep the former upper bound valid for retained projects.
+    number(value.city.exaggeration, 'appearance.city.exaggeration', .2, 5);
     number(value.city.treeDistance, 'appearance.city.treeDistance', 200, 1500);
     if (value.city.layers !== undefined) {
       object(value.city.layers, 'appearance.city.layers');

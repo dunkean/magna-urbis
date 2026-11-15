@@ -5,6 +5,7 @@ import { siteLayer } from '../src/render/landuse';
 import { PALETTES } from '../src/render/styles';
 import { renderSvg } from '../src/render/svg';
 import { buildScene } from '../src/render/scene';
+import { defaultText } from '../src/render/textLayer';
 
 function fixture() {
   const world = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, landAreas: 0 });
@@ -30,7 +31,7 @@ describe('map annotations in city land-use overlays', () => {
     const world = fixture(), { canvas, log, reset } = mockCanvas(1000, 1000);
     const renderer = createCanvasRenderer(canvas as unknown as CanvasLike, world, 'atlas', { Path2D: MockPath2D as never, terrain: () => null, raster: false });
     renderer.setLabels([{ x: 500, y: 500, text: 'Custom label', priority: 1 }]);
-    renderer.setOverlays({ labels: true, legend: false, cartouche: false });
+    renderer.setOverlays({ labels: true, legend: false, cartouche: false, text: defaultText({levels:{pins:100}}) });
     renderer.draw({ cx: 800, cy: 800, scale: 0.5 });
     expect(log.calls.fillText).toBeGreaterThan(0); expect(log.calls.arc).toBeGreaterThan(0);
     reset(); renderer.setOverlays({ labels: false });

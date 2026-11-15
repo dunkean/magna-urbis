@@ -5,11 +5,12 @@ import {
 } from '../../../rust/bridge/neuralModels';
 import { registerMessages, setText, translate, numberLocale, onLanguageChange, getLanguage } from './i18n';
 import './neuralModelManager.css';
+import { confirmNeuralDownload } from './neuralDownload';
 
 const copy = (en: string, fr: string) => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
   title: copy('Downloaded neural models', 'Modèles neuronaux téléchargés'),
-  intro: copy('Prepare browser generation now. Downloads are shared with the terrain engine; no GPU is needed to download them.', 'Préparez la génération dans le navigateur. Le moteur de relief réutilise ces téléchargements ; aucun GPU n’est nécessaire pour les télécharger.'),
+  intro: copy('Neural generation works best in the desktop app. It requires a capable GPU with WebGPU and downloads about 163 MB once.', 'La génération neuronale fonctionne mieux dans l’application de bureau. Elle nécessite une carte graphique performante avec WebGPU et télécharge environ 163 Mo une seule fois.'),
   scope: copy('Stored on this device, for this browser profile and site address. Clearing site data removes the models. These files do not install Python/CUDA models.', 'Conservés sur cet appareil, pour ce profil de navigateur et cette adresse du site. Effacer les données du site supprime les modèles. Ces fichiers n’installent pas les modèles Python/CUDA.'),
   offlineScope: copy('Downloaded weights still need WebGPU and must be loaded into GPU memory at each new session. This does not make the whole application available offline.', 'Les poids téléchargés nécessitent toujours WebGPU et doivent être chargés en mémoire GPU à chaque nouvelle session. Cela ne rend pas toute l’application disponible hors connexion.'),
   nf4: copy('NF4 B75 is the distilled base network: branch B, exponential moving-average weights at 75,000 training steps, 4-bit weight compression and a two-step solver. B75 names the training checkpoint.', 'NF4 B75 est le réseau de base distillé : branche B, moyenne exponentielle des poids à 75 000 étapes d’entraînement, compression des poids sur 4 bits et solveur à deux étapes. B75 désigne le checkpoint d’entraînement.'),
@@ -152,7 +153,9 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
     active = true; show(''); render();
     try { await action(); show(success); }
     catch (error) {
-      show(controller?.signal.aborted ? T.cancelled : error instanceof NeuralModelError ? error.code === 'storage' ? T.storageError : error.code === 'integrity' ? T.integrity : T.failure : T.failure, !controller?.signal.aborted);
+      const cancelled = controller?.signal.aborted || error instanceof DOMException && error.name === 'AbortError';
+      show(cancelled ? T.cancelled : error instanceof NeuralModelError ? error.code === 'storage' ? T.storageError : error.code === 'integrity' ? T.integrity : T.failure
+        : error instanceof Error && error.message.startsWith('WebGPU is unavailable.') ? error.message : T.failure, !cancelled);
     } finally {
       controller = undefined; lastTransfer = undefined;
       try { await inspect(); } catch { show(T.storageError, true); }
@@ -167,6 +170,7 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
     const signal = controller.signal, selectedManifest = manifest;
     await run(async () => {
       const names = name ? [name] : NEURAL_MODEL_NAMES.filter(key => !records.some(r => r.url === neuralModelUrl(assets, selectedManifest.models[key])));
+      if (names.length) await confirmNeuralDownload(signal);
       for (const key of names) {
         signal.throwIfAborted();
         await obtainNeuralModel(assets, selectedManifest, key, { requireStorage: true, signal, onProgress: event => {

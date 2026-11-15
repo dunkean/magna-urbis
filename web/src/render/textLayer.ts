@@ -15,7 +15,8 @@ export const TEXT_GROUPS = ['places', 'water', 'nature', 'countryside', 'city', 
 export type TextGroup = typeof TEXT_GROUPS[number];
 export const NAME_LEVELS = ['places','rivers','water','nature','districts','streets','buildings','landmarks','pins'] as const;
 export type NameLevel = typeof NAME_LEVELS[number];
-const levelDefaults:Record<NameLevel,number>={places:70,rivers:55,water:70,nature:55,districts:30,streets:30,buildings:10,landmarks:40,pins:100};
+const levelDefaults:Record<NameLevel,number>={places:70,rivers:55,water:70,nature:55,districts:0,streets:30,buildings:0,landmarks:1,pins:0};
+const quietLimits:Partial<Record<NameLevel,number>>={places:10,rivers:8,water:6,nature:8,streets:3,landmarks:1};
 export const TEXT_AMOUNTS = ['few', 'normal', 'many', 'all'] as const;
 export type TextAmount = typeof TEXT_AMOUNTS[number];
 /** One simple control scales every category; 'all' shows every candidate (collisions still apply). */
@@ -49,35 +50,32 @@ export function effectiveNameLevel(text:Readonly<TextSettings>,category:NameLeve
 const duplicateKey=(l:MapLabel):string=>`${l.scope ?? ''}|${l.text.trim().toLocaleLowerCase()}`;
 /** Town features repeat generic names (gates, craft streets); natural features legitimately share theirs along a river or across a region. */
 const DEDUPLICATED:ReadonlySet<NameLevel>=new Set(['districts','streets','buildings','landmarks']);
-/** Town names beyond the level are not dropped: they wait for a closer zoom, so a town view stays readable and lanes still show up close in. */
-const DEFERRED_ZOOM=3,DEFERRED_MIN_SCALE=.5;
-/** The closer zoom a deferred name waits for; undefined when that leaves it no useful zoom range (area names of quarters). */
-function deferredMinScale(st:KindStyle):number|undefined{
-  const minScale=Math.max(st.minScale*DEFERRED_ZOOM,DEFERRED_MIN_SCALE);
-  return minScale<st.maxScale*.75?minScale:undefined;
-}
 /** Monotone selection by semantic importance, then size, then stable id. Never random sampling. */
 export function selectNameLevels(labels:MapLabel[],text:Readonly<TextSettings>):MapLabel[] {
-  const selected=new Set<MapLabel>(labels.filter(l=>l.manual)),deferred=new Set<MapLabel>();
+  const selected=new Set<MapLabel>(labels.filter(l=>l.manual));
   for(const category of NAME_LEVELS){
-    const level=text.levels ? effectiveNameLevel(text,category) : 100;if(level<=0)continue;
+    const level=effectiveNameLevel(text,category);if(level<=0)continue;
     const sorted=labels.filter(l=>!l.manual&&nameLevel(l.kind)===category).sort((a,b)=>
       (a.detail??defaultDetail(a))-(b.detail??defaultDetail(b)) || labelExtent(b)-labelExtent(a) || a.id.localeCompare(b.id));
-    const seen=new Set<string>(),candidates:MapLabel[]=[];
+    const seen=new Set<string>(),scopes=new Map<string,MapLabel[]>();
     for(const l of sorted){
       const key=duplicateKey(l);
       if(DEDUPLICATED.has(category)&&l.text.trim()){if(seen.has(key))continue;seen.add(key);}
+      const scope=DEDUPLICATED.has(category)?l.scope??'main':'';
+      let candidates=scopes.get(scope);if(!candidates)scopes.set(scope,candidates=[]);
       candidates.push(l);
     }
+    for(const candidates of scopes.values()){
     // The first step shows only the most important object; every further step adds candidates.
-    const count=level>=100?candidates.length:Math.min(candidates.length,1+Math.floor((candidates.length-1)*Math.pow((level-1)/99,2)));
-    for(let i=0;i<candidates.length;i++)if(i<count)selected.add(candidates[i]);else if(DEDUPLICATED.has(category))deferred.add(candidates[i]);
+    let count=level>=100?candidates.length:Math.min(candidates.length,1+Math.floor((candidates.length-1)*Math.pow((level-1)/99,2)));
+    if(category==='streets'&&level>=10)count=Math.max(count,Math.min(3,candidates.length));
+    if(level<=levelDefaults[category]&&text.amount!=='all')count=Math.min(count,quietLimits[category]??Infinity);
+    for(let i=0;i<count;i++)selected.add(candidates[i]);
+    // Major settlements stay readable; the quiet budget mainly limits hamlets and localities.
+    if(category==='places'&&level>1)for(const label of candidates)if(label.kind==='town'||label.kind==='village'&&(label.detail??defaultDetail(label))<=.35)selected.add(label);
+    }
   }
-  return labels.flatMap(l=>{
-    if(selected.has(l))return [l];
-    const minScale=deferred.has(l)?deferredMinScale(l.st):undefined;
-    return minScale===undefined?[]:[{...l,st:{...l.st,minScale}}];
-  });
+  return labels.filter(l=>selected.has(l));
 }
 function defaultDetail(l:MapLabel):number {
   if(l.kind==='town'||l.kind==='sea')return 0;

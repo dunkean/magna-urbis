@@ -15,6 +15,11 @@ export function settlementDisplayName(world:World,key:string,settings?:V2Setting
   const entry=world.names?.entries.find(e=>e.id===`settlement:${key}`);
   return entry?.parts ? presentName(entry.parts,namePresentation(settings)) : entry?.text ?? world.settlements?.find(s=>s.key===key)?.name;
 }
+/** Typed common nouns follow the map locale; authored full labels stay verbatim. */
+export function featureDisplayName(world: World, id: string, settings?: V2Settings): string | undefined {
+  const entry = world.names?.entries.find(entry => entry.id === id);
+  return entry?.parts && (!entry.manual || entry.generated) ? presentName(entry.parts, namePresentation(settings)) : entry?.text;
+}
 
 /** Display preferences are independent from saved generation inputs and cultural names. */
 export function mapPresentation(world: World, settings?: V2Settings): World {

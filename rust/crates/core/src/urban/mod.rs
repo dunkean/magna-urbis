@@ -850,6 +850,10 @@ pub struct PhaseOverride {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct QuarterOverride {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub building_culture: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub house_config: Option<serde_json::Value>,
     pub role: Option<String>,
     pub wealth: Option<f64>,
     pub culture: Option<String>,
@@ -1029,6 +1033,10 @@ pub struct ParcelOverrides {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ParcelOverride {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub culture: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub house_config: Option<serde_json::Value>,
     pub role: Option<String>,
     pub function: Option<String>,
     pub households: Option<f64>,
@@ -1924,7 +1932,12 @@ pub fn generate_quarters(
         // from the terrain before the first pass (`footprint::slope_relax_ahead`):
         // the lowest at which its houses may use half of the land it would take.
         // Ordinary ground reads 0 and keeps the strict pass, unchanged.
-        let relaxable = config.programme.slope_relax == 0.0 && config.programme.intent == "settlement" && site.population > 0;
+        // A lone farm (or other isolated structure) relaxes the same gates: on a
+        // hill flank its single block would otherwise be refused and the place
+        // stand empty (`housable_share` reads its reservation).
+        let relaxable = config.programme.slope_relax == 0.0
+            && (config.programme.intent == "settlement" || roles::is_isolated(&config.programme.intent))
+            && site.population > 0;
         let ahead = if relaxable && !kind.small() { footprint::slope_relax_ahead(&key_seed, site, config, surface, roads) } else { 0.0 };
         #[cfg(not(target_arch = "wasm32"))]
         if ahead > 0.0 && std::env::var("URBAN_PROFILE").is_ok() {
@@ -2015,6 +2028,11 @@ pub fn generate_quarters(
 /// the layout's programme, relaxation included. 1 for a layout without land.
 fn housable_share(layout: &Layout) -> f64 {
     let Some(pr) = &layout.programme else { return 0.0 };
+    // An isolated site is one structure on one reserved block: housable once
+    // that block is reserved (its own isolated admission, not the town's).
+    if roles::is_isolated(&pr.context.intent) {
+        return if pr.reservations.is_empty() { 0.0 } else { 1.0 };
+    }
     let max_slope = culture::mapping_for(&layout.culture, &pr.context.period).map_or(f64::INFINITY, |m| {
         profiles::house_slope(&layout.culture, m.admissibility.max_slope, pr.context.slope_relax)
     });

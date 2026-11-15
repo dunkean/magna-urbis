@@ -38,16 +38,18 @@ function projectTown(snapshot: RustTownSnapshot, population: number, culture: st
   const requestByParcel = snapshot.scene?.buildings.length ? requestIndex(snapshot.sites ?? snapshot.requests) : new Map<string, string>();
   for (const building of snapshot.scene?.buildings ?? []) {
     const volumes = building.volumes, height = Math.max(0, ...volumes.map(v => v.z_m + v.wall_height_m + v.roof_height_m - building.ground_z_m));
-    const nativeRoof = volumes[0]?.roof_system ?? building.cartographic?.roof_system ?? '';
-    const roof: UrbanBuilding['roof'] = /FLAT|TERRACE/.test(nativeRoof) ? 'flat' : /DOME/.test(nativeRoof) ? 'dome'
-      : /CONE/.test(nativeRoof) ? 'conical' : /HIP/.test(nativeRoof) ? 'hip' : /PAGODA|CURVED/.test(nativeRoof) ? 'pagoda' : 'gable';
-    for (const piece of building.footprint) {
+    const massing = (building as typeof building & { programme?: { massing?: {roof:string;eave_m:number;rise_m:number;floors:number;wall:string}[] } }).programme?.massing;
+    for (const [pieceIndex,piece] of building.footprint.entries()) {
+      const body=massing?.[pieceIndex];
+      const nativeRoof = (volumes[0]?.roof_system ?? building.cartographic?.roof_system ?? body?.roof ?? '').toUpperCase();
+      const roof: UrbanBuilding['roof'] = /FLAT|TERRACE/.test(nativeRoof) ? 'flat' : /DOME/.test(nativeRoof) ? 'dome'
+        : /CONE|CONICAL/.test(nativeRoof) ? 'conical' : /HIP/.test(nativeRoof) ? 'hip' : /PYRAMID/.test(nativeRoof) ? 'pyramidal' : /BARREL/.test(nativeRoof) ? 'barrel' : /PAGODA|CURVED/.test(nativeRoof) ? 'pagoda' : 'gable';
       const projection: UrbanBuilding & { nativeId: string; nativeParcelId: string; nativeRequestId: string } = {
         // Native footprint holes already encode courts inside this exact component.
         // Adding the separate courtyard surface again would cancel even-odd holes in the V1 renderer.
         poly: piece.outer, courtyards: piece.holes,
-        kind: building.function, height: height || building.cartographic?.height_m, arch: building.recipe_id, roof,
-        storeys: Math.max(1, ...volumes.map(v => v.levels.length)), material: volumes[0]?.materials.infill,
+        kind: building.function, height: height || building.cartographic?.height_m || (body ? body.eave_m+body.rise_m : undefined), arch: building.recipe_id, roof,
+        storeys: body?.floors ?? Math.max(1, ...volumes.map(v => v.levels.length)), material: volumes[0]?.materials.infill ?? body?.wall,
         orientation: building.transform.orientation_deg * Math.PI / 180,
         nativeId: building.id, nativeParcelId: building.parcel_id,
         nativeRequestId: requestByParcel.get(building.parcel_id) ?? building.id,

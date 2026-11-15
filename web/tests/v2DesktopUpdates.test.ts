@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectDesktopUpdate } from '../src/v2/desktopUpdates';
+import { latestDesktopRelease, selectDesktopUpdate } from '../src/v2/desktopUpdates';
 
 const current = { version: '0.2.2', platform: 'windows-x86_64' };
 function release(version: string, names = [`Magna Urbis V2_${version}_x64-setup.exe`]) {
@@ -8,6 +8,14 @@ function release(version: string, names = [`Magna Urbis V2_${version}_x64-setup.
 }
 
 describe('desktop installer updates', () => {
+  it('links to the highest published desktop release, including prereleases and ignoring unrelated or invalid data', () => {
+    expect(latestDesktopRelease([null, {}, release('bad'), release('0.3.9'), release('0.3.10-beta.2'),
+      release('0.3.10-beta.10'), { ...release('9.0.0'), draft: true }, { ...release('8.0.0'), tag_name: 'v8.0.0' }]))
+      .toEqual({ version: '0.3.10-beta.10', url: 'https://github.com/dunkean/magna-urbis/releases/tag/desktop-v0.3.10-beta.10' });
+    expect(latestDesktopRelease([release('0.3.10-beta.10'), release('0.3.10', [])])?.version).toBe('0.3.10');
+    expect(latestDesktopRelease([{ ...release('9.0.0'), draft: true }, release('bad')])).toBeUndefined();
+    expect(() => latestDesktopRelease({ message: 'API rate limit exceeded' })).toThrow('Invalid desktop release data');
+  });
   it('includes published prereleases and picks the highest version numerically', () => {
     const result = selectDesktopUpdate([release('0.2.9'), release('0.2.10'), release('0.2.3')], current);
     expect(result).toEqual({ version: '0.2.10', url: release('0.2.10').assets[0].browser_download_url });

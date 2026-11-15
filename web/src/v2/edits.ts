@@ -4,9 +4,10 @@ import { buildingCandidates } from './buildingPicker';
 
 export interface BuildingEdit { type: 'building'; settlement: string; index: number; nativeId?:string; nativeRequestId?:string; signature: string; patch: Partial<UrbanBuilding> }
 export function buildingSignature(b: UrbanBuilding): string { return b.poly.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(';'); }
-export function townUrban(w: World, key: string): UrbanLayer | undefined { return key === 'main' ? w.urban : w.settlements?.find(s => s.key === key)?.urban; }
+export function townUrban(w: World, key: string): UrbanLayer | undefined { const place=w.settlements?.find(s=>s.key===key);return key==='main'||place?.main ? w.urban??place?.urban : place?.urban; }
 export function buildingAt(w: World, p: Vec2): { settlement: string; index: number; building: UrbanBuilding } | null {
-  const towns = [{ key: 'main', urban: w.urban }, ...(w.settlements ?? []).filter(s => !s.main && s.key !== 'main')];
+  const main=w.settlements?.find(s=>s.main);
+  const towns = [{ key: main?.key??'main', urban: w.urban??main?.urban }, ...(w.settlements ?? []).filter(s => !s.main && s.key !== 'main')];
   for (const s of towns) {
     if (!s.urban) continue;
     const candidates=buildingCandidates(s.urban.buildings,p);
@@ -22,7 +23,7 @@ export function applyBuildingEdits(source: World, edits: unknown[]): { world: Wo
     if(copied.has(key))return copied.get(key);
     const original=townUrban(source,key);if(!original)return;
     const layer={...original,buildings:original.buildings.slice()};copied.set(key,layer);
-    if(key==='main'){world.urban=layer;const main=world.settlements?.find(s=>s.main||s.key==='main');if(main)main.urban=layer;}
+    if(key==='main'||source.settlements?.some(s=>s.key===key&&s.main)){world.urban=layer;const main=world.settlements?.find(s=>s.main||s.key==='main');if(main)main.urban=layer;}
     else{const place=world.settlements?.find(s=>s.key===key);if(place)place.urban=layer;}
     return layer;
   }

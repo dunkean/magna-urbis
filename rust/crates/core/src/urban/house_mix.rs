@@ -175,6 +175,14 @@ pub struct HouseMix {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HouseSettings {
+    /// Shape-preserving procedural roof/storey edits by q:, p: or b: identity.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub massing: BTreeMap<String, serde_json::Value>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub parcels: BTreeMap<String, HouseMix>,
+    /// Exact site edits outrank parcel, quarter and city styles.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub buildings: BTreeMap<String, HouseMix>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub city: Option<HouseMix>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -186,7 +194,9 @@ pub struct HouseSettings {
 impl HouseSettings {
     /// No mix chosen at any level.
     pub fn is_empty(&self) -> bool {
-        !self.city.as_ref().is_some_and(HouseMix::usable)
+        self.massing.is_empty() && !self.parcels.values().any(HouseMix::usable)
+            && !self.buildings.values().any(HouseMix::usable)
+            && !self.city.as_ref().is_some_and(HouseMix::usable)
             && !self.zones.values().any(HouseMix::usable)
             && !self.quarters.values().any(HouseMix::usable)
     }
@@ -263,6 +273,8 @@ impl HouseSettings {
         zone: &str,
     ) -> Option<&str> {
         let mix = [
+            self.buildings.get(&format!("{lot}/building")),
+            self.parcels.get(lot),
             self.quarters.get(&quarter.to_string()),
             self.zones.get(zone),
             self.city.as_ref(),

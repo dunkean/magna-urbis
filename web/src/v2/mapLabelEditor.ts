@@ -123,7 +123,7 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
     status.textContent = translate(picking === 'create' ? T.creating : picking === 'place' ? T.moving : T.idle);
     input.setAttribute('aria-label', translate(T.text)); input.placeholder = translate(T.text);
     genericText.textContent = translate(T.keepGeneric);
-    hide.textContent = translate(edits()[selected]?.hidden ? T.show : T.hide);
+    hide.textContent = translate(edits()[selected]?.hidden === false ? T.hide : T.show);
     move.textContent = translate(picking === 'place' ? T.cancelMove : T.move);
     other.textContent = translate(T.other);
     reset.textContent = translate(selected.startsWith('free:') ? T.remove : T.reset);
@@ -272,7 +272,7 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
   for (const control of [color, size, bold, italic]) control.addEventListener('change', () => write({ style: {
     color: color.value, size: Math.max(.25, Math.min(4, Number(size.value) || 1)), bold: bold.checked, italic: italic.checked } }));
   move.onclick = () => setPicking(picking === 'place' ? 'select' : 'place');
-  hide.onclick = () => { write({ hidden: !edits()[selected]?.hidden || undefined }); fields(); };
+  hide.onclick = () => { write({ hidden: edits()[selected]?.hidden === false }); fields(); };
   other.onclick = () => { const s = settings(); s.naming ??= {}; varyNames(s.naming, `feature:${selected}`); renamed(); };
   reset.onclick = () => {
     const free = selected.startsWith('free:');

@@ -82,6 +82,8 @@ export interface NameEntry {
   /** Optional author typography, shared by canvas and vector exports. */
   labelStyle?: { color?: string; size?: number; bold?: boolean; italic?: boolean };
   manual?: boolean;
+  /** Explicit visibility choice, independent of automatic label density. */
+  forceVisible?: boolean;
   /** Original anchor of a separately drawn city label replaced by an author. */
   replacedAnchor?: Vec2;
 }

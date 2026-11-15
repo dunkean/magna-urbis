@@ -107,6 +107,7 @@ export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>)
       if (edit.anchor) { existing.anchor = edit.anchor; existing.path = undefined; existing.span = undefined; existing.manual = true; }
       existing.labelStyle = edit.style;
       (existing as NameEntry & { hidden?: boolean }).hidden = edit.hidden || undefined;
+      existing.forceVisible = edit.hidden === false || !!edit.text?.trim() || undefined;
     } else if (!edit.hidden && edit.text?.trim() && (candidate || edit.kind === 'free') && (edit.anchor || candidate?.anchor)) {
       const entry: NameEntry = { id, kind: candidate?.kind === 'quarter' ? 'quarter' : candidate?.kind==='building'?'building':'square', text: edit.text, rank: 0,
         anchor: edit.anchor ?? candidate!.anchor, manual: true, labelStyle: edit.style, sub: candidate?.kind ?? 'free', ...(candidate?.text ? { replacedAnchor:candidate.anchor } : {}) };

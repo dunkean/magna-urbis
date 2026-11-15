@@ -200,9 +200,10 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   const neuralServer = loopbackServer(request.neuralServer ?? 'http://127.0.0.1:8792');
   const neuralAssets = request.neuralAssets ?? (typeof window !== 'undefined' ? new URL('./neural/', window.location.href).href : undefined);
   if (usesNeural && (request.source === 'neural-wasm' || request.source === 'neural-python') && !neuralAssets) throw new Error('Adresse des modèles neuronaux absente.');
-  if (usesNeural && (request.source === 'neural-wasm' || request.source === 'neural-python')) {
+  // Browser neural uses its verified persistent runtime cache; HEAD probes break offline reuse.
+  if (usesNeural && request.source === 'neural-python') {
     onProgress?.('Vérification du runtime neuronal et des modèles disponibles…');
-    const files = ['magna_urbis_neural_wasm.js', 'magna_urbis_neural_wasm_bg.wasm', ...(request.source === 'neural-wasm' ? ['models/manifest.json'] : [])];
+    const files = ['magna_urbis_neural_wasm.js', 'magna_urbis_neural_wasm_bg.wasm'];
     try {
       await Promise.all(files.map(async file => {
         const response = await fetch(new URL(file, neuralAssets), { method: 'HEAD', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
@@ -210,7 +211,8 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
       }));
     } catch (error) {
       signal?.throwIfAborted();
-      throw new Error(`Runtime neuronal non préparé ou inaccessible. Depuis web/, lancez npm run prepare:v2 -- --neural (checkout ../infinite_map complet requis), puis reconstruisez la distribution. ${String(error)}`);
+      if (import.meta.env?.DEV) console.warn('Run npm run prepare:v2 -- --neural in web/ (complete ../infinite_map required).', error);
+      throw new Error('Neural runtime unavailable. Check your connection and retry.');
     }
   }
   onProgress?.('Chargement du module de génération du terrain…',{stage:'terrain-module'});

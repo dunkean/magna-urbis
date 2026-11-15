@@ -64,7 +64,7 @@ describe('V2 appearance recipes and export snapshots', () => {
       { city: { view: 'streets' } }, { city: { palette: 'satellite' } }, { city: { buildingStyle: 'mesh' } },
       { city: { diagnostic: 'snow' } }, { city: { opacity: 1.01 } }, { city: { width: 5.1 } },
       { city: { groundBlend: true } }, { city: { ground: 'fantasy-ink' } }, { city: { colors: 'height' } },
-      { city: { exaggeration: .5 } }, { city: { refinement: 'neural' } }, { city: { painted: 1 } },
+      { city: { exaggeration: .19 } }, { city: { exaggeration: 5.1 } }, { city: { refinement: 'neural' } }, { city: { painted: 1 } },
       { city: { layers: { gardens: 'yes' } } }, { city: { layers: { imaginary: true } } },
     ]) expect(() => validateAppearance({ style: 'parchment', ...patch }), JSON.stringify(patch)).toThrow();
     for (const lighting of [
@@ -72,6 +72,7 @@ describe('V2 appearance recipes and export snapshots', () => {
       { enabled: true, azimuth: 360, elevation: 90, strength: 3, exaggeration: 10 },
     ]) expect(() => validateAppearance({ style: 'parchment', composition: effectsComposition(c => { c.effects.lighting = lighting; }) })).not.toThrow();
     expect(() => validateAppearance({ style: 'parchment', composition: effectsComposition(c => { c.effects.season = 0; }), city: { opacity: 0, width: 0, exaggeration: 1 } })).not.toThrow();
+    expect(() => validateAppearance({ style: 'parchment', city: { exaggeration: .2 } })).not.toThrow();
     expect(() => validateAppearance({ style: 'parchment', composition: effectsComposition(c => { c.effects.season = 1; }), city: { opacity: 1, width: 5, exaggeration: 5 } })).not.toThrow();
   });
   it('uses persisted false flags in visual exports instead of generation-time layer defaults', () => {

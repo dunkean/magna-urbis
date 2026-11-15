@@ -121,6 +121,9 @@
 #app .toolbar-row>.city3d-bar label{display:inline-flex;align-items:center;gap:4px}
 #app .toolbar-row>.city3d-bar select{width:auto;font-size:11px;padding:6px}
 #app .toolbar-row>.city3d-bar input[type=range]{width:60px}
+#app .toolbar-row>.city3d-bar .city3d-relief-control{gap:6px}
+#app .toolbar-row>.city3d-bar .city3d-relief-control input{width:78px}
+#app .toolbar-row>.city3d-bar [data-relief-value]{min-width:3.5ch;color:var(--gold);font-size:10px;font-variant-numeric:tabular-nums}
 body:has(.map-area>.city3d:not([hidden])) #app .toolbar-row>#scene-controls{display:none}
 #app .city-display-options{margin:0;flex-wrap:wrap}
 #view3d-advanced-controls:empty{display:none}
@@ -154,3 +157,4 @@ body:has(.map-area>.city3d:not([hidden])) #app .toolbar-row>#scene-controls{disp
 .render-fine-settings>.advanced-grid{padding:14px 0 0}.render-fine-group>summary{font-size:12px;color:var(--gold);cursor:pointer}
 .render-fine-group .stage-row{border:0;margin:0;padding:0;background:none}.render-fine-group .stage-body{padding-top:10px}
 @media(max-width:720px){.render-pass-introduction{padding:12px 12px 4px;grid-template-columns:1fr}.render-context{justify-self:start}.render-fine-settings{margin-inline:12px}}
+.name-visibility-controls{margin:0 20px 16px;padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px}.name-visibility-controls h3{margin:0 0 12px}.name-detail-control{display:grid;grid-template-columns:auto minmax(120px,1fr) 70px;align-items:center;gap:12px;font-size:12px}.name-detail-control input{width:100%;accent-color:var(--gold)}.name-category-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 18px;margin:14px 0}.name-category-choices label{display:flex;align-items:center;gap:7px;font-size:12px}.name-category-choices input{accent-color:var(--gold);width:15px;height:15px}.name-visibility-controls .hint{margin:10px 0}@media(max-width:720px){.name-visibility-controls{margin-inline:12px}.name-category-choices{grid-template-columns:repeat(2,minmax(0,1fr))}}

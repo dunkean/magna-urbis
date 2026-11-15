@@ -231,7 +231,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       <label title="Arbres modélisés près de la caméra (sol satellite)"><input type="checkbox" data-trees>Arbres 3D</label>
       <label title="Distance d'affichage des arbres modélisés (m)" data-tree-distance-label hidden>Distance des arbres <input type="range" data-tree-distance min="200" max="1500" step="100" value="600"></label>
       <label>Couleurs <select data-colors><option value="materials">Matériaux</option><option value="uses">Usages</option></select></label>
-      <label title="Exagération du relief">Relief <input type="range" data-relief min="1" max="5" step="0.5" value="1"></label>
+      <label class="city3d-relief-control" title="Exagération du relief">Relief <input type="range" data-relief min="0.2" max="3" step="0.1" value="1"><output data-relief-value aria-hidden="true">×1</output></label>
       <button type="button" data-north title="Nord en haut">N</button>
       <button type="button" data-detail title="Réaliser en natif les plans compacts proches du centre de la vue">Détailler autour</button>
     </div>
@@ -239,6 +239,12 @@ export function mountCity3d(options: City3dOptions): City3d {
     <div class="city3d-info" role="status"></div>`;
   options.host.append(root);
   const canvas = root.querySelector('canvas')!, marker = root.querySelector<HTMLElement>('.city3d-marker')!, info = root.querySelector<HTMLElement>('.city3d-info')!;
+  const selectionSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  selectionSvg.setAttribute('aria-hidden', 'true'); selectionSvg.dataset.urbanSelection = '';
+  Object.assign(selectionSvg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: '3' });
+  const selectionPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  selectionPath.setAttribute('fill', 'none'); selectionPath.setAttribute('stroke', '#e52b36'); selectionPath.setAttribute('stroke-width', '2.5'); selectionPath.setAttribute('stroke-linejoin', 'round');
+  selectionPath.style.filter = 'drop-shadow(0 0 1px white)'; selectionSvg.append(selectionPath); root.append(selectionSvg);
   info.hidden = options.labels === false;
   const toolbar=root.querySelector<HTMLElement>('.city3d-bar')!,externalControls=document.createElement('section');
   externalControls.className='advanced-card view3d-settings';externalControls.hidden=true;
@@ -260,9 +266,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     const label = document.createElement('label'); label.innerHTML = 'Raffinement <select data-refinement><option value="source">Source</option><option value="noise">Bruit multi-échelle</option></select>';
     $('.city3d-bar').append(label);
   }
-  if(options.sharedVisibilityControls)for(const selector of ['[data-plan]','[data-refinement]','[data-colors]','[data-relief]'])$(selector)?.closest('label')?.setAttribute('hidden','');
+  if(options.sharedVisibilityControls)for(const selector of ['[data-plan]','[data-refinement]','[data-colors]'])$(selector)?.closest('label')?.setAttribute('hidden','');
   if(options.advancedControls){
-    for(const selector of ['[data-ground]','[data-refinement]','[data-colors]','[data-relief]']){const field=$(selector)?.closest('label');if(field)externalControls.append(field);}
+    for(const selector of ['[data-ground]','[data-refinement]','[data-colors]']){const field=$(selector)?.closest('label');if(field)externalControls.append(field);}
     options.advancedControls.append(externalControls);
   }
   if(options.toolbarHost){toolbar.hidden=true;options.toolbarHost.insertBefore(toolbar,options.toolbarHost.querySelector(':scope > .advanced-open'));}
@@ -947,6 +953,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     const t = terrain, id = options.getSelected?.(), b = id ? display?.buildings.find(x => x.id === id) : undefined;
     const p = b && active && t ? t.worldToScreen(center(b).x, center(b).y) : null;
     marker.hidden = !p || options.labels === false; if (p) { marker.style.left = `${p[0]}px`; marker.style.top = `${p[1]}px`; }
+    selectionPath.setAttribute('d', b && active && t ? b.footprint.flatMap(shape => [shape.outer, ...shape.holes]).map(ring => {
+      const points = ring.map(point => t.worldToScreen(point.x, point.y));
+      return points.length >= 3 && points.every(Boolean) ? `M${points.map(point => point!.join(',')).join('L')}Z` : '';
+    }).join('') : '');
   }
   function updateInfo(): void {
     if (!active || error) return;
@@ -990,6 +1000,11 @@ export function mountCity3d(options: City3dOptions): City3d {
     options.onViewSettingsChange?.({ ground, plan: planOverlay, colors, exaggeration: terrain?.getCamera().exaggeration ?? Number($<HTMLInputElement>('[data-relief]').value), refinement, trees3d: nearTrees, treeDistance });
   }
   let groundControlRevision = 0;
+  function syncReliefControl(exaggeration: number): void {
+    const control = $<HTMLInputElement>('[data-relief]'), value = `×${exaggeration}`;
+    control.value = String(exaggeration); control.setAttribute('aria-valuetext', value);
+    $<HTMLOutputElement>('[data-relief-value]').textContent = value;
+  }
   function syncView(): void {
     const saved = options.getViewSettings?.(); if (!saved) return;
     const groundControl = $<HTMLSelectElement>('[data-ground]');
@@ -1009,8 +1024,8 @@ export function mountCity3d(options: City3dOptions): City3d {
     $<HTMLSelectElement>('[data-ground]').value = ground; $<HTMLInputElement>('[data-plan]').checked = planOverlay;
     $<HTMLSelectElement>('[data-colors]').value = colors;
     if (options.materialGrounds) $<HTMLSelectElement>('[data-refinement]').value = refinement;
-    const exaggeration = Math.max(1, Math.min(5, saved.exaggeration ?? terrain?.getCamera().exaggeration ?? 1));
-    $<HTMLInputElement>('[data-relief]').value = String(exaggeration);
+    const exaggeration = Math.max(.2, Math.min(5, saved.exaggeration ?? terrain?.getCamera().exaggeration ?? 1));
+    syncReliefControl(exaggeration);
     if (terrain && terrain.getCamera().exaggeration !== exaggeration) terrain.setCamera({ ...terrain.getCamera(), exaggeration });
   }
   $<HTMLSelectElement>('[data-ground]').onchange = async event => {
@@ -1040,7 +1055,11 @@ export function mountCity3d(options: City3dOptions): City3d {
   texturedBox.closest('label')!.hidden = !options.setTextured || !!options.sharedVisibilityControls;
   texturedBox.onchange = () => options.setTextured?.(texturedBox.checked);
   $<HTMLSelectElement>('[data-colors]').onchange = event => { colors = (event.target as HTMLSelectElement).value as Colors; changedView(); syncBuildings(); };
-  $<HTMLInputElement>('[data-relief]').oninput = event => { if (terrain) terrain.setCamera({ ...terrain.getCamera(), exaggeration: Number((event.target as HTMLInputElement).value) }); changedView(); updateInfo(); };
+  $<HTMLInputElement>('[data-relief]').oninput = event => {
+    const exaggeration = Number((event.target as HTMLInputElement).value);
+    if (terrain) terrain.setCamera({ ...terrain.getCamera(), exaggeration });
+    syncReliefControl(exaggeration); changedView(); updateInfo();
+  };
   if (options.materialGrounds) $<HTMLSelectElement>('[data-refinement]').onchange = event => { refinement = (event.target as HTMLSelectElement).value as City3dViewSettings['refinement']; changedView(); applyGround(); };
   $<HTMLButtonElement>('[data-north]').onclick = () => { terrain?.north(); };
   $<HTMLButtonElement>('[data-detail]').onclick = detailAround;

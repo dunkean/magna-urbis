@@ -24,6 +24,7 @@ import { siteVisualScene, type CityPlacementRequest } from '../ui/urbanSilhouett
 import { projectUrbanSite, type UrbanSiteVisual } from '../ui/urbanSiteStore';
 import type { UrbanBuildingSiteQuery } from '../../../rust/bridge/urbanBuildingSite';
 import { partitionsFromPack } from '../../../rust/bridge/urbanParcelPack';
+import { geometryConfigs, localArchitectureSettings, scopedHouseEdit, siteQuarter, applyHouseEdit, requireHouseEditSuccess, isMassingEdit, massingEditApplied } from '../../../rust/bridge/urbanHouseEdits';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -34,6 +35,7 @@ export interface RustTownSnapshot {
   parcelKey?: string;
   programmeKey?: string;
   requestKey?: string;
+  siteBaseKey?: string;
   buildingKey?: string;
   /** Reconciled native programme evidence for this exact retained house scene. */
   capacityKey?: string;
@@ -256,7 +258,8 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
     population: settings.local[key]?.population ?? Number(world.stats['v2.population:' + key] ?? place.population) };
   const resolved = resolveRustUrbanControls(settings, key, options), local = settings.urban?.local?.[key];
   // Same site archetype as City Bench's quarters request (kinds.rs reads it for the village form and the defences).
-  const config = { ...resolved, layout: { ...resolved.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes) } };
+  const geometry = geometryConfigs(resolved.layout, resolved.parcels);
+  const config = { ...resolved, ...geometry, layout: { ...geometry.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes) } };
   const target = through ?? local?.through ?? settings.urban?.through ?? 'buildings';
   const stageIndex = ['layout', 'parcels', 'programme', 'buildings'].indexOf(target);
   if (stageIndex < 0) throw new Error('Étape urbaine inconnue.');
@@ -392,10 +395,13 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   }
   if (stageIndex >= 3) {
     const { architectureProfile } = await import('../../../rust/bridge/urbanArchitecture');
-    const profile = architectureProfile(config.houses), requestKey = fingerprint(buildingSeed === seed ? [programmeKey, profile] : [programmeKey, profile, buildingSeed]);
+    const architecture = cityArchitectureOf(local?.architecture ?? settings.urban?.architecture);
+    const buildingEdits = Object.fromEntries(Object.entries(settings.urban?.buildings ?? {}).filter(([id]) => id.startsWith(`${key}/`)).map(([id, edit]) => [id.slice(key.length + 1), edit]));
+    const profile = architectureProfile(localArchitectureSettings(config.houses, resolved.layout, resolved.parcels, buildingEdits, architecture==='silhouette')), requestKey = fingerprint(buildingSeed === seed ? [programmeKey, profile] : [programmeKey, profile, buildingSeed]);
+    const siteBaseKey = fingerprint([programmeKey, buildingSeed]);
+    const styleOnlyChange = !!snapshot.scene && snapshot.siteBaseKey === siteBaseKey && snapshot.requestKey !== requestKey;
     // Same default as City Bench and the v7 sheets: city volumes raised by urban/massing.rs.
     // The houses crate only runs for the compact/detailed architectures and for edited houses.
-    const architecture = cityArchitectureOf(local?.architecture ?? settings.urban?.architecture);
     const siteInput = () => ({ seed: buildingSeed, layouts: snapshot.layouts, partitions: snapshot.programmePartitions ?? snapshot.partitions, architectureCulture: profile });
     /** Complete requests from the JSON stage (houses crate input). */
     const fullSites = async (): Promise<PlacementRequest[]> => required<PlacementRequest[]>(await request('buildingSites', siteInput()), 'placementRequests');
@@ -411,9 +417,12 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
         // City volumes keep only the projection; the complete requests stay in this worker for edits.
         if (architecture === 'silhouette') wasmSiteRequests.set(snapshot.sites, requests); else snapshot.requests = requests;
       }
-      snapshot.requestKey = requestKey; snapshot.scene = undefined;
+      snapshot.requestKey = requestKey; if (!styleOnlyChange) snapshot.scene = undefined;
     }
+    snapshot.siteBaseKey = siteBaseKey;
     const sites = snapshot.sites!;
+    const previousSites = new Map(previous?.sites?.map(site => [site.id, site]));
+    const changedStyles = new Set(styleOnlyChange ? sites.filter(site => fingerprint([previousSites.get(site.id)?.culture,previousSites.get(site.id)?.programme]) !== fingerprint([site.culture,site.programme])).map(site => site.id) : []);
     /** Complete requests of the given sites: read by id from the engine session, else from this worker's retained stage. */
     const completeSites = async (ids: Set<string>): Promise<PlacementRequest[]> => {
       if (snapshot.requests) return snapshot.requests.filter(request => ids.has(request.id));
@@ -427,15 +436,36 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       const all = wasmSiteRequests.get(sites) ?? await fullSites();
       return all.filter(request => ids.has(request.id));
     };
+    if (styleOnlyChange && previous?.requests?.length === sites.length) {
+      const updates = new Map((await completeSites(changedStyles)).map(request => [request.id, request]));
+      snapshot.requests = previous.requests.map(request => updates.get(request.id) ?? request);
+    }
+    const retainedBuildings = new Map(previous?.scene?.buildings.map(building=>[building.id,building]));
     const relevantOverrides = Object.fromEntries(sites.flatMap(request => {
-      const patch = settings.urban?.buildings?.[`${key}/${request.id}`] ?? settings.urban?.buildings?.[request.id];
-      return patch ? [[request.id, patch]] : [];
+      const own = settings.urban?.buildings?.[`${key}/${request.id}`] ?? settings.urban?.buildings?.[request.id];
+      const patch = scopedHouseEdit(resolved.layout, resolved.parcels, siteQuarter(snapshot.layouts, request), request.parcel_id, own);
+      if (architecture==='silhouette' && (!retainedBuildings.get(request.id)||retainedBuildings.get(request.id)?.recipe_id==='silhouette') && isMassingEdit(patch)) {
+        if (!massingEditApplied(request.programme,patch)) throw new Error('Update the Rust engine to edit the roof or storeys while retaining the existing footprint.');
+        return [];
+      }
+      return Object.keys(patch).length ? [[request.id, patch]] : [];
     }));
+    const changedOverrides = new Set([...Object.keys(relevantOverrides), ...Object.keys(snapshot.houseOverrides ?? {})]
+      .filter(id => fingerprint(relevantOverrides[id]) !== fingerprint(snapshot.houseOverrides?.[id])));
+    changedStyles.forEach(id => changedOverrides.add(id));
     const buildingKey = fingerprint(houseSeed === seed ? [architecture, requestKey, config.houses, relevantOverrides] : [architecture, requestKey, config.houses, relevantOverrides, houseSeed]);
     if (architecture === 'silhouette' && (!snapshot.scene || snapshot.buildingKey !== buildingKey)) {
       report('urban-buildings', 'Rust · city volumes…', 4);
-      let scene = siteVisualScene(sites);
-      const edited = Object.keys(relevantOverrides).length ? await completeSites(new Set(Object.keys(relevantOverrides))) : [];
+      const sourceScene = siteVisualScene(sites);
+      if (styleOnlyChange) requireHouseEditSuccess(sourceScene, sites.filter(site => changedStyles.has(site.id) && previous?.scene?.buildings.some(building => building.parcel_id === site.parcel_id)));
+      const reuseScene = (previous?.requestKey === requestKey || styleOnlyChange) && snapshot.scene && previous?.houseSettingsKey === fingerprint([config.houses, houseSeed]);
+      let scene = reuseScene ? snapshot.scene! : sourceScene;
+      if (reuseScene) {
+        const resetParcels = new Set(sites.filter(site => changedOverrides.has(site.id)).map(site => site.parcel_id));
+        scene = { ...scene, buildings: [...scene.buildings.filter(b => !resetParcels.has(b.parcel_id)), ...sourceScene.buildings.filter(b => resetParcels.has(b.parcel_id))] };
+      }
+      const edits = Object.keys(relevantOverrides).filter(id => !reuseScene || changedOverrides.has(id));
+      const edited = edits.length ? await completeSites(new Set(edits)) : [];
       if (edited.length) {
         // An edited house is planned by the houses crate inside its lot; every other lot keeps its volume.
         const { planUrbanBuildings } = await import('../../../rust/bridge/architecture');
@@ -443,15 +473,17 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
         const parcels = new Set(edited.map(request => request.parcel_id));
         const requests = withRetainedNeighbors(edited.map(request => {
           const patch = relevantOverrides[request.id], draw = patch.seed ?? (houseSeed === seed ? request.seed : `${houseSeed}/${request.id}`);
-          return { ...request, seed: draw, config: merge<HouseConfig>(defaultHouseConfig(), { pack: request.culture.pack, mode: request.culture.mode },
-            request.config, config.houses.house_config, patch, { seed: draw, count: 1 }) };
+          return applyHouseEdit(request, merge<HouseConfig>(defaultHouseConfig(), { pack: request.culture.pack, mode: request.culture.mode },
+            request.config, config.houses.house_config, patch, { seed: draw, count: 1 }));
         }), scene.buildings.filter(building => !parcels.has(building.parcel_id)));
-        const planned = await planUrbanBuildings({ schema_version: '1', requests, settings: { ...config.houses, floors: undefined } }, runtime);
+        const planned = await planUrbanBuildings({ schema_version: '1', requests, settings: { ...config.houses, house_config: undefined, floors: undefined } }, runtime);
+        requireHouseEditSuccess(planned, requests);
         scene = { ...scene, buildings: [...scene.buildings.filter(building => !parcels.has(building.parcel_id)), ...planned.buildings],
           refusals: planned.refusals, open_spaces: [...scene.open_spaces.filter(space => !parcels.has(space.parcel_id)), ...planned.open_spaces],
           materials: planned.materials, ...(planned.plan_archives ? { plan_archives: planned.plan_archives } : {}) };
       }
-      snapshot.scene = scene; snapshot.houseBaseline = undefined; snapshot.lastBuildingRequests = edited.length;
+      snapshot.scene = scene; snapshot.houseBaseline = undefined; snapshot.lastBuildingRequests = edited.length+changedStyles.size;
+      snapshot.houseSettingsKey = fingerprint([config.houses, houseSeed]);
       snapshot.partitions = snapshot.programmePartitions ?? snapshot.partitions;
       snapshot.houseOverrides = structuredClone(relevantOverrides); snapshot.buildingKey = buildingKey;
       // As in City Bench, volumes keep the programme's own capacities (no built-capacity balance).
@@ -467,12 +499,22 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
         return { ...request, seed: draw, ...(request.config ? { config: { ...request.config, seed: draw } } : {}) };
       });
       let baseline: PlacementBatch, baselineRequests = 0;
-      if (snapshot.scene && snapshot.houseBaseline?.key === baselineKey) {
-        snapshot.houseBaseline = { ...snapshot.houseBaseline, originals: { ...snapshot.houseBaseline.originals } };
-        const originals = Object.values(snapshot.houseBaseline.originals);
-        baseline = originals.length ? mergeHouseDelta(snapshot.scene, { ...snapshot.scene,
+      const reuseBaseline = !!snapshot.scene && (snapshot.houseBaseline?.key === baselineKey || styleOnlyChange && snapshot.houseSettingsKey === houseSettingsKey);
+      if (reuseBaseline && snapshot.scene && snapshot.houseBaseline) {
+        snapshot.houseBaseline = { key: baselineKey, originals: { ...snapshot.houseBaseline.originals } };
+        let retainedScene = snapshot.scene;
+        if (changedStyles.size) {
+          const changed = sourceRequests.filter(request => changedStyles.has(request.id));
+          const sources = await planUrbanBuildings({ schema_version: '1', requests: changed, settings: config.houses }, runtime);
+          requireHouseEditSuccess(sources, changed);
+          retainedScene = mergeHouseDelta(retainedScene, sources, new Set(changed.map(request => request.parcel_id)));
+          baselineRequests = changed.length;
+          for (const id of changedStyles) delete snapshot.houseBaseline.originals[id];
+        }
+        const originals = Object.entries(snapshot.houseBaseline.originals).filter(([id]) => changedOverrides.has(id)).map(([, original]) => original);
+        baseline = originals.length ? mergeHouseDelta(retainedScene, { ...retainedScene,
           buildings: originals.flatMap(value => value.buildings), refusals: originals.flatMap(value => value.refusals),
-          open_spaces: originals.flatMap(value => value.open_spaces) }, new Set(originals.map(value => value.parcelId))) : snapshot.scene;
+          open_spaces: originals.flatMap(value => value.open_spaces) }, new Set(originals.map(value => value.parcelId))) : retainedScene;
       } else {
         report('urban-buildings', 'Rust · plans sources des maisons avant les modifications individuelles…', 0, snapshot.requests.length);
         baseline = await planUrbanBuildings({ schema_version: '1', requests: sourceRequests, settings: config.houses }, runtime, {
@@ -484,7 +526,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       // Canonical replay: restore only touched source houses, then apply the
       // current explicit house overrides in stable site order. A seed/recipe
       // import follows exactly the same path as an interactive local edit.
-      let requests = sourceRequests.filter(request => relevantOverrides[request.id]);
+      let requests = sourceRequests.filter(request => relevantOverrides[request.id] && (!reuseBaseline || changedOverrides.has(request.id)));
       const changedParcels = new Set(requests.map(request => request.parcel_id));
       for (const request of requests) if (!snapshot.houseBaseline!.originals[request.id]) {
         snapshot.houseBaseline!.originals[request.id] = { parcelId: request.parcel_id,
@@ -492,7 +534,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
           refusals: baseline.refusals.filter(refusal => refusal.parcel_id === request.parcel_id),
           open_spaces: baseline.open_spaces.filter(space => space.parcel_id === request.parcel_id) };
       }
-      if (settings.urban?.buildings && Object.keys(settings.urban.buildings).length) {
+      if (Object.keys(relevantOverrides).length) {
         const { defaultHouseConfig } = await import('../../../rust/bridge/houses');
         requests = requests.map(request => {
           const patch = relevantOverrides[request.id];
@@ -502,7 +544,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
             request.config, config.houses.house_config,
             config.houses.floors === undefined ? undefined : { overrides: { floors: config.houses.floors } }, patch,
             { seed, count: 1 });
-          return { ...request, seed, config: house };
+          return applyHouseEdit(request, house);
         });
       }
       requests = withRetainedNeighbors(requests, baseline.buildings.filter(building => !changedParcels.has(building.parcel_id)));
@@ -514,7 +556,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       for (const request of requests) {
         const specific = relevantOverrides[request.id];
         const header = specific ? { ...config.houses, floors: undefined,
-          house_config: config.houses.house_config ? request.config : undefined } : config.houses;
+          house_config: undefined } : config.houses;
         const headerKey = fingerprint(header), previous = groups[groups.length - 1];
         if (previous?.key === headerKey) previous.requests.push(request);
         else groups.push({ requests: [request], settings: header, key: headerKey });
@@ -525,6 +567,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
           requests: delta ? withRetainedNeighbors(group.requests, delta.buildings) : group.requests, settings: group.settings }, runtime, {
           progress: completed => report('urban-buildings', `Rust · maisons ${done + completed}/${requests.length}…`, done + completed, requests.length),
         });
+        requireHouseEditSuccess(batch, group.requests);
         delta = delta ? mergeHouseDelta(delta, batch, new Set()) : batch;
         done += group.requests.length;
       }

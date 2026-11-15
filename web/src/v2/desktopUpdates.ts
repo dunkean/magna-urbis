@@ -1,11 +1,18 @@
-import { registerMessages, setText, setDynamicText, translate } from './i18n';
+import { registerMessages, setHTML, setText, setDynamicText, translate } from './i18n';
 import './desktopUpdates.css';
 
 const releasesApi = 'https://api.github.com/repos/dunkean/magna-urbis/releases?per_page=100';
+export const desktopReleasesUrl = 'https://github.com/dunkean/magna-urbis/releases';
 const downloadsBase = 'https://github.com/dunkean/magna-urbis/releases/download/';
 type ReleaseInfo = { version: string; platform: string };
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 export type DesktopUpdate = { version: string; url: string };
+
+async function fetchDesktopReleases(): Promise<unknown> {
+  const response = await fetch(releasesApi, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error(`Releases HTTP ${response.status}`);
+  return response.json();
+}
 
 function versionParts(version: string): { core: number[]; pre: string[] } | undefined {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*))?(?:\+[\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*)?$/.exec(version);
@@ -29,6 +36,71 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+function desktopReleaseVersion(release: { draft?: unknown; tag_name?: unknown } | null | undefined): string | undefined {
+  if (!release || release.draft || typeof release.tag_name !== 'string' || !release.tag_name.startsWith('desktop-v')) return;
+  const version = release.tag_name.slice('desktop-v'.length);
+  return versionParts(version) ? version : undefined;
+}
+
+/** Highest published desktop version, including prereleases, independent of installer platform. */
+export function latestDesktopRelease(releases: unknown): DesktopUpdate | undefined {
+  if (!Array.isArray(releases)) throw new Error('Invalid desktop release data');
+  let latest: DesktopUpdate | undefined;
+  for (const release of releases) {
+    const version = desktopReleaseVersion(release);
+    if (version && (!latest || compareVersions(version, latest.version) > 0)) {
+      latest = { version, url: `${desktopReleasesUrl}/tag/desktop-v${version}` };
+    }
+  }
+  return latest;
+}
+
+const releaseCacheKey = 'magna-urbis-latest-desktop-release-v1';
+let webRelease: Promise<DesktopUpdate | undefined> | undefined;
+
+/** One idle lookup per browser session; a failed lookup keeps the generic releases link. */
+export function getLatestDesktopRelease(): Promise<DesktopUpdate | undefined> {
+  return webRelease ??= (async () => {
+    try {
+      const stored = sessionStorage.getItem(releaseCacheKey);
+      if (stored === 'null') return;
+      if (stored) {
+        const cached = JSON.parse(stored);
+        if (typeof cached?.version === 'string') {
+          const release = latestDesktopRelease([{ tag_name: `desktop-v${cached.version}` }]);
+          if (release) return release;
+        }
+      }
+    } catch { /* Storage can be disabled or malformed. */ }
+    await new Promise<void>(resolve => {
+      if ('requestIdleCallback' in window) window.requestIdleCallback(() => resolve(), { timeout: 5000 });
+      else setTimeout(resolve, 1000);
+    });
+    let latest: DesktopUpdate | undefined;
+    try { latest = latestDesktopRelease(await fetchDesktopReleases()); } catch { /* Offline or rate-limited. */ }
+    try { sessionStorage.setItem(releaseCacheKey, JSON.stringify(latest ?? null)); } catch { /* Best effort. */ }
+    return latest;
+  })();
+}
+
+/** Persistent global web action; the installed app already has its own update action. */
+export function mountDesktopReleaseLink(host: HTMLElement): void {
+  if ('__TAURI_INTERNALS__' in window || /(?:^|\.)tauri\.localhost$/.test(window.location.hostname) || window.location.protocol === 'tauri:') return;
+  const link = document.createElement('a');
+  link.className = 'desktop-release-link'; link.href = desktopReleasesUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+  setHTML(link, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4m-4 0h8"/></svg><span>Desktop app</span>');
+  link.setAttribute('data-i18n-title', 'Windows and Linux installers, native neural generation.');
+  link.title = translate('Windows and Linux installers, native neural generation.');
+  const label = link.querySelector('span')!;
+  host.prepend(link);
+  void getLatestDesktopRelease().then(release => {
+    if (release) {
+      link.href = release.url;
+      setDynamicText(label, () => translate('Desktop app v{version}').replace('{version}', release.version));
+    }
+  });
+}
+
 /** Include published prereleases: desktop releases currently use that channel. */
 export function selectDesktopUpdate(releases: unknown, current: ReleaseInfo): DesktopUpdate | undefined {
   if (!Array.isArray(releases) || !versionParts(current.version)) throw new Error('Invalid desktop release data');
@@ -36,9 +108,8 @@ export function selectDesktopUpdate(releases: unknown, current: ReleaseInfo): De
     : current.platform === 'linux-x86_64' ? ['_amd64.deb', '_amd64.AppImage'] : [];
   let update: DesktopUpdate | undefined;
   for (const release of releases) {
-    if (!release || release.draft || typeof release.tag_name !== 'string' || !release.tag_name.startsWith('desktop-v')) continue;
-    const version = release.tag_name.slice('desktop-v'.length);
-    if (!versionParts(version) || compareVersions(version, current.version) <= 0 || (update && compareVersions(version, update.version) <= 0)) continue;
+    const version = desktopReleaseVersion(release);
+    if (!version || compareVersions(version, current.version) <= 0 || (update && compareVersions(version, update.version) <= 0)) continue;
     if (!Array.isArray(release.assets)) continue;
     for (const extension of extensions) {
       const asset = release.assets.find((item: { name?: unknown; browser_download_url?: unknown; size?: number; state?: string } | null) =>
@@ -89,9 +160,7 @@ export function mountDesktopUpdates(header: HTMLElement, settings: HTMLElement):
     try {
       const info = await invoke<ReleaseInfo>('desktop_release_info');
       setDynamicText(installed, () => translate('Installed version: {version}').replace('{version}', info.version));
-      const response = await fetch(releasesApi, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store', signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) throw new Error(`Releases HTTP ${response.status}`);
-      const update = selectDesktopUpdate(await response.json(), info);
+      const update = selectDesktopUpdate(await fetchDesktopReleases(), info);
       for (const link of links) {
         link.hidden = !update;
         if (update) { link.href = update.url; setDynamicText(link, () => translate('Update {version} · Download installer ↗').replace('{version}', update.version)); }

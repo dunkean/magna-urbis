@@ -31,8 +31,50 @@ Pour la V2, le contrôle navigateur
 par défaut, ou le canal Playwright indiqué par `MAGNA_BROWSER_CHANNEL`.
 Les services Python/CUDA et leurs modèles restent des composants locaux
 facultatifs, distincts de l'hébergement statique.
-La publication standard inclut le moteur procédural CPU/WebGPU, sans les
-poids et le runtime neuronaux optionnels du navigateur (`prepare:v2 -- --neural`).
+La publication V2 inclut également le runtime neuronal JS/WASM et le manifeste
+`neural/models/manifest.json`. Avant publication, préparez le profil navigateur
+dans le checkout principal avec `npm run prepare:v2 -- --neural` (checkout
+`../infinite_map` complet nécessaire uniquement pour cette préparation).
+Le déploiement reprend `rust/pkg/neural-web` du checkout principal dans le
+worktree temporaire : il ne cherche pas `../infinite_map` depuis ce worktree.
+Il refuse de publier si le SHA-256 du WASM diffère de `runtimeSha256` ou si
+la taille ou le SHA-256 d’un poids diffère du manifeste. Les fichiers générés
+doivent donc être préparés depuis les sources neuronales épinglées avant de
+publier le snapshot committé. Aucun build Rust neuronal n’est lancé à cette étape.
+
+Les poids sont hébergés **sur la même origine**, en morceaux de 40 000 000 octets
+maximum (`neural/models/base.nf4.part0`, etc., également pour coarse et decoder).
+Le manifeste publié conserve le hash du fichier complet et ajoute une liste
+`chunks` avec nom, taille et SHA-256 de chaque morceau. Aucun fichier `base.nf4`
+de 150 Mo n’est ajouté à `gh-pages`. Le JS reçoit aussi `runtimeJsSha256`.
+Les licences des poids préparés et du professeur sont incluses sous `neural/`.
+Les fichiers de poids bruts du checkout principal restent inchangés.
+
+Choix vérifié le 15 novembre 2026 :
+`curl -sI -H "Origin: https://magna-urbis.org" -L https://github.com/dunkean/magna-urbis/releases/download/desktop-v0.3.1/base.nf4`
+renvoie `302 Found`, puis `200 OK` (`Content-Length: 149638301`), sans
+`Access-Control-Allow-Origin`, y compris sur l’URL finale
+`release-assets.githubusercontent.com`. Ces assets ne conviennent donc pas à
+un `fetch` navigateur depuis le site ; les morceaux évitent cette dépendance CORS
+et restent sous les limites de taille GitHub.
+
+Le téléchargement est déclenché uniquement par une génération neuronale ou un
+bouton de téléchargement explicite dans les réglages, jamais au chargement de
+la page. Sans WebGPU utilisable, aucun poids n’est téléchargé. Le premier usage
+affiche un avertissement mémorisé avec Continuer / Annuler et un lien vers
+l’application de bureau (environ 163 Mo, GPU performant conseillé). La carte de
+progression existante affiche Mo, pourcentage et annulation. Chaque morceau puis
+le fichier réassemblé sont vérifiés avant enregistrement dans le cache navigateur
+`magna-urbis-neural-models-v1`, distinct des fichiers natifs et Python.
+Le runtime vérifié utilise `magna-urbis-neural-runtime-v1`. Une demande de
+stockage persistant est effectuée ; le navigateur peut la refuser ou l’utilisateur
+effacer les données. Les poids valides sont réutilisés hors connexion, sans
+retéléchargement lors d’une nouvelle visite ; le manifeste sauvegardé et le
+runtime sont réutilisables lorsque le serveur est inaccessible. Cela ne rend pas
+toute l’application disponible hors connexion. Un nouveau hash télécharge les
+nouveaux fichiers ; un cache corrompu est réparé. L’annulation conserve uniquement
+les modèles complets déjà vérifiés. Le mode développement accepte toujours les
+fichiers complets sous `./neural/` sans découpage.
 
 Les identifiants Git doivent permettre de pousser vers le dépôt concerné.
 Le fichier `CNAME`, `.nojekyll`, les licences et la révision de source sont

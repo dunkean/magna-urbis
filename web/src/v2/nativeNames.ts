@@ -16,7 +16,8 @@ export function appendNativeNames(world: World, naming?: NamingSettings, seed=wo
   if (!records || !Object.keys(records).length) return;
   world.names.nativeManaged = true;
   // Native districts/quarters replace the synthetic quarter labels from the compatibility projection.
-  if (records.main) world.names.entries = world.names.entries.filter(e => e.kind !== 'quarter');
+  const mainKey=world.settlements?.find(place=>place.main)?.key??'main';
+  if (records[mainKey]) world.names.entries = world.names.entries.filter(e => e.kind !== 'quarter');
   for (const [cityKey, city] of Object.entries(records)) {
     const place = world.settlements?.find(s => s.key === cityKey);
     const cityCulture = place?.culture ?? world.options.culture;
@@ -59,7 +60,7 @@ export function appendNativeNames(world: World, naming?: NamingSettings, seed=wo
       for (const [ei,enclosure] of (layout.enclosures ?? []).entries()) for (const [gi,gate] of enclosure.gates.entries())
         add(`${prefix}:gate:${layoutKey}:${ei}:${gi}`,'gate',gate,layout.culture ?? cityCulture,.4);
       // Secondary towns also get street names; their compatibility projection is not the main map's urban layer.
-      if (cityKey !== 'main') for (const [index,street] of layout.streets.entries()) {
+      if (cityKey !== 'main' && !place?.main) for (const [index,street] of layout.streets.entries()) {
         const mid=street.path[Math.floor(street.path.length/2)];
         const qi=mid ? layout.quarters.findIndex(q=>polygonContains(q.shape.outer,mid)) : -1;
         add(`${prefix}:street:${layoutKey}:${index}`,'street',mid,cultureAt(Math.max(0,qi)),Math.min(.95,.15+street.rank*.16),undefined,undefined,qi>=0?`${prefix}:quarter:${layoutKey}:${qi}`:undefined);
@@ -77,10 +78,13 @@ export function appendNativeNames(world: World, naming?: NamingSettings, seed=wo
         add(`${prefix}:parcel:${encodeURIComponent(partition.key)}:${encodeURIComponent(parcel.id ?? String(index))}`,kind,center(parcel.shape.outer),allocation?.culture ?? cityCulture,kind==='building' ? .45 : .12,role);
       }
     }
-    for (const building of city.scene?.buildings ?? []) {
+    const buildings=city.scene?.buildings??[];
+    const principalIds=new Set((city.sites??city.requests??[]).filter(site=>site.programme?.landmark).map(site=>site.id));
+    const principal=buildings.find(building=>principalIds.has(building.id)) ?? buildings.find(building=>/^(civic|defence|elite|worship)\./.test(parcelRoles.get(building.parcel_id)?.role??'')) ?? buildings.reduce<typeof buildings[number]|undefined>((largest,building)=>!largest||Math.abs(polygonArea(building.footprint?.[0]?.outer??[]))>Math.abs(polygonArea(largest.footprint?.[0]?.outer??[]))?building:largest,undefined);
+    for (const building of buildings) {
       const id=`${prefix}:building:${encodeURIComponent(building.id)}`, role=parcelRoles.get(building.parcel_id);
       const anchor=building.footprint?.[0] ? center(building.footprint[0].outer) : building.transform?.origin;
-      add(id,'building',anchor,building.culture?.culture ?? role?.culture ?? cityCulture,.9,role?.role ?? (building.function==='domestic' ? 'dwelling.house' : building.function));
+      add(id,'building',anchor,building.culture?.culture ?? role?.culture ?? cityCulture,building===principal ? .05 : .9,role?.role ?? (building.function==='domestic' ? 'dwelling.house' : building.function));
     }
   }
 }

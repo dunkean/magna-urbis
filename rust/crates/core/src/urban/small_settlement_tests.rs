@@ -838,6 +838,38 @@ fn small_farms_and_roadside_shrines_on_a_steep_cone_keep_their_buildings() {
     }
 }
 
+/// Never a place without its houses: a 5-inhabitant farmstead, on flat land and on
+/// a hill flank (grade 0.35, about 19°), builds its farmhouse and its culture's
+/// outbuildings, each piece raised by the massing (one volume per piece in 3D).
+#[test]
+fn a_five_inhabitant_farmstead_builds_its_farmhouse_and_outbuildings_on_a_hill() {
+    let (n, width) = (128, 6000.0);
+    let water = vec![0_u8; n * n];
+    let level = vec![0.0_f32; n * n];
+    for grade in [0.0, 0.35] {
+        let height: Vec<f32> = (0..n * n).map(|i| {
+            let (x, y) = ((i % n) as f64 * width / n as f64, (i / n) as f64 * width / n as f64);
+            (10.0 + grade * (2800.0 - (x - 3000.0).hypot(y - 3000.0)).max(0.0)) as f32
+        }).collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        let site = Site { key: "farm".into(), name: String::new(), population: 5, culture: "european-organic".into(),
+            center: Point { x: 4200.0, y: 3000.0 }, radius: 60.0, neighbours: Vec::new() };
+        let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+        let parcel_config: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
+        let layouts = generate_quarters("farm-hill", &[site], &cfg, surface, &[]).unwrap();
+        assert_eq!(layouts[0].archetype, "farmstead");
+        let parts = generate_parcels("farm-hill", &layouts, &parcel_config).unwrap();
+        let requests = building_sites::requests("farm-hill", &layouts, &parts, surface, &level, None).unwrap();
+        let farm = requests.iter().find(|r| r["programme"]["farmstead"].is_object()).unwrap_or_else(|| panic!(
+            "grade {grade}: no farmstead among {} requests; warnings {:?}; programme {:?}",
+            requests.len(), layouts[0].warnings, parts[0].programme.as_ref().map(|p| (&p.warnings, &p.demands))));
+        let labels: Vec<&str> = farm["preview_parts"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+        assert!(labels.iter().any(|l| !farmsteads::is_outbuilding(l)), "grade {grade}: no farmhouse in {labels:?}");
+        assert!(labels.iter().any(|l| farmsteads::is_outbuilding(l)), "grade {grade}: no outbuilding in {labels:?}");
+        assert_eq!(farm["programme"]["massing"].as_array().map_or(0, Vec::len), labels.len(), "grade {grade}: a piece without volume");
+    }
+}
+
 #[test]
 fn a_town_and_village_use_the_buildable_terraces_of_a_volcano_flank() {
     let (n, width) = (256, 6000.0);

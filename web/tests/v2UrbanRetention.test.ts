@@ -56,6 +56,53 @@ beforeEach(() => {
   native.plan.mockReset().mockImplementation(async (batch: PlacementBatchRequest): Promise<PlacementBatch> => ({ schema_version: '1', generator_version: 'architectural-plans-2', buildings: batch.requests.map(request => building(request.parcel_id, batch.settings?.floors ?? request.config?.overrides.floors ?? 1)), refusals: [], open_spaces: [], plan_archives: { 'native-retained-plan': 'exact-retained-native-archive' } }));
 });
 describe('immutable retained native stages', () => {
+  it('changes one house culture without planning its neighbours again', async () => {
+    const run = native.run.getMockImplementation()!;
+    native.run.mockImplementation(async request => {
+      const response = await run(request);
+      if (request.kind === 'buildingSites' && request.architectureCulture) {
+        const specific = JSON.parse(request.architectureCulture).houses?.buildings ?? {};
+        for (const site of response.placementRequests) if (specific[site.id]) site.culture = { ...site.culture, culture: specific[site.id].styles[0].culture, pack: 'AF-MAG' };
+      }
+      return response;
+    });
+    const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    settings.urban!.buildings = { 'main/p0/request': { culture: 'medina' } };
+    native.run.mockClear(); native.plan.mockClear();
+    const edited = await generateRustTown(world, settings, 'main');
+    expect(native.plan.mock.calls.flatMap(([batch]) => batch.requests.map((request: PlacementRequest) => request.id))).toEqual(['p0/request']);
+    expect(native.run.mock.calls.map(([request]) => request.kind)).toEqual(['buildingSites', 'builtCapacity']);
+    expect(edited.snapshot.scene!.buildings.find(b => b.parcel_id === 'p1')).toBe(first.snapshot.scene!.buildings.find(b => b.parcel_id === 'p1'));
+  });
+  it('replans only the changed house and retains the previous scene when its roof is refused', async () => {
+    const { world, settings } = fixture();
+    settings.urban!.buildings = { 'main/p0/request': { seed: 'a' }, 'main/p1/request': { seed: 'b' } };
+    const first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    native.plan.mockClear(); native.run.mockClear();
+    settings.urban!.buildings['main/p0/request'] = { seed: 'a', overrides: { roof: 'RF-HIP' } as never };
+    const edited = await generateRustTown(world, settings, 'main');
+    expect(native.plan).toHaveBeenCalledTimes(1);
+    expect(native.plan.mock.calls[0][0].requests.map((r: PlacementRequest) => r.id)).toEqual(['p0/request']);
+    expect(native.run.mock.calls.map(([r]) => r.kind)).toEqual(['builtCapacity']);
+    world.debug = { v2RustCities: { main: freeze(edited.snapshot) } };
+    const source = JSON.stringify(edited.snapshot);
+    settings.urban!.buildings['main/p0/request'] = { overrides: { roof: 'RF-INVALID' } as never };
+    native.plan.mockResolvedValue({ schema_version: '1', generator_version: 'architectural-plans-2', buildings: [], refusals: [{ id: 'p0/request', parcel_id: 'p0', code: 'invalid_roof', message: 'Roof unavailable.' }], open_spaces: [] });
+    await expect(generateRustTown(world, settings, 'main')).rejects.toThrow('invalid_roof: Roof unavailable.');
+    expect(JSON.stringify(edited.snapshot)).toBe(source);
+  });
+  it('changes a quarter house parameter without rerunning streets, parcels or programme', async () => {
+    const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
+    world.debug = { v2RustCities: { main: freeze(first.snapshot) } };
+    settings.urban!.local = { main: { layout: { overrides: { quarters: { '0': { houseConfig: { overrides: { floors: 3 } as never } } } } } } };
+    native.run.mockClear(); native.plan.mockClear();
+    const edited = await generateRustTown(world, settings, 'main');
+    expect(native.run.mock.calls.map(([r]) => r.kind)).toEqual(['builtCapacity']);
+    expect(native.plan.mock.calls[0][0].requests.map((r: PlacementRequest) => r.parcel_id)).toEqual(['p0']);
+    expect(edited.snapshot.scene!.buildings.find(b => b.parcel_id === 'p0')!.volumes[0].levels).toHaveLength(3);
+  });
   it('shows the chosen city stage as layers without discarding native downstream products', async () => {
     const { world, settings } = fixture(), first = await generateRustTown(world, settings, 'main');
     const layout = first.snapshot.layouts[0];

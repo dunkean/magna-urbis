@@ -3,6 +3,7 @@ import { translateRuntimeMessage } from './runtimeMessages';
 import { LANGUAGES, isLanguage, type Language } from './languages';
 import { localeMessages } from './localeMessages';
 import { onUnitsChange } from './units';
+import { editingMessages } from './editingMessages';
 
 export type { Language } from './languages';
 export { LANGUAGES } from './languages';
@@ -29,6 +30,7 @@ export function registerMessages(messages:Record<string,{en:string;fr:string}>):
 }
 /** English texts of every registered message, for coverage checks. */
 export function registeredEnglishMessages():string[]{return [...new Set(Object.values(registeredMessages).map(message=>message.en))];}
+registerMessages(Object.fromEntries(editingMessages.map(row=>[row[0],{en:row[0],fr:row[1]}])));
 registerMessages({
   'Magna Urbis · V2 Workshop': { en: 'Magna Urbis · V2 Workshop', fr: 'Magna Urbis · Atelier V2' },
   'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.': { en: 'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.', fr: 'Magna Urbis V2 : du relief à la maison, un atelier de cartographie procédurale.' },

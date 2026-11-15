@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
+import { obtainNeuralRuntime } from '../../rust/bridge/neuralRuntime';
 import {
   loadNeuralManifest, listStoredNeuralModels, obtainNeuralModel, deleteStoredNeuralModel, neuralModelUrl,
   NEURAL_MODEL_NAMES, type NeuralManifest,
@@ -28,6 +29,48 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('browser neural model storage shared by settings and inference', () => {
+  it('assembles ordered chunks, verifies them and the whole file, then reuses the whole cache offline', async () => {
+    const chunks = [payload.slice(0, 2), payload.slice(2)];
+    manifest.models.base.chunks = await Promise.all(chunks.map(async (bytes, i) => ({ file: `base.bin.part${i}`, bytes: bytes.length,
+      sha256: Buffer.from(await webcrypto.subtle.digest('SHA-256', bytes)).toString('hex') })));
+    fetcher.mockImplementation(async (url: string) => new Response(chunks[url.includes('part0') ? 0 : 1]));
+    expect(await obtainNeuralModel(assets, manifest, 'base', { requireStorage: true })).toEqual(payload);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    fetcher.mockRejectedValue(new TypeError('Offline'));
+    expect(await obtainNeuralModel(assets, manifest, 'base')).toEqual(payload);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('rejects a corrupt chunk even when the whole-file hash would pass', async () => {
+    manifest.models.base.chunks = [{ ...manifest.models.base, file: 'base.bin.part0', sha256: 'b'.repeat(64) }];
+    await expect(obtainNeuralModel(assets, manifest, 'base')).rejects.toMatchObject({ code: 'integrity' });
+    expect(files.size).toBe(0);
+  });
+  it('rejects a whole-file mismatch after valid chunk checks', async () => {
+    manifest.models.base.chunks = [{ ...manifest.models.base, file: 'base.bin.part0' }];
+    manifest.models.base.sha256 = 'b'.repeat(64);
+    await expect(obtainNeuralModel(assets, manifest, 'base')).rejects.toMatchObject({ code: 'integrity' });
+    expect(files.size).toBe(0);
+  });
+  it('rejects invalid chunk paths, totals and hashes in the downloaded catalogue', async () => {
+    for (const part of [{ file: '../escape', bytes: 4, sha256: 'a'.repeat(64) }, { file: 'base.part0', bytes: 3, sha256: 'a'.repeat(64) }, { file: 'base.part0', bytes: 4, sha256: 'invalid' }]) {
+      manifest.models.base.chunks = [part];
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify(manifest)));
+      await expect(loadNeuralManifest(assets)).rejects.toMatchObject({ code: 'manifest' });
+    }
+    expect(files.size).toBe(0);
+  });
+  it('verifies the runtime build and reuses the identified JS/WASM offline', async () => {
+    manifest.runtimeSha256 = manifest.models.base.sha256; manifest.runtimeJsSha256 = manifest.models.base.sha256;
+    expect((await obtainNeuralRuntime(assets, manifest)).wasm).toEqual(payload);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    fetcher.mockRejectedValue(new TypeError('Offline'));
+    expect((await obtainNeuralRuntime(assets, manifest)).wasm).toEqual(payload);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('rejects an incompatible runtime before accepting weights', async () => {
+    await expect(obtainNeuralRuntime(assets, manifest)).rejects.toThrow('integrity check failed');
+    expect([...files.keys()].some(url => url.includes('.wasm?'))).toBe(false);
+  });
   it('downloads, verifies and reuses weights without another network request', async () => {
     const onProgress = vi.fn();
     expect(await obtainNeuralModel(assets, manifest, 'base', { requireStorage: true, onProgress })).toEqual(payload);

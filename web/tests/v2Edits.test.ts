@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { applyBuildingEdits, buildingAt, buildingSignature, validateBuildingPatch, type BuildingEdit } from '../src/v2/edits';
+import { applyBuildingEdits, buildingAt, buildingSignature, townUrban, validateBuildingPatch, type BuildingEdit } from '../src/v2/edits';
 import type { World, UrbanBuilding } from '../src/gen/types';
 import {pointInRing} from '../src/gen/geo/poly';
 
 const house:UrbanBuilding={poly:[{x:10,y:10},{x:20,y:10},{x:20,y:20},{x:10,y:20}],kind:'house',storeys:1,roof:'gable'};
 function fixture():World{return {urban:{buildings:[structuredClone(house)]},settlements:[{key:'main',main:true},{key:'village:0',urban:{buildings:[{...structuredClone(house),poly:house.poly.map(p=>({x:p.x+100,y:p.y}))}]}}]} as unknown as World;}
 describe('V2 local edits',()=>{
+  it('uses the retained main settlement key for picking and editing an imported decor',()=>{
+    const w=fixture();w.settlements![0].key='city';
+    const selected=buildingAt(w,{x:15,y:15})!;
+    expect(selected.settlement).toBe('city');expect(townUrban(w,'city')).toBe(w.urban);
+    const result=applyBuildingEdits(w,[{type:'building',settlement:selected.settlement,index:selected.index,signature:buildingSignature(house),patch:{roof:'hip'}}]);
+    expect(result.world.urban!.buildings[0].roof).toBe('hip');
+    expect(result.world.settlements![0].urban).toBe(result.world.urban);
+    expect(w.urban!.buildings[0].roof).toBe('gable');
+  });
   it('picks the actual building footprint in main and secondary settlements',()=>{
     const w=fixture();expect(buildingAt(w,{x:15,y:15})?.settlement).toBe('main');expect(buildingAt(w,{x:115,y:15})?.settlement).toBe('village:0');expect(buildingAt(w,{x:45,y:45})).toBeNull();
   });

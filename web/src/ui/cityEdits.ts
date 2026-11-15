@@ -88,9 +88,10 @@ function shape(v: unknown): EditShape | undefined {
   for (const h of r.holes) { const ring = cleanRing(h, 3); if (!ring) return undefined; holes.push(ring); }
   return { outer, holes };
 }
-const cleanQuarter = (v: unknown): QuarterEdit | undefined => { const r = record(v); return compact({ culture: text(r.culture), tissue: text(r.tissue), density: num(r.density, 0.1, 10), role: text(r.role), wealth: num(r.wealth, 0, 1),
+const houseConfig = (v: unknown): QuarterEdit['houseConfig'] => v && typeof v==='object' && !Array.isArray(v) ? structuredClone(v) as QuarterEdit['houseConfig'] : undefined;
+const cleanQuarter = (v: unknown): QuarterEdit | undefined => { const r = record(v); return compact({ culture: text(r.culture), buildingCulture:text(r.buildingCulture), houseConfig:houseConfig(r.houseConfig), zone:text(r.zone), tissue: text(r.tissue), density: num(r.density, 0.1, 10), role: text(r.role), wealth: num(r.wealth, 0, 1),
   shape: shape(r.shape), deleted: r.deleted === true ? true : undefined, salt: salt(r.salt) }); };
-const cleanLot = (v: unknown): LotEdit | undefined => { const r = record(v); return compact({ role: text(r.role), function: text(r.function), households: num(r.households, 0, 500),
+const cleanLot = (v: unknown): LotEdit | undefined => { const r = record(v); return compact({ culture:text(r.culture),houseConfig:houseConfig(r.houseConfig),role: text(r.role), function: text(r.function), households: num(r.households, 0, 500),
   shape: shape(r.shape), deleted: r.deleted === 'merge' || r.deleted === 'garden' ? r.deleted as 'merge' | 'garden' : undefined, salt: salt(r.salt) }); };
 const cleanHouse = (v: unknown): HouseEdit | undefined => { const r = record(v); const recipe = text(r.recipe); return recipe ? compact({ recipe, variant: text(r.variant) ?? 'default', floors: r.floors === null ? null : num(r.floors, 1, 30) }) : undefined; };
 const cleaners: { [K in EditScope]: (v: unknown) => CityEdits[K][string] | undefined } = { quarters: cleanQuarter, parcels: cleanLot, buildings: cleanHouse };

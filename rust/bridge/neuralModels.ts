@@ -2,9 +2,10 @@
 export const NEURAL_MODEL_CACHE = 'magna-urbis-neural-models-v1';
 export const NEURAL_MODEL_NAMES = ['coarse', 'base', 'decoder'] as const;
 export type NeuralModelName = typeof NEURAL_MODEL_NAMES[number];
-export interface NeuralModelEntry { file: string; bytes: number; sha256: string; selection?: string; release?: string; solverSteps?: number }
+export interface NeuralModelFile { file: string; bytes: number; sha256: string }
+export interface NeuralModelEntry extends NeuralModelFile { chunks?: NeuralModelFile[]; selection?: string; release?: string; solverSteps?: number }
 export interface NeuralManifest {
-  profile: string; engineRevision: string; runtimeSha256: string;
+  profile: string; engineRevision: string; runtimeSha256: string; runtimeJsSha256?: string;
   models: Record<NeuralModelName, NeuralModelEntry>;
 }
 export interface StoredNeuralModel { url: string; name: string; bytes?: number; current: boolean; profile?: string }
@@ -16,9 +17,14 @@ export class NeuralModelError extends Error {
 function validateManifest(value: unknown): NeuralManifest {
   const manifest = value as NeuralManifest;
   if (!manifest || typeof manifest.profile !== 'string' || !/^[a-f0-9]{64}$/.test(manifest.runtimeSha256)) throw new NeuralModelError('manifest', 'Invalid neural model manifest.');
+  if (manifest.runtimeJsSha256 !== undefined && !/^[a-f0-9]{64}$/.test(manifest.runtimeJsSha256)) throw new NeuralModelError('manifest', 'Invalid neural runtime manifest.');
   for (const name of NEURAL_MODEL_NAMES) {
     const entry = manifest.models?.[name];
     if (!entry || !/^[\w.-]+$/.test(entry.file) || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0 || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw new NeuralModelError('manifest', `Invalid ${name} model manifest.`);
+    if (entry.chunks !== undefined && (!Array.isArray(entry.chunks) || !entry.chunks.length
+      || entry.chunks.some(chunk => !chunk || !/^[\w.-]+$/.test(chunk.file) || !Number.isSafeInteger(chunk.bytes) || chunk.bytes <= 0 || chunk.bytes >= 50_000_000 || !/^[a-f0-9]{64}$/.test(chunk.sha256))
+      || new Set(entry.chunks.map(chunk => chunk.file)).size !== entry.chunks.length
+      || entry.chunks.reduce((sum, chunk) => sum + chunk.bytes, 0) !== entry.bytes)) throw new NeuralModelError('manifest', `Invalid ${name} model chunks.`);
   }
   return manifest;
 }
@@ -72,7 +78,7 @@ export async function listStoredNeuralModels(assets: string, manifest?: NeuralMa
   return result;
 }
 
-async function verify(bytes: Uint8Array, entry: NeuralModelEntry): Promise<boolean> {
+export async function verifyNeuralFile(bytes: Uint8Array, entry: Pick<NeuralModelFile, 'bytes' | 'sha256'>): Promise<boolean> {
   if (bytes.byteLength !== entry.bytes) return false;
   const hash = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>);
   return Array.from(new Uint8Array(hash), v => v.toString(16).padStart(2, '0')).join('') === entry.sha256;
@@ -89,35 +95,40 @@ export async function obtainNeuralModel(assets: string, manifest: NeuralManifest
   if (stored) {
     const bytes = new Uint8Array(await stored.arrayBuffer());
     onProgress?.({ name, phase: 'verify', received: bytes.length, total: entry.bytes });
-    const valid = await verify(bytes, entry); signal?.throwIfAborted();
+    const valid = await verifyNeuralFile(bytes, entry); signal?.throwIfAborted();
     if (valid) return bytes;
     await cache?.delete(url);
   }
-  const response = await fetch(url, { signal });
-  if (!response.ok) throw new NeuralModelError('download', `Cannot download ${name} weights: HTTP ${response.status}`);
   const bytes = new Uint8Array(entry.bytes);
   let received = 0;
-  if (response.body) {
-    const reader = response.body.getReader();
-    try {
-      while (true) {
-        signal?.throwIfAborted();
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (received + value.byteLength > bytes.length) throw new NeuralModelError('integrity', `Invalid ${name} model size.`);
-        bytes.set(value, received); received += value.byteLength;
-        onProgress?.({ name, phase: 'download', received, total: entry.bytes });
-      }
-    } catch (error) { await reader.cancel().catch(() => {}); throw error; }
-    finally { reader.releaseLock(); }
-  } else {
-    const buffer = new Uint8Array(await response.arrayBuffer());
-    received = buffer.byteLength;
-    if (received === bytes.length) bytes.set(buffer);
+  for (const part of entry.chunks ?? [entry]) {
+    const partUrl = new URL(`models/${part.file}`, assets); partUrl.searchParams.set('sha256', part.sha256);
+    const response = await fetch(partUrl.href, { signal });
+    if (!response.ok) throw new NeuralModelError('download', `Cannot download ${name} weights: HTTP ${response.status}`);
+    const start = received;
+    if (response.body) {
+      const reader = response.body.getReader();
+      try {
+        while (true) {
+          signal?.throwIfAborted();
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (received + value.byteLength > start + part.bytes) throw new NeuralModelError('integrity', `Invalid ${name} model size.`);
+          bytes.set(value, received); received += value.byteLength;
+          onProgress?.({ name, phase: 'download', received, total: entry.bytes });
+        }
+      } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+      finally { reader.releaseLock(); }
+    } else {
+      const buffer = new Uint8Array(await response.arrayBuffer());
+      received += buffer.byteLength;
+      if (buffer.byteLength === part.bytes) bytes.set(buffer, start);
+    }
+    if (received - start !== part.bytes || (entry.chunks && !await verifyNeuralFile(bytes.subarray(start, received), part))) throw new NeuralModelError('integrity', `Invalid ${name} model chunk: integrity check failed.`);
   }
   signal?.throwIfAborted();
   onProgress?.({ name, phase: 'verify', received, total: entry.bytes });
-  if (received !== entry.bytes || !await verify(bytes, entry)) throw new NeuralModelError('integrity', `Invalid ${name} model: integrity check failed.`);
+  if (received !== entry.bytes || !await verifyNeuralFile(bytes, entry)) throw new NeuralModelError('integrity', `Invalid ${name} model: integrity check failed.`);
   signal?.throwIfAborted();
   if (cache) {
     onProgress?.({ name, phase: 'save', received, total: entry.bytes });

@@ -2154,7 +2154,7 @@ export class Terrain3d {
     if(c.navigation==='fly'){const ground=this.heightAt(c.x,c.y)??0;c.flightAltitude=clamp(Number.isFinite(c.flightAltitude)?c.flightAltitude!:ground+30,ground+WALK_EYE_HEIGHT,ground+width*5);}
     c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : .8, c.navigation === 'walk'||c.navigation==='fly' ? -1.45 : .14, c.navigation === 'walk'||c.navigation==='fly' ? 1.45 : 1.48);
     c.yaw = Number.isFinite(c.yaw) ? ((c.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI : 0;
-    c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, 1, 5);
+    c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, .2, 5);
   }
   private cameraMoving(): void {
     this.cameraMovedAt = performance.now();

@@ -34,7 +34,7 @@ export interface V2UrbanSettings extends V2UrbanControls {
   backend?: 'typescript' | 'rust' | 'native';
   local?: Record<string, V2UrbanControls>;
   /** `${settlementKey}/${nativeRequestId}` (shown by the inspector); bare request ids are a global fallback. */
-  buildings?: Record<string, Partial<HouseConfig>>;
+  buildings?: Record<string, import('../../../rust/bridge/urbanHouseEdits').HouseEditConfig>;
 }
 
 /** Rendering preferences never change the retained terrain or settlement generation recipe. */

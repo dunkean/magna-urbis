@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { defaultLayoutConfig, defaultParcelConfig } from '../../rust/bridge/urbanConfig';
 import type { PlacementRequest } from '../../rust/bridge/urbanArchitecture';
+import { defaultHouseConfig } from '../../rust/bridge/houses';
 import { applyHouseEdits, editCount, emptyEdits, layoutWithEdits, normalizeEdits, parcelWithEdits, setEdit } from '../src/ui/cityEdits';
 import { lotRoleChoices, roleLabel } from '../src/render/cityRoles';
 
 /** City Bench per-item edits: persisted through the share JSON, injected only when present. */
 describe('city edits', () => {
+  it('retains independent descendant architecture through the shared edit contract', () => {
+    let edits=setEdit(emptyEdits(),'quarters','2',{culture:'medina',buildingCulture:'byzantine',houseConfig:{seed:'quarter',overrides:{...defaultHouseConfig().overrides,floors:3}}});
+    edits=setEdit(edits,'parcels','p/2',{culture:'myconid-colony',houseConfig:{seed:'parcel',pack:'MYC-FUN'}});
+    const restored=normalizeEdits(JSON.parse(JSON.stringify(edits)));
+    expect(restored).toEqual(edits);
+    expect(layoutWithEdits(defaultLayoutConfig(),restored).overrides?.quarters?.['2']).toMatchObject({culture:'medina',buildingCulture:'byzantine',houseConfig:{overrides:{floors:3}}});
+    expect(parcelWithEdits(defaultParcelConfig(),restored).overrides?.parcels?.['p/2']).toMatchObject({culture:'myconid-colony',houseConfig:{pack:'MYC-FUN'}});
+  });
   it('round-trips quarter, lot and house edits and injects them into each stage', () => {
     let edits = setEdit(emptyEdits(), 'quarters', '3', { role: 'market', wealth: 2, tissue: 'grid' });
     edits = setEdit(edits, 'parcels', 'p/12', { role: 'craft.smithy', function: 'workshop' });

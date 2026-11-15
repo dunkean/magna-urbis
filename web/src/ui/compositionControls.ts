@@ -198,7 +198,7 @@ export const diagnosticFields = [choice('diagnostic', 'Diagnostic overlay', 'Cou
   choice('resourcePotential', 'Resource shown', 'Ressource affichée', POTENTIAL_IDS.map(id => [id, ...potentialLabels[id]] as const))];
 const perspectiveFields = [flag('city.plan', 'Urban plan', 'Plan urbain'),
   choice('city.colors', 'Building colours in 3D', 'Couleurs des bâtiments en 3D', [['materials', 'Materials', 'Matériaux'], ['uses', 'Uses', 'Usages']]),
-  number('city.exaggeration', 'Vertical exaggeration in 3D', 'Exagération verticale en 3D', 1, 5, .1),
+  number('city.exaggeration', 'Vertical exaggeration in 3D', 'Exagération verticale en 3D', .2, 3, .1),
   choice('city.refinement', 'Surface refinement in 3D', 'Raffinement de surface en 3D', [['source', 'Source heights', 'Altitudes source'], ['noise', 'Multiscale detail', 'Détail multi-échelle']])];
 /** Level 3: the fine controls the recipe does not drive. */
 export const advancedFields = [...advancedCommonFields, ...terrainFields, ...cityFields, ...cityLayerFields, ...perspectiveFields, ...fantasyFields, ...forestFields, ...diagnosticFields];
