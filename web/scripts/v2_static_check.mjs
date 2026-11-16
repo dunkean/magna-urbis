@@ -48,10 +48,14 @@ try {
   await page.locator('#exec-engine').selectOption('rust');
   await page.locator('#exec-compute').selectOption('cpu');
   await page.locator('#hardware-dialog [data-close]').first().click();
+  // This gate qualifies CPU/WASM and static assets; material rendering is covered by the real-GPU live check.
+  await page.locator('#map-style').selectOption('parchment');
   await page.locator('#relief-advanced-open').click();
   const resolution='#terrain-controls [data-setting-path="terrain.resolution"]';await reveal(resolution);await page.locator(resolution).fill('128');
   await page.locator('#relief-advanced .relief-advanced-head button').click();
   await page.locator('#generate-region').click();
+  // The click first awaits cancellation of background work, before setting aria-busy.
+  await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'true', null, { timeout: 30000 });
   await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 180000 });
   assert.match(await page.locator('#footer-status').textContent(), /Carte prête/);
   assert.match(await page.locator('#job-log').textContent(), /rust-wasm-cpu/);
@@ -83,7 +87,10 @@ try {
     scienceLoaded: true, scienceResources: resources.length, imagesLoaded: true };
   assert.deepEqual(result.errors, []); assert.deepEqual(result.missing, []);
   result.ok = true;
-} catch (error) { result.ok = false; result.error = error.stack; process.exitCode = 1; }
+} catch (error) { result.ok = false; result.error = error.stack; process.exitCode = 1;
+  const page=browser?.contexts()[0]?.pages()[0];
+  if(page)result.state=await page.evaluate(()=>({footer:document.querySelector('#footer-status')?.textContent,toast:document.querySelector('#toast')?.textContent,log:document.querySelector('#job-log')?.textContent})).catch(()=>undefined);
+}
 finally {
   await browser?.close(); await new Promise(resolveClosed => server.close(resolveClosed));
   await mkdir(`${web}/out`, { recursive: true });
