@@ -1,3 +1,17 @@
+## Alpha 0.3.4
+
+- Edit the full hierarchy: city, quarter, block, parcel and building. Regeneration applies the current seed; the dice chooses a new local seed. Parent edits systematically replace descendant overrides within the selected area.
+- Culture changes propagate to street patterns, parcel layouts and architecture. Quarter street patterns rebuild interior streets. Keep rendering, textures and lighting choices during regeneration, and preserve editing settings in share codes.
+- Simplify the inspector, localize building types, populate advanced settings and filter types by culture, available architecture and parcel area. Failed building requests retain the previous scene. Building-type changes selected from a house currently apply to its parcel, as indicated in the interface.
+- Target 85% tree dwellings in the elven profile. Reduce automatic farmstead and hamlet counts while preserving regional population; build small places in groups of up to eight with four generation lanes and one regional update per group.
+- Add the minimal map renderer and its composition controls, including contour lines. Correct night lighting of detailed buildings' own window materials.
+
+Source validation: 688 Rust urban tests and 208 targeted frontend/integration tests passed, along with TypeScript, version alignment and portable/checksum checks. A real native-engine browser run covered block editing, renderer retention, localized options, selection cleanup and nine farmsteads built in two groups (eight plus one).
+
+Package and hardware qualification for this version is recorded separately after downloading the published artifacts. Existing 0.3.3 hardware results below describe that version only.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.3
 
 - Include the Python/CUDA service's `neural_sampling.py` dependency in both desktop packages. Staging and package validation now share the service-module inventory, with a regression check for adjacent imports.
