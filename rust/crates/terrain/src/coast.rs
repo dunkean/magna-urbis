@@ -217,7 +217,7 @@ impl Coast {
                 .map(|i| self.geometry((i % n) as f64 * cell + cell * 0.5, (i / n) as f64 * cell + cell * 0.5, cell).0)
                 .collect();
             let planned = geometry.iter().filter(|&&g| g <= 0.0).count() as f64 / geometry.len() as f64;
-            let target = if lone_cove { planned.clamp(0.06, 0.15) } else { planned.clamp(0.03, 0.72) };
+            let target = if lone_cove { planned.clamp(0.08, 0.22) } else { planned.clamp(0.03, 0.72) };
             let sea = |coast: &Self, shift: f64| {
                 geometry.iter().zip(&relief)
                     .filter(|&(&g, &h)| g + shift + coast.relief_term(h, g + shift) <= 0.0)
@@ -384,9 +384,10 @@ impl Coast {
         let point = |a: f64, depth: f64| (m.0 + t.0 * a + inward.0 * depth, m.1 + t.1 * a + inward.1 * depth);
         let centre = rng.range(-0.10, 0.10);
         if rng.float() < 0.78 {
-            let mouth = rng.range(0.05, 0.10);
+            // Mostly open coves and gulfs; a narrow mouth (under 0.10) is a rare draw (~7%).
+            let mouth = 0.08 + 0.10 * rng.float().powf(0.6);
             let depth = rng.range(0.18, 0.34);
-            let bulb = rng.range(0.07, 0.13);
+            let bulb = rng.range(0.10, 0.18).max(mouth);
             let bend = rng.range(-0.08, 0.08);
             let (a, b, c, d) = (point(centre, -0.03), point(centre + bend * 0.3, depth * 0.35),
                 point(centre + bend, depth * 0.7), point(centre + bend * 1.3, depth));
@@ -976,7 +977,7 @@ mod open_sea_tests {
             let share = sea.iter().filter(|&&s| s).count() as f64 / (n * n) as f64;
             let bottom = &sea[(n - 1) * n..];
             let open = bottom.iter().filter(|&&s| s).count();
-            assert!(share <= 0.20, "seed {seed}: share {share}");
+            assert!(share <= 0.25, "seed {seed}: share {share}");
             assert!(open > 0 && open < n * 7 / 10, "seed {seed}: {open} of {n} bottom cells");
             // No sea along the other sides.
             assert!(sea[..n].iter().all(|&s| !s), "seed {seed}: top side");
