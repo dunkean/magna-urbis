@@ -103,18 +103,18 @@ async function editHouse(before) {
     const x = box.x + box.width / 2 + (p.x - main.center.x) * scale, y = box.y + box.height / 2 + (p.y - main.center.y) * scale;
     if (x < box.x + 40 || x > box.x + box.width - 400 || y < box.y + 170 || y > box.y + box.height - 170) continue;
     await page.mouse.click(x, y);
-    if (await page.locator('#house-native-json').count()) { selected = building; break; }
+    if (await page.locator('#house-native-controls').count()) { selected = building; break; }
   }
   assert(selected, 'No house selected through the visible map');
   const roof = page.locator('#house-native-controls [data-setting-path="overrides.roof"]');
   await page.waitForFunction(() => {
     const input = document.querySelector('#house-native-controls [data-setting-path="overrides.roof"]');
-    return input && document.getElementById(input.getAttribute('list'))?.querySelectorAll('option').length > 0;
+    return input instanceof HTMLSelectElement && input.options.length > 1;
   });
-  const options = await roof.evaluate(input => [...document.getElementById(input.getAttribute('list')).querySelectorAll('option')].map(o => o.value));
+  const options = await roof.evaluate(input => [...input.options].map(o => o.value));
   const next = selected.roof === 'flat' ? 'RF-GABLE' : 'RF-FLAT';
   assert(options.includes(next), `No supported roof alternative: ${options.join(', ')}`);
-  await roof.fill(next); await roof.dispatchEvent('change');
+  await roof.selectOption(next);
   assert(await page.locator('#map > [data-urban-selection] path[stroke="#e52b36"]').getAttribute('d'), 'Red selection outline missing');
   await run('03-house-roof', '#house-native-apply');
   const after = await project('edited');
