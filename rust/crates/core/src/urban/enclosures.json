@@ -23,9 +23,11 @@
       "cultures": ["modernist-functionalist", "soviet-socialist", "global-high-rise", "chinese-megacity", "korean-high-rise", "cyberpunk", "dystopian-brutalism", "corporate-arcology", "futuristic-space-colony"]}
   },
   "cultures": {
+    "southeast-asian-tropical": {"village": {"plot": 0.25, "country": 0.25, "material": "hedge", "front": 0, "side": 0.5, "back": 0.8, "lotLines": false}},
+    "sub-saharan-african-metropolis": {"village": {"plot": 0.2, "country": 0.2, "material": "hedge", "front": 0, "side": 0.5, "back": 0.8, "lotLines": false}},
     "mongol-ordu": {"plot": 0.8, "front": 1, "side": 1, "back": 1, "wallHeight": 1.6, "inset": 1.5},
     "kraal": {"inset": 1.2},
-    "ethiopian-highland": {"inset": 1},
+    "ethiopian-highland": {"inset": 1, "village": {"plot": 0.35, "country": 0.35, "material": "hedge", "front": 0.3, "side": 0.8, "back": 1, "lotLines": false}},
     "maori-pa": {"inset": 1},
     "elven": {"plot": 0, "field": 0},
     "goblin-warren": {"plot": 0, "field": 0},

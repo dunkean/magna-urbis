@@ -8,8 +8,13 @@
 //!    outward until water, another road or a slope the strips cannot climb: the
 //!    *reach* of that station. A front with no reach (a bank, a scarp, a road
 //!    mouth) is a gap.
-//! 2. **Core.** The village gathers round a crossroads near the site's centre,
-//!    else round the centre itself. Frontage pressure falls off from the core.
+//! 2. **Core and knots.** The village gathers round a crossroads near the site's
+//!    centre, else round the centre itself. By the culture's `clusters` one or
+//!    two more knots of houses stand along the road (another crossroads first,
+//!    else a seeded station), each with its own share of the households and its
+//!    own stretch of road; frontage pressure falls off from each knot, so the
+//!    road between two knots stays sparse (roadside villages of Central and West
+//!    Africa: one or two clusters, a few compounds between them).
 //! 3. **Green.** Drawn from the culture's data: a spindle green (the road splits
 //!    round an Anger and the houses front the second branch), a green on one side
 //!    (on the side with more room), a small square on both sides, or none.
@@ -20,11 +25,16 @@
 //!    (they serve fields, not doors, so the street pruning keeps them); a back lane joining two field lanes
 //!    behind the strips, with a small second row of plots, when the culture
 //!    has one or when the street has no room left for the households.
-//! 5. **Strips.** Four fronts grow outward from the core (both sides, both
-//!    directions), always the least advanced first, farm by farm. Near the core
-//!    the front is continuous; towards the ends gaps open and farms widen. Strip
-//!    depth follows the culture, the reach and a seeded wobble; behind a back lane
-//!    the strips run to it.
+//!    Row lanes (`rows`): at a knot, a short lane off the street with a second
+//!    row of compounds on both its sides (the T or comb of a roadside cluster).
+//! 5. **Strips.** Four fronts grow outward from each knot (both sides, both
+//!    directions), always the least advanced first, farm by farm, within the
+//!    knot's stretch. Near a knot the front is continuous; towards its ends gaps
+//!    open and farms widen. A share of the households (`scatter`) stands as loose
+//!    compounds between and beyond the knots. Each farm is its own plot
+//!    (`plotJitter` > 0): its width, depth and back line vary per farm, so the
+//!    village is no row of equal strips; `plotJitter` 0 keeps one strip per run,
+//!    cut evenly by the parcels. Behind a back lane the strips run to it.
 //!
 //! Culture differences are data (`village.street` in the catalogue). Every step
 //! is a walk along the axis or a per-station probe: the cost is linear in the
@@ -47,6 +57,20 @@ struct Style {
     field_lanes: f64,
     water_lanes: usize,
     obliquity: f64,
+    /// Expected number of knots besides the core (0-2).
+    clusters: f64,
+    /// Share of the households in loose compounds between the knots (0-0.6).
+    scatter: f64,
+    /// Chance per knot of a row lane with a second row of compounds (0-1).
+    rows: f64,
+    /// Per-farm variation of plot width and depth (0 = one even strip per run).
+    plot_jitter: f64,
+    /// Share of neighbouring farms that share their side (1 = a continuous row);
+    /// the others leave a path between them, more often where the village thins.
+    contiguity: f64,
+    /// Each farm is one household's compound (`wholeFarms`): the households are
+    /// counted in farms, not in metres of frontage.
+    whole_farms: bool,
 }
 
 fn style(culture: &str, population: u32, organic: f64) -> Style {
@@ -65,6 +89,12 @@ fn style(culture: &str, population: u32, organic: f64) -> Style {
         field_lanes: num("fieldLanes", 160.0).clamp(60.0, 800.0),
         water_lanes: num("waterLanes", 2.0).clamp(0.0, 6.0) as usize,
         obliquity: num("obliquity", organic).clamp(0.0, 2.0),
+        clusters: num("clusters", 0.4).clamp(0.0, 2.0),
+        scatter: num("scatter", 0.08).clamp(0.0, 0.6),
+        rows: num("rows", 0.15).clamp(0.0, 1.0),
+        plot_jitter: num("plotJitter", 0.3).clamp(0.0, 1.0),
+        contiguity: num("contiguity", 0.75).clamp(0.0, 1.0),
+        whole_farms: data["wholeFarms"].as_bool().unwrap_or(false),
     }
 }
 
@@ -116,6 +146,8 @@ struct Run {
     a: f64,
     b: f64,
     pressure: f64,
+    /// Farm limits strictly inside `a..b`, ascending.
+    cuts: Vec<f64>,
 }
 
 fn smoothstep(u: f64) -> f64 {
@@ -305,8 +337,37 @@ pub(super) fn plan(
         .filter(|&j| (j - centre).abs() < total * 0.3 && j > total * 0.1 && j < total * 0.9)
         .min_by(|a, b| (a - centre).abs().total_cmp(&(b - centre).abs()))
         .unwrap_or_else(|| (centre + rng.range(-0.08, 0.08) * total).clamp(total * 0.25, total * 0.75));
-    let reach_scale = (budget / 4.0 * 1.1).max(50.0);
-    let pressure = |s: f64| (-((s - core) / reach_scale).powi(2)).exp();
+    // 2b. Knots: the core and, by the culture's `clusters`, one or two more
+    //     (another crossroads first, else a seeded station), far enough apart
+    //     that the road between them stays sparse. (station, weight)
+    let extra = (style.clusters.floor() as usize + usize::from(rng.chance(style.clusters.fract()))).min(2);
+    let sep = (total * 0.22).max(70.0);
+    let mut knots: Vec<(f64, f64)> = vec![(core, 1.0)];
+    let mut candidates: Vec<f64> = junctions.iter().copied().filter(|&j| j > total * 0.1 && j < total * 0.9).collect();
+    candidates.extend((0..12).map(|_| rng.range(total * 0.12, total * 0.88)));
+    for s in candidates {
+        if knots.len() > extra {
+            break;
+        }
+        if knots.iter().all(|&(k, _)| (k - s).abs() >= sep) {
+            knots.push((s, rng.range(0.25, 0.65)));
+        }
+    }
+    let weights: f64 = knots.iter().map(|k| k.1).sum();
+    // Each knot spreads with the root of its share, as one village of that size.
+    let scales: Vec<f64> = knots.iter().map(|&(_, w)| (budget * w / weights / 4.0 * 1.1).max(35.0)).collect();
+    let pressure = |s: f64| {
+        knots.iter().zip(&scales).map(|(&(k, _), &r)| (-((s - k) / r).powi(2)).exp()).fold(0.0, f64::max)
+    };
+    // Each knot's stretch of road: up to the midpoints with its neighbours.
+    let mut order: Vec<usize> = (0..knots.len()).collect();
+    order.sort_by(|&a, &b| knots[a].0.total_cmp(&knots[b].0));
+    let mut stretch = vec![(0.0, total); knots.len()];
+    for w in order.windows(2) {
+        let m = (knots[w[0]].0 + knots[w[1]].0) * 0.5;
+        stretch[w[0]].1 = m;
+        stretch[w[1]].0 = m;
+    }
 
     // Forbidden spans and lane seams, per side.
     let mut forbidden: [Vec<(f64, f64)>; 2] = [vec![], vec![]];
@@ -389,7 +450,8 @@ pub(super) fn plan(
     let blocked_at = |forbidden: &[(f64, f64)], s: f64, pad: f64| forbidden.iter().any(|&(a, b)| s > a - pad && s < b + pad);
 
     // 4a. Lanes to the water, where the bank comes close behind the plots.
-    let extent = budget / 4.0 * (1.0 + 0.6 * style.spread) + 60.0;
+    let far = knots.iter().map(|&(k, _)| (k - core).abs()).fold(0.0, f64::max);
+    let extent = far + budget / 4.0 * (1.0 + 0.6 * style.spread) + 60.0;
     // (side, station, path, role): a lane to the water, or a field track.
     let mut lanes: Vec<(bool, f64, Vec<Point>, &'static str)> = vec![];
     for left in [true, false] {
@@ -427,6 +489,40 @@ pub(super) fn plan(
                 lanes.push((left, s, path, "lane"));
             }
         }
+    }
+
+    // 4a'. Row lanes: at a knot, by the culture's `rows`, a short lane off the
+    //      street with a second row of compounds on both its sides.
+    //      (path, first station of its plots along it)
+    let mut rows: Vec<(Vec<Point>, f64)> = vec![];
+    let mut row_frontage = 0.0;
+    for (ki, &(k, _)) in knots.iter().enumerate() {
+        if !rng.chance(style.rows) {
+            continue;
+        }
+        let s = (k + rng.range(-0.3, 0.3) * scales[ki]).clamp(20.0, total - 20.0);
+        let left = mean_reach(true, s - 10.0, s + 10.0) >= mean_reach(false, s - 10.0, s + 10.0);
+        let kk = side_k(left);
+        if !buildable[kk][idx(s)] || blocked_at(&forbidden[kk], s, 12.0) || seams[kk].iter().any(|&(q, _)| (q - s).abs() < 30.0) {
+            continue;
+        }
+        let len = (half + base * rng.range(1.7, 2.6)).min(half + depth_at(left, s) - 4.0);
+        if len < half + base * 1.3 {
+            continue;
+        }
+        let n = track.normal(s);
+        let n = if left { n } else { Point { x: -n.x, y: -n.y } };
+        let turn = rng.range(-0.12, 0.12) * style.obliquity.max(0.4);
+        let dir = Point { x: n.x * turn.cos() - n.y * turn.sin(), y: n.x * turn.sin() + n.y * turn.cos() };
+        let (p, q) = (track.pos(s), at(track.pos(s), dir, len));
+        if !routing::segment_clear(surface, p, q, cfg.max_lane_grade) {
+            continue;
+        }
+        let start = half + base * rng.range(0.75, 0.95);
+        seams[kk].push((s, lane * 0.5 + 1.5));
+        row_frontage += 2.0 * (len - start - 3.0).max(0.0);
+        rows.push((vec![p, q], start));
+        lanes.push((left, s, vec![p, q], "lane"));
     }
 
     // 4b. Field lanes, at the culture's spacing, where the land opens furthest.
@@ -484,7 +580,9 @@ pub(super) fn plan(
     // 4c. A back lane joining two field lanes behind the strips, with a second row.
     let usable: f64 = (0..2).map(|k| buildable[k].iter().filter(|&&b| b).count() as f64 * STEP).sum();
     let overflow = budget / usable.max(1.0);
-    let mut budget = budget;
+    // Paths between farms, clipped plots and lanes cost some frontage: a margin
+    // so that the village still houses its households.
+    let mut budget = budget * 1.12;
     let mut back: Option<(bool, f64, f64, Box<dyn Fn(f64) -> f64>)> = None;
     if rng.chance((style.back_lane + if overflow > 0.85 { 0.5 } else { 0.0 }).min(1.0)) {
         let mut pairs: Vec<(usize, usize)> = vec![];
@@ -539,61 +637,117 @@ pub(super) fn plan(
         cuts.extend(g::ribbon(path, &[lane]));
     }
 
-    // 5. Strips: four fronts grow outward from the core, the least advanced first.
-    let p_gap = |f: f64| (style.spread * (0.04 + 0.4 * (1.0 - f).powi(2))).clamp(0.0, 0.8);
+    // 5. Strips: four fronts grow outward from each knot, the least advanced
+    //    first, within the knot's stretch; each knot builds its share.
+    let p_gap = |f: f64| (style.spread * (0.04 + 0.4 * (1.0 - f).powi(2)) + style.scatter * 0.2 * (1.0 - f)).clamp(0.0, 0.8);
+    budget -= row_frontage * 0.8;
+    let mut loose = budget.max(0.0) * style.scatter;
+    // Frontage a farm of width `w` uses up from the households' budget.
+    let per_farm = |w: f64| if style.whole_farms { module * 1.15 } else { w };
+    let mut shares: Vec<f64> = knots.iter().map(|&(_, w)| (budget - loose).max(0.0) * w / weights).collect();
     struct Front {
+        knot: usize,
+        origin: f64,
         left: bool,
         dir: f64,
         x: f64,
         drive: f64,
         live: bool,
     }
+    // 5a. Loose compounds first, between and beyond the knots, where the
+    //     pressure is low; the fronts later jump over them.
+    let mut runs: Vec<Run> = vec![];
+    {
+        let lo = knots.iter().zip(&scales).map(|(&(k, _), &r)| k - r * 1.8).fold(f64::MAX, f64::min).max(8.0);
+        let hi = knots.iter().zip(&scales).map(|(&(k, _), &r)| k + r * 1.8).fold(f64::MIN, f64::max).min(total - 8.0);
+        let mut tries = 0;
+        while loose > 0.0 && tries < 160 && hi - lo > 20.0 {
+            tries += 1;
+            let s = rng.range(lo, hi);
+            let left = rng.chance(0.5);
+            let w = module * rng.range(1.0, 1.9);
+            if rng.chance(pressure(s) * 0.9) {
+                continue;
+            }
+            let k = side_k(left);
+            let (a, b) = (s - w * 0.5, s + w * 0.5);
+            if a < 6.0
+                || b > total - 6.0
+                || !(idx(a)..=idx(b)).all(|i| buildable[k][i])
+                || forbidden[k].iter().any(|&(fa, fb)| fa < b + 4.0 && fb > a - 4.0)
+                || seams[k].iter().any(|&(q, e)| q + e > a - 2.0 && q - e < b + 2.0)
+            {
+                continue;
+            }
+            forbidden[k].push((a - 3.0, b + 3.0));
+            runs.push(Run { left, a, b, pressure: pressure(s), cuts: vec![] });
+            loose -= per_farm(w);
+        }
+        // No room left for them: the core takes the rest.
+        shares[0] += loose.max(0.0);
+    }
     let mut fronts: Vec<Front> = vec![];
-    for left in [true, false] {
-        for dir in [-1.0, 1.0] {
-            let start = match spindle {
-                Some((g0, g1, ..)) if left == green_left => ((if dir > 0.0 { g1 } else { g0 }) - core) * dir + 3.0,
-                _ => rng.range(0.0, 10.0),
-            };
-            fronts.push(Front { left, dir, x: start, drive: rng.range(0.8, 1.25), live: true });
+    for (ki, &(origin, _)) in knots.iter().enumerate() {
+        for left in [true, false] {
+            for dir in [-1.0, 1.0] {
+                let start = match spindle {
+                    Some((g0, g1, ..)) if ki == 0 && left == green_left => ((if dir > 0.0 { g1 } else { g0 }) - core) * dir + 3.0,
+                    _ => rng.range(0.0, 10.0),
+                };
+                fronts.push(Front { knot: ki, origin, left, dir, x: start, drive: rng.range(0.8, 1.25) * scales[ki], live: true });
+            }
         }
     }
-    let mut runs: Vec<Run> = vec![];
-    let farm = |f: f64, r: &mut Rng| module * r.range(0.9, 1.6) * (1.0 + 0.4 * (1.0 - f));
-    while budget > 0.0 {
+    let jitter = style.plot_jitter;
+    // Lineages (`plotJitter`): a few large compounds, many medium, some small.
+    let farm = |f: f64, r: &mut Rng| {
+        let width = module * r.range(0.9, 1.6) * (1.0 + 0.4 * (1.0 - f));
+        let u = r.float();
+        width
+            * if u < 0.2 * jitter {
+                r.range(1.8, 2.8)
+            } else if u < 0.5 * jitter {
+                r.range(0.5, 0.75)
+            } else {
+                1.0 + jitter * r.range(-0.2, 0.3)
+            }
+    };
+    while shares.iter().any(|&b| b > 0.0) {
         let Some(c) = fronts
             .iter_mut()
-            .filter(|c| c.live)
+            .filter(|c| c.live && shares[c.knot] > 0.0)
             .min_by(|a, b| (a.x / a.drive).total_cmp(&(b.x / b.drive)))
         else {
             break;
         };
         let k = side_k(c.left);
-        let s_of = |x: f64| core + c.dir * x;
+        let (origin, dir) = (c.origin, c.dir);
+        let s_of = |x: f64| origin + dir * x;
         let x = c.x;
         let s = s_of(x);
-        if s < 6.0 || s > total - 6.0 {
+        let (st0, st1) = stretch[c.knot];
+        if s < 6.0 || s > total - 6.0 || s < st0 || s > st1 {
             c.live = false;
             continue;
         }
         // Inside a forbidden span: skip to its far end.
         if let Some(&(a, b)) = forbidden[k].iter().find(|&&(a, b)| s >= a && s <= b) {
-            c.x = (if c.dir > 0.0 { b } else { a } - core) * c.dir + 0.5;
+            c.x = (if dir > 0.0 { b } else { a } - origin) * dir + 0.5;
             continue;
         }
-        // The next obstacle ahead: a forbidden span or a lane seam.
-        let limit_end = (if c.dir > 0.0 { total - 6.0 } else { 6.0 } - core) * c.dir;
+        // The next obstacle ahead: a forbidden span, a lane seam or the stretch's end.
+        let limit_end = (if dir > 0.0 { (total - 6.0).min(st1) } else { st0.max(6.0) } - origin) * dir;
         let mut limit = limit_end;
         let mut at_seam: Option<(f64, f64)> = None;
         for &(a, b) in &forbidden[k] {
-            let near = (if c.dir > 0.0 { a } else { b } - core) * c.dir;
+            let near = (if dir > 0.0 { a } else { b } - origin) * dir;
             if near > x && near < limit {
                 limit = near;
                 at_seam = None;
             }
         }
         for &(q, e) in &seams[k] {
-            let xq = (q - core) * c.dir;
+            let xq = (q - origin) * dir;
             if xq > x + e + 0.5 && xq + e < limit {
                 limit = xq + e;
                 at_seam = Some((xq, e));
@@ -601,27 +755,42 @@ pub(super) fn plan(
         }
         let mut end = x;
         let mut hit = false;
+        let mut limits: Vec<f64> = vec![];
+        let share = shares[c.knot];
+        let mut used = 0.0;
         loop {
             let f = pressure(s_of(end));
             let w = farm(f, &mut rng);
             if end + w >= limit {
                 hit = true;
+                // A sliver at the obstacle joins the last farm.
+                if limit - end < module * 0.6 {
+                    limits.pop();
+                } else {
+                    used += per_farm(limit - end);
+                }
                 end = limit;
                 break;
             }
             end += w;
-            if budget - (end - x) <= 0.0 || rng.chance(p_gap(pressure(s_of(end)))) {
+            limits.push(end);
+            used += per_farm(w);
+            if share - used <= 0.0 || rng.chance(p_gap(pressure(s_of(end)))) {
+                limits.pop();
                 break;
             }
         }
         if end - x >= 14.0 {
-            let (a, b) = if c.dir > 0.0 { (s_of(x), s_of(end)) } else { (s_of(end), s_of(x)) };
-            runs.push(Run { left: c.left, a, b, pressure: pressure((a + b) * 0.5) });
-            budget -= end - x;
+            let (a, b) = if dir > 0.0 { (s_of(x), s_of(end)) } else { (s_of(end), s_of(x)) };
+            let mut cuts: Vec<f64> = limits.iter().map(|&l| s_of(l)).filter(|&q| q > a + 4.0 && q < b - 4.0).collect();
+            cuts.sort_by(f64::total_cmp);
+            runs.push(Run { left: c.left, a, b, pressure: pressure((a + b) * 0.5), cuts });
+            shares[c.knot] -= used.max(1.0);
         }
         c.x = match (hit, at_seam) {
             (true, Some((xq, e))) => xq - e,
-            (true, None) => limit + 0.5,
+            // Always forward: a front at its stretch's end must not step back.
+            (true, None) => (limit + 0.5).max(x + 0.5),
             _ => {
                 let f = pressure(s_of(end));
                 end + rng.range(6.0, 30.0) * (0.6 + (1.0 - f)) * style.spread.max(0.3)
@@ -629,8 +798,9 @@ pub(super) fn plan(
         };
     }
 
-    // 6. Blocks: each run a band, its depth from the culture, the reach and a
-    //    seeded wobble; behind a back lane the strips run to it.
+    // 6. Blocks: each farm (or each run, without `plotJitter`) a band, its
+    //    depth from the culture, the reach and a seeded wobble; behind a back
+    //    lane the strips run to it.
     let mut taken: Vec<Shape> = vec![];
     let accept = |shape: Shape, kind: &'static str, blocks: &mut Vec<(Shape, &'static str)>, taken: &mut Vec<Shape>| {
         let mut pieces = vec![shape];
@@ -648,7 +818,7 @@ pub(super) fn plan(
             .into_iter()
             .max_by(|a, b| g::area(a).total_cmp(&g::area(b)))
             .and_then(|p| settle(&p, blocked, &surface, 0.4))
-            .filter(|p| g::area(p) > 250.0)
+            .filter(|p| g::area(p) > 150.0)
         {
             taken.push(p.clone());
             blocks.push((p, kind));
@@ -662,17 +832,6 @@ pub(super) fn plan(
     let center = built.first().map_or(track.pos(core), |(green, _)| g::centroid(green));
     for run in &runs {
         let target = base * rng.range(0.85, 1.1) * (1.0 + 0.2 * (1.0 - run.pressure));
-        // The back line: one fence per farm or two, straight between its corners.
-        let mut knots = vec![(run.a, rng.range(0.88, 1.12))];
-        while knots.last().unwrap().0 < run.b {
-            let next = knots.last().unwrap().0 + module * rng.range(1.0, 2.4);
-            knots.push((next.min(run.b), rng.range(0.88, 1.12)));
-        }
-        let wobble = move |s: f64| {
-            let i = knots.partition_point(|k| k.0 < s).clamp(1, knots.len() - 1);
-            let ((s0, v0), (s1, v1)) = (knots[i - 1], knots[i]);
-            v0 + (v1 - v0) * ((s - s0) / (s1 - s0).max(1e-9)).clamp(0.0, 1.0)
-        };
         let behind = back.as_ref().filter(|(left, a, b, _)| *left == run.left && run.b > *a && run.a < *b);
         let inner_bow = |s: f64| match spindle {
             Some((g0, g1, width, branch)) if run.left == green_left && s > g0 && s < g1 => {
@@ -680,16 +839,51 @@ pub(super) fn plan(
             }
             _ => half,
         };
-        let outer = |s: f64| {
+        let outer = |s: f64, own: f64| {
             let room = half + depth_at(run.left, s) - 0.5;
-            let own = half + target * wobble(s);
             match behind {
                 Some((_, a, b, offset)) if s >= *a && s <= *b => (offset(s) - lane * 0.5 - 0.2).min(room),
-                _ => own.min(room),
+                _ => (half + own).min(room),
             }
         };
-        if let Some(shape) = band(&track, run.a, run.b, run.left, &inner_bow, &outer) {
-            accept(shape, "block", &mut built, &mut taken);
+        if jitter <= 0.0 {
+            // The back line: one fence per farm or two, straight between its corners.
+            let mut knots = vec![(run.a, rng.range(0.88, 1.12))];
+            while knots.last().unwrap().0 < run.b {
+                let next = knots.last().unwrap().0 + module * rng.range(1.0, 2.4);
+                knots.push((next.min(run.b), rng.range(0.88, 1.12)));
+            }
+            let wobble = move |s: f64| {
+                let i = knots.partition_point(|k| k.0 < s).clamp(1, knots.len() - 1);
+                let ((s0, v0), (s1, v1)) = (knots[i - 1], knots[i]);
+                v0 + (v1 - v0) * ((s - s0) / (s1 - s0).max(1e-9)).clamp(0.0, 1.0)
+            };
+            if let Some(shape) = band(&track, run.a, run.b, run.left, &inner_bow, &|s| outer(s, target * wobble(s))) {
+                accept(shape, "block", &mut built, &mut taken);
+            }
+            continue;
+        }
+        // One plot per farm: its own depth, its back line a little tilted. Two
+        // farms share their side (`contiguity`), or a path runs between them,
+        // more often away from the knots.
+        let mut limits = vec![run.a];
+        limits.extend(run.cuts.iter().copied());
+        limits.push(run.b);
+        let open = (1.0 - style.contiguity) * (0.35 + 0.65 * (1.0 - run.pressure));
+        let paths: Vec<f64> = (0..limits.len()).map(|_| if rng.chance(open) { rng.range(1.5, 5.0) } else { 0.0 }).collect();
+        for (i, w) in limits.windows(2).enumerate() {
+            // A path at an inner limit is split between its two farms.
+            let a = w[0] + if i > 0 { paths[i] * 0.5 } else { 0.0 };
+            let b = w[1] - if i + 2 < limits.len() { paths[i + 1] * 0.5 } else { 0.0 };
+            if b - a < 6.0 {
+                continue;
+            }
+            let d0 = target * (1.0 + jitter * rng.range(-0.4, 0.3));
+            let d1 = d0 * (1.0 + jitter * rng.range(-0.15, 0.15));
+            let own = move |s: f64| d0 + (d1 - d0) * ((s - a) / (b - a).max(1e-9)).clamp(0.0, 1.0);
+            if let Some(shape) = band(&track, a, b, run.left, &inner_bow, &|s| outer(s, own(s).max(min_depth))) {
+                accept(shape, "block", &mut built, &mut taken);
+            }
         }
     }
     // The houses fronting the spindle's branch.
@@ -699,6 +893,23 @@ pub(super) fn plan(
         let outer = |s: f64| (inner(s) + target).min(half + depth_at(green_left, s) - 0.5);
         if let Some(shape) = band(&track, g0 + 4.0, g1 - 4.0, green_left, &inner, &outer) {
             accept(shape, "block", &mut built, &mut taken);
+        }
+    }
+    // The row lanes' compounds, on both sides of each lane, behind the street's plots.
+    for (path, start) in &rows {
+        let row = Track::new(path);
+        let end = row.total - 3.0;
+        for left in [true, false] {
+            let mut a = start + rng.range(0.0, 4.0);
+            while a < end - 8.0 {
+                let w = module * rng.range(0.9, 1.6) * (1.0 + jitter * rng.range(-0.2, 0.3));
+                let b = if end - (a + w) < 8.0 { end } else { a + w };
+                let d = module * rng.range(1.1, 1.8);
+                if let Some(shape) = band(&row, a, b, left, &|_| lane * 0.5 + 0.05, &|_| lane * 0.5 + d) {
+                    accept(shape, "block", &mut built, &mut taken);
+                }
+                a = b + if rng.chance(style.scatter * 0.8) { rng.range(2.0, 6.0) } else { 0.0 };
+            }
         }
     }
     // The back lane's second row, on its far side.
@@ -837,7 +1048,7 @@ mod tests {
                 let site = site(culture, &format!("{name}-{k}"));
                 let near = nearest(site.center, &roads, 600.0);
                 let build = |seed: &str| {
-                    linear(&site, &cfg, Kind::StreetVillage, &morph, &near, &[], &|_| 3.05, &roads, surface, &mut Rng::new(seed))
+                    linear(&site, &cfg, Kind::StreetVillage, &morph, &near, &[], &|_| 3.05, &roads, surface, &mut Rng::new(seed), 1.0)
                         .expect("a street village")
                 };
                 let plan = build(&site.key);
@@ -889,7 +1100,7 @@ mod tests {
         let dir = std::path::PathBuf::from(dir);
         std::fs::create_dir_all(&dir).unwrap();
         let seed_suffix = std::env::var("MU_VILLAGE_SEED").unwrap_or_default();
-        let cultures = ["european-organic", "byzantine-greek", "venetian-lagoon", "hanseatic"];
+        let cultures = ["european-organic", "hanseatic", "sub-saharan-african-metropolis", "ethiopian-highland", "southeast-asian-tropical"];
         let (vw, vh) = (1500.0, 800.0);
         for (name, h, w, roads) in sites() {
             let surface = surface(&h, &w);
@@ -972,6 +1183,136 @@ mod tests {
             }
             svg.push_str("</svg>");
             std::fs::write(dir.join(format!("{name}.svg")), svg).unwrap();
+        }
+    }
+
+    /// No-empty-towns invariant: a street village houses its households, and
+    /// no more than a tenth over them (homes within 95-110 % of the programme's
+    /// domestic units), at 150 and 300 inhabitants, with the V2's ribbon
+    /// (`villageStreets` off) and the site-read plan, alone and beside a large
+    /// town that reserved the village's core first (the string keeps to free
+    /// ground, or the village gathers in its core).
+    #[test]
+    fn street_villages_house_their_households() {
+        use crate::urban::neighbours::{Claim, Reserve};
+        let mut wrong = vec![];
+        for (name, h, w, roads) in sites().into_iter().filter(|c| c.0 == "flat" || c.0 == "river") {
+            let surface = surface(&h, &w);
+            for culture in ["european-organic", "sub-saharan-african-metropolis"] {
+                for population in [150u32, 300] {
+                    for on in [false, true] {
+                        for beside in [false, true] {
+                            if beside && (name != "flat" || culture != "european-organic") {
+                                continue;
+                            }
+                            let cfg = LayoutConfig { village_streets: on, street_frontage: true, settlement_form: "ribbon".into(), ..LayoutConfig::default() };
+                            let mut site = site(culture, &format!("{name}-homes-{population}"));
+                            site.population = population;
+                            if beside {
+                                let radius = crate::settlements::extent_radius(4000);
+                                let town = Site {
+                                    key: "town".into(), name: String::new(), population: 4000, culture: culture.into(),
+                                    center: p(site.center.x - 1.5 * radius, site.center.y), radius,
+                                    neighbours: vec![Claim { key: site.key.clone(), land: vec![], streets: vec![], reserve: Some(Reserve {
+                                        population, culture: culture.into(), center: site.center, radius: site.radius }) }],
+                                };
+                                let town = generate_quarters(&site.key, std::slice::from_ref(&town), &cfg, surface, &roads).unwrap().remove(0);
+                                site.neighbours = vec![town.claim];
+                            }
+                            let layouts = generate_quarters(&site.key, std::slice::from_ref(&site), &cfg, surface, &roads).unwrap();
+                            let parts = generate_parcels(&site.key, &layouts, &ParcelConfig::default()).unwrap();
+                            let programme = parts[0].programme.as_ref().expect("a programme");
+                            let housed: f64 = programme.allocations.iter().map(|a| a.households).sum();
+                            let asked: f64 = programme.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+                            eprintln!(
+                                "{name:6} {culture:32} {population:4} {:3} {:6}: archetype {}, blocks {:3}, homes {housed:5.1} / {asked:5.1} households ({:.2})",
+                                if on { "on" } else { "off" },
+                                if beside { "beside" } else { "alone" },
+                                layouts[0].archetype,
+                                layouts[0].blocks.len(),
+                                housed / asked.max(1.0)
+                            );
+                            if housed < asked * 0.95 || housed > asked * 1.1 {
+                                wrong.push(format!("{name}/{culture}/{population}/{on}/{beside}: {housed:.1}/{asked:.1}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "street villages not sized to their households: {wrong:?}");
+    }
+
+    /// Knots, rows and plot variety, before (`villageStreets` off, the V2's
+    /// default ribbon) and after (site-read plan with knots and farm plots).
+    /// Prints the figures; asserts that households are kept and plots vary.
+    #[test]
+    fn street_village_knots_and_plot_variety() {
+        let cultures = ["european-organic", "hanseatic", "sub-saharan-african-metropolis", "ethiopian-highland"];
+        let built_use = |u: &str| !matches!(u, "place" | "green" | "market" | "field" | "garden" | "orchard" | "reserve" | "pasture");
+        for (name, h, w, roads) in sites().into_iter().filter(|c| c.0 == "flat" || c.0 == "crossroads") {
+            let surface = surface(&h, &w);
+            for culture in cultures {
+                let mut lots = [0usize; 2];
+                let mut cv = [0.0f64; 2];
+                for on in [false, true] {
+                    let (mut knots, mut rows, mut squares, mut n, mut cvs) = (0usize, 0usize, 0usize, 0usize, 0.0);
+                    let (mut pairs, mut touching) = (0usize, 0usize);
+                    for seed in 0..3 {
+                        let cfg = LayoutConfig { village_streets: on, street_frontage: true, settlement_form: "street-village".into(), ..LayoutConfig::default() };
+                        let site = site(culture, &format!("{name}-knots-{seed}"));
+                        let layouts = generate_quarters(&site.key, std::slice::from_ref(&site), &cfg, surface, &roads).unwrap();
+                        let parts = generate_parcels(&site.key, &layouts, &ParcelConfig::default()).unwrap();
+                        let homes: Vec<&Shape> = parts[0].parcels.iter().filter(|q| built_use(&q.use_kind)).map(|q| &q.shape).collect();
+                        n += homes.len();
+                        // Width: the short side of the lot's box (the road runs along x).
+                        let widths: Vec<f64> = homes.iter().map(|s| { let (x0, y0, x1, y1) = g::bbox(s); (x1 - x0).min(y1 - y0) }).collect();
+                        let mean = widths.iter().sum::<f64>() / widths.len().max(1) as f64;
+                        let var = widths.iter().map(|w| (w - mean).powi(2)).sum::<f64>() / widths.len().max(1) as f64;
+                        cvs += var.sqrt() / mean.max(1e-9);
+                        // Knots: runs of lots along the road split by 60 m of empty road.
+                        let mut xs: Vec<f64> = homes.iter().map(|s| g::centroid(s).x).collect();
+                        xs.sort_by(f64::total_cmp);
+                        let mut group = 1usize;
+                        for w in xs.windows(2) {
+                            if w[1] - w[0] > 60.0 {
+                                knots += usize::from(group >= 4);
+                                group = 0;
+                            }
+                            group += 1;
+                        }
+                        knots += usize::from(group >= 4);
+                        rows += homes.iter().filter(|s| (g::centroid(s).y - 1505.0).abs() > 60.0).count();
+                        // Neighbouring street lots (same side, first row): touching or not.
+                        for north in [true, false] {
+                            let mut row: Vec<(f64, f64)> = homes
+                                .iter()
+                                .filter(|s| { let c = g::centroid(s); (c.y < 1505.0) == north && (c.y - 1505.0).abs() <= 60.0 })
+                                .map(|s| { let (x0, _, x1, _) = g::bbox(s); (x0, x1) })
+                                .collect();
+                            row.sort_by(|a, b| a.0.total_cmp(&b.0));
+                            for w in row.windows(2) {
+                                if w[1].0 - w[0].1 < 12.0 {
+                                    pairs += 1;
+                                    touching += usize::from(w[1].0 - w[0].1 < 0.6);
+                                }
+                            }
+                        }
+                        squares += layouts[0].blocks.iter().filter(|b| b.kind == "place").count();
+                    }
+                    let k = usize::from(on);
+                    lots[k] = n;
+                    cv[k] = cvs / 3.0;
+                    eprintln!(
+                        "{name:10} {culture:32} {:6}: lots {n:4}, knots {knots:2}, width CV {:.2}, contiguous {:.2}, second-row lots {rows:3}, squares {squares}",
+                        if on { "after" } else { "before" },
+                        cv[k],
+                        touching as f64 / pairs.max(1) as f64
+                    );
+                }
+                assert!(lots[1] as f64 >= lots[0] as f64 * 0.6, "{name}/{culture}: households lost ({} -> {})", lots[0], lots[1]);
+                assert!(cv[1] > 0.12, "{name}/{culture}: plot widths still even (CV {:.2})", cv[1]);
+            }
         }
     }
 }

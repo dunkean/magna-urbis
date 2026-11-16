@@ -136756,6 +136756,23 @@
       ],
       "village": {
         "form": "auto",
+        "street": {
+          "green": {
+            "side": 0.25,
+            "square": 0.25
+          },
+          "depth": 0.8,
+          "spread": 1.2,
+          "backLane": 0.15,
+          "fieldLanes": 220,
+          "obliquity": 1.3,
+          "clusters": 1.0,
+          "scatter": 0.35,
+          "rows": 0.35,
+          "plotJitter": 0.7,
+          "contiguity": 0.3,
+          "wholeFarms": true
+        },
         "enclosure": {
           "shape": "organic",
           "wall": "none",
@@ -140884,6 +140901,24 @@
       ],
       "village": {
         "form": "auto",
+        "street": {
+          "green": {
+            "square": 0.3,
+            "side": 0.2
+          },
+          "depth": 0.9,
+          "spread": 1.0,
+          "backLane": 0.3,
+          "fieldLanes": 160,
+          "obliquity": 0.9,
+          "waterLanes": 3,
+          "clusters": 0.8,
+          "scatter": 0.15,
+          "rows": 0.45,
+          "plotJitter": 0.55,
+          "contiguity": 0.5,
+          "wholeFarms": true
+        },
         "enclosure": {
           "shape": "organic",
           "wall": "none",
@@ -141434,6 +141469,23 @@
       ],
       "village": {
         "form": "auto",
+        "street": {
+          "green": {
+            "square": 0.45,
+            "side": 0.15
+          },
+          "depth": 0.6,
+          "spread": 1.3,
+          "backLane": 0.1,
+          "fieldLanes": 260,
+          "obliquity": 1.2,
+          "clusters": 1.3,
+          "scatter": 0.3,
+          "rows": 0.55,
+          "plotJitter": 0.85,
+          "contiguity": 0.35,
+          "wholeFarms": true
+        },
         "enclosure": {
           "shape": "organic",
           "wall": "none",

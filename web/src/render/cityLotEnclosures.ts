@@ -85,7 +85,7 @@ const COUNTRY_LANE = 2.6;
 const ATTACH_M = 3, ATTACH_AREA = 3;
 /** Share of fringe (faubourg/edge) lots that keep a yard in a culture that fences at all. */
 const FRINGE_PLOT = .9;
-/** Share of country lots that keep a yard: there the decision stays per house, an unfenced house is a hole in the patchwork. */
+/** Share of country lots that keep a yard (absent the culture's `country`, enclosures.json): there the decision stays per house, an unfenced house is a hole in the patchwork. */
 const OPEN_PLOT = .95;
 /** Public ground inside a block: yards stop at it, never enclose it. */
 const OBSTACLES = new Set(['place', 'common', 'market', 'court']);
@@ -228,7 +228,7 @@ export function buildYardEnclosures(scene: CityScene, houses: readonly YardHouse
     const p = scene.parcels[lot.pi], P = lot.profile, own = P.inset > 0, key = own ? lot.id : lot.unit || lot.id;
     if (lot.enclosure && lot.enclosure !== 'none') lot.profile = { ...P, material: lot.enclosure as Profile['material'] };
     lot.frontOpen = !!lot.unit && draw(key, 2) >= P.front;
-    const share = lot.enclosure ? 1 : own ? P.plot : !lot.unit ? Math.max(P.plot, OPEN_PLOT) : p.peripheral || p.zone === 'faubourg' ? Math.max(P.plot, FRINGE_PLOT) : P.plot;
+    const share = lot.enclosure ? 1 : own ? P.plot : !lot.unit ? Math.max(P.plot, P.country ?? OPEN_PLOT) : p.peripheral || p.zone === 'faubourg' ? Math.max(P.plot, FRINGE_PLOT) : P.plot;
     if (lot.enclosure !== 'none' && P.plot > 0 && CLOSABLE.has(p.use) && draw(key, 1) < share) closed.add(lot.pi); else note(p.zone, 'open');
     note(p.zone, 'holdings');
   }

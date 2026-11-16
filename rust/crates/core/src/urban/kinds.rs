@@ -303,11 +303,14 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
     match class {
         "hamlet" => return Kind::Hamlet,
         "village" => {
-            return match cfg.settlement_form.as_str() {
+            let kind = match cfg.settlement_form.as_str() {
                 "ribbon" => Kind::StreetVillage,
                 "nucleated" => Kind::NucleatedVillage,
                 _ => village_form(site, cfg, culture, roads),
             };
+            // Beside a larger neighbour, a string with no free stretch long
+            // enough for its households gathers inside the core left to it.
+            return if kind == Kind::StreetVillage && !string_fits(site, cfg, roads) { Kind::NucleatedVillage } else { kind };
         }
         "city" => return Kind::City,
         "metropolis" | "megacity" => return Kind::Metropolis,
@@ -919,6 +922,86 @@ fn window(path: &[Point], station: f64, length: f64, depth: f64, surface: &Surfa
     best.0
 }
 
+/// Homes a village or hamlet asks for: the string's length and its fill
+/// target. (One line to switch to the roles rule of homes per household.)
+fn wanted_homes(culture: &str, population: u32) -> f64 {
+    super::footprint::capacity::households(culture, population)
+}
+
+/// House lots a street village's plan offers, as `parcels` cuts them: a farm
+/// plot of a `wholeFarms` culture (up to 3000 m2) is one lot; any other block
+/// is cut along the street into whole lots of the plan's module (0.85-1.2 modules).
+fn linear_homes(plan: &Plan, morph: &Morph, whole_farms: bool) -> f64 {
+    let front = morph.range("frontage", "village");
+    let module = if front[1] > 0.0 { ((front[0] + front[1]) * 0.5).clamp(12.0, 16.0) } else { 30.0 };
+    let lot = module * 1.025;
+    let d = plan.axis;
+    plan.blocks
+        .iter()
+        .filter(|(_, k)| *k == "block")
+        .map(|(s, _)| {
+            if whole_farms && g::area(s) <= 3000.0 {
+                return 1.0;
+            }
+            let (lo, hi) = s.outer.iter().map(|p| p.x * d.x + p.y * d.y).fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+            // A farm narrower than two lots stays one (parcels keep its width).
+            ((hi - lo) / lot).floor().max(1.0)
+        })
+        .sum()
+}
+
+/// The free stretch of `path` round `station` beside neighbours: 5 m stations
+/// whose street point is off their land and margin, with a side free at
+/// mid-plot depth. (start, end, frontage): the arc lengths of the run holding
+/// the station (else of the nearest run) and its free frontage, both sides.
+fn free_stretch(path: &[Point], station: f64, depth: f64, mask: &super::neighbours::Mask) -> (f64, f64, f64) {
+    let total = *arc(path).last().unwrap_or(&0.0);
+    if path.len() < 2 || total <= 0.0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let step = 5.0;
+    let count = (total / step).ceil() as usize + 1;
+    let sides: Vec<usize> = (0..count)
+        .map(|k| {
+            let (p, d) = point_at(path, (k as f64 * step).min(total));
+            let n = perp(d);
+            if mask.blocked(p) { 0 } else { [-1.0, 1.0].iter().filter(|&&s| !mask.blocked(at(p, n, s * depth * 0.5))).count() }
+        })
+        .collect();
+    let k0 = ((station / step).round().max(0.0) as usize).min(count - 1);
+    let Some(k) = (0..count).filter(|&k| sides[k] > 0).min_by_key(|&k| k.abs_diff(k0)) else {
+        return (station, station, 0.0);
+    };
+    let (mut a, mut b) = (k, k);
+    while a > 0 && sides[a - 1] > 0 {
+        a -= 1;
+    }
+    while b + 1 < count && sides[b + 1] > 0 {
+        b += 1;
+    }
+    (a as f64 * step, (b as f64 * step).min(total), sides[a..=b].iter().sum::<usize>() as f64 * step)
+}
+
+/// Beside neighbours, a street village needs a free stretch of its road (or
+/// of its own lane through the centre) that fronts all its households: a lot
+/// of the middle village module (14 m, `linear` keeps 12-16 m) with its 15 %
+/// margin, on either side. Always true without neighbours.
+fn string_fits(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> bool {
+    let Some(mask) = super::neighbours::Mask::of(site) else {
+        return true;
+    };
+    let need = wanted_homes(culture(site, cfg), site.population).ceil() * 14.0 * 1.15;
+    let depth = 50.0;
+    let (path, station) = match nearest(site.center, roads, 600.0) {
+        Some(n) if n.distance < depth + 60.0 => through(roads, n.road, n.station, need),
+        near => {
+            let d = near.map_or(Point { x: 1.0, y: 0.0 }, |n| n.tangent);
+            (vec![at(site.center, d, -need), at(site.center, d, need)], need)
+        }
+    };
+    free_stretch(&path, station, depth, &mask).2 >= need
+}
+
 /// Small kinds, laid out without the quarter grammar. `None` when the site
 /// offers no dry land for them: the caller falls back to the quarter pipeline.
 #[allow(clippy::too_many_arguments)]
@@ -974,9 +1057,38 @@ pub(super) fn lay_out(
             site, cfg, kind, &near, &obstacles, &road_half, roads, surface, &mut rng,
         )?,
         Kind::Camp => camp(site, cfg, &near, &obstacles, surface, &mut rng)?,
-        Kind::Hamlet | Kind::StreetVillage => linear(
-            site, cfg, kind, morph, &near, &obstacles, &road_half, roads, surface, &mut rng,
-        )?,
+        Kind::Hamlet | Kind::StreetVillage => {
+            let mut plan = linear(site, cfg, kind, morph, &near, &obstacles, &road_half, roads, surface, &mut rng, 1.0)?;
+            // Households first: a street village offers about the homes it asks
+            // (95-110 %). A string short of lots (blocked stretches, water, a
+            // bend) is laid again for more households, one with a surplus for
+            // fewer, on the same random stream, each lay sized by the last count.
+            if kind == Kind::StreetVillage {
+                let need = wanted_homes(&culture, site.population);
+                let whole = cfg.village_streets
+                    && super::catalogue()["cultures"][culture.as_str()]["village"]["street"]["wholeFarms"].as_bool() == Some(true);
+                let homes = |plan: &Plan| linear_homes(plan, morph, whole);
+                // Distance to the target; a shortfall always weighs more than a surplus.
+                let miss = |h: f64| if h < need * 0.97 { 1e6 + need - h } else { (h - need * 1.02).abs() };
+                let mut best = homes(&plan);
+                let (mut fill, mut last) = (1.0, best);
+                for _ in 0..3 {
+                    if (need * 0.97..=need * 1.06).contains(&best) {
+                        break;
+                    }
+                    fill = (fill * need * 1.02 / last.max(1.0)).clamp(0.4, 2.5);
+                    let mut again = Rng::new(seed).fork(&format!("settlement-kind:{}", kind.id()));
+                    let Some(next) = linear(site, cfg, kind, morph, &near, &obstacles, &road_half, roads, surface, &mut again, fill) else {
+                        break;
+                    };
+                    last = homes(&next);
+                    if miss(last) < miss(best) {
+                        (plan, best) = (next, last);
+                    }
+                }
+            }
+            plan
+        }
         _ => return None,
     };
     if plan.blocks.is_empty() {
@@ -1430,10 +1542,23 @@ fn linear(
     roads: &[Street],
     surface: Surface<'_>,
     rng: &mut Rng,
+    fill: f64,
 ) -> Option<Plan> {
-    let pop = f64::from(site.population);
     let depth = morph.range("plotDepth", "village");
     let village = kind == Kind::StreetVillage;
+    // The same cultural household size as programme::prepare, for both
+    // frontage length and the number of farms. Explicit oversized hamlets
+    // stay bounded by their demographic band, rather than a fixed 30 farms.
+    let population = if village { site.population } else {
+        site.population.min(demographics::floor("village") - 1)
+    };
+    let households = wanted_homes(culture(site, cfg), population).ceil();
+    // A street village is laid for `fill` times its households (`lay_out`
+    // sizes the string to them); a hamlet places one farm per household.
+    let homes = if village { households * fill } else { households };
+    // Beside neighbours the string keeps to free ground: their land and margin
+    // are obstacles, and the road is cut to its free stretch round the site.
+    let mask = super::neighbours::Mask::of(site);
     // `villageStreets`: the street village is read from its site
     // (`kinds_street_village.rs`), on its own random stream.
     let varied = village && cfg.village_streets;
@@ -1442,7 +1567,6 @@ fn linear(
     let (depth, length) = if village {
         // One farm per household along both sides of the street: the ribbon
         // is as long as their frontages, plus the cross-lanes and the green.
-        let households = (pop / 4.5).ceil();
         let front = morph.range("frontage", "village");
         let front = if front[1] > 0.0 {
             // A compact village: house lots, never the town burgage, so the
@@ -1458,10 +1582,10 @@ fn linear(
         let extra = if varied { 140.0 } else { 60.0 };
         (
             d,
-            (households / 2.0 * front * 1.15 * gaps + extra).clamp(120.0, if varied { 3200.0 } else { 2400.0 }),
+            (homes / 2.0 * front * 1.15 * gaps + extra).clamp(120.0, if varied { 3200.0 } else { 2400.0 }),
         )
     } else {
-        let farms = (pop / 5.0).ceil().clamp(2.0, 30.0);
+        let farms = households.max(2.0);
         let d = ((depth[0] + depth[1]) * 0.5).clamp(36.0, 64.0);
         // Room to skip wet or blocked stretches.
         (d, (farms / 2.0).ceil() * 50.0 * 1.6 + 20.0)
@@ -1471,6 +1595,16 @@ fn linear(
     let (axis, half, mut streets, along) = match near {
         Some(n) if n.distance < depth + 60.0 => {
             let (road, station) = through(roads, n.road, n.station, length);
+            let (road, station) = match &mask {
+                Some(mask) => {
+                    let (a, b, _) = free_stretch(&road, station, depth, mask);
+                    if b - a < 20.0 {
+                        return None;
+                    }
+                    (slice(&road, a, b), (station - a).clamp(0.0, b - a))
+                }
+                None => (road, station),
+            };
             let start = window(&road, station, length, depth, &surface);
             (
                 slice(&road, start, start + length),
@@ -1522,6 +1656,9 @@ fn linear(
         return None;
     }
     let mut blocked = obstacles.to_vec();
+    if mask.is_some() {
+        blocked.extend(super::neighbours::forbidden(site));
+    }
     for s in &streets {
         if s.path.len() > 2 {
             blocked.extend(g::ribbon(&s.path[..s.path.len() - 1], &[s.widths[0]]));
@@ -1530,9 +1667,8 @@ fn linear(
     let mut blocks: Vec<(Shape, &'static str)> = vec![];
     let lane = if cfg.road_width_by_size { super::network::town_table(morph, site.population, true)[3] } else { 3.5 };
     if varied {
-        let households = (pop / 4.5).ceil();
         let (blocks, lanes, center) = street_village::plan(
-            site, cfg, culture(site, cfg), &axis, half, depth, households * module * 1.15, module, lane,
+            site, cfg, culture(site, cfg), &axis, half, depth, homes * module * 1.15, module, lane,
             organic, &blocked, surface, rng,
         )?;
         streets.extend(lanes);
@@ -1621,7 +1757,7 @@ fn linear(
         streets.extend(cuts);
     } else {
         // Separate farms, alternating sides, with fields between them.
-        let farms = (pop / 5.0).ceil().clamp(2.0, 30.0) as usize;
+        let farms = households.max(2.0) as usize;
         let mut station = [rng.range(0.0, 15.0), rng.range(10.0, 30.0)];
         // Start the farms around the middle of the axis.
         let spare = (total - (farms as f64 / 2.0).ceil() * 50.0).max(0.0) * 0.5;
@@ -2204,7 +2340,7 @@ mod field_lane_tests {
             };
             let build = |seed| linear(
                 &site, &cfg, Kind::StreetVillage, &morph, &near, &[], &|_| 3.05,
-                &roads, surface, &mut Rng::new(seed),
+                &roads, surface, &mut Rng::new(seed), 1.0,
             ).unwrap();
             let plan = build("field-lanes");
             let paths = |plan: &Plan| plan.streets.iter().map(|s| s.path.clone()).collect::<Vec<_>>();
@@ -2266,6 +2402,24 @@ mod demographic_morphology_tests {
         Site { key: "demographic-morphology".into(), name: String::new(), population,
             culture: "european-organic".into(), center: Point { x: 4000.0, y: 4000.0 }, radius: 200.0,
             neighbours: Vec::new(), }
+    }
+
+    #[test]
+    fn hamlet_farms_match_the_programmes_cultural_households() {
+        let n = 32;
+        let height = vec![0.0; n * n];
+        let water = vec![0; n * n];
+        let surface = Surface { geometry: None, width: 8000.0, n,
+            height: &height, water: &water, interpolation: Default::default() };
+        let morph = Morph { value: serde_json::json!({"plotDepth":{"village":[40.,60.]}}) };
+        // Small European households need 41 homes for 149 people (0.85 home per household).
+        // A cultural override must size the plan with the selected profile.
+        for (population, culture, expected) in [(90,"site",25), (149,"site",41), (90,"haussmannian",22)] {
+            let cfg = LayoutConfig { culture: culture.into(), ..Default::default() };
+            let plan = linear(&site(population), &cfg, Kind::Hamlet, &morph, &None, &[], &|_| 3.,
+                &[], surface, &mut Rng::new("household-farms"), 1.0).unwrap();
+            assert_eq!(plan.blocks.len(), expected, "{population} / {culture}: one farm per model household");
+        }
     }
     #[test]
     fn demographic_morphology_boundaries_are_distinct_without_changing_population() {

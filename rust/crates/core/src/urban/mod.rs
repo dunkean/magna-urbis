@@ -2179,7 +2179,7 @@ pub fn generate_parcels(
         if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
             partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
         }
-        partition.enclosure = Some(enclosure::resolve(culture, config));
+        partition.enclosure = Some(enclosure::resolve(culture, layout.programme.as_ref().map(|p| p.population), config));
         shanty::allocate(full_layout, &mut partition);
         laps.lap("enclosure+shanty");
         Ok(partition)

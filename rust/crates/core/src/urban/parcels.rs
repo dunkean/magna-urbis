@@ -1186,11 +1186,26 @@ fn strips(
                 * pressure
                 * pressure
                 * if rank <= 1 { 1.0 } else { 0.4 };
+            // Lineages (`_lotSpread`, street villages): a few large compounds,
+            // many medium, some small ones, never under the smallest house.
+            let spread = morph.number("_lotSpread").clamp(0.0, 1.0);
+            let smallest = morph.value["_witness"][0].as_f64().unwrap_or(0.0) * 1.1;
             while total < extent && widths.len() < 4096 {
                 rhythm = (0.7 * rhythm + 0.3 * rr.range(0.8, 1.25)).clamp(0.8, 1.25);
                 let mut w = (module * rhythm).max(lo);
                 if merge > 0.0 && rr.chance(merge) {
                     w *= if rr.chance(0.3) { 3.0 } else { 2.0 };
+                }
+                if spread > 0.0 {
+                    let u = rr.float();
+                    w *= if u < 0.15 * spread {
+                        rr.range(1.8, 2.8)
+                    } else if u < 0.45 * spread {
+                        rr.range(0.55, 0.8)
+                    } else {
+                        rr.range(1.0 - 0.25 * spread, 1.0 + 0.3 * spread)
+                    };
+                    w = w.max(smallest).max(3.6);
                 }
                 widths.push(w);
                 total += w;
@@ -4190,6 +4205,28 @@ pub(super) fn generate(
             })
             .unwrap_or("culture");
         let mut local_morph = super::with_tissue(morph.clone(), tissue);
+        // A street village's plan lays one house lot per household at a 12-16 m
+        // module (`kinds::linear`): its lots are cut at that module, not at the
+        // culture's wider village frontage, or half its households go unhoused.
+        if layout.archetype == "street-village" {
+            let [a, b] = local_morph.range("frontage", &block.zone);
+            if b > 0.0 && local_morph.value["frontage"].is_object() {
+                let module = ((a + b) * 0.5).clamp(12.0, 16.0);
+                local_morph.value["frontage"][block.zone.as_str()] = serde_json::json!([module * 0.85, module * 1.2]);
+            }
+        }
+        // A street village read from its site (`villageStreets`): the culture's
+        // `village.street.plotJitter` spreads its lot widths (`strips`, `_lotSpread`).
+        if layout.archetype == "street-village" && layout.config.as_ref().is_some_and(|c| c.village_streets) {
+            let street = &super::catalogue()["cultures"][block_culture]["village"]["street"];
+            let spread = street["plotJitter"].as_f64().unwrap_or(0.3);
+            local_morph.value["_lotSpread"] = serde_json::json!(spread.clamp(0.0, 1.0));
+            // A culture whose village farm is one compound (`wholeFarms`) keeps
+            // each farm plot of the plan as one lot, its width and depth as drawn.
+            if street["wholeFarms"].as_bool() == Some(true) && block.kind == "block" && area(&block.shape) <= 3000.0 {
+                local_morph.value["plotOp"] = serde_json::json!("wholeBlock");
+            }
+        }
         if layout.config.as_ref().is_some_and(|c| c.old_enclosure_citadel) {
             local_morph.value["_innerWalls"] = serde_json::json!(true);
         }
