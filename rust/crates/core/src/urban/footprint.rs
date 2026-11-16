@@ -3437,7 +3437,7 @@ mod tests {
             let mut w = vec![0; h.len()];
             for y in 0..n {
                 for x in 300..300 + cells {
-                    w[y * n + x] = 1;
+                    w[y * n + x] = 3;
                 }
             }
             let surface = Surface {

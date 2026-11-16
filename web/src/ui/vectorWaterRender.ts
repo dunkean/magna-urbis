@@ -515,12 +515,21 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
 }
 
 const clearances = new WeakMap<VectorWater, (x: number, y: number) => number>();
+const riverClearances = new WeakMap<VectorWater, (x: number, y: number) => number>();
 /** Signed clearance (m) from the drawn water: at most 0 inside a river ribbon (the riverGeometry capsules both
  * renderers draw), a lake or the sea; else the distance to the nearest drawn river bank, capped at 64 m (lakes and sea
  * only answer wet or dry). Lines are indexed by their box and cut into capsules only when a query first reaches them,
  * so probing a few crossings never expands the whole network. Cached per network. */
 export function drawnWaterClearance(water: VectorWater): (x: number, y: number) => number {
-  const cached = clearances.get(water); if (cached) return cached;
+  return waterClearance(water, true);
+}
+/** As drawnWaterClearance, for running water only: lakes and the sea answer dry (at least 1 m), so a bridge deck snapped
+ * onto this clearance ends at their shore and never spans still water (a lake, a harbour basin, the sea). */
+export function drawnRiverClearance(water: VectorWater): (x: number, y: number) => number {
+  return waterClearance(water, false);
+}
+function waterClearance(water: VectorWater, still: boolean): (x: number, y: number) => number {
+  const cache = still ? clearances : riverClearances, cached = cache.get(water); if (cached) return cached;
   const h = water.hydro, width = h.width, CAP = 64, PAD = 300, net = water.rivers;
   const area = water.riverArea && water.riverArea > 0 ? water.riverArea : Math.max(.02, .003 * (width / 1000) ** 2);
   const lines: [RiverLine, number][] = net ? [...net.rivers, ...net.braids, ...net.distributaries].map(l => [l, 0] as [RiverLine, number]).concat(net.oxbows.map(l => [l, 1])) : [];
@@ -541,7 +550,8 @@ export function drawnWaterClearance(water: VectorWater): (x: number, y: number) 
   };
   const probe = (x: number, y: number): number => {
     const cx = Math.min(h.n - 1, Math.max(0, Math.floor(x / width * h.n))), cy = Math.min(h.n - 1, Math.max(0, Math.floor(y / width * h.n)));
-    if (h.sea[cy * h.n + cx] || lakeSample(water.lakeField, width, x, y) >= 0) return 0;
+    const stillWater = h.sea[cy * h.n + cx] || lakeSample(water.lakeField, width, x, y) >= 0;
+    if (stillWater && still) return 0;
     for (const i of boxes.query(x - CAP, y - CAP, x + CAP, y + CAP)) if (!expanded[i]) expand(i);
     let best = CAP;
     for (const id of capsules.query(x - CAP, y - CAP, x + CAP, y + CAP)) {
@@ -549,9 +559,9 @@ export function drawnWaterClearance(water: VectorWater): (x: number, y: number) 
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
       best = Math.min(best, Math.hypot(x - ax - t * dx, y - ay - t * dy) - (cap[o + 4] + (cap[o + 5] - cap[o + 4]) * t));
     }
-    return best;
+    return stillWater ? Math.max(1, best) : best;
   };
-  clearances.set(water, probe);
+  cache.set(water, probe);
   return probe;
 }
 

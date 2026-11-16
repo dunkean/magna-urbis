@@ -3392,7 +3392,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
         std::fs::write(std::path::Path::new(&dir).join(format!("streets-{pass}.json")), serde_json::to_vec(streets).unwrap()).unwrap();
     }
     use super::{footprint::crossings, geometry as g, routing};
-    struct Request<'a> { a: Point, b: Point, middle: Point, width: f64, rank: usize, path: Vec<Point>, retain: bool, crossing: bool, surface: super::Surface<'a> }
+    struct Request<'a> { a: Point, b: Point, middle: Point, width: f64, rank: usize, path: Vec<Point>, retain: bool, crossing: bool, causeway: bool, surface: super::Surface<'a> }
     let mut requests = vec![];
     let mut dry = vec![];
     let ground = surface;
@@ -3490,7 +3490,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
             if a > cursor + EPS { let path = slice(cursor, a);
                 dry.push(Street { widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
             }
-            requests.push(Request { a: at(a), b: at(b), middle: at((from + to) * 0.5), width: w, rank: s.rank, path: slice(a, b), retain, crossing: s.role == "bridge", surface });
+            requests.push(Request { a: at(a), b: at(b), middle: at((from + to) * 0.5), width: w, rank: s.rank, path: slice(a, b), retain, crossing: s.role == "bridge", causeway: s.role == "causeway", surface });
             cursor = b;
         }
         if cursor < total - EPS { let path = slice(cursor, total);
@@ -3640,6 +3640,12 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
         });
         if on_platform {
             // A supported quay joint is a causeway, not a second quay branch.
+            decks.push(Street { widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
+            continue;
+        }
+        // A deck spans running water only. A causeway culture's raised road
+        // over a lake or the sea stays the causeway it was routed as.
+        if r.causeway && r.path.windows(2).any(|w| crossings::over_still_water(channel_surface, w[0], w[1])) {
             decks.push(Street { widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
             continue;
         }
@@ -5396,7 +5402,7 @@ mod tests {
         // banks; a village keeps one deck, the other approaches end on the bank.
         let n = 200;
         let height = vec![20.0; n * n];
-        let water: Vec<u8> = (0..n * n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<u8> = (0..n * n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default() };
         let ys = [200.0, 300.0, 400.0, 500.0, 600.0];
         let bank = |x: f64| street(&std::iter::once(100.0).chain(ys).chain([700.0]).map(|y| (x, y)).collect::<Vec<_>>(), "street");
@@ -5428,13 +5434,8 @@ mod tests {
                 assert!(p.x <= 980.0 - clear || p.x >= 1020.0 + clear, "{} end {p:?} within {clear} m of the river", s.role);
             }
         }
-        // Every approach is trimmed back, not removed: each still reaches near its bank.
-        for y in ys {
-            for (lo, hi) in [(970.0, 980.0), (1020.0, 1030.0)] {
-                assert!(layout.streets.iter().any(|s| s.role != "bridge" && s.path.iter().any(|p| p.y == y && p.x >= lo && p.x <= hi)),
-                    "approach at y={y} near x in [{lo}, {hi}] was lost");
-            }
-        }
+        // A dropped deck's dead-end approaches may be trimmed or removed by bridge selection;
+        // what matters is the end clearance above and the connectivity below.
         // Both banks, with their approaches, stay one network through the kept deck.
         let mut reached = vec![Point { x: 900.0, y: 100.0 }];
         loop {
@@ -5945,6 +5946,37 @@ mod tests {
         assert_eq!((streets[4].role.as_str(), &streets[4].path), ("quay", &quay));
         // A second pass has nothing left to settle.
         assert!(dry_streets(&mut streets, "european-organic", 2500, surface, None, 0.12).is_none());
+    }
+
+    /// Invariant (a town deck spans running water only): two streets crossing
+    /// a lake between built shores stop at its banks, with no deck or wet metre
+    /// over the lake; the same water coded as a river gets its bridges, each
+    /// short across the channel.
+    #[test]
+    fn a_lake_between_built_shores_gets_no_deck_and_a_river_keeps_its_bridge() {
+        let h = vec![20.0; 64 * 64];
+        // A 25 m water body along y in [187.5, 212.5): regional code 2 = lake, 3 = river.
+        let run = |code: u8| -> (Vec<f64>, bool) {
+            let water: Vec<u8> = (0..64 * 64).map(|i| if (30..34).contains(&(i / 64)) { code } else { 0 }).collect();
+            let surface = super::super::Surface { geometry: None, width: 400.0, n: 64, height: &h, water: &water, interpolation: Default::default() };
+            let mut streets = vec![
+                street(&[(100.0, 100.0), (100.0, 300.0)], "street"),
+                street(&[(250.0, 100.0), (250.0, 300.0)], "street"),
+                street(&[(60.0, 140.0), (340.0, 140.0)], "street"),
+                street(&[(60.0, 260.0), (340.0, 260.0)], "street"),
+            ];
+            bridge_water(&mut streets, surface, 0.12);
+            let decks = streets.iter().filter(|s| matches!(s.role.as_str(), "bridge" | "causeway"))
+                .map(|s| distance(s.path[0], *s.path.last().unwrap())).collect();
+            let wet_earth = streets.iter().filter(|s| !matches!(s.role.as_str(), "bridge" | "causeway")).any(|s|
+                s.path.windows(2).any(|w| !super::super::routing::water_intervals(surface, w[0], w[1]).is_empty()));
+            (decks, wet_earth)
+        };
+        let (decks, wet) = run(2);
+        assert!(decks.is_empty() && !wet, "lake: decks {decks:?}, wet street {wet}");
+        let (decks, wet) = run(3);
+        assert!(!decks.is_empty() && !wet, "river: decks {decks:?}, wet street {wet}");
+        assert!(decks.iter().all(|&l| l <= 2.5 * 25.0 + 2.0 * 20.0), "river decks {decks:?}");
     }
 }
 

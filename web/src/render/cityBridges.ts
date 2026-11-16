@@ -182,19 +182,19 @@ export function snapCrossingToWater<C extends { kind?: string; path: Point[] }>(
     return { at: d, bank: false };
   };
   // Trace the window by clearance: a step never jumps over a bank nearer than the step.
-  const runs: { from: number; to: number; fromBank: boolean; toBank: boolean }[] = [];
+  const runs: { from: number; to: number; fromBank: boolean; toBank: boolean; depth: number }[] = [];
   const c0 = at(lo);
-  let d = lo, c = c0, from = c <= 0 ? lo : NaN, fromBank = false;
+  let d = lo, c = c0, from = c <= 0 ? lo : NaN, fromBank = false, depth = Math.min(0, c0);
   while (d < hi && probes < SNAP_PROBES) {
     const next = Math.min(hi, d + step(c)), cn = at(next);
     if ((c <= 0) !== (cn <= 0)) {
-      if (cn <= 0) { from = bank(d, next); fromBank = true; }
-      else { runs.push({ from, to: bank(next, d), fromBank, toBank: true }); from = NaN; }
-    }
+      if (cn <= 0) { from = bank(d, next); fromBank = true; depth = cn; }
+      else { runs.push({ from, to: bank(next, d), fromBank, toBank: true, depth }); from = NaN; }
+    } else if (cn <= 0) depth = Math.min(depth, cn);
     d = next; c = cn;
   }
   const traced = d;
-  if (!Number.isNaN(from)) runs.push({ from, to: d, fromBank, toBank: false });
+  if (!Number.isNaN(from)) runs.push({ from, to: d, fromBank, toBank: false, depth });
   // Only water the road crosses at its routed span (± near) is taken.
   const over = runs.filter(r => r.from <= s1 + near && r.to >= s0 - near);
   if (!over.length) return crossing.kind === 'bridge' && traced >= Math.min(total, s1 + near) ? undefined : crossing;
@@ -204,10 +204,15 @@ export function snapCrossingToWater<C extends { kind?: string; path: Point[] }>(
   const a = Math.max(0, first.fromBank ? first.from - margin : Math.min(s0, first.from));
   const b = Math.min(total, last.toBank ? last.to + margin : Math.max(s1, last.to));
   if (!(b > a)) return crossing;
+  // A deck many times the width of its river follows the water instead of crossing it: never lengthen one.
+  const across = 2 * Math.max(1, -Math.min(...over.map(r => r.depth)));
+  if (last.to - first.from > DECK_WIDTHS * across && b - a > s1 - s0) return crossing;
   const path = [pointAt(a), ...road.filter((_, j) => station[j] > a && station[j] < b), pointAt(b)];
   return { ...crossing, path: ca <= cb ? path : path.reverse() };
 }
 
+/** Longest snapped deck, in drawn river widths (twice the deepest clearance): about a crossing at 30 degrees. */
+const DECK_WIDTHS = 2.5;
 /** Depth (m) inside a drawn river ribbon that makes a wet run a crossing; lakes and sea answer exactly 0 and a road
  * grazing a bank stays shallower. */
 const MISSED_DEPTH = 0.5;

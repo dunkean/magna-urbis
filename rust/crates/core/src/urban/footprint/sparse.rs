@@ -413,7 +413,7 @@ mod tests {
     fn unserved_patch_across_water_is_not_invented_as_a_neighbourhood() {
         let height = vec![0.0; 64 * 64];
         let water: Vec<u8> = (0..height.len())
-            .map(|i| u8::from((24..32).contains(&(i % 64))))
+            .map(|i| 3 * u8::from((24..32).contains(&(i % 64))))
             .collect();
         let surface = Surface {
             geometry: None,
@@ -452,7 +452,7 @@ mod tests {
     fn patch_across_an_existing_bridge_is_served_by_that_bridge() {
         let height = vec![0.0; 64 * 64];
         let water: Vec<u8> = (0..height.len())
-            .map(|i| u8::from((24..32).contains(&(i % 64))))
+            .map(|i| 3 * u8::from((24..32).contains(&(i % 64))))
             .collect();
         let surface = Surface {
             geometry: None,

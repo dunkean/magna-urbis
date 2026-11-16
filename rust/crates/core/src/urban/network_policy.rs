@@ -796,7 +796,7 @@ mod tests {
         let water: Vec<_> = (0..10000).map(|i| {
             let (x, y) = (i % 100, i / 100);
             if (50..70).contains(&x) && y >= 30 { 1 }
-            else if (56..64).contains(&x) && (10..30).contains(&y) { 1 }
+            else if (56..64).contains(&x) && (10..30).contains(&y) { 3 }
             else { 0 }
         }).collect();
         let surf = surface(&h, &water);

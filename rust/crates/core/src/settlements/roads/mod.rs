@@ -1179,4 +1179,61 @@ mod tests {
         assert_eq!(crossings, 0, "{crossings} rural access crossings");
         assert!(out.segments.iter().all(|s| s.path.iter().all(|p| p.y < 2950.0)), "a track reaches the far bank");
     }
+
+    /// A lake (and, east of it, a river) between two villages. Invariant: a bridge deck spans
+    /// running water only, at most a few river widths long; still water (lake, sea, a harbour
+    /// basin) is never decked. A culture without causeways goes round the lake; a causeway
+    /// culture may cross the shallow lake, but only on a causeway.
+    #[test]
+    fn a_lake_is_never_bridged_and_decks_stay_short() {
+        let (n, width) = (120, 6000.0);
+        let cell = width / n as f64;
+        let h = vec![20.0f32; n * n];
+        // Lake: x 2000..4000, y 1500..4500, 4 m deep. River: two cells wide at x 5200..5300.
+        let lake = |x: usize, y: usize| (40..80).contains(&x) && (30..90).contains(&y);
+        let water: Vec<u8> = (0..n * n).map(|i| if lake(i % n, i / n) { 2 } else if (104..=105).contains(&(i % n)) { 3 } else { 0 }).collect();
+        let level: Vec<f32> = water.iter().map(|&w| if w == 2 { 24.0 } else { 20.0 }).collect();
+        let rivers: Vec<f32> = water.iter().map(|&w| if w == 3 { 20.0 } else { 0.0 }).collect();
+        let ids: Vec<i32> = water.iter().map(|&w| if w == 3 { 0 } else { -1 }).collect();
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &level, river_width: &rivers, river_ids: &ids });
+        let cfg = RoadConfig { density: 0.0, exits: ExitCounts::default(), ..Default::default() };
+        for culture in ["european-organic", "aztec"] {
+            let village = |key: &str, x: f64| RoadSite { key: key.into(), population: 400, culture: culture.into(), center: Point { x, y: 3000.0 }, ..Default::default() };
+            let out = route("lake", &f, &[village("west", 1000.0), village("east", 5800.0)], &cfg).unwrap();
+            assert!(!out.segments.is_empty(), "{culture}: the villages are not linked");
+            for s in &out.segments {
+                for c in &s.crossings {
+                    // Water codes under the crossing, sampled every tenth of a cell.
+                    let mut lake_samples = 0;
+                    let mut river_samples = 0;
+                    for w in c.path.windows(2) {
+                        let steps = (w[0].distance(w[1]) / (0.1 * cell)).ceil().max(1.0) as usize;
+                        for k in 0..steps {
+                            let t = k as f64 / steps as f64;
+                            match water[f.index(Point { x: w[0].x + (w[1].x - w[0].x) * t, y: w[0].y + (w[1].y - w[0].y) * t })] {
+                                2 => lake_samples += 1,
+                                3 => river_samples += 1,
+                                _ => {}
+                            }
+                        }
+                    }
+                    if c.kind == "bridge" {
+                        assert_eq!(lake_samples, 0, "{culture}: a bridge deck over the lake");
+                        // Two river cells crossed at no less than MIN_BRIDGE_ANGLE, with slack for the raster.
+                        let wet = river_samples as f64 * 0.1 * cell;
+                        let cap = 2.0 * 2.0 * cell / deck::MIN_BRIDGE_ANGLE.to_radians().sin();
+                        assert!(wet <= cap, "{culture}: a {wet:.0} m deck over a river two cells wide (cap {cap:.0} m)");
+                    }
+                    if lake_samples > 0 {
+                        assert_eq!(c.kind, "causeway", "{culture}: a {} over the lake", c.kind);
+                        assert_eq!(culture, "aztec", "a culture without causeways crosses the lake");
+                    }
+                }
+                // No road runs over the lake without a causeway either.
+                if culture != "aztec" {
+                    assert!(s.path.iter().all(|&p| water[f.index(p)] != 2), "{culture}: a road vertex in the lake");
+                }
+            }
+        }
+    }
 }

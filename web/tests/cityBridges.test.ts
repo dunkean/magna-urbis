@@ -204,6 +204,28 @@ describe('regional crossings snapped onto the drawn water', () => {
     expect(a).toBeCloseTo(517, 0); expect(b).toBeCloseTo(483, 0);
   });
 
+  it('never spans still water: a lake, the sea or a harbour basin past the river mouth stays open', () => {
+    // The river (banks 485 and 515) opens into a lake or harbour basin from 515 to 900. drawnRiverClearance answers
+    // still water as dry (>= 1 m), so the deck ends on the river's west bank side and the basin's shore.
+    const basin = (x: number): number => x > 515 && x < 900 ? Math.max(1, river(x)) : river(x);
+    for (const path of [[{ x: 490, y: 0 }, { x: 512, y: 0 }], [{ x: 500, y: 0 }, { x: 560, y: 0 }]]) {
+      const snapped = snapCrossingToWater(road, { kind: 'bridge', path }, basin, 60)!;
+      const [a, b] = ends(snapped.path);
+      expect(a).toBeCloseTo(483, 0); expect(b).toBeLessThan(520);
+    }
+    // A bridge over the basin alone is dropped, and the basin never gets a missed-crossing deck.
+    expect(snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 700, y: 0 }, { x: 740, y: 0 }] }, basin, 60)).toBeUndefined();
+    const lake = (x: number): number => x > 515 && x < 900 ? Math.max(1, x - 515) : 64; // a basin with no river
+    expect(snapRoadCrossings([{ path: road, crossings: [] }], lake, 60)[0].crossings).toEqual([]);
+  });
+
+  it('never lengthens a deck to many river widths (a road running along the water)', () => {
+    // The road runs 400 m down the middle of a 30 m river: snapping would lay a 400 m deck.
+    const along = (x: number): number => x < 400 ? 400 - x : x > 800 ? x - 800 : -15;
+    const crossing = { kind: 'bridge', path: [{ x: 490, y: 0 }, { x: 520, y: 0 }] };
+    expect(snapCrossingToWater(road, crossing, along, 60)).toBe(crossing);
+  });
+
   it('extends a short span to a bank beyond the window instead of ending in the water', () => {
     const wide = (x: number): number => Math.abs(x - 500) - 60; // banks at 440 and 560
     const snapped = snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 490, y: 0 }, { x: 510, y: 0 }] }, wide, 30)!;

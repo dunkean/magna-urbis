@@ -21,7 +21,7 @@ import { sampleGrid } from '../gen/core/grid';
 import { regionalRoadCorridor } from '../render/forestRoom';
 import { deleteGridRiver, type GridRiverDeletion } from './gridRiverDeletion';
 import { snapRoadCrossings } from '../render/cityBridges';
-import { drawnWaterClearance } from '../ui/vectorWaterRender';
+import { drawnRiverClearance } from '../ui/vectorWaterRender';
 
 export type RegionalRoad = NonNullable<World['roads']>[number];
 export type Bridge = NonNullable<World['bridges']>[number];
@@ -332,7 +332,7 @@ function writeRoad(d: Draft, index: number, rawPath: Polyline, options: RoadEdit
   const road: RegionalRoad = { path, kind: roadKindOf(cls), width };
   // Routed on raster cells like Rust, then snapped onto the drawn water like region.ts.
   const drawnWater = (terrain as NativeTerrainLayer).v2NativeTerrain?.water, routed = roadCrossings(terrain, path, cls);
-  const crossings = drawnWater ? snapRoadCrossings([{ path, crossings: routed }], drawnWaterClearance(drawnWater), 1.5 * terrain.height.cell)[0].crossings : routed;
+  const crossings = drawnWater ? snapRoadCrossings([{ path, crossings: routed }], drawnRiverClearance(drawnWater), 1.5 * terrain.height.cell)[0].crossings : routed;
   const at = index >= 0 ? index : d.roads.length;
   d.roads[at] = road; d.changes.push({ old: old?.path, next: road });
   if (d.output) {

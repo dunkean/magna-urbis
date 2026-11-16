@@ -5009,7 +5009,7 @@ mod tests {
         let heights = vec![0.0; 64 * 64];
         let mut water = vec![0; 64 * 64];
         for y in 0..64 {
-            water[y * 64 + 32] = 1;
+            water[y * 64 + 32] = 3;
         }
         let surface = Surface {
             geometry: None,

@@ -221,10 +221,54 @@ fn flip(
     None
 }
 
+/// Water kind of the planning raster under a wet point (regional codes: 1 sea,
+/// 2 lake, 3 river): `Some(true)` still water, `Some(false)` running water,
+/// `None` unknown. A channel narrower than a cell lies on dry cells: they take
+/// their neighbours' kind, a river first, so a river mouth stays a river.
+fn still_cell(surface: Surface<'_>, p: Point) -> Option<bool> {
+    let n = surface.n;
+    if n == 0 || surface.water.len() != n * n { return None; }
+    let index = |v: f64| ((v / surface.width * n as f64).max(0.0) as usize).min(n - 1);
+    let (x, y) = (index(p.x), index(p.y));
+    match surface.water[y * n + x] { 3 => return Some(false), 1 | 2 => return Some(true), _ => {} }
+    let mut still = false;
+    for j in y.saturating_sub(1)..=(y + 1).min(n - 1) {
+        for i in x.saturating_sub(1)..=(x + 1).min(n - 1) {
+            match surface.water[j * n + i] { 3 => return Some(false), 1 | 2 => still = true, _ => {} }
+        }
+    }
+    still.then_some(true)
+}
+
+/// Invariant (a town deck spans running water only): whether the water the
+/// segment crosses is mostly sea, lake or harbour basin rather than river.
+/// Such water is crossed by a causeway of a causeway culture, never a bridge.
+pub(in crate::urban) fn over_still_water(surface: Surface<'_>, a: Point, b: Point) -> bool {
+    let length = distance(a, b);
+    let step = (surface.width / surface.n.max(1) as f64 * 0.5).clamp(0.5, 8.0);
+    let steps = (length / step).ceil().max(1.0) as usize;
+    let (mut still, mut river) = (0usize, 0usize);
+    for k in 0..=steps {
+        let t = k as f64 / steps as f64;
+        let p = Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        if !surface.wet(p) { continue; }
+        match still_cell(surface, p) { Some(true) => still += 1, Some(false) => river += 1, None => {} }
+    }
+    still > river
+}
+
+/// Longest town deck over its channel: the water it crosses stays within this
+/// many times the narrowest chord there (the local river width), so no long
+/// oblique span runs along a watercourse or over a basin.
+const DECK_SPAN_PER_WIDTH: f64 = 2.5;
+
 /// Channel normal from the wet raster/vector mask. A covariance fit over a
 /// few channel widths smooths raster stairs without following an oblique road.
+/// `None` over still water (sea, lake, harbour basin): a deck spans rivers only.
 pub(in crate::urban) fn deck(surface: Surface<'_>, middle: Point) -> Option<[Point; 2]> {
-    deck_at(surface, middle, 2)
+    if surface.wet(middle) && still_cell(surface, middle) == Some(true) { return None; }
+    let ends = deck_at(surface, middle, 2)?;
+    (!over_still_water(surface, ends[0], ends[1])).then_some(ends)
 }
 fn deck_at(surface: Surface<'_>, middle: Point, center_passes: u8) -> Option<[Point; 2]> {
     if !surface.wet(middle) { return None; }
@@ -325,6 +369,7 @@ fn deck_at(surface: Surface<'_>, middle: Point, center_passes: u8) -> Option<[Po
     let center = Point { x: middle.x + normal.0 * (b - a) * 0.5, y: middle.y + normal.1 * (b - a) * 0.5 };
     if center_passes > 0 && distance(middle, center) > cell.min(5.0) * 0.1 && surface.wet(center)
         && let Some(ends) = deck_at(surface, center, center_passes - 1) { return Some(ends); }
+    if a + b > DECK_SPAN_PER_WIDTH * shortest.max(cell * 0.5) { return None; }
     // Land beyond the bank's interpolated height ramp, without reaching a
     // neighbouring canal. The approaches must not climb out of the river bed.
     let landing = |t: f64, sign: f64| {
@@ -403,6 +448,10 @@ fn measure(
             y: p.y + u.1 * t,
         };
         let (entry, exit) = (at(t0), at(t1));
+        // Sea, lake and harbour water are a boundary: a town spans rivers only.
+        if over_still_water(surface, entry, exit) {
+            continue;
+        }
         // A real crossing spans a channel: water continues along the flow on
         // both sides of the crossing line. A ray that only clips a bend or a
         // shore corner lands on its own bank and is not a crossing.
@@ -532,7 +581,7 @@ mod tests {
     #[test]
     fn oblique_unflagged_and_nearby_crossings_share_one_normal_deck() {
         let n = 200;
-        let water: Vec<u8> = (0..n * n).map(|i| u8::from((90..104).contains(&(i % n)))).collect();
+        let water: Vec<u8> = (0..n * n).map(|i| 3 * u8::from((90..104).contains(&(i % n)))).collect();
         let height: Vec<f32> = water.iter().map(|&w| if w == 0 { 20.0 } else { 0.0 }).collect();
         let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let original = [(300.0, 300.0), (700.0, 650.0)];
@@ -590,7 +639,7 @@ mod tests {
             let (nx, ny) = (angle.cos(), angle.sin());
             let water: Vec<u8> = (0..n * n).map(|i| {
                 let (x, y) = (((i % n) as f64 + 0.5) * 5.0 - 500.0, ((i / n) as f64 + 0.5) * 5.0 - 500.0);
-                u8::from((x * nx + y * ny).abs() < 35.0)
+                3 * u8::from((x * nx + y * ny).abs() < 35.0)
             }).collect();
             let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
             let [a, b] = deck(surface, Point { x: 500.0, y: 500.0 }).unwrap();
@@ -607,7 +656,7 @@ mod tests {
         // independently on the analytic centreline over two widths each way.
         let water: Vec<_> = (0..n*n).map(|i| {
             let (x, y) = (((i % n) as f64 + 0.5) * 2.5, ((i / n) as f64 + 0.5) * 2.5);
-            u8::from((x - 500.0 - 35.0 * ((y - 500.0) / 50.0).sin()).abs() < 40.0)
+            3 * u8::from((x - 500.0 - 35.0 * ((y - 500.0) / 50.0).sin()).abs() < 40.0)
         }).collect();
         let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         for y in [450.0, 500.0, 550.0] {
@@ -658,7 +707,7 @@ mod tests {
     #[test]
     fn bridge_count_scales_with_crossing_length_and_population_not_street_count() {
         let n = 200; let height = vec![20.0; n * n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let mut streets = vec![street(&[(900.0, 100.0), (900.0, 1900.0)], "street"),
             street(&[(1100.0, 100.0), (1100.0, 1900.0)], "street")];
@@ -717,7 +766,7 @@ mod tests {
     #[test]
     fn built_parts_get_bridges_even_without_an_original_crossing_road() {
         let n = 320; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((118..122).contains(&(i % n)) || (198..202).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((118..122).contains(&(i % n)) || (198..202).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 1600.0, n, height: &height, water: &water, interpolation: Default::default(),};
         for population in [500, 10000] {
             for parts in [2, 3] {
@@ -739,7 +788,7 @@ mod tests {
     #[test]
     fn a_nearby_bridge_cannot_hide_a_different_built_part() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let streets = vec![street(&[(900.0, 100.0), (900.0, 300.0)], "street"),
             street(&[(1100.0, 120.0), (1100.0, 140.0)], "street"),
@@ -755,7 +804,7 @@ mod tests {
     #[test]
     fn bridge_junctions_preserve_reserved_blocks_street_references() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let mut l = layout(vec![street(&[(900.0, 100.0), (900.0, 700.0)], "street"),
             street(&[(1100.0, 100.0), (1100.0, 700.0)], "street")],
@@ -773,7 +822,7 @@ mod tests {
     #[test]
     fn nearby_local_bridge_keeps_a_built_bank_connected_but_not_an_empty_spur() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let mut streets = vec![street(&[(900.0, 100.0), (900.0, 500.0)], "street")];
         for y in [150.0, 250.0, 350.0] {
@@ -811,7 +860,7 @@ mod tests {
         // spur (y = 1500), not joined by streets but both on the regional road
         // along x = 700; east bank: one network facing both.
         let n = 200; let height = vec![20.0; n * n];
-        let water: Vec<_> = (0..n * n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n * n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let streets = vec![
             street(&[(700.0, 300.0), (970.0, 300.0)], "street"),
@@ -841,7 +890,7 @@ mod tests {
     #[test]
     fn regional_bridge_keeps_its_existing_outward_road_beyond_the_town_clip() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let streets = vec![street(&[(900.0, 500.0), (970.0, 500.0)], "street"),
             street(&[(970.0, 500.0), (1030.0, 500.0)], "bridge"),
@@ -861,7 +910,7 @@ mod tests {
         let n = 200; let height = vec![20.0; n*n];
         let water: Vec<_> = (0..n*n).map(|i| {
             let (x, y) = (i % n, i / n);
-            u8::from(((98..102).contains(&x) && y < 102) || ((98..102).contains(&y) && x >= 98))
+            3 * u8::from(((98..102).contains(&x) && y < 102) || ((98..102).contains(&y) && x >= 98))
         }).collect();
         let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let streets = vec![
@@ -880,11 +929,11 @@ mod tests {
     #[test]
     fn stilt_planning_mask_does_not_rotate_the_physical_river_normal() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((80..120).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((80..120).contains(&(i % n)))).collect();
         // Reclaimed shallows leave an oblique sliver in a straight river.
         let mask: Vec<_> = (0..n*n).map(|i| {
             let (x, y) = ((i % n) as f64 * 5.0, (i / n) as f64 * 5.0);
-            u8::from(water[i] != 0 && (x - 500.0 - (y - 500.0) * 0.8).abs() < 25.0)
+            3 * u8::from(water[i] != 0 && (x - 500.0 - (y - 500.0) * 0.8).abs() < 25.0)
         }).collect();
         let physical = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let planning = Surface { water: &mask, ..physical };
@@ -902,7 +951,7 @@ mod tests {
     #[test]
     fn bank_to_bank_stilt_pier_is_a_normal_crossing_but_a_water_dead_end_is_not() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((80..120).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((80..120).contains(&(i % n)))).collect();
         let dry = vec![0; n*n];
         let physical = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let planning = Surface { water: &dry, ..physical };
@@ -924,7 +973,7 @@ mod tests {
     #[test]
     fn a_retained_normal_bridge_does_not_keep_hundreds_of_metres_of_dry_deck() {
         let n = 200; let height = vec![20.0; n*n];
-        let water: Vec<_> = (0..n*n).map(|i| u8::from((90..104).contains(&(i % n)))).collect();
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((90..104).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 1000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let mut streets = vec![street(&[(300.0, 500.0), (700.0, 500.0)], "bridge")];
         network::bridge_water(&mut streets, surface, 0.12);
@@ -942,7 +991,7 @@ mod tests {
     fn river_10k_town_keeps_a_few_supported_perpendicular_crossings() {
         let n = 300;
         let height = vec![20.0; n * n];
-        let water: Vec<u8> = (0..n * n).map(|i| u8::from((145..152).contains(&(i % n)))).collect();
+        let water: Vec<u8> = (0..n * n).map(|i| 3 * u8::from((145..152).contains(&(i % n)))).collect();
         let surface = Surface { geometry: None, width: 3000.0, n, height: &height, water: &water, interpolation: Default::default(),};
         let cfg = LayoutConfig { fortification: "none".into(), ..Default::default() };
         let roads = [street(&[(900.0, 1200.0), (2000.0, 1800.0)], "regional")];
