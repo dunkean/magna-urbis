@@ -38,7 +38,6 @@ const ui = {
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
   none: copy('Inland', 'Intérieur des terres'), island: copy('Island', 'Île'), archipelago: copy('Archipelago', 'Archipel'),
   peninsula: copy('Peninsula', 'Presqu’île'),
-  all: copy('All', 'Toutes'), allCoasts: copy('All coasts', 'Toutes les côtes'),
   quick: copy('Create the terrain', 'Créer le terrain'), coastline: copy('Coasts', 'Côtes'),
   vector: copy('Vector', 'Vectoriel'), rust: copy('Rust', 'Rust'),
   basics: copy('Relief and climate', 'Relief et climat'), procedural: copy('Procedural terrain', 'Relief procédural'),
@@ -210,7 +209,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const compass = document.createElement('div'); compass.className = 'terrain-coast-compass'; compass.setAttribute('role', 'group'); compass.setAttribute('aria-label', ui.coasts);
   const compassButtons = new Map<string, HTMLButtonElement>();
   for (const direction of ['NW', 'N', 'NE', 'W', 'center', 'E', 'SW', 'S', 'SE'] as const) {
-    if (direction === 'center') { const center = button(compass, ui.all, () => { set('terrain.coastMask', Number(get('terrain.coastMask')) === 255 ? 0 : 255); }, 'terrain-coast-all'); center.setAttribute('aria-label', ui.allCoasts);center.setAttribute('title',ui.allCoasts);coastArt(center,'island'); compassButtons.set('all', center); continue; }
+    // The centre is the island: sea on all eight sides (archipelago and peninsula are in the list beside it).
+    if (direction === 'center') { const center = button(compass, ui.island, () => { const s = bindings.getSettings(), island = Number(get('terrain.coastMask')) === 255 && (get('terrain.islandMode') ?? 'island') === 'island'; if (!island) writeSettingPath(s, 'terrain.islandMode', 'island'); set('terrain.coastMask', island ? 0 : 255); }, 'terrain-coast-all'); center.setAttribute('aria-label', ui.island); center.setAttribute('title', ui.island); coastArt(center, 'island'); compassButtons.set('all', center); continue; }
     const coast = button(compass, direction, () => set('terrain.coastMask', toggleCoastDirection(Number(get('terrain.coastMask')), direction)), `terrain-coast-${direction}`);
     coast.dataset.coast = direction; coast.dataset.settingPath = 'terrain.coastMask';
     coast.setAttribute('aria-label', seaNames[direction][0]); coast.setAttribute('title', seaNames[direction][0]); compassButtons.set(direction, coast);
@@ -221,7 +221,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const coastHint = document.createElement('p'); coastHint.className = 'hint'; setText(coastHint, ui.coastHelp); coasts.append(coastHint);
   const coastPresets = document.createElement('div'); coastPresets.className = 'terrain-presets coast-presets';
   const coastChoices = new Map<string, HTMLInputElement>();
-  for (const [value, label, art] of [['none', ui.none, 'inland'], ['island', ui.island, 'island'], ['archipelago', ui.archipelago, 'archipelago'], ['peninsula', ui.peninsula, 'peninsula']] as const) {
+  for (const [value, label, art] of [['none', ui.none, 'inland'], ['archipelago', ui.archipelago, 'archipelago'], ['peninsula', ui.peninsula, 'peninsula']] as const) {
     const choice = document.createElement('label'); setText(choice, label); coastArt(choice, art, 0, true);
     const input = document.createElement('input'); input.type = 'radio'; input.name = 'terrain-coast-layout'; input.value = value; input.id = `terrain-coast-${value}`;
     choice.prepend(input); coastPresets.append(choice); coastChoices.set(value, input);
@@ -314,7 +314,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       }
       spacingControl?.removeAttribute('aria-invalid');
     } catch (error) { definitionHint.textContent = error instanceof Error ? error.message : String(error); spacingControl?.setAttribute('aria-invalid', 'true'); }
-    for (const [direction, coast] of compassButtons) { const mask = Number(get('terrain.coastMask')); coast.setAttribute('aria-pressed', String(direction === 'all' ? mask === 255 : !!(mask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = bindings.disabled?.() ?? false; }
+    for (const [direction, coast] of compassButtons) { const mask = Number(get('terrain.coastMask')); coast.setAttribute('aria-pressed', String(direction === 'all' ? mask === 255 && (get('terrain.islandMode') ?? 'island') === 'island' : !!(mask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = bindings.disabled?.() ?? false; }
     for (const [value, input] of coastChoices) {
       const mask = Number(get('terrain.coastMask'));
       input.checked = value === 'none' ? mask === 0 : mask === 255 && get('terrain.islandMode') === value;

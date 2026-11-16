@@ -20,7 +20,9 @@ vec4 orchardDetail(vec2 world){
   return landDetailSample(uv,0.);
 }
 // Signed distance (m) of the alpha channel to the nearest strip edge: positive inside a holding, negative outside.
-float landDetailDist(float a){return a*12.-6.;}
+// Its range is 6 m on fine rasters and 2.5 texels on coarse ones (web/src/ui/landDetail.ts edgeRange).
+float landDetailRange(){return max(6.,2.5*uLandDetailRect.z/uLandDetailN);}
+float landDetailDist(float a){return (a*2.-1.)*landDetailRange();}
 // Smooth share of the orchard class at this fragment (applyGroundOccupation, before applyForest): the unresolved
 // orchard crowns fade with it instead of ending on the class texels. 1 where no occupation pass ran.
 float v2OrchardShare=1.;
@@ -95,7 +97,7 @@ vec2 landDetailInside(vec2 uv,float footprint,out float edge){
   if(footprint<cell*2.&&abs(sd)<cell*1.2){
     float a0=landDetailSample(uv+vec2(0.,r),0.).a,a1=landDetailSample(uv+vec2(-.8660254,-.5)*r,0.).a,a2=landDetailSample(uv+vec2(.8660254,-.5)*r,0.).a;
     // Least squares on the stencil: g = 2/(3r) sum a_i d_i, here in metres of distance per metre.
-    vec2 g=(a0*vec2(0.,1.)+a1*vec2(-.8660254,-.5)+a2*vec2(.8660254,-.5))*12.*2./(3.*cell*.5);
+    vec2 g=(a0*vec2(0.,1.)+a1*vec2(-.8660254,-.5)+a2*vec2(.8660254,-.5))*2.*landDetailRange()*2./(3.*cell*.5);
     float s=length(g);
     if(s>.5)uv+=g/s*(cell*1.2-sd)/uLandDetailRect.z;
   }
@@ -413,8 +415,10 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   float wMeadow=0.,wPasture=0.,wHeath=0.,wMarsh=0.;
   if(wildShare>.001){
     uint salt=uMaterialSeed+1091u;
-    vec2 wander=vec2(surfaceNoise(vec3(world/43.,0.),salt),surfaceNoise(vec3(world/43.,0.),salt+1u))*16.
-      +vec2(surfaceNoise(vec3(world/13.,0.),salt+2u),surfaceNoise(vec3(world/13.,0.),salt+3u))*6.;
+    // The wander follows the class texel: on a large map (texels of tens of metres) a fixed 22 m kept the texel blobs.
+    float ws=max(1.,cell/24.);
+    vec2 wander=(vec2(surfaceNoise(vec3(world/(43.*ws),0.),salt),surfaceNoise(vec3(world/(43.*ws),0.),salt+1u))*16.
+      +vec2(surfaceNoise(vec3(world/(13.*ws),0.),salt+2u),surfaceNoise(vec3(world/(13.*ws),0.),salt+3u))*6.)*ws;
     vec2 wgrid=(uv+wander/uOccupationRect.z)*uOccupationN-.5,wf=fract(wgrid);ivec2 wbase=ivec2(floor(wgrid));
     for(int y=0;y<2;y++)for(int x=0;x<2;x++){
       int cls=int(texelFetch(uOccupation,clamp(wbase+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
@@ -450,7 +454,8 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   if(covered<=0.)return;
   target/=covered;
   // Wild ground fades into its surroundings; ploughed land keeps a firm edge.
-  float edgeWidth=fieldShare>.5*covered?max(footprint,cell*.6):cell*3.;
+  // Wild ground fades over at most ~45 m: three coarse texels drew a wide halo around every patch on large maps.
+  float edgeWidth=fieldShare>.5*covered?max(footprint,min(cell*.6,12.)):max(footprint*2.,min(cell*3.,45.));
   float width=min(edgeWidth*(1.+1.5*dry),cell*6.);
   // Dry wild ground lets the bare earth through; tended land (fields, plots, town) keeps its full cover.
   // Partial snow follows the land: each holding takes its own share of the local (relief-driven) cover, from its crop

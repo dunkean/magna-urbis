@@ -1302,7 +1302,9 @@ fn homestead(
     let toward = bank.map_or_else(
         || {
             near.as_ref()
-                .map_or(Point { x: 0.0, y: 1.0 }, |n| unit(c, n.point))
+                // A road ending at the place's centre (an isolated farm is a road
+                // endpoint) gives no direction to it: the plot then fronts the road's side.
+                .map_or(Point { x: 0.0, y: 1.0 }, |n| if dist(c, n.point) > 1.0 { unit(c, n.point) } else { perp(n.tangent) })
         },
         |(_, inland)| inland,
     );
@@ -1315,7 +1317,10 @@ fn homestead(
     let plot = side(&lane, half, d, true)
         .filter(|p| g::contains(p, c) || dist(g::interior_point(p), c) < d)
         .or_else(|| side(&lane, half, d, false))
-        .filter(|p| dist(g::interior_point(p), c) < d)?;
+        .filter(|p| dist(g::interior_point(p), c) < d)
+        // Never a farm without its lot: the plain rectangle behind the lane.
+        .unwrap_or_else(|| g::normalized(Shape { outer: [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)]
+            .iter().map(|&(s, t)| at(at(c, along, s * w), toward, t * d)).collect(), holes: vec![] }));
     let mut path = match near {
         Some(n) => {
             let start = if dist(n.point, a) < dist(n.point, b) {
@@ -1334,7 +1339,12 @@ fn homestead(
     if path.len() > 2 {
         blocked.extend(g::ribbon(&path[..path.len() - 1], &[half * 2.0]));
     }
-    let plot = settle(&plot, &blocked, &surface, 0.6)?;
+    // A track wandering through the plot (hill routes) or an obstacle cutting it must
+    // not leave the farm without its farmhouse: a smaller remaining piece first, then
+    // the plot clear of the obstacles only (the track then ends at its edge).
+    let plot = settle(&plot, &blocked, &surface, 0.6)
+        .or_else(|| settle(&plot, &blocked, &surface, 0.3))
+        .or_else(|| settle(&plot, obstacles, &surface, 0.3))?;
     Some(Plan {
         center: g::interior_point(&plot),
         blocks: vec![(plot, "block")],

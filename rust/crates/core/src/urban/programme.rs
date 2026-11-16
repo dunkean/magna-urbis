@@ -1098,6 +1098,41 @@ fn prepare_inner(
             d.reasons.push(
                 "No suitably sized accessible block for reservation before subdivision".into(),
             );
+        }
+        // Degenerate case only: a lone farm or structure whose plot no gate admits (a plot
+        // clipped by its track or a bank, a short frontage) still reserves its own largest
+        // dry block, so the place keeps its building (`eligible_memo` admits it there).
+        let fallback: Vec<(usize, usize, f64)> = if picks.is_empty() && isolated && context.intent != "activity" {
+            (0..layout.blocks.len())
+                .filter(|&bi| !used.contains(&bi) && layout.blocks[bi].kind == "block" && environment.get(bi).is_none_or(|e| !e.wet))
+                .max_by(|&a, &b| areas[a].total_cmp(&areas[b]).then(b.cmp(&a)))
+                .map(|bi| {
+                    let street = block_contacts[bi].iter().max_by(|a, b| a.length.total_cmp(&b.length)).map_or(0, |c| c.street);
+                    vec![(bi, street, super::parcels::continuous_frontage(&block_contacts[bi]))]
+                })
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+        if !fallback.is_empty() && d.reasons.last().is_some_and(|r| r.starts_with("No suitably sized")) {
+            d.reasons.pop();
+            warnings.push("Ferme isolée : aucune parcelle ne remplit les règles ordinaires ; son terrain est réservé tel quel.".into());
+        }
+        for &(bi, street, front) in &fallback {
+            used.insert(bi);
+            if layout.blocks[bi].kind == "block" {
+                layout.blocks[bi].kind = "reserve:programme".into();
+            }
+            reservations.push(Reservation {
+                id: format!("{}/reserve/{}/{}", layout.key, d.function, bi),
+                demand_id: d.id.clone(),
+                block: bi,
+                shape: layout.blocks[bi].shape.clone(),
+                street,
+                frontage: front,
+            });
+        }
+        if picks.is_empty() {
         } else if d.sites > 0 && picks.len() < d.sites {
             d.reasons.push(format!(
                 "Only {} of {} sites reserved before subdivision",
@@ -1742,6 +1777,16 @@ fn eligible_memo(
     };
     if pr.context.mode == "strict" && c.borrowed {
         return false;
+    }
+    // A lone farm or structure is admitted on its own reserved block whatever its slope,
+    // frontage or envelope: that plot is the place (kinds.rs `homestead`), its bodies
+    // stand on stepped plinths. Never an isolated place left without its building.
+    if roles::is_isolated(&pr.context.intent)
+        && pr.context.intent != "activity"
+        && memo.reservation(pr, p.block).is_some_and(|r| r.demand_id == d.id)
+        && pr.environment.get(p.block).is_none_or(|e| !e.wet)
+    {
+        return true;
     }
     if pr
         .environment

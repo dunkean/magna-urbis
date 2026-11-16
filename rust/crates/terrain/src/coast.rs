@@ -3,10 +3,21 @@
 use crate::{Noise, Rng, smooth};
 use std::f64::consts::TAU;
 
-/// Header floats before the capsules: profile, per-direction reach, character, bumps.
-const HEADER: usize = 56;
+/// Header floats before the capsules: profile, per-direction reach, character, bumps,
+/// then the relief fit (shore shift, relief median, inverse spread, drowning, band, shelf).
+const HEADER: usize = 64;
 const BUMPS: usize = 32;
 const MAX_BUMPS: usize = 6;
+/// Relief fit slots, mirrored by `terrainCoast.wgsl` (vec4 14 and 15).
+const SHIFT: usize = 56;
+const RELIEF_MEDIAN: usize = 57;
+const RELIEF_INVERSE: usize = 58;
+const DROWNING: usize = 59;
+const DROWNING_BAND: usize = 60;
+const SHELF: usize = 61;
+/// Sea capsules (8 floats each) follow the header, before the land capsules.
+const SEA_COUNT: usize = 62;
+const SEA_STRIDE: usize = 8;
 /// Upper bound of |simplex noise|, hence of any fractal sum of it: three corners of
 /// at most 75 * max((0.5 - r²)⁴ r) = 75 * 0.0092 each.
 const NOISE_BOUND: f64 = 2.1;
@@ -15,6 +26,9 @@ pub(crate) struct Coast {
     rng: Rng,
     pub noise: Noise,
     pub parameters: Vec<f32>,
+    /// Plan length before the offshore islets, which are placed again once fitted.
+    islets_from: usize,
+    archipelago: bool,
 }
 
 impl Coast {
@@ -32,6 +46,8 @@ impl Coast {
                 0.0,
                 marine_datum as f32,
             ],
+            islets_from: 0,
+            archipelago: false,
         }
     }
 
@@ -76,8 +92,24 @@ impl Coast {
         for (i, value) in header.into_iter().enumerate() {
             self.parameters[24 + i] = value as f32;
         }
+        // How far the sea follows the relief: from smooth, almost geometric shores to
+        // drowned coasts whose valleys become rias and whose ridges stand as headlands.
+        // The drowning stays below 0.6 band, so the coast distance stays monotonic.
+        let mut drowned = self.rng.fork("coast-drowning");
+        let band = drowned.range(0.10, 0.20);
+        self.parameters[DROWNING] = (drowned.range(0.035, 0.17)).min(band * 0.6) as f32;
+        self.parameters[DROWNING_BAND] = band as f32;
+        self.parameters[SHELF] = drowned.range(0.55, 2.1) as f32;
+        self.islets_from = HEADER;
+        self.archipelago = false;
         if mask == 0 {
             return Ok(());
+        }
+        if mask != 255 {
+            // Edge seas are coves and corner seas: a softer warp and large-scale noise keep them whole.
+            self.parameters[24] *= 0.5;
+            self.parameters[26] *= 0.6;
+            self.edge_seas(mask);
         }
         let mut rng = self.rng.fork("shape-v2");
         let peninsula = mode == "peninsula";
@@ -141,10 +173,77 @@ impl Coast {
             }
         }
         // Bays could sever an isthmus; islands only take small coves and points.
-        if !archipelago && !(mask == 255 && peninsula) {
-            self.shore_features(&mut rng, mask != 255);
+        let lone_cove = mask.count_ones() == 1 && mask.trailing_zeros() % 2 == 0;
+        if !archipelago && !(mask == 255 && peninsula) && !lone_cove {
+            self.shore_features(&mut rng, false);
         }
-        // Detached rocks near the actual shore, including beside peninsulas.
+        self.islets_from = self.parameters.len();
+        self.archipelago = archipelago;
+        self.place_islets(&|_, _| 0.0);
+        Ok(())
+    }
+
+    /// Fit the plan to the bare relief, sampled cell-centred on an `n`² grid over the
+    /// map: the relief median and spread drive the drowning, and the sea share of the
+    /// selected edges is calibrated on the actual relief (seeded per direction), so a
+    /// single edge never floods half of the map. Offshore islets are placed again.
+    pub fn fit(&mut self, heights: &[f32], n: usize) -> Result<(), String> {
+        if !self.active() {
+            return Ok(());
+        }
+        if n < 2 || heights.len() != n * n || heights.iter().any(|h| !h.is_finite()) {
+            return Err("Invalid coast relief samples".into());
+        }
+        let relief: Vec<f64> = heights.iter().map(|&h| self.marine_relief(h as f64)).collect();
+        let mut land: Vec<f64> = relief.iter().copied().filter(|&h| h > 0.0).collect();
+        if land.len() < relief.len() / 10 {
+            land = relief.clone();
+        }
+        land.sort_by(f64::total_cmp);
+        let quantile = |q: f64| land[((land.len() - 1) as f64 * q).round() as usize];
+        let spread = quantile(0.85) - quantile(0.15);
+        self.parameters[RELIEF_MEDIAN] = quantile(0.5) as f32;
+        self.parameters[RELIEF_INVERSE] = if spread > 1e-6 { (1.0 / spread) as f32 } else { 0.0 };
+        self.parameters[SHIFT] = 0.0;
+        self.parameters.truncate(self.islets_from);
+        self.parameters[1] = ((self.islets_from - self.land_start()) / 12) as f32;
+        let mask = self.parameters[0] as u32;
+        if mask != 255 {
+            // The seeded plan sets the intended sea share; the relief only redistributes
+            // it. A lone cardinal cove stays small; corners and runs follow their plan.
+            let lone_cove = mask.count_ones() == 1 && mask.trailing_zeros() % 2 == 0;
+            let cell = 1.0 / n as f64;
+            let geometry: Vec<f64> = (0..n * n)
+                .map(|i| self.geometry((i % n) as f64 * cell + cell * 0.5, (i / n) as f64 * cell + cell * 0.5, cell).0)
+                .collect();
+            let planned = geometry.iter().filter(|&&g| g <= 0.0).count() as f64 / geometry.len() as f64;
+            let target = if lone_cove { planned.clamp(0.06, 0.15) } else { planned.clamp(0.03, 0.72) };
+            let sea = |coast: &Self, shift: f64| {
+                geometry.iter().zip(&relief)
+                    .filter(|&(&g, &h)| g + shift + coast.relief_term(h, g + shift) <= 0.0)
+                    .count() as f64 / geometry.len() as f64
+            };
+            // A bounded shift: the calibration never opens a cove onto the whole side.
+            let (mut low, mut high) = (-0.1, 0.1);
+            for _ in 0..32 {
+                let middle = 0.5 * (low + high);
+                if sea(self, middle) > target { low = middle } else { high = middle }
+            }
+            self.parameters[SHIFT] = (0.5 * (low + high)) as f32;
+        }
+        let at = |x: f64, y: f64| {
+            let (i, j) = ((x * n as f64).floor().clamp(0.0, (n - 1) as f64) as usize, (y * n as f64).floor().clamp(0.0, (n - 1) as f64) as usize);
+            relief[j * n + i]
+        };
+        self.place_islets(&at);
+        Ok(())
+    }
+
+    /// Detached rocks near the actual shore, including beside peninsulas.
+    fn place_islets(&mut self, relief: &dyn Fn(f64, f64) -> f64) {
+        let mask = self.parameters[0] as u32;
+        let archipelago = self.archipelago;
+        let mut rng = self.rng.fork("islets");
         let wanted = if mask == 255 && archipelago {
             18 + (rng.float() * 15.0) as usize
         } else {
@@ -184,7 +283,7 @@ impl Coast {
             if x.min(y).min(1.0 - x).min(1.0 - y) < r * 2.2 + 0.01 {
                 continue;
             }
-            let (distance, _, _, _) = self.distance(x, y, 0.0);
+            let (distance, _, _, _) = self.distance(x, y, 0.0, relief(x, y));
             if !(-clearance - 0.045..-clearance).contains(&distance)
                 || islets
                     .iter()
@@ -194,9 +293,8 @@ impl Coast {
             }
             if (0..8).any(|i| {
                 let angle = i as f64 * TAU / 8.0;
-                self.distance(x + r * 2.2 * angle.cos(), y + r * 2.2 * angle.sin(), 0.0)
-                    .0
-                    > -0.003
+                let (px, py) = (x + r * 2.2 * angle.cos(), y + r * 2.2 * angle.sin());
+                self.distance(px, py, 0.0, relief(px, py)).0 > -0.003
             }) {
                 continue;
             }
@@ -205,7 +303,109 @@ impl Coast {
             islets.push((x, y, r));
             target_attempts = 0;
         }
-        Ok(())
+    }
+
+    /// First land capsule, after the sea capsules.
+    fn land_start(&self) -> usize {
+        HEADER + self.parameters[SEA_COUNT] as usize * SEA_STRIDE
+    }
+
+    fn sea_capsule(&mut self, a: (f64, f64), b: (f64, f64), ra: f64, rb: f64) {
+        let at = self.land_start();
+        self.parameters.splice(at..at, [a.0, a.1, b.0, b.1, ra, rb, 0.0, 0.0].map(|v| v as f32));
+        self.parameters[SEA_COUNT] += 1.0;
+    }
+
+    /// The selected edges, as seas entering the map. The boundary is split into eight
+    /// pieces: each cardinal owns the middle third of its side, each corner the last
+    /// third of one side and the first third of the next. Adjacent selections form one
+    /// run: SW+S+SE is the whole bottom. A lone cardinal is a bounded inlet through
+    /// part of its side (cove, gulf or broad bay); anything else is a coastal band along
+    /// its run, rounded at the corners and tapered at its ends.
+    fn edge_seas(&mut self, mask: u32) {
+        let mut rng = self.rng.fork("edge-seas");
+        let selected = |i: usize| mask & (1 << (i % 8)) != 0;
+        let Some(free) = (0..8).find(|&i| !selected(i)) else { return };
+        let mut i = free + 1;
+        while i < free + 8 {
+            if !selected(i) { i += 1; continue; }
+            let first = i;
+            while i < free + 8 && selected(i) { i += 1; }
+            let last = i - 1;
+            if first == last && first % 2 == 0 {
+                self.cove(&mut rng, first % 8);
+                continue;
+            }
+            // Perimeter positions clockwise from the top-left corner, one unit per side.
+            let half = |k: usize| if k % 2 == 0 { 1.0 / 6.0 } else { 1.0 / 3.0 };
+            let (p0, p1) = (0.5 + 0.5 * first as f64 - half(first), 0.5 + 0.5 * last as f64 + half(last));
+            let mut knots = vec![p0];
+            let mut corner = p0.floor() + 1.0;
+            while corner < p1 - 1e-9 {
+                knots.push(corner);
+                corner += 1.0;
+            }
+            knots.push(p1);
+            // Finer knots, so the sea reach varies along a long coast.
+            let mut points = vec![knots[0]];
+            for pair in knots.windows(2) {
+                let pieces = ((pair[1] - pair[0]) * 3.0).ceil().max(1.0) as usize;
+                for k in 1..=pieces {
+                    points.push(pair[0] + (pair[1] - pair[0]) * k as f64 / pieces as f64);
+                }
+            }
+            let corner_only = first == last;
+            let reach = if corner_only { rng.range(0.20, 0.32) } else { rng.range(0.15, 0.25) };
+            let radii: Vec<f64> = (0..points.len())
+                .map(|k| {
+                    if k == 0 || k + 1 == points.len() {
+                        reach * rng.range(0.25, 0.45)
+                    } else {
+                        reach * rng.range(0.7, 1.3)
+                    }
+                })
+                .collect();
+            for k in 1..points.len() {
+                self.sea_capsule(perimeter(points[k - 1]), perimeter(points[k]), radii[k - 1], radii[k]);
+            }
+        }
+    }
+
+    /// A sea inlet through part of the side of cardinal direction `i`: mostly a cove
+    /// or gulf narrower at its mouth than inside, sometimes a broad bay.
+    fn cove(&mut self, rng: &mut Rng, i: usize) {
+        // Side centre, along-side tangent and inward normal of N, E, S, W.
+        let (m, t, inward) = [
+            ((0.5, 0.0), (1.0, 0.0), (0.0, 1.0)),
+            ((1.0, 0.5), (0.0, 1.0), (-1.0, 0.0)),
+            ((0.5, 1.0), (-1.0, 0.0), (0.0, -1.0)),
+            ((0.0, 0.5), (0.0, -1.0), (1.0, 0.0)),
+        ][i / 2];
+        let point = |a: f64, depth: f64| (m.0 + t.0 * a + inward.0 * depth, m.1 + t.1 * a + inward.1 * depth);
+        let centre = rng.range(-0.10, 0.10);
+        if rng.float() < 0.78 {
+            let mouth = rng.range(0.05, 0.10);
+            let depth = rng.range(0.18, 0.34);
+            let bulb = rng.range(0.07, 0.13);
+            let bend = rng.range(-0.08, 0.08);
+            let (a, b, c, d) = (point(centre, -0.03), point(centre + bend * 0.3, depth * 0.35),
+                point(centre + bend, depth * 0.7), point(centre + bend * 1.3, depth));
+            self.sea_capsule(a, b, mouth, mouth * rng.range(1.0, 1.3));
+            let neck = self.parameters[self.land_start() - 3] as f64;
+            self.sea_capsule(b, c, neck, bulb);
+            self.sea_capsule(c, d, bulb, bulb * rng.range(0.25, 0.45));
+        } else {
+            // A broad bay: a disc whose chord on the side is the mouth.
+            let mouth = rng.range(0.14, 0.24);
+            let depth = rng.range(0.10, 0.18);
+            let radius = (mouth * mouth + depth * depth) / (2.0 * depth);
+            let at = point(centre, depth - radius);
+            self.sea_capsule(at, at, radius, radius);
+            let lobe = rng.range(-0.5, 0.5) * mouth;
+            let at = point(centre + lobe, depth * 0.4);
+            let r = depth * rng.range(0.4, 0.7);
+            self.sea_capsule(at, at, r, r);
+        }
     }
 
     /// One branched landmass: a crooked spine of capsules and `arms` side lobes.
@@ -302,7 +502,7 @@ impl Coast {
     /// drawn so far, so that no two seeds share one caricatural outline.
     fn shore_features(&mut self, rng: &mut Rng, mainland: bool) {
         let count = 2 + (rng.float() * 5.0) as usize;
-        let inside = self.distance(0.5, 0.5, 0.0).0 > 0.0;
+        let inside = self.geometry(0.5, 0.5, 0.0).0 > 0.0;
         let mut placed = 0;
         for _ in 0..count * 6 {
             if placed == count {
@@ -323,7 +523,7 @@ impl Coast {
                 let (x, y) = (0.5 + dx * r, 0.5 + dy * r);
                 (0.0..=1.0).contains(&x)
                     && (0.0..=1.0).contains(&y)
-                    && (self.distance(x, y, 0.0).0 > 0.0) != inside
+                    && (self.geometry(x, y, 0.0).0 > 0.0) != inside
             }) else {
                 continue;
             };
@@ -440,7 +640,31 @@ impl Coast {
         self.parameters[3] as f64
     }
 
-    fn distance(&self, x: f64, y: f64, footprint: f64) -> (f64, f64, f64, f64) {
+    /// Drowning of the relief near the shore: low ground (valleys, river mouths,
+    /// lowlands) lets the sea in as bays, rias and estuaries; high ground holds out as
+    /// headlands and, offshore, as islets. Bounded by the drowning, fading beyond its band.
+    fn relief_term(&self, relief: f64, distance: f64) -> f64 {
+        let inverse = self.parameters[RELIEF_INVERSE] as f64;
+        if inverse == 0.0 {
+            return 0.0;
+        }
+        let z = ((relief - self.parameters[RELIEF_MEDIAN] as f64) * inverse).tanh();
+        let band = self.parameters[DROWNING_BAND] as f64;
+        self.parameters[DROWNING] as f64 * z * smooth(1.0 - distance.abs() / band)
+    }
+
+    /// Signed distance (positive inland) of the fitted coast over this marine `relief`.
+    fn distance(&self, x: f64, y: f64, footprint: f64, relief: f64) -> (f64, f64, f64, f64) {
+        let (mut distance, scale, islet_height, apron) = self.geometry(x, y, footprint);
+        if islet_height == 0.0 {
+            distance += self.parameters[SHIFT] as f64;
+            distance += self.relief_term(relief, distance);
+        }
+        (distance, scale, islet_height, apron)
+    }
+
+    /// The geometric plan alone: shorelines, landmasses, islets, bays and headlands.
+    fn geometry(&self, x: f64, y: f64, footprint: f64) -> (f64, f64, f64, f64) {
         let at = |i: usize| self.parameters[i] as f64;
         let mask = at(0) as u32;
         let mut distance = -2.0;
@@ -460,20 +684,17 @@ impl Coast {
                         .noise
                         .fbm_filtered(x / ws - 7.7, y / ws + 9.1, 3, 0.5, footprint / ws),
             );
-            // Each sea direction is a seeded shoreline (offset and turn); smooth
-            // union of the seas, so corners between two coasts stay rounded.
-            let mut shore = 10.0_f64;
-            for i in 0..8 {
-                if mask & (1 << i) == 0 {
-                    continue;
-                }
-                let angle = i as f64 * TAU / 8.0 + at(16 + i);
-                let d = at(8 + i) - ((wx - 0.5) * angle.sin() - (wy - 0.5) * angle.cos());
-                let h = (0.12 - (shore - d).abs()).max(0.0) / 0.12;
-                shore = shore.min(d) - h * h * 0.03;
+            // The edge seas (`edge_seas`): the union of their capsules, sea inside.
+            let mut sea = -10.0_f64;
+            for k in 0..at(SEA_COUNT) as usize {
+                let j = HEADER + k * SEA_STRIDE;
+                let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
+                let (dx, dy) = (bx - ax, by - ay);
+                let t = (((wx - ax) * dx + (wy - ay) * dy) / (dx * dx + dy * dy).max(1e-12)).clamp(0.0, 1.0);
+                sea = sea.max(at(j + 4) * (1.0 - t) + at(j + 5) * t - (wx - ax - t * dx).hypot(wy - ay - t * dy));
             }
             let (large, ls, fine, fs) = (at(26), at(27), at(28), at(29));
-            distance = shore
+            distance = -sea
                 + large
                     * self
                         .noise
@@ -485,8 +706,9 @@ impl Coast {
         }
         let mut cached_phase = f64::NAN;
         let mut detail = 0.0;
+        let land = self.land_start();
         for i in 0..at(1) as usize {
-            let j = HEADER + i * 12;
+            let j = land + i * 12;
             let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
             let (dx, dy) = (bx - ax, by - ay);
             let t =
@@ -551,6 +773,13 @@ impl Coast {
     /// grows with the relief it cuts. Beyond the band the sea floor is flat at `-depth`.
     fn shore_band(&self, scale: f64, apron: f64, relief: f64, width: f64) -> f64 {
         4.0 * (self.parameters[2] as f64).max(relief / (width * 0.45)).min(scale * 0.18) * 1.75 * apron
+            * self.shelf()
+    }
+
+    /// Seeded shelf width: narrow steep shores to broad shallow ones.
+    fn shelf(&self) -> f64 {
+        let shelf = self.parameters[SHELF] as f64;
+        if shelf > 0.0 { shelf } else { 1.0 }
     }
 
     /// Open sea: `(x, y)`, in map widths, is provably beyond the coastal band of every
@@ -569,28 +798,38 @@ impl Coast {
                 raised += at(j + 3).max(0.0) * (1.0 - d2) * (1.0 - d2);
             }
         }
+        // The fitted shift and the relief drowning raise the land by at most this much.
+        if at(RELIEF_INVERSE) != 0.0 {
+            let z = ((height - at(RELIEF_MEDIAN)) * at(RELIEF_INVERSE)).tanh();
+            raised += at(DROWNING) * z.max(0.0);
+        }
+        raised += at(SHIFT).max(0.0);
         let mask = at(0) as u32;
         if mask != 255 {
-            // `shore` never exceeds the smallest of its directions' distances.
-            let reach = at(24).abs() * NOISE_BOUND;
-            let mut shore = 10.0_f64;
-            for i in 0..8 {
-                if mask & (1 << i) == 0 {
-                    continue;
-                }
-                let (sin, cos) = (i as f64 * TAU / 8.0 + at(16 + i)).sin_cos();
-                let warp = reach * (sin.abs() + cos.abs());
-                shore = shore.min(at(8 + i) - ((x - 0.5) * sin - (y - 0.5) * cos) + warp);
+            // The warp moves the sample by at most `reach`; a tapered capsule changes
+            // by at most (1 + its radius slope) per unit of displacement.
+            let reach = at(24).abs() * NOISE_BOUND * std::f64::consts::SQRT_2;
+            let mut sea = -10.0_f64;
+            for k in 0..at(SEA_COUNT) as usize {
+                let j = HEADER + k * SEA_STRIDE;
+                let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
+                let (dx, dy) = (bx - ax, by - ay);
+                let length = dx.hypot(dy);
+                let t = (((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy).max(1e-12)).clamp(0.0, 1.0);
+                let slope = if length > 1e-9 { (at(j + 5) - at(j + 4)).abs() / length } else { 0.0 };
+                let base = at(j + 4) * (1.0 - t) + at(j + 5) * t - (x - ax - t * dx).hypot(y - ay - t * dy);
+                sea = sea.max(base - (1.0 + slope) * reach);
             }
-            let top = shore + (at(26).abs() + at(28).abs()) * NOISE_BOUND + raised;
+            let top = -sea + (at(26).abs() + at(28).abs()) * NOISE_BOUND + raised;
             if top + self.shore_band(0.2, 1.0, height, width) > 0.0 {
                 return false;
             }
         } else if raised - 2.0 + self.shore_band(0.2, 1.0, height, width) > 0.0 {
             return false;
         }
+        let land = self.land_start();
         for i in 0..at(1) as usize {
-            let j = HEADER + i * 12;
+            let j = land + i * 12;
             let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
             let (dx, dy) = (bx - ax, by - ay);
             let t =
@@ -635,7 +874,7 @@ impl Coast {
         // positive floor so low pockets retain the selected coast geography.
         let height = self.marine_relief(height);
         let (distance, scale, islet_height, apron) =
-            self.distance(x / width, y / width, footprint / width);
+            self.distance(x / width, y / width, footprint / width, height);
         let height = if islet_height > 0.0 {
             islet_height
         } else {
@@ -658,10 +897,23 @@ impl Coast {
             * apron
             * (1.0 - 0.90 * cliff);
         if distance <= 0.0 {
-            -self.depth() * smooth(-distance / (ramp * 4.0))
+            -self.depth() * smooth(-distance / (ramp * 4.0 * self.shelf()))
         } else {
             height * smooth(distance / ramp)
         }
+    }
+}
+
+/// Point of the map boundary at perimeter `p`, clockwise from the top-left corner,
+/// one unit per side (y grows southwards).
+fn perimeter(p: f64) -> (f64, f64) {
+    let p = p.rem_euclid(4.0);
+    let f = p.fract();
+    match p as usize {
+        0 => (f, 0.0),
+        1 => (1.0, f),
+        2 => (1.0 - f, 1.0),
+        _ => (0.0, 1.0 - f),
     }
 }
 
@@ -672,9 +924,12 @@ mod open_sea_tests {
     #[test]
     fn open_sea_is_exactly_what_the_shore_returns() {
         let width = 25000.0;
-        for (mask, mode) in [(255, "island"), (255, "archipelago"), (255, "peninsula"), (3, "island"), (136, "island")] {
+        for (mask, mode, fitted) in [(255, "island", false), (255, "archipelago", false), (255, "peninsula", true), (3, "island", false), (136, "island", true), (1, "island", true), (56, "island", true)] {
             let mut coast = Coast::new(Rng::new("open-sea").fork("coast"), width, 10000.0, 1000.0, 0.0);
             coast.configure(mask, mode).unwrap();
+            if fitted {
+                coast.fit(&hills(48), 48).unwrap();
+            }
             let mut open = 0;
             for y in 0..160 {
                 for x in 0..160 {
@@ -687,6 +942,71 @@ mod open_sea_tests {
                 }
             }
             println!("{mask} {mode}: open sea {:.1}%", open as f64 / 256.0);
+        }
+    }
+
+    /// Rolling relief with valleys of several sizes, in metres, on an `n`² grid.
+    fn hills(n: usize) -> Vec<f32> {
+        (0..n * n).map(|i| {
+            let (x, y) = ((i % n) as f64 / n as f64, (i / n) as f64 / n as f64);
+            (180.0 + 120.0 * (x * 9.0).sin() * (y * 7.0).cos() + 45.0 * (x * 23.0 + y * 17.0).sin()) as f32
+        }).collect()
+    }
+
+    /// Sea cells of a fitted coast on the `n`² sampling grid of `relief`.
+    fn sea_cells(mask: u32, seed: usize, relief: &[f32], n: usize) -> Vec<bool> {
+        let width = 25000.0;
+        let mut coast = Coast::new(Rng::new(&format!("coast-share-{seed}")).fork("coast"), width, 10000.0, 1000.0, 0.0);
+        coast.configure(mask, "island").unwrap();
+        coast.fit(relief, n).unwrap();
+        let cell = width / n as f64;
+        (0..n * n).map(|i| coast.apply(((i % n) as f64 + 0.5) * cell, ((i / n) as f64 + 0.5) * cell, width, relief[i] as f64, cell) <= 0.0).collect()
+    }
+
+    /// A lone south edge is a cove or gulf through part of the bottom side: small, it
+    /// reaches the edge, and most draws keep land on both flanks of that side.
+    #[test]
+    fn a_lone_cardinal_is_a_cove_through_part_of_its_side() {
+        let n = 48;
+        let relief = hills(n);
+        let (mut enclosed, mut shares, mut masks) = (0, Vec::new(), Vec::new());
+        let draws = 20;
+        for seed in 0..draws {
+            let sea = sea_cells(16, seed, &relief, n);
+            let share = sea.iter().filter(|&&s| s).count() as f64 / (n * n) as f64;
+            let bottom = &sea[(n - 1) * n..];
+            let open = bottom.iter().filter(|&&s| s).count();
+            assert!(share <= 0.20, "seed {seed}: share {share}");
+            assert!(open > 0 && open < n * 7 / 10, "seed {seed}: {open} of {n} bottom cells");
+            // No sea along the other sides.
+            assert!(sea[..n].iter().all(|&s| !s), "seed {seed}: top side");
+            assert!((0..n * 2 / 3).all(|y| !sea[y * n] && !sea[y * n + n - 1]), "seed {seed}: east and west sides");
+            let flank = n * 15 / 100;
+            enclosed += usize::from(bottom[..flank].iter().chain(&bottom[n - flank..]).all(|&s| !s));
+            shares.push(share);
+            masks.push(sea);
+        }
+        assert!(enclosed * 10 >= draws * 7, "{enclosed} of {draws} draws enclosed");
+        // The calibration holds the share near its target: the draws differ by their shape.
+        let differ = |a: &[bool], b: &[bool]| a.iter().zip(b).filter(|(x, y)| x != y).count();
+        assert!(masks[1..].iter().all(|m| differ(m, &masks[0]) * 100 >= n * n), "shares {shares:?}");
+    }
+
+    /// SW + S + SE is the whole bottom side; a lone corner stays in its corner.
+    #[test]
+    fn adjacent_edges_merge_into_one_coast() {
+        let n = 48;
+        let relief = hills(n);
+        for seed in 0..8 {
+            let sea = sea_cells(32 | 16 | 8, seed, &relief, n);
+            let bottom = sea[(n - 1) * n..].iter().filter(|&&s| s).count();
+            assert!(bottom * 10 >= n * 8, "seed {seed}: {bottom} of {n} bottom cells");
+            for third in 0..3 {
+                assert!(sea[(n - 1) * n + third * n / 3..(n - 1) * n + (third + 1) * n / 3].iter().any(|&s| s), "seed {seed}: third {third}");
+            }
+            let corner = sea_cells(8, seed, &relief, n);
+            assert!(corner[n * n - 1], "seed {seed}: SE corner");
+            assert!(!corner[0] && !corner[n - 1] && !corner[(n - 1) * n], "seed {seed}: other corners");
         }
     }
 }

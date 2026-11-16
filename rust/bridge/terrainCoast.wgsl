@@ -1,8 +1,9 @@
 // The dedicated third simplex stream matches Rust's shore-noise fork.
-// Fourteen header vec4s (profile, shore offsets, shore turns, character, six bumps), then
-// each capsule is three vec4s: endpoints; radii/scale/phase; islet height/center/apron.
+// Sixteen header vec4s (profile, unused offsets and turns, character, six bumps, then the
+// relief fit: shift/median/inverse spread/drowning and band/shelf/sea count), then the edge
+// sea capsules, two vec4s each (endpoints; radii), then each land capsule is three vec4s:
+// endpoints; radii/scale/phase; islet height/center/apron. Same layout as Rust `Coast`.
 @group(0) @binding(6) var<storage, read> coast: array<vec4<f32>>;
-fn headerValue(i:u32)->f32 {return coast[i/4u][i%4u];}
 fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let config=coast[0];let mask=u32(config.x);
   if(mask==0u){return terrainHeight;}
@@ -16,22 +17,21 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
     let character=coast[6];let fine=coast[7];
     let warped=uv+character.x*vec2<f32>(fbm(uv/character.y+vec2<f32>(5.2,1.3),2u,3u,0.5,footprint/character.y),
       fbm(uv/character.y+vec2<f32>(-7.7,9.1),2u,3u,0.5,footprint/character.y));
-    // Seeded shoreline per sea direction, smoothly united as in Rust.
-    var shore=10.0;
-    for(var i=0u;i<8u;i++){
-      if((mask&(1u<<i))==0u){continue;}
-      let angle=f32(i)*0.7853981633974483+headerValue(16u+i);
-      let d=headerValue(8u+i)-((warped.x-0.5)*sin(angle)-(warped.y-0.5)*cos(angle));
-      let h=max(0.12-abs(shore-d),0.0)/0.12;
-      shore=min(shore,d)-h*h*0.03;
+    // Edge seas (coves, corner seas, coastal runs): union of their capsules, as in Rust.
+    var sea=-10.0;
+    for(var k=0u;k<u32(coast[15].z);k++){
+      let ends=coast[16u+k*2u];let radii=coast[17u+k*2u];let delta=ends.zw-ends.xy;
+      let t=clamp(dot(warped-ends.xy,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
+      sea=max(sea,mix(radii.x,radii.y,t)-length(warped-ends.xy-t*delta));
     }
-    distance=shore
+    distance=-sea
       +character.z*fbm(uv/character.w,2u,7u,0.56,footprint/character.w)
       +fine.x*fbm(uv/fine.y,2u,5u,0.55,footprint/fine.y);
   }
   var cachedPhase=-1.0;var detail=0.0;
+  let land=16u+2u*u32(coast[15].z);
   for(var i=0u;i<u32(config.y);i++){
-    let ends=coast[14u+i*3u];let shape=coast[15u+i*3u];let geology=coast[16u+i*3u];let delta=ends.zw-ends.xy;
+    let ends=coast[land+i*3u];let shape=coast[land+1u+i*3u];let geology=coast[land+2u+i*3u];let delta=ends.zw-ends.xy;
     let t=clamp(dot(uv-ends.xy,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
     let base=mix(shape.x,shape.y,t)-length(uv-ends.xy-t*delta);let s=shape.z;
     if(base+s*0.165<=distance){continue;}
@@ -58,11 +58,14 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
       let bump=coast[8u+k];let d2=dot(uv-bump.xy,uv-bump.xy)/(bump.z*bump.z);
       if(d2<1.0){distance+=bump.w*(1.0-d2)*(1.0-d2);}
     }
+    // Fitted shift and relief drowning, as Rust `Coast::distance`.
+    let fit=coast[14];distance+=fit.x;
+    if(fit.z!=0.0){distance+=fit.w*tanh(clamp((height-fit.y)*fit.z,-9.0,9.0))*smooth01(1.0-abs(distance)/coast[15].x);}
   }
   if(isletHeight>0.0){height=isletHeight;}
   let cliff=smooth01((fbm(uv/0.12,2u,3u,0.5,0.0)-0.20)/0.25);
   let widthVariation=0.65+1.1*smooth01(fbm(uv/0.21+vec2<f32>(11.7,-4.2),2u,3u,0.5,0.0)+0.5);
   let ramp=min(max(config.z,height/(p.values[0].x*0.45)),scale*0.18)*widthVariation*apron*(1.0-0.90*cliff);
-  if(distance<=0.0){return -config.w*smooth01(-distance/(ramp*4.0));}
+  if(distance<=0.0){return -config.w*smooth01(-distance/(ramp*4.0*coast[15].y));}
   return height*smooth01(distance/ramp);
 }

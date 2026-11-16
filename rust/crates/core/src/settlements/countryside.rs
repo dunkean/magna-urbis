@@ -77,10 +77,10 @@ pub(super) fn complete(t: &act::Site, culture: &str, b: &[ActivityBuilding]) -> 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn site(t: &act::Site, mode: &str, parent: &Settlement, anchor: String, centre: Point, access: Point, buildings: Vec<ActivityBuilding>, f: &Fields) -> ActivitySite {
+fn site(t: &act::Site, mode: &str, parent: &Settlement, anchor: String, centre: Point, access: Point, mut buildings: Vec<ActivityBuilding>, f: &Fields) -> ActivitySite {
     let culture = parent.spec.culture.as_str();
     let id = format!("activity:{}:{anchor}", parent.spec.key);
-    let installations = installations::lay(&sites::allowed_installations(t, culture), &id, centre, &buildings, f, None, &|_| false);
+    let installations = installations::lay_site(&sites::allowed_installations(t, culture), &id, culture, centre, &mut buildings, f, None, &|_| false);
     ActivitySite {
         template: t.id.clone(),
         mode: mode.into(),
@@ -363,8 +363,8 @@ pub(super) fn junctions(seed: &str, f: &Fields, road_sites: &[RoadSite], roads: 
                 break;
             }
         }
-        let Some((centre, buildings)) = placed else { continue };
-        let installations = installations::lay(&sites::allowed_installations(t, culture), &id, centre, &buildings, f, Some(at), &|q| ribbon.iter().any(|(a, b, hw)| seg_distance(q, *a, *b) <= hw + 2.0));
+        let Some((centre, mut buildings)) = placed else { continue };
+        let installations = installations::lay_site(&sites::allowed_installations(t, culture), &id, culture, centre, &mut buildings, f, Some(at), &|q| ribbon.iter().any(|(a, b, hw)| seg_distance(q, *a, *b) <= hw + 2.0));
         out.push(ActivitySite {
             template: t.id.clone(),
             mode: "network_node".into(),

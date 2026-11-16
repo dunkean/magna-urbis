@@ -272,7 +272,7 @@ fn build(s: &Settlement, c: &Candidate, f: &Fields) -> Option<ActivitySite> {
         return None;
     }
     let access = Point { x: c.anchor.access.0, y: c.anchor.access.1 };
-    let installations = installations::lay(&allowed_installations(c.site, culture), &id, centre, &buildings, f, None, &|_| false);
+    let installations = installations::lay_site(&allowed_installations(c.site, culture), &id, culture, centre, &mut buildings, f, None, &|_| false);
     Some(ActivitySite {
         template: c.site.id.clone(),
         mode: c.mode.into(),

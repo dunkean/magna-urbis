@@ -11,6 +11,14 @@ pub fn cut_coast_field(seed: &str, width: f64, motif: f64, amplitude: f64, mask:
     let root=Rng::new(&format!("magna-urbis:{seed}")).fork("terrain");
     let mut coast=crate::coast::Coast::new(root.fork("coast"),width,motif,amplitude,0.);
     coast.configure(mask,mode)?;
+    // Fit the coast to this relief over the map (the field may extend beyond it).
+    const FIT: usize = 64;
+    let pick=|v:f64|(((v-origin)/cell-0.5).round().clamp(0.,(n-1) as f64)) as usize;
+    let relief:Vec<f32>=(0..FIT*FIT).map(|i|{
+        let (x,y)=(((i%FIT) as f64+0.5)*width/FIT as f64,((i/FIT) as f64+0.5)*width/FIT as f64);
+        field[pick(y)*n+pick(x)]
+    }).collect();
+    coast.fit(&relief,FIT)?;
     crate::terrain_par::rows(field,n,|y,row| {
         for (x,h) in row.iter_mut().enumerate() {
             *h=coast.apply(origin+(x as f64+0.5)*cell,origin+(y as f64+0.5)*cell,width,*h as f64,cell) as f32;

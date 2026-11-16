@@ -275,8 +275,8 @@ fn build(s: &Spot, p: &Place, f: &Fields, roads: &RoadOutput) -> Option<Activity
             }
         }
     }
-    let (centre, buildings) = placed?;
-    let installations = installations::lay(&sites::allowed_installations(tpl, culture), &id, centre, &buildings, f, Some(s.at), &|q| !ribbon.clear(q, 2.0));
+    let (centre, mut buildings) = placed?;
+    let installations = installations::lay_site(&sites::allowed_installations(tpl, culture), &id, culture, centre, &mut buildings, f, Some(s.at), &|q| !ribbon.clear(q, 2.0));
     Some(ActivitySite {
         template: s.template.into(),
         mode: "network_node".into(),

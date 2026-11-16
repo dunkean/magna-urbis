@@ -430,7 +430,7 @@ fn build(seed: &str, s: &Settlement, c: &Candidate, f: &Fields) -> Option<Activi
         buildings = act::ruined(&id, culture, buildings);
     }
     let (kind, line, access, class) = approach(f, t, place, centre, front, up, &mut rng);
-    let mut installations = installations::lay(&sites::allowed_installations(t, culture), &id, centre, &buildings, f, None, &|_| false);
+    let mut installations = installations::lay_site(&sites::allowed_installations(t, culture), &id, culture, centre, &mut buildings, f, None, &|_| false);
     installations.extend(line);
     Some(ActivitySite {
         template: t.id.clone(),

@@ -87,6 +87,31 @@ export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: 
         volumes: [], useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: [], resolved: null,
         programme: { massing: sent ?? [farmPiece(b, culture, tone)] } } as unknown as PlacedBuilding);
     });
+    // The lot's works stand as bodies too: rail fences round the pens and paddocks (pieces of at most 8 m, each on
+    // its own ground), the threshing floor a low beaten-earth disc on a stone rim. Same records as the buildings.
+    (f.plots ?? []).forEach((plot, pi) => {
+      if (plot.poly.length < 3) return;
+      const body = (id: string, poly: Polygon, piece: MassingPiece): void => {
+        const footprint = [{ outer: poly, holes: [] }], c = centreOf(poly), z = altitude(c.x, c.y);
+        out.push({ id, parcel_id: `farm:${fi}`, function: 'warehouse', culture: { culture, pack: '', mode: 'historical_inspired', borrowing: null }, recipe_id: 'silhouette', variant_id: plot.kind,
+          transform: { origin: c, orientation_deg: 0 }, ground_z_m: Number.isFinite(z) ? z : ground, footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: c, access_id: '',
+          volumes: [], useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: [], resolved: null,
+          programme: { massing: [piece] } } as unknown as PlacedBuilding);
+      };
+      if (plot.kind === 'threshing-floor') body(`farm:${fi}:floor:${pi}`, plot.poly, { floors: 1, eave_m: .25, rise_m: 0, roof: 'flat', ridges: [], cover: 'earth', wall: 'stone', tone: .5 } as MassingPiece);
+      if (plot.kind !== 'pen' && plot.kind !== 'paddock') return;
+      plot.poly.forEach((a, k) => {
+        const b = plot.poly[(k + 1) % plot.poly.length], length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length < .5) return;
+        const ux = (b.x - a.x) / length, uy = (b.y - a.y) / length, n = Math.ceil(length / 8), h = .12;
+        for (let j = 0; j < n; j++) {
+          const s0 = length * j / n, s1 = length * (j + 1) / n;
+          body(`farm:${fi}:fence:${pi}:${k}:${j}`, [{ x: a.x + ux * s0 - uy * h, y: a.y + uy * s0 + ux * h }, { x: a.x + ux * s1 - uy * h, y: a.y + uy * s1 + ux * h },
+            { x: a.x + ux * s1 + uy * h, y: a.y + uy * s1 - ux * h }, { x: a.x + ux * s0 + uy * h, y: a.y + uy * s0 - ux * h }],
+          { floors: 1, eave_m: 1.1, rise_m: 0, roof: 'flat', ridges: [], cover: 'shingle', wall: 'wood', tone: .4 } as MassingPiece);
+        }
+      });
+    });
   });
   return out;
 }
@@ -319,9 +344,11 @@ export function drawFarmLotPieces(ctx: CanvasRenderingContext2D, farmsteads: rea
     ctx.fillStyle = paintOf(earth, .22 * bare, dim); ctx.fill(p.yard); ctx.fill(p.core); ctx.fill(p.pens);
     ctx.strokeStyle = paintOf([62, 50, 38], .28 * bare, dim); ctx.lineWidth = Math.max(.2, .6 * o.mpp); ctx.stroke(p.pens);
     // Garden: dug soil and low greens close to the ground's own tone; bed rows only where they resolve.
-    ctx.fillStyle = paintOf(blend(ground, [92, 94, 62], .6), .7 * bare, dim); ctx.fill(p.garden);
+    ctx.fillStyle = paintOf(blend(ground, [118, 96, 70], .55), .62 * bare, dim); ctx.fill(p.garden);
+    // The beds read at every scale: green rows on the dug soil (they blend into a striped plot once under a pixel).
+    ctx.strokeStyle = paintOf(blend(ground, [78, 102, 56], .7), .7 * bare, dim); ctx.lineWidth = .7; ctx.stroke(p.rows);
     const rows = Math.max(0, Math.min(1, (.55 - o.mpp) / .2));
-    if (rows > 0) { ctx.strokeStyle = paintOf([70, 57, 41], .42 * rows * bare, dim); ctx.lineWidth = .45; ctx.stroke(p.rows); }
+    if (rows > 0) { ctx.strokeStyle = paintOf([70, 57, 41], .42 * rows * bare, dim); ctx.lineWidth = .2; ctx.stroke(p.rows); }
     // Pond: a wet bank without outline, then the dark water of the map's rivers and lakes (ice under snow).
     ctx.fillStyle = paintOf(blend(blend(ground, [50, 52, 40], .6), SNOW, .7 * snow), .55, dim); ctx.fill(p.bank);
     ctx.fillStyle = paintOf(blend([39, 71, 74], [198, 208, 214], .85 * snow), 1, dim); ctx.fill(p.pond);

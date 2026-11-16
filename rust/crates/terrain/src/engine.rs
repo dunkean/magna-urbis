@@ -789,9 +789,22 @@ impl TerrainGenerator {
         if self.relief == Relief::Cavern && mask != 0 {
             return Err("Les côtes ne s’appliquent pas aux cavernes.".into());
         }
-        self.coast.configure(mask, mode)?;
+        // The coast is fitted to the bare relief: sample it with the coast off.
         self.coastal_surface = Surface::new(Vec::new());
-        Ok(())
+        self.coast.configure(0, mode)?;
+        if mask == 0 {
+            return Ok(());
+        }
+        const FIT: usize = 64;
+        let cell = self.map_width / FIT as f64;
+        let mut relief = vec![0.0_f32; FIT * FIT];
+        crate::terrain_par::rows(&mut relief, FIT, |y, row| {
+            for (x, h) in row.iter_mut().enumerate() {
+                *h = self.height_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell, cell) as f32;
+            }
+        });
+        self.coast.configure(mask, mode)?;
+        self.coast.fit(&relief, FIT)
     }
 
     fn coast_talus(&self) -> f64 {

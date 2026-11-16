@@ -1310,6 +1310,13 @@ impl BuildingSiteIndex {
         // their outbuildings. A lone farm always keeps the core buildings of its
         // culture's farm type (barn, byre…) in that type's layout: the share then
         // only decides its ancillary ones.
+        // A lone farm whose lot the occupation could not cut still gets its farmhouse (its
+        // outbuildings follow below): a house of its culture's size in the lot, along its longest side.
+        if parts.is_empty() && role.starts_with("dwelling.farm") && !role.ends_with(".ruin") && super::roles::is_isolated(&pr.context.intent)
+            && let Some(house) = lone_farmhouse(&lot, building_culture, &site_seed)
+        {
+            parts.push((house, "building"));
+        }
         let ancillary = crate::rng::Rng::new(&site_seed).fork("outbuildings").chance(layout.config.as_ref().map_or(0.5, |c| c.outbuildings));
         let farmhouse = role.starts_with("dwelling.farm");
         let lone = farmhouse && super::roles::is_isolated(&pr.context.intent);
@@ -1739,6 +1746,36 @@ pub fn requests_range(
     })
     .into_iter()
     .collect()
+}
+
+/// The farmhouse of a lone farm lot the occupation preview left empty: its culture's house
+/// size (farmsteads.rs `house_size`), centred on the lot's interior point along its longest
+/// side, shrunk until it stands inside the lot (None on a lot too small for a 4 m house).
+fn lone_farmhouse(lot: &super::Shape, culture: &str, seed: &str) -> Option<super::Shape> {
+    let ring = &lot.outer;
+    if ring.len() < 3 {
+        return None;
+    }
+    let (a, b) = (0..ring.len()).map(|i| (ring[i], ring[(i + 1) % ring.len()]))
+        .max_by(|p, q| (p.1.x - p.0.x).hypot(p.1.y - p.0.y).total_cmp(&(q.1.x - q.0.x).hypot(q.1.y - q.0.y)))?;
+    let l = (b.x - a.x).hypot(b.y - a.y).max(1e-9);
+    let (u, v) = (Point { x: (b.x - a.x) / l, y: (b.y - a.y) / l }, Point { x: -(b.y - a.y) / l, y: (b.x - a.x) / l });
+    let c = super::geometry::interior_point(lot);
+    let (w, d) = super::farmsteads::house_size(culture, seed);
+    let scale = super::culture::house_parameters(culture).0;
+    for k in [1.0, 0.8, 0.64, 0.5] {
+        let (hw, hd) = (w * scale * k / 2.0, d * scale * k / 2.0);
+        if hw.min(hd) < 2.0 {
+            break;
+        }
+        let outer: Vec<Point> = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].iter()
+            .map(|(s, t)| Point { x: c.x + u.x * s * hw + v.x * t * hd, y: c.y + u.y * s * hw + v.y * t * hd }).collect();
+        let house = super::geometry::normalized(super::Shape { outer, holes: vec![] });
+        if house.outer.iter().all(|&p| super::geometry::contains(lot, p)) {
+            return Some(house);
+        }
+    }
+    None
 }
 
 fn ring_area(ring: &[Point]) -> f64 {

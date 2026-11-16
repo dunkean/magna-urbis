@@ -150,6 +150,19 @@ function drawRemoteAccess(ctx: CanvasRenderingContext2D, archetype: string, pts:
   }
 }
 
+/** Worked benches of a pit (quarry, clay pit, shaft): two receding rings toward its floor, darker inward. */
+function drawPitSteps(ctx: CanvasRenderingContext2D, ring: readonly Pt[], stroke: string, mpp: number): void {
+  const cx = ring.reduce((s, p) => s + p.x, 0) / ring.length, cy = ring.reduce((s, p) => s + p.y, 0) / ring.length;
+  for (const [k, shade] of [[.68, .18], [.38, .3]] as const) {
+    ctx.beginPath();
+    ring.forEach((p, i) => { const x = cx + (p.x - cx) * k, y = cy + (p.y - cy) * k; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.globalAlpha = shade; ctx.fillStyle = '#3b3128'; ctx.fill();
+    ctx.globalAlpha = .9; ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(.35, mpp * .6); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 /** Installations (weirs, quarry faces, heaps, piers, corrals…) as flat ground under the buildings; world-metre transform already set.
  * `natural` selects the muted no-outline look of satellite / natural grounds for the remote accesses; the default keeps the ink edge.
  * The same function paints the 2D map and the 3D ground tiles. */
@@ -178,6 +191,7 @@ export function drawInstallations(ctx: CanvasRenderingContext2D, sites: readonly
         ctx.closePath();
         if (style.fill) { ctx.globalAlpha = .85; ctx.fillStyle = style.fill; ctx.fill(); }
         ctx.globalAlpha = 1; ctx.strokeStyle = style.stroke; ctx.lineWidth = Math.max(style.fill ? .5 : style.width, mpp * .8); ctx.stroke();
+        if (g.kind === 'excavation' && mpp < 1.5) drawPitSteps(ctx, g.points, style.stroke, mpp);
       } else {
         ctx.globalAlpha = 1; ctx.strokeStyle = style.stroke; ctx.lineWidth = Math.max(style.width, mpp * 1.2); ctx.stroke();
       }
@@ -188,6 +202,11 @@ export function drawInstallations(ctx: CanvasRenderingContext2D, sites: readonly
   return drawn;
 }
 
+/** Ground height (m) of an installation body (its massing piece carries `ground_m` and `object`), undefined for a yard building. */
+function objectGround(b: ActivitySite['buildings'][number]): number | undefined {
+  const piece = Array.isArray(b.massing) ? b.massing[0] as { object?: boolean; ground_m?: number } | undefined : undefined;
+  return piece?.object && typeof piece.ground_m === 'number' ? piece.ground_m : undefined;
+}
 const scenes = new WeakMap<readonly ActivitySite[], PlacementBatch>();
 /** Native plans of the activity buildings (compact/detailed architecture), retained on the world by `planActivityArchitecture`. */
 interface ActivityPlans { sites: readonly ActivitySite[]; key: string; scene: PlacementBatch }
@@ -209,11 +228,13 @@ function massingScene(sites: readonly ActivitySite[]): PlacementBatch {
     const footprint: Surface = [{ outer: b.ring, holes: [] }];
     const massing = readMassing({ massing: b.massing }, footprint);
     if (!massing) return;
+    // An installation's body (heap, kiln, rack: Rust `installations::raise`) stands on its own ground.
+    const ground = objectGround(b) ?? site.ground;
     const vertices: Vertex3[] = [], faces: { vertices: number[]; normal: [number, number, number]; material: string; kind: string }[] = [];
     let top = 0;
     for (const face of buildingRoof(footprint, massing)) {
       const start = vertices.length;
-      for (const p of face.points) { vertices.push({ x: p.x, y: p.y, z: site.ground + p.z }); top = Math.max(top, p.z); }
+      for (const p of face.points) { vertices.push({ x: p.x, y: p.y, z: ground + p.z }); top = Math.max(top, p.z); }
       faces.push({ vertices: face.points.map((_, i) => start + i), normal: face.normal, material: `activity:${face.cover}`, kind: 'roof' });
       covers.add(face.cover);
     }
@@ -224,9 +245,9 @@ function massingScene(sites: readonly ActivitySite[]): PlacementBatch {
     buildings.push({
       id, parcel_id: site.id, function: 'workshop', culture: { culture: site.culture, pack: '', mode: 'historical_inspired', borrowing: null },
       recipe_id: `activity:${b.archetype}`, variant_id: b.look, transform: { origin: { x: site.x, y: site.y }, orientation_deg: Math.atan2(c.y - a.y, c.x - a.x) * 180 / Math.PI },
-      ground_z_m: site.ground, footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, access_id: '',
-      volumes: [{ id: `${id}/v`, footprint, levels: [], z_m: site.ground, wall_height_m: eave, roof_height_m: Math.max(0, top - eave), roof_system: massing[0].roof.toUpperCase(),
-        roof_pitch_deg: 0, overhang_m: 0, materials: slots, role: 'main', roof_mesh: { vertices, faces }, foundation: { footprint, z_min_m: site.ground, z_max_m: site.ground } }],
+      ground_z_m: ground, footprint, roof_footprint: footprint, courtyards: [], circulation: [], entrance: { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, access_id: '',
+      volumes: [{ id: `${id}/v`, footprint, levels: [], z_m: ground, wall_height_m: eave, roof_height_m: Math.max(0, top - eave), roof_system: massing[0].roof.toUpperCase(),
+        roof_pitch_deg: 0, overhang_m: 0, materials: slots, role: 'main', roof_mesh: { vertices, faces }, foundation: { footprint, z_min_m: ground, z_max_m: ground } }],
       useful_area_m2: 0, domestic_units: 0, structural_features: [], simplification: 'recipe_volumes', diagnostics: [], resolved: null,
       programme: { massing: b.massing, archetype: b.archetype, activity: site.template, parent: site.parent },
     } as unknown as PlacedBuilding);
@@ -269,7 +290,8 @@ export async function planActivityArchitecture(world: World, settings: V2Setting
     const requests: PlacementRequest[] = [], footprints: Record<string, Surface> = {};
     for (const site of sites) site.buildings.forEach((b, k) => {
       const id = `${site.id}/${k}`, pack = byCulture.get(site.culture) ?? any;
-      if (!pack || !massed.has(id) || b.ring.length < 3) return;
+      // Heaps, kilns and racks keep their massing: the house generator never plans them.
+      if (!pack || !massed.has(id) || b.ring.length < 3 || objectGround(b) !== undefined) return;
       const lot: Surface = [{ outer: enlarged(b.ring, 1.3), holes: [] }], front = lot[0].outer;
       footprints[id] = [{ outer: b.ring, holes: [] }];
       requests.push({ id, parcel_id: site.id, cadastral: lot, buildable: lot, reserves: [], roof_domain: lot,

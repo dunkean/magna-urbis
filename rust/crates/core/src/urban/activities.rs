@@ -45,7 +45,36 @@ pub(crate) struct Archetype {
     /// The singular building it becomes where it stands alone in a yard (`formed`).
     #[serde(default)]
     pub form: Option<Form>,
+    /// Installation only: the bodies it raises (heaps, kilns, racks, stacks, a crane),
+    /// each a massing.rs part label with a mass rule (forms/roles_*.json), so the 2D roof
+    /// painter and the 3D volumes read the same pieces (settlements/installations.rs `raise`).
+    #[serde(default)]
+    pub objects: Vec<InstallationObject>,
+    /// Installation only: its objects stand for the whole installation, its flat ground
+    /// shape is not kept (a heap, a kiln, a rack line); otherwise the ground stays under them.
+    #[serde(default)]
+    pub replace_ground: bool,
 }
+
+/// One kind of body an installation raises (`Archetype::objects`).
+#[derive(Deserialize)]
+pub(crate) struct InstallationObject {
+    /// massing.rs part label, ruled in forms/roles_*.json (`cairn`, `round-kiln`, `fish-rack`…).
+    pub part: String,
+    /// `on`: the installation's own shape (a regular polygon when `round`, a strip along an
+    /// open line); `in`: scattered inside it; `around`: round its edge, on free dry ground;
+    /// `back`: along its uphill side (a quarry's worked face); `edge`: rails or a wall
+    /// along its sides, in pieces of at most `size[0]` m; `vertex`: a post at each corner.
+    pub at: String,
+    /// Width along the frame, depth across (m); `on` keeps the installation's own size.
+    #[serde(default = "object_size")]
+    pub size: [f64; 2],
+    /// Bodies drawn in this range (`on`: one per shape).
+    #[serde(default = "object_count")]
+    pub count: [u32; 2],
+}
+fn object_size() -> [f64; 2] { [3.0, 3.0] }
+fn object_count() -> [u32; 2] { [1, 1] }
 
 /// The form of a town lot (parcels/monuments, parcels/landmark.rs) an isolated
 /// yard building takes: a chapel is a small church, a road inn a court of ranges.
@@ -307,6 +336,52 @@ pub(crate) fn building_massing(archetype_id: &str, culture: &str, ring: &[super:
         archetype: archetype_id,
         complex: false, user_core: false,
     })
+}
+
+/// Massing of one body an installation raises (`Archetype::objects`): the part label's
+/// mass rule (forms/roles_*.json: a cairn, a round kiln, a rack) on `ring`, in the
+/// culture's tradition where the rule leaves a field to it. One piece, standing at
+/// `ground_m` (its own ground: an object may stand well above or below the site's
+/// centre) and marked `object` so the display never plans it as a house.
+/// Part labels of installation objects come from the catalogue; massing parts take static labels.
+/// Interned once each, so the set stays as small as the catalogue's labels.
+fn static_label(label: &str) -> &'static str {
+    use std::{collections::HashSet, sync::{Mutex, OnceLock}};
+    static LABELS: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let mut set = LABELS.get_or_init(Default::default).lock().unwrap();
+    if let Some(&known) = set.get(label) {
+        return known;
+    }
+    let leaked: &'static str = Box::leak(label.to_owned().into_boxed_str());
+    set.insert(leaked);
+    leaked
+}
+pub(crate) fn object_massing(label: &str, culture: &str, ring: &[super::Point], ground_m: f64, seed: &str) -> serde_json::Value {
+    let parts = [(super::Shape { outer: ring.to_vec(), holes: vec![] }, static_label(label))];
+    let mut pieces = super::massing::massing(&super::massing::Input {
+        parts: &parts,
+        arch: culture_arch(culture),
+        culture,
+        zone: "rural",
+        role: "",
+        function: "workshop",
+        landmark: false,
+        wealth: 0.4,
+        pressure: 0.0,
+        small_home: false,
+        population: 0,
+        fronts: &[],
+        low_rural: true,
+        distance: 2.0,
+        seed,
+        archetype: "",
+        complex: false, user_core: false,
+    });
+    if let Some(piece) = pieces.as_array_mut().and_then(|p| p.first_mut()).and_then(|p| p.as_object_mut()) {
+        piece.insert("ground_m".into(), serde_json::json!((ground_m * 100.0).round() / 100.0));
+        piece.insert("object".into(), serde_json::Value::Bool(true));
+    }
+    pieces
 }
 
 impl crate::settlements::installations::Ground for super::Surface<'_> {
@@ -949,7 +1024,13 @@ mod tests {
         for a in &d.archetypes {
             match a.kind.as_str() {
                 "building" => assert!(a.look.as_ref().is_some_and(|l| d.looks.contains_key(l)) && a.ground.is_none(), "{}: look", a.id),
-                "installation" => assert!(a.ground.as_ref().is_some_and(|g| d.ground.contains_key(g)) && a.look.is_none(), "{}: ground", a.id),
+                "installation" => {
+                    assert!(a.ground.as_ref().is_some_and(|g| d.ground.contains_key(g)) && a.look.is_none(), "{}: ground", a.id);
+                    // Every body an installation raises has a mass rule, so it gets a volume in 2D and 3D.
+                    for o in &a.objects {
+                        assert!(super::super::forms::roles::rule(&o.part, &[]).is_some() && matches!(o.at.as_str(), "on" | "in" | "around" | "back" | "edge" | "vertex"), "{}: object {}", a.id, o.part);
+                    }
+                }
                 k => panic!("{}: kind {k}", a.id),
             }
             if let Some(r) = &a.role { assert!(services.contains(r.as_str()), "{}: role {r} not in services.json", a.id); }

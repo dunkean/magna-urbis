@@ -80,8 +80,11 @@ function cropsOf(culture: string | undefined, biome: string | undefined): Crops 
 }
 /** Share of the strips of a holding sown apart from it: the open-field mosaic. */
 const STRAY_STRIP = .2;
-/** Metres of edge distance held by the alpha channel; the shader reads the same range. */
+/** Metres of edge distance held by the alpha channel at fine resolution; the shader reads the same range. */
 const LAND_EDGE_RANGE = 6;
+/** The range grows with the texel (2.5 texels) on large maps: a fixed 6 m saturated within one 30 m texel, so the
+ * zero line fell back to a staircase and the shader could not find the inside of a holding (landDetailRange). */
+const edgeRange = (cell: number): number => Math.max(LAND_EDGE_RANGE, 2.5 * cell);
 const DETAILED = new Set<LandArea['kind']>(['field', 'orchard', 'garden']);
 
 const mix32 = (value: number): number => {
@@ -153,7 +156,7 @@ function longestEdge(ring: Polygon): number {
  * Rasterises the holdings of the rural land use for the satellite ground: the shader draws crops, furrows and
  * balks from it, so fields keep their real strips and directions without any vector overlay.
  * RGBA8, filterable: R crop position (the crops of the culture of the nearest place), G and B cos 2a and sin 2a of the
- * row direction, A exact signed distance to the nearest strip edge (.5 + d / 2 LAND_EDGE_RANGE: above .5 inside a holding,
+ * row direction, A exact signed distance to the nearest strip edge (.5 + d / 2 R, R = edgeRange(cell): above .5 inside a holding,
  * below outside, 0 beyond the range); unowned texels along a holding carry its R, G and B. A garden's R is a
  * plain crop position too, jittered like a strip: the shader hashes R, G and B into the plot's identity.
  * Deterministic: same layer and cultures, same bytes.
@@ -173,11 +176,11 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
   if (!(maxX > minX && maxY > minY)) return undefined;
   const side = Math.max(maxX - minX, maxY - minY), cell = Math.max(minCell, side / (maxN - 4)), n = Math.min(maxN, Math.ceil(side / cell) + 4);
   const x = (Math.floor(minX / cell) - 2) * cell, y = (Math.floor(minY / cell) - 2) * cell;
-  const owner = new Uint32Array(n * n), edge = new Float32Array(n * n).fill(LAND_EDGE_RANGE), crop: number[] = [0], angle: number[] = [0];
-  // Exact distance to a ring: per segment, refresh only the texels of its capsule of radius LAND_EDGE_RANGE (only
-  // d < LAND_EDGE_RANGE can lower `edge`). Row by row, the texel centres within R of the segment lie within R in x of
+  const R = edgeRange(cell);
+  const owner = new Uint32Array(n * n), edge = new Float32Array(n * n).fill(R), crop: number[] = [0], angle: number[] = [0];
+  // Exact distance to a ring: per segment, refresh only the texels of its capsule of radius R (only
+  // d < R can lower `edge`). Row by row, the texel centres within R of the segment lie within R in x of
   // the part of the segment whose y is within R of the row: a superset of the capsule, so the result is exact.
-  const R = LAND_EDGE_RANGE;
   const stamp = (ring: Polygon): void => {
     for (let k = 0; k < ring.length; k++) {
       const a = ring[k], b = ring[(k + 1) % ring.length], dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
@@ -220,9 +223,12 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
       paint([strip], stray ? pickCrop(crops, unit(salt + 1))[0] : Math.min(1, Math.max(0, base + (unit(salt + 1) * 2 - 1) * spread)), direction);
     });
   });
-  const rgba = new Uint8Array(n * n * 4), scale = 127.5 / LAND_EDGE_RANGE;
+  const rgba = new Uint8Array(n * n * 4), scale = 127.5 / R;
   const cos2 = angle.map(a => Math.round((Math.cos(2 * a) * .5 + .5) * 255)), sin2 = angle.map(a => Math.round((Math.sin(2 * a) * .5 + .5) * 255)), tone = crop.map(c => Math.round(c * 255));
   // Crops meet at the true edge: a texel across from another strip takes its share, so filtering draws a straight line.
+  // Only on fine rasters: on a coarse one the shader reads each holding from its inside (landDetailInside) and a shared
+  // texel would spread an in-between crop tone over tens of metres, a ring around every field.
+  const blendAcross = R <= LAND_EDGE_RANGE;
   const across = (i: number, id: number): number => {
     for (const step of [1, -1, n, -n, n + 1, n - 1, 1 - n, -1 - n]) { const other = owner[i + step]; if (other && other !== id) return other; }
     return 0;
@@ -241,15 +247,15 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
   let hash = 0x811c9dc5;
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
     const id = owner[i];
-    // Alpha: signed distance to the nearest strip edge over ±LAND_EDGE_RANGE, positive inside a holding, negative
+    // Alpha: signed distance to the nearest strip edge over ±R, positive inside a holding, negative
     // outside, so the outer limit of the fields filters into a straight line; 0 beyond the range outside.
     if (!id) {
-      const near = grown[i]; if (!near && edge[i] >= LAND_EDGE_RANGE) continue;
+      const near = grown[i]; if (!near && edge[i] >= R) continue;
       if (near) { rgba[o] = tone[near]; rgba[o + 1] = cos2[near]; rgba[o + 2] = sin2[near]; }
       rgba[o + 3] = Math.max(0, Math.min(127, Math.round(127.5 - edge[i] * scale)));
       continue;
     }
-    const other = (under.has(id) || edge[i] < cell) && i > n && i < n * n - n - 1 ? across(i, id) : 0;
+    const other = (under.has(id) || blendAcross && edge[i] < cell) && i > n && i < n * n - n - 1 ? across(i, id) : 0;
     rgba[o] = !other ? tone[id] : under.has(id) ? tone[other] : Math.round(tone[id] + (under.has(other) ? 0 : (tone[other] - tone[id]) * .5 * (1 - edge[i] / cell))); rgba[o + 1] = cos2[id]; rgba[o + 2] = sin2[id]; rgba[o + 3] = Math.max(128, Math.min(255, Math.round(127.5 + edge[i] * scale)));
     hash = Math.imul(hash ^ id ^ i ^ rgba[o] << 24 ^ (rgba[o + 1] << 8) ^ (rgba[o + 2] << 16), 0x01000193);
   }

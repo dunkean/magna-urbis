@@ -380,3 +380,161 @@ pub(crate) fn lay(
     }
     out
 }
+
+/// The installations of a site laid round its yard (`lay`), then the bodies they raise
+/// (`raise`) added to the yard's buildings: every caller of a territorial site gets the
+/// same heaps, kilns, racks and stacks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn lay_site(
+    ids: &[String],
+    seed: &str,
+    culture: &str,
+    centre: Point,
+    buildings: &mut Vec<ActivityBuilding>,
+    f: &dyn Ground,
+    access: Option<Point>,
+    avoid: &dyn Fn(Point) -> bool,
+) -> Vec<Installation> {
+    let mut list = lay(ids, seed, centre, buildings, f, access, avoid);
+    let objects = raise(&mut list, culture, seed, buildings, f, avoid);
+    buildings.extend(objects);
+    list
+}
+
+fn centroid(points: &[Point]) -> Point {
+    let n = points.len().max(1) as f64;
+    Point { x: points.iter().map(|p| p.x).sum::<f64>() / n, y: points.iter().map(|p| p.y).sum::<f64>() / n }
+}
+fn ring_area(ring: &[Point]) -> f64 {
+    (0..ring.len()).map(|i| { let (a, b) = (ring[i], ring[(i + 1) % ring.len()]); a.x * b.y - b.x * a.y }).sum::<f64>().abs() / 2.0
+}
+
+/// Bodies the installations raise (activities.json `objects`), each with the massing of
+/// its part label (urban/activities.rs `object_massing`) standing on its own ground, so the
+/// 2D roof painter and the 3D volumes show the same heap, kiln or crane. `on`: the
+/// installation's own shape (a square of the same area where the shape is irregular, made
+/// round by a round rule; a strip along each leg of an open line); `in`: scattered inside
+/// it; `around`: round its edge on free dry ground; `back`: along its uphill side; `edge`:
+/// rails or a wall along its sides (pieces of at most `size[0]` m); `vertex`: a post at
+/// each corner. An
+/// installation whose archetype `replace_ground`s loses its flat shape once a body stands.
+/// Bodies stay off water, off `avoid`, off the yard's buildings and off each other.
+pub(crate) fn raise(list: &mut Vec<Installation>, culture: &str, seed: &str, yard: &[ActivityBuilding], f: &dyn Ground, avoid: &dyn Fn(Point) -> bool) -> Vec<ActivityBuilding> {
+    let mut out: Vec<ActivityBuilding> = vec![];
+    let mut keep = vec![true; list.len()];
+    for (i, inst) in list.iter().enumerate() {
+        let Some(a) = act::archetype(&inst.archetype).filter(|a| !a.objects.is_empty()) else { continue };
+        let mut rng = Rng::new(&format!("{seed}/objects/{i}/{}", inst.archetype));
+        let c = centroid(&inst.points);
+        let up = uphill(f, c);
+        let (u, v) = (perp(up), up);
+        let reach = inst.points.iter().map(|p| p.distance(c)).fold(0.0, f64::max);
+        let mut raised = 0;
+        for (k, o) in a.objects.iter().enumerate() {
+            let (w, d) = (o.size[0].max(0.5), o.size[1].max(0.5));
+            let n = rng.int(o.count[0].min(o.count[1]), o.count[1].max(o.count[0])) as usize;
+            let mut rings: Vec<Vec<Point>> = vec![];
+            match o.at.as_str() {
+                "on" if inst.closed && inst.points.len() == 4 => rings.push(inst.points.clone()),
+                "on" if inst.closed => rings.push(rect(c, u, (ring_area(&inst.points) * 4.0 / std::f64::consts::PI).sqrt(), (ring_area(&inst.points) * 4.0 / std::f64::consts::PI).sqrt())),
+                "on" => {
+                    for leg in inst.points.windows(2) {
+                        if let Some(t) = unit(leg[0], leg[1]) {
+                            rings.push(rect(add(leg[0], t, leg[0].distance(leg[1]) / 2.0), t, leg[0].distance(leg[1]), d));
+                        }
+                    }
+                }
+                "in" if inst.closed => {
+                    // A grid of spots across the shape, in its frame; `n` of them spread evenly.
+                    let step = w.max(d) + 1.2;
+                    let (s0, s1) = inst.points.iter().map(|p| (p.x - c.x) * u.x + (p.y - c.y) * u.y).fold((f64::MAX, f64::MIN), |(a, b), s| (a.min(s), b.max(s)));
+                    let (t0, t1) = inst.points.iter().map(|p| (p.x - c.x) * v.x + (p.y - c.y) * v.y).fold((f64::MAX, f64::MIN), |(a, b), t| (a.min(t), b.max(t)));
+                    let mut spots = vec![];
+                    let mut t = t0 + step / 2.0;
+                    while t <= t1 - step / 2.0 + 1e-6 {
+                        let mut s = s0 + step / 2.0;
+                        while s <= s1 - step / 2.0 + 1e-6 {
+                            let ring = rect(add(add(c, u, s), v, t), u, w, d);
+                            if ring.iter().all(|&p| inside(&inst.points, p)) {
+                                spots.push(ring);
+                            }
+                            s += step;
+                        }
+                        t += step;
+                    }
+                    // A shape too small for the grid takes one body at its centre.
+                    if spots.is_empty() {
+                        spots.push(rect(c, u, w, d));
+                    }
+                    let take = n.clamp(1, spots.len());
+                    rings.extend((0..take).map(|j| spots[j * spots.len() / take].clone()));
+                }
+                "edge" => {
+                    // Rails or a low wall along every side (an open line's legs), cut into pieces of
+                    // at most `w` m so each stands on its own ground.
+                    let pts = &inst.points;
+                    let legs: Vec<(Point, Point)> = if inst.closed { (0..pts.len()).map(|i| (pts[i], pts[(i + 1) % pts.len()])).collect() } else { pts.windows(2).map(|l| (l[0], l[1])).collect() };
+                    for (p, q) in legs {
+                        let Some(t) = unit(p, q) else { continue };
+                        let len = p.distance(q);
+                        let pieces = (len / w).ceil().max(1.0) as usize;
+                        for j in 0..pieces {
+                            rings.push(rect(add(p, t, len * (j as f64 + 0.5) / pieces as f64), t, len / pieces as f64, d));
+                        }
+                    }
+                }
+                "vertex" => rings.extend(inst.points.iter().map(|&p| rect(p, u, w, d))),
+                "back" => {
+                    let top = inst.points.iter().map(|p| (p.x - c.x) * v.x + (p.y - c.y) * v.y).fold(0.0, f64::max);
+                    let span = inst.points.iter().map(|p| ((p.x - c.x) * u.x + (p.y - c.y) * u.y).abs()).fold(0.0, f64::max) * 2.0;
+                    rings.push(rect(add(c, v, top + d / 2.0 - 1.0), u, w.min(0.9 * span.max(w * 0.5)), d));
+                }
+                "around" => {
+                    let a0 = rng.float() * TAU;
+                    let radius = reach + w.max(d) / 2.0 + 2.5;
+                    for j in 0..12 {
+                        if rings.len() >= n {
+                            break;
+                        }
+                        // Spread first, then fill the gaps.
+                        let a = a0 + TAU * (j as f64 * 0.618_033_988_75).fract();
+                        let at = Point { x: c.x + radius * a.cos(), y: c.y + radius * a.sin() };
+                        // Long bodies (racks, stacks) lie along the edge.
+                        let along = Point { x: -a.sin(), y: a.cos() };
+                        rings.push(rect(at, along, w, d));
+                        let ring = rings.last().unwrap();
+                        let clear = ring.iter().chain(std::iter::once(&at)).all(|&p| dry(f, p) && !avoid(p))
+                            && !yard.iter().chain(&out).any(|b| b.ring.iter().any(|&q| inside(ring, q)) || ring.iter().any(|&q| inside(&b.ring, q)))
+                            && !list.iter().any(|g| g.closed && g.kind != "enclosure" && ring.iter().any(|&q| inside(&g.points, q)))
+                            && !rings[..rings.len() - 1].iter().any(|r| r.iter().any(|&q| inside(ring, q)) || ring.iter().any(|&q| inside(r, q)));
+                        if !clear {
+                            rings.pop();
+                        }
+                    }
+                }
+                _ => {}
+            }
+            // Rails, posts and dams follow the installation's own line, which `lay` already put
+            // where it belongs (a weir across its river, a trap in the water).
+            let wet = matches!(o.at.as_str(), "edge" | "vertex");
+            for (j, ring) in rings.into_iter().enumerate() {
+                if !(wet || ring.iter().all(|&p| dry(f, p))) || yard.iter().any(|b| b.ring.iter().any(|&q| inside(&ring, q)) || ring.iter().any(|&q| inside(&b.ring, q))) {
+                    continue;
+                }
+                let ground = f.height_at(centroid(&ring));
+                let massing = act::object_massing(&o.part, culture, &ring, ground, &format!("{seed}/objects/{i}/{k}/{j}"));
+                if massing.as_array().is_none_or(|m| m.is_empty()) {
+                    continue;
+                }
+                out.push(ActivityBuilding { archetype: inst.archetype.clone(), look: o.part.clone(), ring, massing });
+                raised += 1;
+            }
+        }
+        if a.replace_ground && raised > 0 {
+            keep[i] = false;
+        }
+    }
+    let mut k = 0;
+    list.retain(|_| { k += 1; keep[k - 1] });
+    out
+}

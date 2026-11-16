@@ -19,6 +19,8 @@ import './stageChain.css';
 const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
   variation: copy('New variation', 'Nouvelle variation'),
+  rerollCoast: copy('Reroll', 'Relancer'),
+  rerollCoastHelp: copy('Draw another coastline for the same sea directions; the relief before the coast is kept.', 'Tirer un autre littoral pour les mêmes directions de mer ; le relief d’avant la côte est conservé.'),
   run: copy('Show this stage’s output', 'Afficher la sortie de cette étape'), required: copy('Required stage', 'Étape obligatoire'),
   enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
   general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
@@ -68,7 +70,8 @@ export interface StageChainBindings {
   onCityScope(mode: 'all' | 'selection'): void;
   onChange(): void; onAppearance(): void; onRegionChange(): void;
   run(stage: StageDef): void; runFamily(family: StageFamily): void; openPlace(): void;
-  reroll?(stage: StageDef): void;
+  /** New draw of the stage's variation; `family` runs its whole family instead of previewing the stage. */
+  reroll?(stage: StageDef, family?: boolean): void;
   /** Detected backends (Settings); unavailable choices are disabled with their reason. */
   /** Opens Settings on the Execution block. */
   openExecution(): void;
@@ -511,8 +514,20 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const grid = document.createElement('div'); grid.className = 'coast-grid';
     grid.append(compass, presets); panel.append(grid);
     grid.addEventListener('click', () => { markStale('relief-source'); sync(); });
+    // A new coast draw: only its variation changes, and the chain resumes at the coast cut.
+    const coastStage = STAGES.find(stage => stage.id === 'relief-coast-cut')!;
+    const reroll = document.createElement('button'); reroll.type = 'button'; reroll.id = 'terrain-coast-reroll'; reroll.className = 'coast-reroll';
+    // The settlements' die (art-dice), as everywhere a draw is rerolled.
+    const die = document.createElement('i'); die.className = 'art art-dice'; die.setAttribute('aria-hidden', 'true'); reroll.append(die);
+    const rerollCaption = document.createElement('span'); setText(rerollCaption, T.rerollCoast); reroll.append(rerollCaption);
+    reroll.onclick = event => { event.stopPropagation(); if (!reroll.disabled) b.reroll?.(coastStage, true); sync(); };
+    presets.append(reroll);
     syncers.push(() => {
       panel.toggleAttribute('data-chain-hidden', context().relief === 'heightmap');
+      const ctx = context();
+      reroll.hidden = !b.reroll || !coastStage.when(ctx) || !!coastStage.unavailable?.(ctx);
+      reroll.disabled = b.busy() || Number(b.terrain.access.get('terrain.coastMask') ?? 0) === 0;
+      reroll.title = translate(T.rerollCoastHelp);
     });
   }
   function prepareLandscapeStrip(field: HTMLElement, kind: 'climate' | 'relief'): void {

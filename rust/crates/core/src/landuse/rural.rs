@@ -1037,7 +1037,10 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     let mut horticulture: Vec<(u8, Region)> = vec![];
     let mut counts = BTreeMap::new();
     let warp_noise = Noise::new(rr.fork("warp"));
-    let wamp = (0.5 * cell).clamp(2.0, 4.0);
+    // The warp follows the cell: on a large map (cells of tens of metres) a 4 m cap left the traced class
+    // limits on the raster grid, a staircase of cells around every field and pasture.
+    let wamp = (0.5 * cell).clamp(2.0, 30.0);
+    let ws = (cell / 19.2).max(1.0);
     let ex_m: Vec<_> = (0..total).map(|i| cls[i] == 0 || excl[i] != 0).collect();
     let ex_dist = |q: Point| {
         let i = idx(q, n, n, cell);
@@ -1069,11 +1072,11 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                 let a = wamp * smooth(ex_dist(*q), 0.8 * cell, 2.4 * cell);
                 p(
                     q.x + a
-                        * (warp_noise.noise(q.x / 48.0, q.y / 48.0)
-                            + 0.25 * warp_noise.noise(q.x / 20.0 + 5.0, q.y / 20.0)),
+                        * (warp_noise.noise(q.x / (48.0 * ws), q.y / (48.0 * ws))
+                            + 0.25 * warp_noise.noise(q.x / (20.0 * ws) + 5.0, q.y / (20.0 * ws))),
                     q.y + a
-                        * (warp_noise.noise(q.x / 48.0 + 31.0, q.y / 48.0 - 7.0)
-                            + 0.25 * warp_noise.noise(q.x / 20.0, q.y / 20.0 + 9.0)),
+                        * (warp_noise.noise(q.x / (48.0 * ws) + 31.0, q.y / (48.0 * ws) - 7.0)
+                            + 0.25 * warp_noise.noise(q.x / (20.0 * ws), q.y / (20.0 * ws) + 9.0)),
                 )
             })
             .collect::<Polygon>()

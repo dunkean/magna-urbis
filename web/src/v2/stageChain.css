@@ -114,6 +114,8 @@
 .coast-presets .coast-preset:has(:checked){color:var(--gold)}
 .coast-presets .coast-preset:has(:disabled){opacity:.55;cursor:default}
 .coast-grid button[aria-pressed=true]{color:var(--gold);border-color:#dcb86f99;background:#dcb86f18}
+.coast-presets .coast-reroll{display:flex;align-items:center;justify-content:flex-start;gap:6px;min-height:26px;padding:2px 8px;font-size:10px}
+.coast-presets .coast-reroll .art-dice{flex:none;width:16px;height:16px}
 .climate-strip{grid-template-columns:repeat(6,minmax(0,1fr))}
 .region-icon-strip button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0;min-height:39px;padding:3px 0;border:1px solid var(--line);border-radius:6px;background:#161712;color:var(--muted)}
 .region-icon-strip button:hover:not(:disabled){border-color:#dcb86f80;background:#dcb86f0e;color:var(--ink)}

@@ -10,12 +10,19 @@ import { rerollSeed, seedRoot, stepSeed } from '../../rust/bridge/generationSeed
 import defaults from '../src/v2/cityCodeDefaults.json';
 import { CULTURES } from '../src/gen/options';
 import type { V2Settings } from '../src/v2/contracts';
+import { applySceneClock, DEFAULT_SCENE } from '../src/v2/sceneClock';
 
 const terrain = (s: V2Settings) => effectiveTerrainSettings(s, adaptedExtent(s));
 const restored = (s: V2Settings) => decodeCityCode(encodeCityCode(s)).settings;
 const base = () => { const s = defaultSettings(); s.options.seed = '42'; return s; };
 
 describe('V2 compact generation codes', () => {
+  it('recomputes solar values from the portable clock rather than storing derived floating-point controls', () => {
+    const settings=base();applySceneClock(settings,DEFAULT_SCENE);
+    const code=encodeCityCode(settings),manual=structuredClone(settings);delete manual.scene;
+    expect(decodeCityCode(code).settings).toEqual(settings);
+    expect(code.length).toBeLessThan(160);
+  });
   it('encodes the five essential choices in fewer than 25 characters', () => {
     const settings = base(), code = encodeCityCode(settings);
     expect(code).toMatch(/^MU3\.[\w-]+$/); expect(code.length).toBeLessThan(25);
@@ -32,6 +39,16 @@ describe('V2 compact generation codes', () => {
   it.each(['042', '-0', 'a seed with spaces', 'café 🗺️', 'MU3.literal'])('preserves the literal seed %s', seed => {
     const settings = base(); settings.options.seed = seed;
     expect(restored(settings).options.seed).toBe(seed);
+  });
+  it('keeps a rerolled coast through the code', () => {
+    const settings = base(); settings.terrain!.coastMask = 1 | 4;
+    settings.options.seed = rerollSeed(rerollSeed(settings.options.seed, ['relief-coast-cut']), ['relief-coast-cut']);
+    const decoded = restored(settings), coast = (s: V2Settings) => stepSeed(terrain(s).generalSeed ?? terrain(s).seed, 'relief-coast-cut');
+    expect(decoded.options.seed).toBe(settings.options.seed);
+    expect(coast(decoded)).toBe(coast(settings));
+    expect(coast(decoded)).not.toBe(coast(base()));
+    // The relief before the coast keeps its draw.
+    expect(terrain(decoded).seed).toBe(terrain(base()).seed);
   });
   it('stores advanced changes and local edits while keeping the input untouched', () => {
     const settings = base(); settings.options.population = 17300; settings.options.walls = 'none';

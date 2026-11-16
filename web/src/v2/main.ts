@@ -189,7 +189,8 @@ function rerollCityStep(stage: UrbanSeedStage, keys: string[], output?: string):
   if (keys.length === 1) void generate('town', keys[0], target, undefined, undefined, output);
   else void generate('towns', undefined, target, undefined, keys, output);
 }
-function rerollStage(stage: StageDef): void {
+/** `family`: run the whole family (cached upstream stages are kept) instead of previewing this stage. */
+function rerollStage(stage: StageDef, family = false): void {
   if (busy) return;
   const variation = typeof stage.variation === 'function' ? stage.variation(chain.context()) : stage.variation;
   if (!variation) return;
@@ -197,7 +198,7 @@ function rerollStage(stage: StageDef): void {
   migrateUrbanSeeds(settings);
   settings.options.seed = rerollSeed(settings.options.seed, [variation]);
   $<HTMLInputElement>('#seed').value = settings.options.seed; touchRecipe();
-  runStage(stage);
+  if (family) runFamily(stage.family); else runStage(stage);
 }
 let selectedBuilding: { settlement: string; index: number; building: UrbanBuilding } | null = null;
 let selectedSubdivision: { key: string; kind: 'quarter' | 'parcel'; id: string; point: { x: number; y: number } } | undefined;
