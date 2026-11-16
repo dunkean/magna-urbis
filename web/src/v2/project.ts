@@ -160,13 +160,15 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
   checkTree(value, false);
 }
 
+/** A 256 MiB project holds at most ~32 M JSON values (8 bytes each at least); bound the walk to that, not to a town count. */
+const MAX_NODES = 32e6;
 /** Bound nesting and reject non-finite parameters before any geometry is computed. */
 function checkTree(root: unknown, allowNonFinite: boolean): void {
   const pending: [unknown, number][] = [[root, 0]];
   let nodes = 0;
   while (pending.length) {
     const [value, depth] = pending.pop()!;
-    if (++nodes > 4e6 || depth > 50) throw new Error('Structure du projet trop complexe.');
+    if (++nodes > MAX_NODES || depth > 50) throw new Error('Structure du projet trop complexe.');
     if (typeof value === 'number' && !Number.isFinite(value) && !allowNonFinite) throw new Error('Paramètre numérique non fini.');
     if (!value || typeof value !== 'object') continue;
     if (ArrayBuffer.isView(value)) continue;
@@ -176,7 +178,7 @@ function checkTree(root: unknown, allowNonFinite: boolean): void {
       const child = (value as Record<string, unknown>)[key];
       if (child && typeof child === 'object') pending.push([child, depth + 1]);
       else {
-        if (++nodes > 4e6 || depth + 1 > 50) throw new Error('Structure du projet trop complexe.');
+        if (++nodes > MAX_NODES || depth + 1 > 50) throw new Error('Structure du projet trop complexe.');
         if (typeof child === 'number' && !Number.isFinite(child) && !allowNonFinite) throw new Error('Paramètre numérique non fini.');
       }
     }
@@ -187,6 +189,8 @@ const arrayTypes = { Float32Array, Float64Array, Int8Array, Int16Array, Int32Arr
 /** Numeric raster elements need no JSON reviver call; only objects can contain our tags. */
 function reviveProject(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
+  // Binary projects already own their revived views; never enumerate raster cells.
+  if (ArrayBuffer.isView(value)) return value;
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) if (value[i] && typeof value[i] === 'object') value[i] = reviveProject(value[i]);
     return value;
@@ -249,7 +253,11 @@ export function serializeProjectChunks(settings: V2Settings, world?: World, mods
 }
 export function parseProject(text: string): V2Project {
   if (text.length > 256 * 1024 * 1024) throw new Error('Projet trop volumineux (256 Mio maximum).');
-  return parsedProject(reviveProject(JSON.parse(text)));
+  return parseProjectValue(JSON.parse(text));
+}
+/** Common tag revival, validation and normalization for JSON and binary projects. */
+export function parseProjectValue(value: unknown): V2Project {
+  return parsedProject(reviveProject(value));
 }
 /** Read the discriminator once, including whitespace and escaped JSON keys/values. */
 export function parseProjectInput(text:string):V2Project{
@@ -260,7 +268,7 @@ export function parseProjectInput(text:string):V2Project{
     const settings=defaultSettings();settings.options.seed=value.seed;
     return {format:'magna-urbis-v2',version:1,engine:V2_ENGINE_VERSION,settings,mods:[]};
   }
-  return parsedProject(reviveProject(value));
+  return parseProjectValue(value);
 }
 export function validateModifications(mods: unknown): asserts mods is unknown[] {
   if (!Array.isArray(mods) || mods.length > 100000) throw new Error('Historique de modifications invalide.');

@@ -45,6 +45,9 @@ import { runtimeOptions, loopbackServer } from './platform';
 import { applyBuildingEdits, buildingAt, nearestSettlement, townUrban, buildingSignature, validateBuildingPatch, type BuildingEdit } from './edits';
 import ExportWorker from './export.worker?worker';
 import ProjectWorker from './project.worker?worker';
+import { isBinaryProject, MAX_BINARY_PROJECT_BYTES } from './projectBinary';
+import { projectFileMessages } from './projectFileMessages';
+import { resultTransferBuffers } from './transfer';
 import ComposeWorker from './compose.worker?worker';
 import type { RustTownSnapshot } from './rustUrban';
 import { mountTerrainControls } from './terrainControls';
@@ -229,6 +232,7 @@ let connectLocal = localEdition;
 // The installed launcher already owns a ready native service; avoid loading WASM for the same CPU work.
 if(localEdition){settings.generation='procedural';settings.runtime={...settings.runtime!,backend:'native',source:'procedural',localServer:bootRuntime.localServer,pythonServer:bootRuntime.pythonServer};}
 
+registerMessages(projectFileMessages);
 setHTML($('#app'), `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>The region workshop</p></div><span class="version">V2 · ALPHA</span>
@@ -240,7 +244,7 @@ setHTML($('#app'), `
     <a href="https://github.com/dunkean/magna-urbis/releases" target="_blank" rel="noopener noreferrer">Releases ↗</a>
     <a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a>
     <span id="build-info"></span>
-  </nav><div class="project-actions"><button id="import-open">Open</button><button id="export-open">Export ↗</button></div>
+  </nav><div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="export-open">Export ↗</button></div>
   <div class="header-tools"><span class="edition">${localEdition ? 'Desktop / local edition' : 'Web edition'}</span><label class="language-control header-language"><select id="language-select" aria-label="Interface language">${LANGUAGES.map(item=>`<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><button id="hardware-open" title="Settings, engines and activity">${icon('settings-gear',20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Settings</span></button></div>
 </header>
 <section class="workbench-bar" aria-label="Scene and editing tools">
@@ -279,8 +283,8 @@ setHTML($('#app'), `
     <div class="map-bottom"><div class="glass mini-card"><canvas id="minimap" aria-label="Overview"></canvas><div class="map-scale"><span id="scale-label">—</span><div class="scale-line"></div><p id="map-metrics">No map</p><div id="cursor-readout"></div></div></div></div><div class="legend-strip"></div>
   </section>
 </main>
-<dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">Return to a region</span><h2>Open & compose</h2></div><button data-close="import-dialog" aria-label="Close">×</button></div><p class="hint">A project contains the map, settings and edits. A recipe recreates a region with the same engine version.</p><div class="file-card"><h3>Magna Urbis V2 project or recipe</h3><p class="hint">Complete JSON or seeds + settings. Projects retain the elevation grids.</p><input id="project-file" type="file" accept=".json,application/json" aria-label="Import a V2 project or recipe"></div><div class="file-card"><h3>Heightmap → territory</h3><p class="hint">Grayscale PNG, JPEG or WebP, cropped to a square. Set the elevation and sea level before creating the terrain. The import replaces the current terrain.</p><input id="heightmap-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Import a heightmap"><button id="clear-heightmap" class="quiet small">Remove imported terrain</button><p class="hint" id="import-height-info">No heightmap imported.</p></div><div class="dialog-actions"><button data-close="import-dialog">Close</button></div></dialog>
-<dialog id="export-dialog"><div class="dialog-head"><div><span class="eyebrow">Take your region with you</span><h2>Export your way</h2></div><button data-close="export-dialog" aria-label="Close">×</button></div><p class="hint">A complete map, a crop, or just the elements you need for your game.</p><div class="control-grid"><div><label class="label" for="export-format">Format</label><select id="export-format"><option value="png">Image PNG</option><option value="svg">SVG vector map</option><option value="project">Complete project · JSON</option><option value="recipe">Seeds + settings + edits</option><option value="seed">Seed only · JSON</option><option value="heightmap">Heightmap · 8-bit PNG</option></select></div></div><div id="export-map-options"><h3>Elements to include</h3><div class="export-layers">${EXPORT_LAYER_NAMES.map(k=>`<label class="checkline"><input type="checkbox" data-layer="${k}" checked>${layerNames[k]}</label>`).join('')}</div><div class="control-grid"><div><label class="label" for="export-resolution">Longest edge</label><select id="export-resolution"><option value="1600">1,600 px · quick</option><option value="3000" selected>3,000 px · standard</option><option value="4096">4,096 px · detailed</option></select></div><label class="checkline"><input id="export-crop" type="checkbox" checked>Choose the export area</label></div></div><p class="hint" id="export-note" style="margin-top:15px">Visual exports use the current map without rerunning generation.</p><div class="dialog-actions"><button data-close="export-dialog">Cancel</button><button class="primary" id="export-go">Export</button></div></dialog>
+<dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">Return to a region</span><h2>Open & compose</h2></div><button data-close="import-dialog" aria-label="Close">×</button></div><p class="hint">A project contains the map, settings and edits. A recipe recreates a region with the same engine version.</p><div class="file-card"><h3>Magna Urbis V2 project or recipe</h3><p class="hint">Binary .muproj, complete JSON, or seeds + settings. Projects retain the elevation grids.</p><input id="project-file" type="file" accept=".muproj,.json,application/octet-stream,application/json" aria-label="Import a V2 project or recipe"></div><div class="file-card"><h3>Heightmap → territory</h3><p class="hint">Grayscale PNG, JPEG or WebP, cropped to a square. Set the elevation and sea level before creating the terrain. The import replaces the current terrain.</p><input id="heightmap-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Import a heightmap"><button id="clear-heightmap" class="quiet small">Remove imported terrain</button><p class="hint" id="import-height-info">No heightmap imported.</p></div><div class="dialog-actions"><button data-close="import-dialog">Close</button></div></dialog>
+<dialog id="export-dialog"><div class="dialog-head"><div><span class="eyebrow">Take your region with you</span><h2>Export your way</h2></div><button data-close="export-dialog" aria-label="Close">×</button></div><p class="hint">A complete map, a crop, or just the elements you need for your game.</p><div class="control-grid"><div><label class="label" for="export-format">Format</label><select id="export-format"><option value="binary">Save map · .muproj</option><option value="png">Image PNG</option><option value="svg">SVG vector map</option><option value="project">Export complete project (JSON)</option><option value="recipe">Seeds + settings + edits</option><option value="seed">Seed only · JSON</option><option value="heightmap">Heightmap · 8-bit PNG</option></select></div></div><div id="export-map-options"><h3>Elements to include</h3><div class="export-layers">${EXPORT_LAYER_NAMES.map(k=>`<label class="checkline"><input type="checkbox" data-layer="${k}" checked>${layerNames[k]}</label>`).join('')}</div><div class="control-grid"><div><label class="label" for="export-resolution">Longest edge</label><select id="export-resolution"><option value="1600">1,600 px · quick</option><option value="3000" selected>3,000 px · standard</option><option value="4096">4,096 px · detailed</option></select></div><label class="checkline"><input id="export-crop" type="checkbox" checked>Choose the export area</label></div></div><p class="hint" id="export-note" style="margin-top:15px">Visual exports use the current map without rerunning generation.</p><div class="dialog-actions"><button data-close="export-dialog">Cancel</button><button class="primary" id="export-go">Export</button></div></dialog>
 <dialog id="expert-dialog"><div class="dialog-head"><div><span class="eyebrow">The region recipe</span><h2>Expert settings</h2></div><button data-close="expert-dialog" aria-label="Close">×</button></div><p class="hint">Global settings, local overrides by stable key, growth plans and site preferences. Imported terrain data is retained separately.</p><label class="label" for="expert-json">JSON recipe</label><textarea id="expert-json" spellcheck="false"></textarea><p class="warning" id="expert-error" role="alert"></p><div class="dialog-actions"><button data-close="expert-dialog">Cancel</button><button class="primary" id="expert-apply">Apply recipe</button></div></dialog>
 <dialog id="hardware-dialog"><div class="dialog-head"><div><span class="eyebrow">The workshop at work</span><h2>Settings & engines</h2></div><button data-close="hardware-dialog" aria-label="Close">×</button></div><p class="hint">Choose the engine for each process. Available hardware and the last execution are shown separately.</p><details class="section preferences-section"><summary>Preferences & documentation</summary><div id="workbench-preferences" class="workbench-preferences"></div><a class="science-link" href="./scientific/index.html" target="_blank" rel="noopener">Scientific atlas ↗</a></details><div id="hardware-details"></div><details class="section"><summary>Generation log</summary><pre class="job-log" id="job-log">The workshop is ready.</pre></details><div class="dialog-actions"><button id="hardware-refresh">Refresh connections</button><button data-close="hardware-dialog">Close</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>`);
@@ -686,7 +690,7 @@ function setBusy(value: boolean): void {
   labelEditorHostInert(value);
   busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
   for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector','#editor-content']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
-  for (const id of ['generate-region','run-chain','relief-symbolic-open','relief-modify-open','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
+  for (const id of ['generate-region','run-chain','relief-symbolic-open','relief-modify-open','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','save-map','clear-heightmap','preview-close']) $<HTMLButtonElement>(`#${id}`).disabled = value;
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('[data-option],#culture-environment,#culture-random,#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
   document.querySelectorAll<HTMLButtonElement>('[data-relief],#inspector button').forEach(e=>e.disabled=value);
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
@@ -1062,9 +1066,11 @@ $<HTMLInputElement>('#project-file').onchange=async e=>{
   const input=e.target as HTMLInputElement,file=input.files?.[0];if(!file||busy)return;
   setBusy(true);$<HTMLButtonElement>('#cancel-job').disabled=true;setText($('#progress-label'), 'Reading & preparing the project…');setText($('#progress-time'), '');
   try{
-    if(file.size>200*1024*1024)throw new Error('Projet trop volumineux (maximum 200 Mio).');
-    const text=await file.text(),scope=$<HTMLSelectElement>('#import-scope').value;
-    const project=scope==='complete'?await projectJob<{settings:V2Settings;world?:World;mods:unknown[]}>({action:'parse',text}):await composeJob({scope,text,current:settings,world:previewBase?.pristine??previewBase?.world??pristine??world,mods});
+    if(file.size>MAX_BINARY_PROJECT_BYTES)throw new Error('Binary project is too large (2 GiB compressed maximum).');
+    const binary=isBinaryProject(new Uint8Array(await file.slice(0,8).arrayBuffer()));
+    if(!binary&&file.size>256*1024*1024)throw new Error('JSON project is too large (256 MiB maximum). Use a .muproj file for large maps.');
+    const source=binary?{buffer:await file.arrayBuffer()}:{text:await file.text()},transfer='buffer' in source?[source.buffer!]:[],scope=$<HTMLSelectElement>('#import-scope').value;
+    const project=scope==='complete'?await projectJob<{settings:V2Settings;world?:World;mods:unknown[]}>({action:binary?'parse-binary':'parse',...source},transfer):await composeJob({scope,...source,current:settings,world:previewBase?.pristine??previewBase?.world??pristine??world,mods},transfer);
     await loadProject(project);
     $<HTMLDialogElement>('#import-dialog').close();log(`Import ${scope} : ${file.name}`);
   }catch(e){reportAppearanceError(e);}finally{input.value='';setBusy(false);}
@@ -1072,8 +1078,8 @@ $<HTMLInputElement>('#project-file').onchange=async e=>{
 $<HTMLInputElement>('#heightmap-file').onchange=async e=>{const input=e.target as HTMLInputElement,file=input.files?.[0];if(!file)return;try{const image=await readHeightmap(file);settings.options.importedHeight=image;if(settings.terrain){delete settings.terrain.sketch;delete settings.terrain.zones;}settings.options.heightScale??=120;settings.options.importSea??=0;setText($('#import-height-info'), `${file.name} · ${image.w} × ${image.h} px`);touchRecipe();syncControls();toast('Heightmap ready. Set the elevations, then create the topography.');}catch(e){toast(String(e),true);}finally{input.value='';}};
 $('#clear-heightmap').onclick=()=>{delete settings.options.importedHeight;if(settings.terrain){delete settings.terrain.sketch;delete settings.terrain.zones;}terrainControls.sync();setText($('#import-height-info'), 'No heightmap imported.');touchRecipe();};
 
-function projectJob<T>(request:unknown):Promise<T>{const worker=new ProjectWorker();return new Promise<T>((resolve,reject)=>{worker.onmessage=({data})=>{worker.terminate();if(data.error)reject(new Error(data.error));else resolve(data.result);};worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};worker.postMessage(request);});}
-function composeJob(request:unknown):Promise<{settings:V2Settings;world?:World;mods:unknown[]}>{const worker=new ComposeWorker();return new Promise((resolve,reject)=>{worker.onmessage=({data})=>{worker.terminate();if(data.error)reject(new Error(data.error));else resolve(data.result);};worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};worker.postMessage(request);});}
+function projectJob<T>(request:unknown,transfer:Transferable[]=[]):Promise<T>{if((request as {action?:string}).action==='serialize-binary'){request=structuredClone(request);transfer=resultTransferBuffers(request);}const worker=new ProjectWorker();return new Promise<T>((resolve,reject)=>{worker.onmessage=({data})=>{worker.terminate();if(data.error)reject(new Error(data.error));else resolve(data.result);};worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};worker.postMessage(request,transfer);});}
+function composeJob(request:unknown,transfer:Transferable[]=[]):Promise<{settings:V2Settings;world?:World;mods:unknown[]}>{const worker=new ComposeWorker();return new Promise((resolve,reject)=>{worker.onmessage=({data})=>{worker.terminate();if(data.error)reject(new Error(data.error));else resolve(data.result);};worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};worker.postMessage(request,transfer);});}
 function download(blob: Blob,name: string): void { const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000); }
 async function svgExport(): Promise<Blob> {
   const layers=exportLayers(),width=Number($<HTMLSelectElement>('#export-resolution').value);
@@ -1138,18 +1144,19 @@ function syncExportOptions():void{
   setText(svg,available?'SVG vector map':'SVG vector map · unavailable for this style');
   const select=$<HTMLSelectElement>('#export-format');if(!available&&select.value==='svg')select.value='png';
   const format=select.value;$('#export-map-options').hidden=!['png','svg'].includes(format);
-  setText($('#export-note'),format==='heightmap'?'256-level PNG accompanied by minimum/maximum elevations. The JSON project retains the exact FP32 grids.':format==='recipe'?'The recipe retains settings and edits. Faithful reproduction requires the same engine version.':format==='seed'?'The seed alone contains neither your settings nor your edits.':!available?'SVG is unavailable for the current style. Use PNG.':'Visual exports use the current map without rerunning generation.');
+  setText($('#export-note'),format==='binary'?'The binary project retains the exact map, settings and edits in a compressed file.':format==='project'?'The JSON project is a readable interchange format. Use Save map for a smaller file.':format==='heightmap'?'256-level PNG accompanied by minimum/maximum elevations. Save map retains the exact FP32 grids.':format==='recipe'?'The recipe retains settings and edits. Faithful reproduction requires the same engine version.':format==='seed'?'The seed alone contains neither your settings nor your edits.':!available?'SVG is unavailable for the current style. Use PNG.':'Visual exports use the current map without rerunning generation.');
 }
 $<HTMLSelectElement>('#export-format').onchange=syncExportOptions;
 $('#export-go').onclick=async()=>{
   if(busy||$<HTMLButtonElement>('#export-go').disabled)return;const format=$<HTMLSelectElement>('#export-format').value;
   migrateUrbanSeeds(settings); $<HTMLInputElement>('#seed').value = settings.options.seed;
   if(!world&&!['recipe','seed'].includes(format)){toast('Create a map first.');return;}
-  $<HTMLButtonElement>('#export-go').disabled=true;
+  $<HTMLButtonElement>('#export-go').disabled=true;$<HTMLButtonElement>('#save-map').disabled=true;
   let exportError:string|undefined;
   try {
     const name=`magna-urbis-${settings.options.seed.replace(/[^\w-]/g,'_').slice(0,45)}`;
-    if(format==='project'||format==='recipe'){download(await projectJob<Blob>({action:'serialize',settings:format==='recipe'&&world?{...settings,extent:world.mapSize,options:{...settings.options,mapSize:world.mapSize}}:settings,world:format==='project'?(previewBase?.pristine??previewBase?.world??pristine??world):undefined,mods}),`${name}.${format}.json`);}
+    if(format==='binary'){const buffer=await projectJob<ArrayBuffer>({action:'serialize-binary',settings,world:previewBase?.pristine??previewBase?.world??pristine??world,mods});download(new Blob([buffer],{type:'application/octet-stream'}),`${name}.project.muproj`);}
+    else if(format==='project'||format==='recipe'){download(await projectJob<Blob>({action:'serialize',settings:format==='recipe'&&world?{...settings,extent:world.mapSize,options:{...settings.options,mapSize:world.mapSize}}:settings,world:format==='project'?(previewBase?.pristine??previewBase?.world??pristine??world):undefined,mods}),`${name}.${format}.json`);}
     else if(format==='seed'){download(new Blob([JSON.stringify({format:'magna-urbis-v2-seed',version:1,seed:settings.options.seed})],{type:'application/json'}),`${name}.seed.json`);}
     else if(format==='heightmap'){const result=await heightmapBlob();download(result.blob,`${name}.heightmap.png`);download(result.metadata,`${name}.heightmap.metadata.json`);}
     else {
@@ -1162,11 +1169,12 @@ $('#export-go').onclick=async()=>{
       if(!blob)return;download(blob,`${name}.${format}`);
     }
     log(`Export : ${format}`);toast('Export downloaded.');$<HTMLDialogElement>('#export-dialog').close();
-  }catch(e){exportError=String(e);toast(exportError,true);}finally{
-    $<HTMLButtonElement>('#export-go').disabled=false;syncExportOptions();
+  }catch(e){exportError=e instanceof Error?e.message:String(e);toast(exportError,true);}finally{
+    $<HTMLButtonElement>('#export-go').disabled=false;$<HTMLButtonElement>('#save-map').disabled=busy;syncExportOptions();
     if(exportError)setText($('#export-note'),exportError);
   }
 };
+$('#save-map').onclick=()=>{$<HTMLSelectElement>('#export-format').value='binary';$('#export-go').click();};
 async function inspectHardware():Promise<void>{
   settingsPanel.render();
   try{await refreshBackends(backendBindings);chain.sync();}
