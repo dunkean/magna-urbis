@@ -3,6 +3,7 @@ import { effectiveRegion,regionSpec } from './regionSettings';
 import { mountParameterForm,readSettingPath,writeSettingPath,type ParameterField,type ParameterForm } from './parameterForm';
 import { CULTURE_LABELS,SITE_ARCHETYPES } from '../gen/options';
 import { registerMessages,setText,bindTree } from './i18n';
+import { mountRegionalExitsPanel } from './regionalExitsPanel';
 
 const messages:Record<string,{en:string;fr:string}>={};
 const copy=(en:string,fr:string):string=>{messages[en]={en,fr};return en;};
@@ -45,7 +46,7 @@ export const regionControlFields:ParameterField[]=[
   {path:'roads.level',label:copy('Road development level','Développement des routes'),type:'select',options:choice(['primitive','rural','developed','imperial'])},
   {path:'roads.surface',label:copy('Road surface','Revêtement des routes'),type:'select',options:choice(['auto','dirt','gravel','paved','flagstone'])},
   {path:'roads.culture',label:copy('Road construction profile','Profil de construction routier'),type:'select',options:choice(['auto','medieval','roman','east-asian','caravan','andean','mesoamerican','tribal','elven','dwarven'])},
-  n('roads.density','Road network density','Densité du réseau routier',0,1,.05),n('roads.gradeWeight','Slope cost','Coût des pentes',0,10,.1),n('roads.maxGrade','Maximum grade (0 = profile default)','Pente maximale (0 = profil)',0,1,.01),n('roads.crossingCost','Water crossing cost','Coût des franchissements',.05,10,.1),n('roads.wobble','Road meandering','Sinuosité des routes',0,5,.1),n('roads.sharing','Shared road corridors','Partage des axes routiers',0,1,.05),n('roads.exits','Map exits','Sorties de carte',0,16,1),
+  n('roads.density','Road network density','Densité du réseau routier',0,1,.05),n('roads.gradeWeight','Slope cost','Coût des pentes',0,10,.1),n('roads.maxGrade','Maximum grade (0 = profile default)','Pente maximale (0 = profil)',0,1,.01),n('roads.crossingCost','Water crossing cost','Coût des franchissements',.05,10,.1),n('roads.wobble','Road meandering','Sinuosité des routes',0,5,.1),n('roads.sharing','Shared road corridors','Partage des axes routiers',0,1,.05),
   {path:'roads.activityAccess',label:copy('Tracks to activity sites (mills, quarries…)','Chemins vers les sites d’activité (moulins, carrières…)'),type:'boolean'},
   n('resolution','Placement raster resolution','Résolution du raster d’implantation',64,1024,1),
   n('autoBuildPopulation','Build small places automatically up to (inhabitants)','Construire automatiquement les petits lieux jusqu’à (habitants)',0,5000,50,copy('After the main town is shown, smaller places are built in bounded groups, larger neighbours first. A group never starts an unselected larger town. 0 = never.','Une fois la ville principale affichée, les petits lieux sont construits par lots limités, les plus grands voisins d’abord. Un lot ne déclenche jamais une grande ville non sélectionnée. 0 = jamais.')),
@@ -59,6 +60,7 @@ export function mountRegionControls(root:HTMLElement,options:{getSettings:()=>V2
   const details=document.createElement('details');details.className='section region-controls';const summary=document.createElement('summary');setText(summary,'Placement and regional routes · Rust');details.append(summary);
   const warning=document.createElement('p');warning.className='hint';setText(warning,'Rust regional controls require the Rust terrain engine.');details.append(warning);
   const fieldset=document.createElement('fieldset');fieldset.className='parameter-fieldset';details.append(fieldset);root.append(details);
+  const exitsPanel=mountRegionalExitsPanel(fieldset,{getSettings:get,getWorld:options.getWorld,onChange:()=>{options.onChange();sync();},disabled:()=>!!options.disabled?.()||get().runtime?.backend==='typescript'});
   const note=document.createElement('p');note.className='hint';setText(note,'Counts include every inhabited place. Manual positions are in metres.');fieldset.append(note);
   const set=(path:string,value:unknown)=>{const settings=get();settings.region??={};if(path.startsWith('roads.')&&settings.region.roads===null)settings.region.roads={};writeSettingPath(settings.region,path,value);options.onChange();sync();};
   for(const [title,fields]of [
@@ -76,6 +78,6 @@ export function mountRegionControls(root:HTMLElement,options:{getSettings:()=>V2
   add.onclick=()=>{const settings=get();settings.region??={};settings.region.placement??={};const p=settings.region.placement;p.mode='list';p.list??=[];if(!p.list.length)p.list.push(effectiveRegion(settings).placement.main);let key='place-'+(p.list.length+1);while(p.list.some(s=>s.key===key))key+='x';p.list.push(regionSpec(key,100));renderList();options.onChange();sync();};
   use.onclick=()=>{const towns=options.getWorld?.()?.settlements;if(!towns?.length)return;const settings=get();settings.region??={};settings.region.placement={...settings.region.placement,mode:'list',list:towns.map(s=>({...regionSpec(s.key,s.population),name:s.name??'',culture:s.culture,siteType:s.archetype,position:{...s.center}}))};listSignature='';renderList();options.onChange();sync();};
   if(options.onReroute){const button=document.createElement('button');button.id='roads-only';setText(button,'Reroute without moving sites');button.onclick=options.onReroute;fieldset.append(button);}
-  function sync():void{forms.forEach(f=>f.sync());warning.hidden=get().runtime?.backend!=='typescript';fieldset.disabled=!!options.disabled?.()||get().runtime?.backend==='typescript';enabled.checked=get().region?.roads!==null;use.disabled=!options.getWorld?.()?.settlements?.length;renderList();}
-  sync();return{sync,dispose:()=>{forms.forEach(f=>f.dispose());listForms.forEach(f=>f.dispose());root.replaceChildren();}};
+  function sync():void{exitsPanel.sync();forms.forEach(f=>f.sync());warning.hidden=get().runtime?.backend!=='typescript';fieldset.disabled=!!options.disabled?.()||get().runtime?.backend==='typescript';enabled.checked=get().region?.roads!==null;use.disabled=!options.getWorld?.()?.settlements?.length;renderList();}
+  sync();return{sync,dispose:()=>{exitsPanel.dispose();forms.forEach(f=>f.dispose());listForms.forEach(f=>f.dispose());root.replaceChildren();}};
 }

@@ -59,9 +59,10 @@ export interface ActivitySite {
 export interface SettlementOutput { settlements: Settlement[]; warnings: string[]; requested: number; usableKm2: number; ms: number; activities?: ActivitySite[] }
 
 /** Road network options (Rust `settlements::roads::RoadConfig`). */
+export interface ExitCounts { highway: number; main: number; local: number; track: number }
 export interface RoadConfig {
   level: RoadLevel; surface: 'auto' | RoadSurface; culture: string; density: number;
-  gradeWeight: number; maxGrade: number; crossingCost: number; wobble: number; sharing: number; exits: number;
+  gradeWeight: number; maxGrade: number; crossingCost: number; wobble: number; sharing: number; exits: ExitCounts;
   /** Largest routing grid side (Rust default 512): finer rasters are pooled before routing; 0 routes on the raster itself. */
   grid?: number;
   /** Route tracks/trails to activity access points (Rust default on; false keeps the old network). */
@@ -69,7 +70,7 @@ export interface RoadConfig {
   /** Network nodes (tolls, ferries, inns, border posts) along the finished network (Rust default on). */
   networkNodes?: boolean;
 }
-export const defaultRoadConfig = (): RoadConfig => ({ level: 'rural', surface: 'auto', culture: 'auto', density: 0.5, gradeWeight: 1, maxGrade: 0, crossingCost: 1, wobble: 1, sharing: 0.7, exits: 2, activityAccess: true });
+export const defaultRoadConfig = (): RoadConfig => ({ level: 'rural', surface: 'auto', culture: 'auto', density: 0.5, gradeWeight: 1, maxGrade: 0, crossingCost: 1, wobble: 1, sharing: 0.7, exits: { highway: 0, main: 1, local: 1, track: 0 }, activityAccess: true });
 export type RoadLevel = 'primitive' | 'rural' | 'developed' | 'imperial';
 export type RoadClass = 'highway' | 'main' | 'local' | 'track' | 'trail';
 export type RoadSurface = 'dirt' | 'gravel' | 'paved' | 'flagstone';
@@ -94,6 +95,7 @@ export interface RoadSegment {
   path: Point[]; crossings: RoadCrossing[]; length: number; grade: number; importance: number;
 }
 export interface RoadJunction { point: Point; degree: number; site: string | null }
+export interface ExitReport { requested: RoadClass; class: RoadClass | null; gateway: string | null; point: Point | null; reason: string | null }
 export interface RoadOutput {
   segments: RoadSegment[]; junctions: RoadJunction[]; warnings: string[]; unreachable: string[]; routes: number;
   lengthByClass: Partial<Record<RoadClass, number>>; lengthBySurface: Partial<Record<RoadSurface, number>>; ms: number;
@@ -101,6 +103,8 @@ export interface RoadOutput {
   nodes?: ActivitySite[];
   /** Access lines of remote places cut where they meet a road (Rust `roads::Approach`); fewer than two points = no line left. */
   approaches?: { key: string; points: Point[] }[];
+  /** One result per requested regional exit, including failures and class substitutions. */
+  exits?: ExitReport[];
 }
 
 /** Map inputs of the Rust resource model (seed, sea-level °C, annual mm, biome or climate zone, world corner). */

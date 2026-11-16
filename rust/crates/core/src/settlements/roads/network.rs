@@ -14,6 +14,8 @@ pub(super) struct Routed {
     pub cells: Vec<usize>,
     pub importance: u32,
     pub profile: usize,
+    /// Minimum road class, expressed as a rank (smaller is stronger).
+    pub class_floor: Option<usize>,
     /// Exact start point (settlement centre or map exit) and its label.
     pub start: (Point, String),
     /// Exact end point when the path reaches the target centre rather than a road.
@@ -26,6 +28,7 @@ struct Edge {
     b: usize,
     importance: u32,
     profile: usize,
+    class_floor: Option<usize>,
     alive: bool,
 }
 
@@ -33,6 +36,7 @@ pub(super) struct Link {
     pub vertices: Vec<usize>,
     pub importance: u32,
     pub profile: usize,
+    pub class_floor: Option<usize>,
     pub length: f64,
 }
 
@@ -73,13 +77,21 @@ impl Graph {
             self.pos[v] = p;
         }
     }
-    fn edge(&mut self, a: usize, b: usize, importance: u32, profile: usize) {
+    fn edge(
+        &mut self,
+        a: usize,
+        b: usize,
+        importance: u32,
+        profile: usize,
+        class_floor: Option<usize>,
+    ) {
         if a == b {
             return;
         }
         let key = (a.min(b), a.max(b));
         if let Some(&e) = self.by_pair.get(&key) {
             let edge = &mut self.edges[e];
+            edge.class_floor = strongest_floor(edge.class_floor, class_floor);
             if importance > edge.importance {
                 edge.importance = importance;
                 edge.profile = profile;
@@ -92,6 +104,7 @@ impl Graph {
             b,
             importance,
             profile,
+            class_floor,
             alive: true,
         });
     }
@@ -102,7 +115,7 @@ impl Graph {
             self.pin_vertex(*vs.last().unwrap(), *p, label);
         }
         for w in vs.windows(2) {
-            self.edge(w[0], w[1], r.importance, r.profile);
+            self.edge(w[0], w[1], r.importance, r.profile, r.class_floor);
         }
     }
     /// Pins a settlement onto the vertex of its cell when a road passes through it.
@@ -175,10 +188,10 @@ impl Graph {
             self.by_pair.remove(&(old.a.min(old.b), old.a.max(old.b)));
             let mut prev = old.a;
             for (_, v) in points {
-                self.edge(prev, v, old.importance, old.profile);
+                self.edge(prev, v, old.importance, old.profile, old.class_floor);
                 prev = v;
             }
-            self.edge(prev, old.b, old.importance, old.profile);
+            self.edge(prev, old.b, old.importance, old.profile, old.class_floor);
         }
     }
 
@@ -222,9 +235,13 @@ impl Graph {
                     self.by_pair
                         .remove(&(lost.a.min(lost.b), lost.a.max(lost.b)));
                     for e in tri {
-                        if e != longest && lost.importance > self.edges[e].importance {
-                            self.edges[e].importance = lost.importance;
-                            self.edges[e].profile = lost.profile;
+                        if e != longest {
+                            self.edges[e].class_floor =
+                                strongest_floor(self.edges[e].class_floor, lost.class_floor);
+                            if lost.importance > self.edges[e].importance {
+                                self.edges[e].importance = lost.importance;
+                                self.edges[e].profile = lost.profile;
+                            }
                         }
                     }
                 }
@@ -243,8 +260,10 @@ impl Graph {
             let (mut at, mut e) = first;
             let mut importance = 0;
             let mut profile = 0;
+            let mut class_floor = None;
             loop {
                 used[e] = true;
+                class_floor = strongest_floor(class_floor, self.edges[e].class_floor);
                 if self.edges[e].importance >= importance {
                     importance = self.edges[e].importance;
                     profile = self.edges[e].profile;
@@ -267,6 +286,7 @@ impl Graph {
                 vertices,
                 importance,
                 profile,
+                class_floor,
                 length,
             }
         };
@@ -288,6 +308,10 @@ impl Graph {
         }
         links
     }
+}
+
+fn strongest_floor(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    a.into_iter().chain(b).min()
 }
 
 fn intersect(a: Point, b: Point, c: Point, d: Point) -> Option<Point> {

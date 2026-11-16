@@ -5,6 +5,8 @@ import { defaultSettings } from '../src/v2/settings';
 import { effectiveRegion, regionSpec, validateRegionSettings } from '../src/v2/regionSettings';
 import { projectEngineTerrain } from '../src/v2/terrainProjection';
 import type { TerrainData } from '../../rust/bridge/terrain';
+import { suggestRegionalExits, effectiveRegionalExits, regionalExitResults } from '../src/v2/regionalExits';
+import { settlementStageValidityKeys } from '../src/v2/stageValidity';
 import { rerollSeed, stepSeed } from '../../rust/bridge/generationSeed';
 
 const bridge = vi.hoisted(() => ({ create: vi.fn(), run: vi.fn(), dispose: vi.fn(), raster: vi.fn(), fallback: vi.fn() }));
@@ -77,12 +79,12 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
   it('reroutes between retained sites without placement, raster resampling or a second native upload', async () => {
     const { settings, world } = setup(), { planRustRegion } = await import('../src/v2/region');
     await planRustRegion(world, settings); const sites = world.settlements;
-    settings.region!.roads = { density: .8, exits: 4 };
+    settings.region!.roads = { density: .8, exits: { main: 4 } };
     await planRustRegion(world, settings, undefined, true);
     const request = bridge.run.mock.calls[2][0];
     expect(request.place).toBeUndefined(); expect(request.raster).toBeUndefined();
     expect(request.sites).toEqual(sites!.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })));
-    expect(request.roads).toMatchObject({ density: .8, exits: 4 }); expect(world.settlements).toBe(sites);
+    expect(request.roads).toMatchObject({ density: .8, exits: { main: 4 } }); expect(world.settlements).toBe(sites);
     expect(bridge.create).toHaveBeenCalledTimes(1); expect(bridge.raster).toHaveBeenCalledTimes(1);
     expect(world.debug?.v2RustRegion).toMatchObject({ placement: output() });
   });
@@ -108,7 +110,7 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
       { placement: { populationJitter: 1.1 } }, { placement: { edgeMargin: .4 } }, { placement: { counts: { village: 700, hamlet: 700 } } },
       { placement: { main: { position: { x: 100 } } } }, { placement: { list: [regionSpec('same'), regionSpec('same')] } }]) expect(() => validateRegionSettings(invalid)).toThrow();
     expect(() => validateRegionSettings({ placement: { main: { position: { x: 1200, y: 300 } } } }, 1200)).toThrow('inside');
-    expect(() => validateRegionSettings({ roads: { density: 1, maxGrade: 1, crossingCost: .05, exits: 16 }, placement: { populationJitter: 1, zipfExponent: .3, edgeMargin: .3 } })).not.toThrow();
+    expect(() => validateRegionSettings({ roads: { density: 1, maxGrade: 1, crossingCost: .05, exits: { main: 16 } }, placement: { populationJitter: 1, zipfExponent: .3, edgeMargin: .3 } })).not.toThrow();
   });
   it('uses a finer bounded regional planning grid beyond 40 km unless explicitly set', () => {
     const { settings } = setup();
@@ -126,5 +128,79 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
     const config = effectiveRegion(settings).placement;
     expect(config.main).toMatchObject({ population: 80, position: { x: 1000, y: 1100 }, siteType: 'plain', sitePrefs: { weights: { hilltop: 2 } } });
     expect(config.list[0]).toMatchObject({ key: 'secondary', population: 70, culture: 'medina', position: { x: 1600, y: 1700 }, siteType: 'harbor', sitePrefs: { mountainFace: .8, weights: { harbor: 3 } } });
+  });
+});
+
+describe('regional road exit requests', () => {
+  it('requests non-zero automatic exits with the V2 roads=0 default', () => {
+    const settings = defaultSettings();
+    expect(settings.options.roads).toBe(0);
+    const exits = effectiveRegion(settings).roads!.exits;
+    expect(Object.keys(exits).sort()).toEqual(['highway', 'local', 'main', 'track']);
+    expect(Object.values(exits).reduce((n, count) => n + count, 0)).toBeGreaterThan(0);
+    expect(() => validateRegionSettings({ roads: effectiveRegion(settings).roads })).not.toThrow();
+  });
+  it('pins each explicit class, including zero, and resets absent classes to context', () => {
+    const { settings } = setup(), suggested = suggestRegionalExits(settings);
+    settings.region!.roads = { exits: { main: 0, track: 3 } };
+    expect(effectiveRegion(settings).roads!.exits).toEqual({ ...suggested, main: 0, track: 3 });
+    delete settings.region!.roads.exits!.main;
+    expect(effectiveRegion(settings).roads!.exits.main).toBe(suggested.main);
+    settings.region!.roads = null;
+    expect(effectiveRegion(settings).roads).toBeNull();
+  });
+  it('validates integer class counts and a combined limit of 16, rejecting the old scalar form', () => {
+    for (const exits of [2, { main: -1 }, { local: .5 }, { track: 17 }, { highway: NaN }, { trail: 1 }, { highway: 8, main: 9 }])
+      expect(() => validateRegionSettings({ roads: { exits } })).toThrow();
+    expect(() => validateRegionSettings({ roads: { exits: { highway: 4, main: 4, local: 4, track: 4 } } })).not.toThrow();
+    expect(() => validateRegionSettings({ roads: { exits: {} } })).not.toThrow();
+  });
+  it('uses tracks for primitive regions and highways for large imperial regions', () => {
+    const settings = defaultSettings(); settings.extent = 40000;
+    settings.region = { demography: { population: 100000 }, roads: { level: 'primitive' } };
+    expect(suggestRegionalExits(settings)).toEqual({ highway: 0, main: 0, local: 0, track: 7 });
+    settings.region.roads!.level = 'rural';
+    expect(suggestRegionalExits(settings)).toEqual({ highway: 0, main: 2, local: 4, track: 1 });
+    settings.region.roads!.level = 'developed';
+    expect(suggestRegionalExits(settings)).toEqual({ highway: 1, main: 3, local: 3, track: 0 });
+    settings.region.roads!.level = 'imperial';
+    expect(suggestRegionalExits(settings)).toEqual({ highway: 2, main: 3, local: 2, track: 0 });
+    settings.extent = 2400;
+    expect(suggestRegionalExits(settings).highway).toBe(0);
+    expect(Object.values(suggestRegionalExits(settings)).reduce((n, count) => n + count, 0)).toBe(3);
+    settings.extent = 40000; settings.region.demography!.population = 100;
+    expect(suggestRegionalExits(settings).highway).toBe(0);
+  });
+  it('leaves the automatic classes only the budget remaining after overrides', () => {
+    const settings = defaultSettings(); settings.region = { roads: { exits: { highway: 16 } } };
+    expect(effectiveRegionalExits(settings)).toEqual({ highway: 16, main: 0, local: 0, track: 0 });
+    expect(() => validateRegionSettings({ roads: effectiveRegion(settings).roads })).not.toThrow();
+    settings.region.roads!.exits = { highway: 0, main: 0, local: 0, track: 0 };
+    expect(effectiveRegionalExits(settings)).toEqual({ highway: 0, main: 0, local: 0, track: 0 });
+  });
+  it('invalidates regional roads while keeping placement and hierarchy valid', () => {
+    const settings = defaultSettings(), before = settlementStageValidityKeys(settings, 'terrain');
+    settings.region = { roads: { exits: { main: 3 } } };
+    const after = settlementStageValidityKeys(settings, 'terrain');
+    expect(after.get('settle-sites')).toBe(before.get('settle-sites'));
+    expect(after.get('settle-hierarchy')).toBe(before.get('settle-hierarchy'));
+    expect(after.get('settle-roads')).not.toBe(before.get('settle-roads'));
+  });
+  it('retains successes, substitutions, failures and Rust warnings after routing and rerouting', async () => {
+    const { settings, world } = setup(), { planRustRegion } = await import('../src/v2/region');
+    const report: NonNullable<RoadOutput['exits']> = [
+      { requested: 'highway', class: 'main', gateway: 'village:1', point: { x: 0, y: 1700 }, reason: null },
+      { requested: 'main', class: 'main', gateway: 'main', point: { x: 1000, y: 0 }, reason: null },
+      { requested: 'local', class: null, gateway: null, point: null, reason: 'No viable gateway' },
+    ];
+    bridge.run.mockImplementation(async request => ({ id: request.id, ...(request.place ? { settlements: output() } : {}),
+      roads: request.roads ? { ...roads(), exits: report, warnings: ['A requested exit could not be routed.'] } : null }));
+    await planRustRegion(world, settings);
+    expect((world.debug?.v2RustRegion as { roads: RoadOutput }).roads.exits).toEqual(report);
+    expect(world.stats['settlements.warning']).toBe('A source diagnostic | A requested exit could not be routed.');
+    expect(regionalExitResults(report)).toEqual({ highway: { obtained: 0, requested: 1 }, main: { obtained: 2, requested: 1 },
+      local: { obtained: 0, requested: 1 }, track: { obtained: 0, requested: 0 } });
+    await planRustRegion(world, settings, undefined, true);
+    expect((world.debug?.v2RustRegion as { roads: RoadOutput }).roads.exits).toEqual(report);
   });
 });

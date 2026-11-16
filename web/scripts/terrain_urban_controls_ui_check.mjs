@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 const target = new URL(process.argv[2] ?? 'http://localhost:5173/terrainbench.html');
 target.search = new URLSearchParams({ v: '4', seed: '42', width: '40000', motif: '3000', source: 'neural', relief: 'valley', coasts: 'N', climate: 'mediterranean', style: 'render', auto: '1', pins: '6926.7,3193.3,', showPins: '0', view: '16241.2,12890.1,0.944' }).toString();
 target.searchParams.set('settlements', JSON.stringify({ enabled: true, config: { mode: 'counts', main: { key: 'main', population: 3000, culture: 'european-organic', kind: 'settlement', siteType: 'auto', sitePrefs: {} }, counts: { city: 0, town: 0, village: 9, hamlet: 12, farmstead: 25 } } }));
-target.searchParams.set('roads', JSON.stringify({ enabled: true, config: { level: 'developed', culture: 'medieval', density: 0.5, sharing: 0.7, exits: 4 } }));
+target.searchParams.set('roads', JSON.stringify({ enabled: true, config: { level: 'developed', culture: 'medieval', density: 0.5, sharing: 0.7, exits: { highway: 0, main: 2, local: 2, track: 0 } } }));
 target.searchParams.set('urban', JSON.stringify({ enabled: true, parcelEnabled: true, target: 'main', layoutConfig: { scope: 'district', placement: 'notched', preset: 'japanese-jokamachi/village', culture: 'european-organic', recipe: 'core', zone: 'core', count: 3, fortification: 'none', axisAlignment: 'culture', exitTreatment: 'legacy', siteAdaptation: 0, footprint: { mechanism: 'legacy', budget: 'radius' }, tissue: 'radial', accessMode: 'adaptive' } }));
 target.searchParams.set('pipeline', 'legacy');
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'] });

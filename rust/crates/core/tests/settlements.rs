@@ -1,4 +1,4 @@
-use magna_urbis_core::settlements::roads::{RoadConfig, RoadOutput, RoadSite};
+use magna_urbis_core::settlements::roads::{ExitCounts, RoadConfig, RoadOutput, RoadSite};
 use magna_urbis_core::settlements::{
     Config, Output, Point, Raster, SettlementSpec, Terrain, extent_gap, generate, pair_spacing,
 };
@@ -78,7 +78,7 @@ fn sites(out: &Output) -> Vec<RoadSite> {
 }
 fn no_exits() -> RoadConfig {
     RoadConfig {
-        exits: 0,
+        exits: ExitCounts::default(),
         ..Default::default()
     }
 }
@@ -853,12 +853,12 @@ fn levels_cultures_and_surface_overrides_type_the_network() {
     // A tree-only network has no more links than places (plus exits).
     let tree = route(RoadConfig {
         density: 0.0,
-        exits: 0,
+        exits: ExitCounts::default(),
         ..Default::default()
     });
     let loops = route(RoadConfig {
         density: 1.0,
-        exits: 0,
+        exits: ExitCounts::default(),
         ..Default::default()
     });
     let km = |r: &RoadOutput| r.segments.iter().map(|s| s.length).sum::<f64>();
@@ -1056,7 +1056,7 @@ fn many_exits_spread_around_the_main_place_with_different_sizes() {
     };
     cfg.main.population = 12000;
     let roads_cfg = RoadConfig {
-        exits: 8,
+        exits: ExitCounts { main: 4, local: 4, ..Default::default() },
         ..Default::default()
     };
     let start = std::time::Instant::now();
@@ -1089,7 +1089,7 @@ fn many_exits_spread_around_the_main_place_with_different_sizes() {
     assert!(classes.len() > 1, "exit classes: {classes:?}");
     assert!(
         map.terrain()
-            .roads("exits", &[], &RoadConfig { exits: 17, ..Default::default() })
+            .roads("exits", &[], &RoadConfig { exits: ExitCounts { main: 16, local: 1, ..Default::default() }, ..Default::default() })
             .is_err()
     );
 }

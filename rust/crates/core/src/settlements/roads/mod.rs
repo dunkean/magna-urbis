@@ -5,6 +5,7 @@
 //! road profile of its culture ([`profile`]), most important first, so lesser roads join
 //! the trunks; all routes then merge into one network ([`network`]) whose class comes from
 //! the trips it carries and whose surface comes from the development level and culture.
+mod exits;
 mod network;
 pub mod profile;
 mod search;
@@ -13,6 +14,7 @@ use super::grid::Fields;
 use super::{Point, extent_radius};
 use crate::{noise::Noise, rng::Rng};
 use network::{Graph, Routed};
+pub use exits::{ExitCounts, ExitReport};
 pub use profile::{CLASSES, LEVELS, PROFILES, SURFACES};
 use profile::{Profile, class_index, level_by_id, profile_by_id, profile_for, surface_index};
 use search::{Costs, Net, Query, Search};
@@ -38,7 +40,8 @@ pub struct RoadConfig {
     pub wobble: f64,
     /// 0 = every route on its own … 1 = strong trunk sharing.
     pub sharing: f64,
-    pub exits: usize,
+    /// Requested map exits by class; terrain and gateway sizes may limit the result.
+    pub exits: ExitCounts,
     /// Largest routing grid side: a finer raster is pooled by whole blocks down to at most this
     /// many cells per side before routing (0 routes on the raster itself). Search work grows
     /// faster than the cell count, so a 1024² raster routes about ten times slower than 512².
@@ -61,7 +64,7 @@ impl Default for RoadConfig {
             crossing_cost: 1.0,
             wobble: 1.0,
             sharing: 0.7,
-            exits: 2,
+            exits: ExitCounts { highway: 0, main: 1, local: 1, track: 0 },
             grid: 512,
             activity_access: true,
             network_nodes: true,
@@ -143,6 +146,8 @@ pub struct RoadOutput {
     pub junctions: Vec<Junction>,
     pub warnings: Vec<String>,
     pub unreachable: Vec<String>,
+    #[serde(default)]
+    pub exits: Vec<ExitReport>,
     /// Routed connections (before merging).
     pub routes: usize,
     pub length_by_class: BTreeMap<String, f64>,
@@ -289,7 +294,7 @@ fn validate(sites: &[RoadSite], cfg: &RoadConfig, width: f64) -> Result<(), Stri
         || cfg.max_grade > 1.0
         || !(0.05..=10.0).contains(&cfg.crossing_cost)
         || cfg.wobble > 5.0
-        || cfg.exits > 16
+        || cfg.exits.total() > 16
         || (cfg.grid != 0 && !(64..=1024).contains(&cfg.grid))
         || level_by_id(&cfg.level).is_none()
         || (cfg.surface != "auto" && !SURFACES.contains(&cfg.surface.as_str()))
@@ -406,6 +411,7 @@ impl Router<'_> {
             cells,
             importance,
             profile,
+            class_floor: None,
             start: (start, label),
             end,
         });
@@ -461,6 +467,7 @@ impl Router<'_> {
             cells,
             importance,
             profile,
+            class_floor: None,
             start: (
                 start,
                 if from_site {
@@ -657,94 +664,11 @@ impl Router<'_> {
                     self.add_road_cell(c, parent);
                 }
             }
-            self.routed.push(Routed { cells, importance, profile, start: (s.center, s.key.clone()), end: None });
+            self.routed.push(Routed { cells, importance, profile, class_floor: None, start: (s.center, s.key.clone()), end: None });
         }
         approaches
     }
 
-    /// A road from `site` to the map border `side`, ending wherever along that border the route
-    /// is cheapest. Returns the exit point.
-    fn connect_exit(
-        &mut self,
-        site: usize,
-        side: usize,
-        importance: u32,
-        around: Option<(Point, f64)>,
-    ) -> Option<Point> {
-        let f = self.f;
-        let n = f.r.n;
-        let border: Vec<usize> = (0..n)
-            .map(|k| match side {
-                0 => k * n,
-                1 => k * n + n - 1,
-                2 => k,
-                _ => (n - 1) * n + k,
-            })
-            .filter(|&i| f.r.water[i] == 0)
-            .filter(|&i| around.map_or(true, |(p, r)| f.pos(i).distance(p) <= r))
-            .collect();
-        if border.is_empty() {
-            return None;
-        }
-        let center = self.sites[site].center;
-        let profile = self.profile_of(site);
-        let mut query = Query {
-            start: f.index(center),
-            goals: &border,
-            origin: center,
-            target: around.map_or(side_point(f, side, center), |(p, _)| p),
-            profile: &PROFILES[profile],
-            class: class_index(importance, self.level),
-            tight: around.is_some(),
-        };
-        let mut found = self
-            .search
-            .few_crossings(f, &self.net, &self.costs, &query);
-        if found.is_none() && query.tight {
-            query.tight = false;
-            found = self
-                .search
-                .few_crossings(f, &self.net, &self.costs, &query);
-        }
-        let mut cells = found?;
-        if cells.len() < 2 {
-            return None;
-        }
-        cells.reverse();
-        let at = f.pos(cells[0]);
-        let exit = side_point(f, side, at);
-        self.net.add_path(n, &cells);
-        for &c in &cells {
-            if !self.marked[c] {
-                self.marked[c] = true;
-                self.add_road_cell(c, site);
-            }
-        }
-        self.routed.push(Routed {
-            cells,
-            importance,
-            profile,
-            start: (exit, "exit".into()),
-            end: Some((center, self.sites[site].key.clone())),
-        });
-        Some(exit)
-    }
-}
-
-/// Projection of `c` on map side 0 (west), 1 (east), 2 (north) or 3 (south).
-fn side_point(f: &Fields, side: usize, c: Point) -> Point {
-    match side {
-        0 => Point { x: 0.0, y: c.y },
-        1 => Point {
-            x: f.r.width,
-            y: c.y,
-        },
-        2 => Point { x: c.x, y: 0.0 },
-        _ => Point {
-            x: c.x,
-            y: f.r.width,
-        },
-    }
 }
 
 pub(super) fn route(
@@ -770,6 +694,7 @@ pub(super) fn route(
     let mut out = RoadOutput::default();
     let k = sites.len();
     if k == 0 {
+        exits::without_sites(cfg.exits, &mut out);
         return Ok(out);
     }
     let level = level_by_id(&cfg.level).unwrap();
@@ -892,91 +817,7 @@ pub(super) fn route(
             }
         }
     }
-    // Exits: the main place towards its nearest borders, then large towns near a border. The
-    // search runs from the place to every dry cell of that border, so the exit lands where the
-    // ground allows rather than at the foot of a cliff.
-    let mut exits: Vec<(Point, usize, u32)> = vec![];
-    let main = sites[hub].center;
-    let spacing = 1500.0_f64.max(0.12 * f.r.width);
-    // N directions evenly spread around the main place, the first towards its nearest border.
-    let nearest = (0..4)
-        .min_by(|&a, &b| {
-            side_point(f, a, main)
-                .distance(main)
-                .total_cmp(&side_point(f, b, main).distance(main))
-        })
-        .unwrap();
-    let np = side_point(f, nearest, main);
-    let start = (np.y - main.y).atan2(np.x - main.x);
-    let mut planned: Vec<(Point, usize)> = vec![];
-    for j in 0..cfg.exits {
-        let a = start + std::f64::consts::TAU * j as f64 / cfg.exits as f64;
-        let (dx, dy) = (a.cos(), a.sin());
-        let w = f.r.width;
-        let tx = if dx > 1e-9 {
-            (w - main.x) / dx
-        } else if dx < -1e-9 {
-            -main.x / dx
-        } else {
-            f64::INFINITY
-        };
-        let ty = if dy > 1e-9 {
-            (w - main.y) / dy
-        } else if dy < -1e-9 {
-            -main.y / dy
-        } else {
-            f64::INFINITY
-        };
-        let (t, side) = if tx <= ty {
-            (tx, if dx > 0.0 { 1 } else { 0 })
-        } else {
-            (ty, if dy > 0.0 { 3 } else { 2 })
-        };
-        let hit = Point {
-            x: (main.x + dx * t).clamp(0.0, w),
-            y: (main.y + dy * t).clamp(0.0, w),
-        };
-        if planned.iter().any(|(p, _)| p.distance(hit) < spacing) {
-            continue;
-        }
-        planned.push((hit, side));
-    }
-    // Nearest border first: the first exit is the strongest.
-    planned.sort_by(|a, b| {
-        a.0.distance(main)
-            .total_cmp(&b.0.distance(main))
-    });
-    for (rank, (hit, side)) in planned.into_iter().enumerate() {
-        let weight = (sites[hub].population / (rank as u32 + 1).pow(2)).max(1);
-        if let Some(p) =
-            router.connect_exit(hub, side, weight, Some((hit, 0.25 * spacing)))
-        {
-            exits.push((p, hub, weight));
-        }
-    }
-    if cfg.exits > 0 {
-        for i in (0..k).filter(|&i| i != hub && sites[i].population >= 1000) {
-            let c = sites[i].center;
-            let side = (0..4)
-                .min_by(|&a, &b| {
-                    side_point(f, a, c)
-                        .distance(c)
-                        .total_cmp(&side_point(f, b, c).distance(c))
-                })
-                .unwrap();
-            let p = side_point(f, side, c);
-            if p.distance(c) > 0.3 * f.r.width
-                || exits
-                    .iter()
-                    .any(|(e, _, _)| e.distance(p) < spacing)
-            {
-                continue;
-            }
-            if let Some(p) = router.connect_exit(i, side, sites[i].population, None) {
-                exits.push((p, i, sites[i].population));
-            }
-        }
-    }
+    let exits = exits::route(seed, &mut router, &mut out);
     router.rural_access(seed, density);
     let first_activity = router.routed.len();
     out.approaches = router.activity_access(&activity);
@@ -1014,11 +855,7 @@ pub(super) fn route(
             trips.push((va, vb, importance(a, b)));
         }
     }
-    for &(p, s, weight) in &exits {
-        if let (Some(ve), Some(vs)) = (graph.vertex_of(f.index(p)), site_vertex[s]) {
-            trips.push((ve, vs, weight));
-        }
-    }
+    exits::add_trips(&exits, sites, &graph, &site_vertex, &mut trips);
     network::assign_traffic(&mut links, graph.pos.len(), &graph.pos, &trips, 3.0);
 
     // Junctions are the link ends.
@@ -1053,6 +890,7 @@ pub(super) fn route(
             None
         };
         let class = earth.unwrap_or_else(|| class_index(link.importance, level));
+        let class = link.class_floor.map_or(class, |floor| class.min(floor));
         let surface = if earth.is_some() { 0 } else { surface_index(class, level, p, forced) };
         let raw: Vec<_> = link.vertices.iter().map(|&v| graph.pos[v]).collect();
         let limit = if cfg.grade_weight > 0.0 {
@@ -1361,7 +1199,7 @@ mod tests {
             approach: vec![top, Point { x: 3000.0, y: 3000.0 }, foot],
             ..Default::default()
         };
-        let cfg = RoadConfig { density: 0.0, exits: 0, ..Default::default() };
+        let cfg = RoadConfig { density: 0.0, exits: ExitCounts::default(), ..Default::default() };
         let out = route("stair", &f, &[village("west", 1000.0), village("east", 5000.0), temple], &cfg).unwrap();
         let cut = out.approaches.iter().find(|a| a.key == "temple").expect("the stair meets the road");
         let end = *cut.points.last().unwrap();

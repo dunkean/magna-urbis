@@ -1,0 +1,17 @@
+.regional-exits{display:grid;gap:5px;min-width:0;width:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.regional-exits-heading{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.regional-exits h4{margin:0;color:var(--gold);font-size:11px;font-weight:500}
+.regional-exits-heading button{min-height:24px;padding:2px 7px;font-size:10px}
+.regional-exits .hint{margin:0;font-size:10px;line-height:1.4;color:var(--muted)}
+.regional-exits-fields{display:grid;gap:4px;border:0;padding:0;margin:0;min-width:0}
+.regional-exit-row{display:grid;grid-template-columns:minmax(0,1fr) 52px 24px 44px;gap:4px;align-items:center}
+.regional-exit-row label{display:flex;align-items:center;gap:5px;min-width:0;font-size:10px}
+#app .regional-exit-row input{box-sizing:border-box;width:100%;min-width:0;min-height:26px;padding:3px;font-size:11px;font-variant-numeric:tabular-nums}
+.regional-exit-row.is-auto input,.regional-exit-row small{color:var(--muted)}
+.regional-exit-row:not(.is-auto) input{border-color:var(--gold)}
+.regional-exit-row small{font-size:9px}
+.regional-exit-result{font-size:10px;font-variant-numeric:tabular-nums;text-align:end;color:var(--muted);cursor:help}
+.regional-road-swatch{display:block;flex:0 0 16px;width:16px;border-top:3px solid #fff8e6}
+[data-exit-class=highway] .regional-road-swatch{border-color:#d8342c;border-top-width:4px}
+[data-exit-class=main] .regional-road-swatch{border-color:#f2a33a}
+[data-exit-class=track] .regional-road-swatch{border-color:#8a6a45;border-top:2px dashed #8a6a45}

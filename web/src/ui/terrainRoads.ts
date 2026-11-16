@@ -1,4 +1,4 @@
-import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadCrossing, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
+import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type ExitCounts, type Point, type RoadClass, type RoadConfig, type RoadCrossing, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
 import type { Layout } from '../../../rust/bridge/urban';
 import { prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
 import { bridgeRoadOwnership } from '../render/cityBridges';
@@ -146,7 +146,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       <label class="map-field" title="Sets the road classes and their surfaces"><select id="roadLevel" aria-label="Réseau">${ROAD_LEVELS.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join('')}</select></label>
       ${gearButton()}</div>
     <div class="map-line map-sub">
-      <label class="map-field" title="Roads leaving the map from the main settlement (0 to 16)">sorties <input data-road="exits" type="number" min="0" max="16" step="1" aria-label="Sorties de carte"></label>
+      ${(['highway','main','local','track'] as const).map(cls => `<label class="map-field">${classWords[cls][1]} · exits <input data-road-exit="${cls}" type="number" min="0" max="16" step="1"></label>`).join('')}
       <label class="map-field map-grow" title="0: spanning tree only · 1: many loops, rural tracks and trails out of settlements and across the countryside">densité <input data-road="density" type="range" min="0" max="1" step="0.05" aria-label="Densité du réseau"><output id="roadDensityValue"></output></label>
     </div>
     <small id="roadStatus" class="map-status" role="status">Waiting for settlements…</small>
@@ -192,6 +192,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       const key = c.dataset.road as keyof RoadConfig, value = config[key] as number;
       c.value = String(key === 'maxGrade' ? Math.round(value * 100) : value);
     }
+    for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-exit]'))) c.value = String(config.exits[c.dataset.roadExit as keyof ExitCounts]);
     q('#roadDensityValue').textContent = config.density.toFixed(2);
     select('roadPreset').value = style.preset; select('roadBlend').value = getGroundBlend();
     for (const c of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
@@ -231,6 +232,18 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (!c.reportValidity()) return;
       (config as unknown as Record<string, number>)[key] = key === 'maxGrade' ? Number(c.value) / 100 : Number(c.value);
       changed();
+    };
+  }
+  for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-exit]'))) {
+    c.oninput = () => c.setCustomValidity('');
+    c.onchange = () => {
+      if (!c.reportValidity() || c.value === '') return;
+      const exits = { ...config.exits, [c.dataset.roadExit!]: Number(c.value) };
+      if (Object.values(exits).reduce((n, count) => n + count, 0) > 16) {
+        c.setCustomValidity(urbanText(['Au plus 16 sorties au total.','At most 16 exits in total.','出口总数最多为 16。','Como máximo 16 salidas en total.','No máximo 16 saídas no total.']));
+        c.reportValidity(); return;
+      }
+      config.exits = exits; changed();
     };
   }
   function legend(): void {
@@ -464,7 +477,10 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const text = (selector: string, words: Words): void => { const target=panel.querySelector(selector); const node=(target instanceof HTMLInputElement || target instanceof HTMLSelectElement ? target.closest('label') : target)?.firstChild; if (node?.nodeType===Node.TEXT_NODE) node.textContent=urbanText(words)+' '; };
     const inputLabel = (selector: string, words: Words): void => { const node=panel.querySelector(selector)?.nextSibling; if (node?.nodeType===Node.TEXT_NODE) node.textContent=urbanText(words); };
     text('summary',['Routes','Roads','道路','Carreteras','Estradas']);
-    text('[data-road="exits"]',['Sorties','Exits','出口','Salidas','Saídas']);
+    for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-exit]'))) {
+      const label = `${urbanText(classWords[c.dataset.roadExit as keyof ExitCounts])} · ${urbanText(['Sorties','Exits','出口','Salidas','Saídas'])}`;
+      c.closest('label')!.firstChild!.textContent = label + ' '; c.setAttribute('aria-label', label);
+    }
     text('[data-road="density"]',['Densité','Density','密度','Densidad','Densidade']);
     for (const option of Array.from(select('roadLevel').options)) if (levelWords[option.value]) option.textContent=urbanText(levelWords[option.value]);
     for (const option of Array.from(select('roadCulture').options)) option.textContent=option.value==='auto' ? urbanText(['Selon les implantations','From the settlements','根据聚落','Según los asentamientos','Conforme os assentamentos']) : profileWords[option.value] ? urbanText(profileWords[option.value]) : option.textContent;
@@ -484,11 +500,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     q('#roadRendering > summary').textContent=urbanText(['Rendu','Rendering','渲染','Renderizado','Renderização']);
     const gear=panel.querySelector<HTMLButtonElement>('.map-gear'); if(gear) { const label=urbanText(['Réglages des routes','Road settings','道路设置','Ajustes de carreteras','Configurações das estradas']); gear.title=label; gear.setAttribute('aria-label',label); }
     select('roadLevel').setAttribute('aria-label',urbanText(['Réseau','Network','路网','Red','Rede']));
-    q('[data-road="exits"]').setAttribute('aria-label',urbanText(['Sorties de carte','Map exits','地图出口','Salidas del mapa','Saídas do mapa']));
     q('[data-road="density"]').setAttribute('aria-label',urbanText(['Densité du réseau','Network density','路网密度','Densidad de la red','Densidade da rede']));
     const titles: Record<string,Words> = {
       '#roadLevel':['Définit les classes de routes et leurs surfaces','Sets the road classes and their surfaces','设置道路等级及其路面','Define las clases de carretera y sus superficies','Define as classes de estradas e suas superfícies'],
-      '[data-road="exits"]':['Routes sortant de la carte depuis l’implantation principale (0 à 16)','Roads leaving the map from the main settlement (0 to 16)','从主要聚落通向地图外的道路（0 至 16）','Carreteras que salen del mapa desde el asentamiento principal (0 a 16)','Estradas que saem do mapa a partir do assentamento principal (0 a 16)'],
       '[data-road="density"]':['0 : arbre couvrant seul · 1 : nombreuses boucles, pistes et sentiers','0: spanning tree only · 1: many loops, tracks and trails','0：仅生成树 · 1：大量环路、小路和步道','0: solo árbol de expansión · 1: muchos bucles, pistas y senderos','0: apenas árvore geradora · 1: muitos circuitos, caminhos e trilhas'],
       '#roadSurface':['Imposer une surface à tout le réseau','Force one surface on the whole network','为整个路网指定一种路面','Imponer una superficie a toda la red','Definir uma superfície para toda a rede'],
       '#roadCulture':['Culture routière : pentes, rectitude, ponts et chaussées','Road-building culture: grades, straightness, bridges, causeways','道路文化：坡度、直线度、桥梁和堤道','Cultura viaria: pendientes, rectitud, puentes y calzadas','Cultura viária: inclinações, retidão, pontes e calçadas'],

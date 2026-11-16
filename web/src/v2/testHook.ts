@@ -147,7 +147,9 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
         ...(req.autoPosition ? {} : { position: original ? { ...original.center } : { x: width / 2, y: width / 2 } }) };
       const edgeMargin = req.autoPosition ? framedEdgeMargin(req.population, width) : defaultSettlementConfig().edgeMargin;
       const placement = cityPlacementRequest({ ...defaultSettlementConfig(), mode: 'list', relief: (TERRAIN_RELIEFS as readonly string[]).includes(relief) ? relief : 'flat', main: spec, list: [spec], edgeMargin });
-      settings.region = { placement, ...(meta.roadConfig ? { roads: { ...meta.roadConfig } } : {}), resolution: Math.max(64, Math.min(1024, decor.raster.n)) };
+      // Saved decors keep the road options of their time; exits are now per class and chosen from the region (auto).
+      const savedRoads = meta.roadConfig ? (({ exits: _exits, ...rest }) => rest)(meta.roadConfig) : undefined;
+      settings.region = { placement, ...(savedRoads ? { roads: savedRoads } : {}), resolution: Math.max(64, Math.min(1024, decor.raster.n)) };
       const urban = urbanSettings(req, defaultCityLayoutConfig() as unknown as Record<string, unknown>, defaultParcelConfig() as unknown as Record<string, unknown>);
       settings.urban = { ...settings.urban, layout: urban.layout, parcels: urban.parcels };
       delete settings.urban.local;

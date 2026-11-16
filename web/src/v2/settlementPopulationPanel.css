@@ -8,14 +8,18 @@
 .regional-population-field.is-manual>input{border-color:var(--gold)}
 .regional-density-unit{font-size:9px;color:var(--muted)}
 .regional-population-field[data-demographic-field=density]>label{flex-wrap:wrap;gap:0 5px}
-.regional-counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:3px 0}
+.regional-counts{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:4px;margin:3px 0}
 .regional-count-card{grid-template-columns:minmax(0,1fr) 20px;gap:3px;padding:4px 5px 5px;border:1px solid var(--border, #ffffff20);border-radius:7px;background:#ffffff03}
-.regional-count-card>label{grid-column:1/-1;display:flex;flex-direction:column;gap:2px;text-align:center;font-size:10px;min-height:94px;justify-content:flex-start}
-.regional-count-card>label>span{display:flex;align-items:center;justify-content:center;min-height:26px;line-height:1.2}
+.regional-count-card>label{grid-column:1/-1;display:flex;flex-direction:column;gap:2px;text-align:center;font-size:10px;min-height:52px;justify-content:flex-start}
+.regional-count-card>label>span{display:flex;align-items:center;justify-content:center;min-height:20px;line-height:1.2}
 .regional-count-card>input{text-align:center;padding:3px 2px;min-height:26px;font-variant-numeric:tabular-nums}
 .regional-count-card .regional-reset{font-size:14px}
-.settlement-class-icon{display:block;flex:0 0 64px;width:64px;height:64px;background-image:url('./assets/settlement-classes-v1.png');background-size:300% 200%;background-repeat:no-repeat;border-radius:5px}
+.settlement-class-icon{display:block;flex:0 0 30px;width:30px;height:30px;background-image:url('./assets/settlement-classes-v1.png');background-size:300% 200%;background-repeat:no-repeat;border-radius:5px}
 .regional-population>input[type=range]{width:100%;margin:0;accent-color:var(--gold)}
 .regional-population-help{font-size:10px;color:var(--muted)}
 .regional-population-help>summary{cursor:pointer}
 .regional-population-help[open]{display:grid;gap:5px}
+
+/* Match Region’s compact choice art in the Settlements tab and its advanced panel. */
+#family-settlements .choice .art,#family-settlements .landscape-art{width:30px;height:30px}
+#family-settlements .choice{min-height:33px;padding:2px 4px;gap:3px;font-size:9px}

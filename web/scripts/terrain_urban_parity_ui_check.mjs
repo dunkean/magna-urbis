@@ -85,7 +85,7 @@ try {
   const override = await urban.evaluate(() => JSON.parse(new URL(location.href).searchParams.get('urban')));
   override.layoutConfig.tissue = 'grid'; selectedUrl.searchParams.set('urban', JSON.stringify(override));
   const routeOverride = await urban.evaluate(() => JSON.parse(new URL(location.href).searchParams.get('roads')));
-  routeOverride.config = { ...routeOverride.config, density: 0, exits: 0, gradeWeight: 2 };
+  routeOverride.config = { ...routeOverride.config, density: 0, exits: { highway: 0, main: 0, local: 0, track: 0 }, gradeWeight: 2 };
   selectedUrl.searchParams.set('roads', JSON.stringify(routeOverride));
   const editedCity = await urban.evaluate(() => JSON.parse(new URL(location.href).searchParams.get('city')));
   editedCity.roads = 'reroute'; selectedUrl.searchParams.set('city', JSON.stringify(editedCity));

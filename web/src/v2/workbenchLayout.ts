@@ -69,6 +69,9 @@ export function mountWorkbenchLayout(api: {
   cultureActions.append(automatic, dice); cultureHost.append(cultureActions);
   general.prepend(cultureHost);
   const demographics = mountSettlementPopulationPanel(general, api);
+  // Keep the roads stage's composite request control visible in the Settlements sidebar.
+  const exitsPanel = settlements.querySelector<HTMLElement>('#row-settle-roads .regional-exits');
+  if (exitsPanel) general.append(exitsPanel);
   const state = new WeakMap<V2Settings, { cultureEnvironment: string; autoCulture: boolean }>();
   // The existing option binding writes the chosen culture before this listener runs.
   culture.addEventListener('change', () => { const s=api.getSettings(); s.region??={};s.region.demography??={};s.region.demography.followCulture=false;state.get(s)!.autoCulture = false; sync();api.changed(); });

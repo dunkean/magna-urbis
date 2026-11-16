@@ -72,7 +72,7 @@ function variation(i, attempt = 0) {
   const relief = RELIEFS[i % RELIEFS.length], size = SIZES[Math.floor(i / 10) % SIZES.length];
   const coast = pick(COASTS), river = pick(RIVERS), meanders = pick(MEANDERS), lakes = pick(LAKES);
   const level = pick(ROAD_LEVELS), roadCulture = pick(ROAD_CULTURES), culture = pick(CULTURES);
-  const density = Math.round((0.15 + 0.8 * r()) * 20) / 20, exits = Math.floor(r() * 5);
+  const density = Math.round((0.15 + 0.8 * r()) * 20) / 20, exitCount = Math.floor(r() * 5);
   // Retries change the neural seed while preserving the catalogue classification.
   const seed = attempt ? `decor-${i}-${attempt}` : `decor-${i}`, width = size.width, motif = Math.max(1500, Math.min(6000, Math.round(width * (0.6 + 0.6 * r()) / 250) * 250)) * (1 + attempt);
   const params = new URLSearchParams({
@@ -90,7 +90,7 @@ function variation(i, attempt = 0) {
   if (coast.coasts === 'all') { params.set('coasts', 'N,NE,E,SE,S,SW,W,NW'); params.set('islands', coast.islands); }
   else if (coast.coasts.length) { params.set('coasts', coast.coasts.join(',')); params.set('islands', 'island'); }
   params.set('settlements', JSON.stringify({ config: { mode: 'counts', counts: size.counts, main: { population: size.population, culture } }, enabled: true, showPoints: true }));
-  params.set('roads', JSON.stringify({ config: { level, culture: roadCulture, density, exits }, enabled: true, show: true }));
+  params.set('roads', JSON.stringify({ config: { level, culture: roadCulture, density, exits: { highway: 0, main: Math.ceil(exitCount / 2), local: Math.floor(exitCount / 2), track: 0 } }, enabled: true, show: true }));
   // The urban stages are what the decor is for: they stay off while exporting.
   params.set('urban', JSON.stringify({ enabled: false, parcelEnabled: false }));
   const id = `d${String(i).padStart(3, '0')}-${relief}-${coast.id}-${size.size}`;
@@ -155,8 +155,8 @@ const BIOMES = [
   ['swamp', 'river', 'Marais fluvial', 'flat', 'inland', 'major', 'some', 'lizardfolk-swamp', 'primitive'],
 ].map(([zone, site, label, relief, coast, river, lakes, culture, level]) => ({ id: `${zone}-${site}`, zone, label, climate: zone, relief, coast, river, lakes, culture, level }));
 const CITY_SIZES = [
-  { id: 's', size: 'small', label: 'petite carte', width: 4000, population: 5000, exits: 3 },
-  { id: 'l', size: 'large', label: 'grande carte', width: 16000, population: 100000, exits: 4 },
+  { id: 's', size: 'small', label: 'petite carte', width: 4000, population: 5000, exits: { highway: 0, main: 2, local: 1, track: 0 } },
+  { id: 'l', size: 'large', label: 'grande carte', width: 16000, population: 100000, exits: { highway: 0, main: 2, local: 2, track: 0 } },
 ];
 /** `central`: the exact centre is too steep or wet; placement picks the best site of the central area instead. */
 function cityVariation(i, attempt = 0, central = false) {

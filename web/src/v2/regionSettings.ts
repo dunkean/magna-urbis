@@ -3,12 +3,13 @@ import type { V2Settings } from './contracts';
 import { CULTURES, SITE_ARCHETYPES, SIZE_SHORTCUT } from '../gen/options';
 import { TERRAIN_RELIEFS } from './terrainSettings';
 import { regionalPopulation, type RegionalDemography } from './regionalPopulation';
+import { effectiveRegionalExits, REGIONAL_EXIT_CLASSES } from './regionalExits';
 
 export interface V2RegionSettings {
   demography?: RegionalDemography;
   placement?: Partial<SettlementConfig>;
   /** null disables regional roads. */
-  roads?: Partial<RoadConfig> | null;
+  roads?: Omit<Partial<RoadConfig>, 'exits'> & { exits?: Partial<RoadConfig['exits']> } | null;
   resolution?: number;
   /** Farmland beyond subsistence: cultivated budget = settled people x base ha per head x (1 + cropSurplus). 0 = subsistence, ~2 = export farming. */
   cropSurplus?: number;
@@ -68,7 +69,7 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
     placement.farmDensity = 0;
     placement.remotePlaces = plan.isolatedCount ? Math.min(10, plan.isolatedDensity) : 0;
   }
-  const roads=settings.region?.roads===null?null:{level:'rural',surface:'auto',culture:'auto',density:.5,gradeWeight:1,maxGrade:0,crossingCost:1,wobble:1,sharing:.7,exits:o.roads??2,...settings.region?.roads} as RoadConfig;
+  const roads:RoadConfig|null=settings.region?.roads===null?null:{level:'rural',surface:'auto',culture:'auto',density:.5,gradeWeight:1,maxGrade:0,crossingCost:1,wobble:1,sharing:.7,...settings.region?.roads,exits:effectiveRegionalExits(settings)};
   return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512),cropSurplus:settings.region?.cropSurplus??DEFAULT_CROP_SURPLUS,autoBuildPopulation:settings.region?.autoBuildPopulation??DEFAULT_AUTO_BUILD_POPULATION};
 }
 /** Mirrors core/settlements/mod.rs::validate and roads/mod.rs::validate. */
@@ -141,10 +142,16 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
   }
   if (region.roads !== undefined && region.roads !== null) {
     const r = object(region.roads, 'road settings');
-    const limits: Record<string, readonly [number, number]> = { density: [0, 1], gradeWeight: [0, 10], maxGrade: [0, 1], crossingCost: [.05, 10], wobble: [0, 5], sharing: [0, 1], exits: [0, 16] };
-    fields(r, ['level', 'surface', 'culture', 'activityAccess', ...Object.keys(limits)], 'roads');
+    const limits: Record<string, readonly [number, number]> = { density: [0, 1], gradeWeight: [0, 10], maxGrade: [0, 1], crossingCost: [.05, 10], wobble: [0, 5], sharing: [0, 1] };
+    fields(r, ['level', 'surface', 'culture', 'activityAccess', 'exits', ...Object.keys(limits)], 'roads');
     if (r.activityAccess !== undefined && typeof r.activityAccess !== 'boolean') throw new Error('Invalid roads.activityAccess.');
     enumeration(r.level, ['primitive', 'rural', 'developed', 'imperial'], 'road level'); enumeration(r.surface, ['auto', 'dirt', 'gravel', 'paved', 'flagstone'], 'road surface'); enumeration(r.culture, ['auto', 'medieval', 'roman', 'east-asian', 'caravan', 'andean', 'mesoamerican', 'tribal', 'elven', 'dwarven'], 'road construction profile');
-    for (const [key, range] of Object.entries(limits)) if (r[key] !== undefined) number(r[key], `roads.${key}`, ...range, key === 'exits');
+    for (const [key, range] of Object.entries(limits)) if (r[key] !== undefined) number(r[key], `roads.${key}`, ...range);
+    if (r.exits !== undefined) {
+      const exits = object(r.exits, 'road exits'); fields(exits, REGIONAL_EXIT_CLASSES, 'road exits');
+      let total = 0;
+      for (const [cls, count] of Object.entries(exits)) if (count !== undefined) { number(count, `roads.exits.${cls}`, 0, 16, true); total += count as number; }
+      if (total > 16) throw new Error('At most 16 regional road exits can be requested.');
+    }
   }
 }

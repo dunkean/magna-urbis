@@ -37,7 +37,7 @@ const target = new URL(process.argv[2] ?? 'http://127.0.0.1:5174/terrainbench.ht
 target.search = new URLSearchParams({ width: '16000', motif: '3000', relief: 'flat', source: 'procedural', compute: 'wasm', generation: 'cpu', hydro_enabled: '0', erosion: '0', refine: '0', forest: '0', style: 'copernicus', auto: '0', standalone: '1', profile: 'web' }).toString();
 const spec = { key: 'main', population: 3000, name: '', culture: 'european-organic', kind: 'settlement', siteType: 'auto', sitePrefs: {} };
 target.searchParams.set('settlements', JSON.stringify({ config: { mode: 'counts', main: spec, counts: { village: 2, hamlet: 2, farmstead: 2 } } }));
-target.searchParams.set('roads', JSON.stringify({ config: { exits: 2, level: 'developed' } }));
+target.searchParams.set('roads', JSON.stringify({ config: { exits: { highway: 0, main: 1, local: 1, track: 0 }, level: 'developed' } }));
 target.searchParams.set('urban', JSON.stringify({ enabled: false }));
 target.searchParams.set('landuse', JSON.stringify({ enabled: false }));
 target.searchParams.set('pipeline', 'legacy');

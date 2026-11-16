@@ -45,7 +45,7 @@ export async function runRoadRoute(engine: SettlementEngine, raster: SettlementR
     throw new Error('Choose road endpoints inside the map.');
   if (Math.hypot(start.x - end.x, start.y - end.y) < 1e-6) throw new Error('Choose two different road endpoints.');
   const sites = [start, end].map((center, i) => ({ key: i ? END : START, center: { ...center }, population: 300, culture, radius: .001 }));
-  const response = await engine.run({ id: 1, seed, raster, sites, roads: { ...roads, density: 0, exits: 0, activityAccess: false, networkNodes: false }, runtime });
+  const response = await engine.run({ id: 1, seed, raster, sites, roads: { ...roads, density: 0, exits: { highway: 0, main: 0, local: 0, track: 0 }, activityAccess: false, networkNodes: false }, runtime });
   if ('error' in response) throw new Error(response.error);
   if (!response.roads) throw new Error('The road engine returned no route.');
   return selectRoutedRoad(response.roads);

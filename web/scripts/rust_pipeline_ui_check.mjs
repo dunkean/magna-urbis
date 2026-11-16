@@ -20,7 +20,7 @@ await context.addInitScript(() => {
 try {
   const params = new URLSearchParams({ seed: 'pipeline-check', relief: 'flat', width: '3000', compute: 'wasm', generation: 'cpu', hydro_enabled: '0', auto: '0',
     settlements: JSON.stringify({ config: { mode: 'counts', main: { population: 300 }, counts: { village: 1, hamlet: 1, farmstead: 0 } } }),
-    roads: JSON.stringify({ enabled: true, config: { exits: 0 } }) });
+    roads: JSON.stringify({ enabled: true, config: { exits: { highway: 0, main: 0, local: 0, track: 0 } } }) });
   await page.goto(`${base}/rustbench.html#terrain?${params}`);
   const terrain = page.frameLocator('iframe[data-bench=terrain]');
   await terrain.locator('#generate').waitFor();
