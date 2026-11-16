@@ -460,6 +460,9 @@ function runStage(stage:StageDef):void{
   }
   void generate(run.action, undefined, undefined, run.action === 'terrain' ? stage.id : undefined);
 }
+function openExecutionSettings():void {
+  dialog('#hardware-dialog');void inspectHardware();requestAnimationFrame(()=>document.getElementById('settings-execution')?.scrollIntoView({block:'start'}));
+}
 const chain:StageChain=mountStageChain({
   root:$('#terrain-controls'),staging:$('#stage-staging'),terrain:terrainControls,regionRoot:$('#region-controls'),renderRoot:$('#render-controls'),
   getSettings:()=>settings,getWorld:()=>world,
@@ -471,7 +474,8 @@ const chain:StageChain=mountStageChain({
   onRegionChange:()=>{touchRecipe();regionControls.sync();},
   onAppearance:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);},
   run:runStage,reroll:rerollStage,runFamily,openPlace:()=>{if(world&&selectedTown){$('#places-panel').hidden=false;showInspector(selectedTown);}},
-  openExecution:()=>{dialog('#hardware-dialog');void inspectHardware();requestAnimationFrame(()=>document.getElementById('settings-execution')?.scrollIntoView({block:'start'}));},
+  openExecution:openExecutionSettings,
+  onNeuralSelected:()=>void inspectNeuralSelection(),
   availability:()=>{const s=backendStatus();return{checked:s.checked,webgpu:s.webgpu,native:s.native.available,python:s.python.available};},
   heightmap:{
     source:host=>mountHeightmapSource(host,{getSettings:()=>settings,onLoaded:()=>{touchRecipe();terrainControls.sync();chain.sync();toast('Heightmap loaded. Create the relief to use it.');},
@@ -567,7 +571,29 @@ const nativeNeuralManager = mountDesktopNeural(neuralModelHost);
 const neuralModelManager = nativeNeuralManager ? { dispose() {} } : mountNeuralModelManager(neuralModelHost, () => new URL(settings.runtime?.neuralAssets ?? './neural/', location.href).href);
 const modelShortcut = document.createElement('button'); modelShortcut.type = 'button'; modelShortcut.className = 'small'; modelShortcut.id = 'neural-models-open';
 setText(modelShortcut, 'Downloaded neural models'); chain.body('relief-neural-base').append(modelShortcut);
-modelShortcut.onclick = () => { dialog('#hardware-dialog'); requestAnimationFrame(() => $('#neural-model-manager').scrollIntoView({ block: 'start' })); };
+function openNeuralModelsSettings():void {
+  dialog('#hardware-dialog');
+  const section=$<HTMLDetailsElement>('#neural-model-manager');section.open=true;
+  requestAnimationFrame(()=>{section.scrollIntoView({block:'start'});const download=section.querySelector<HTMLButtonElement>('#neural-model-download-all');(download&&!download.disabled?download:section.querySelector<HTMLElement>('summary'))?.focus({preventScroll:true});});
+}
+let neuralSelectionRevision=0;
+async function inspectNeuralSelection():Promise<void> {
+  const revision=++neuralSelectionRevision,source=settings.runtime?.source;
+  if(source==='neural-python')return;
+  $('#source-neural').setAttribute('aria-busy','true');
+  const assets=new URL(settings.runtime?.neuralAssets??'./neural/',location.href).href;
+  try {
+    const ready=nativeNeuralManager
+      ? await (await import('./desktopNeural')).desktopNeuralModelsReady()
+      : source==='neural-wasm' ? await (await import('../../../rust/bridge/neuralModels')).hasStoredNeuralModels(assets) : true;
+    if(revision!==neuralSelectionRevision||settings.runtime?.source!==source||busy||assets!==new URL(settings.runtime?.neuralAssets??'./neural/',location.href).href)return;
+    const capabilities=backendStatus();
+    if(!ready)openNeuralModelsSettings();
+    else if(!nativeNeuralManager&&source==='neural-wasm'&&capabilities.checked&&!capabilities.webgpu)openExecutionSettings();
+  } catch { if(revision===neuralSelectionRevision&&settings.runtime?.source===source&&!busy)openNeuralModelsSettings(); }
+  finally {if(revision===neuralSelectionRevision)$('#source-neural').setAttribute('aria-busy','false');}
+}
+modelShortcut.onclick = openNeuralModelsSettings;
 function syncPlacesPanel(family:StageFamily=chain.family()):void{document.body.dataset.workbenchFamily=family;$('#places-panel').hidden=!['settlements','cities'].includes(family);}
 $('#cities-select-all').onclick=()=>{selectedCities.clear();cityScope='all';selectedTown='';selectedBuilding=null;selectedSubdivision=undefined;selectionOutline.set();$('#inspector').hidden=true;document.querySelectorAll('[data-town]').forEach(button=>button.setAttribute('aria-pressed','false'));syncCitySelection();};
 $('#cities-select-none').onclick=()=>{selectedCities.clear();cityScope='selection';syncCitySelection();};

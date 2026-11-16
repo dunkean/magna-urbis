@@ -76,6 +76,15 @@ nouveaux fichiers ; un cache corrompu est réparé. L’annulation conserve uniq
 les modèles complets déjà vérifiés. Le mode développement accepte toujours les
 fichiers complets sous `./neural/` sans découpage.
 
+Choisir **Neural** vérifie la présence du jeu de modèles dans le stockage local.
+S’il manque un fichier, **Réglages → Télécharger les modèles** s’ouvre directement,
+y compris lorsqu’on reclique sur Neural déjà sélectionné. Ce clic ne télécharge
+aucun poids ; le bouton de téléchargement reste une action explicite. Les modèles
+du navigateur et ceux de l’application native sont vérifiés séparément. Si les
+modèles sont présents mais que le GPU est indisponible, les réglages d’exécution
+s’ouvrent pour consulter le diagnostic. La détection essaie le GPU haute performance,
+puis le choix par défaut du navigateur ; elle ne contourne pas les blocages du navigateur.
+
 Les identifiants Git doivent permettre de pousser vers le dépôt concerné.
 Le fichier `CNAME`, `.nojekyll`, les licences et la révision de source sont
 inclus dans la publication. La galerie et la documentation déjà publiées

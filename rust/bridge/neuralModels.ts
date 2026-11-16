@@ -62,6 +62,22 @@ export function neuralModelUrl(assets: string, entry: NeuralModelEntry): string 
   return url.href;
 }
 
+/** Selection preflight only: inspect saved metadata, without network access or reading all weight bytes.
+ * Inference still verifies the files before using them. A missing catalogue belongs in model Settings. */
+export async function hasStoredNeuralModels(assets: string): Promise<boolean> {
+  try {
+    const cache = await neuralModelCache(false);
+    const saved = await cache?.match(new URL('models/manifest.json', assets).href);
+    if (!cache || !saved) return false;
+    const manifest = validateManifest(await saved.json());
+    for (const name of NEURAL_MODEL_NAMES) {
+      const entry = manifest.models[name], model = await cache.match(neuralModelUrl(assets, entry));
+      if (!model || Number(model.headers.get('X-Magna-Model-Bytes')) !== entry.bytes) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
 export async function listStoredNeuralModels(assets: string, manifest?: NeuralManifest): Promise<StoredNeuralModel[]> {
   const cache = await neuralModelCache();
   const current = new Map(manifest ? NEURAL_MODEL_NAMES.map(name => [neuralModelUrl(assets, manifest.models[name]), name]) : []);

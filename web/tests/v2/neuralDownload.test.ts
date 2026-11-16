@@ -23,6 +23,14 @@ describe('on-demand browser neural downloads', () => {
     vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ requestDevice: async () => { throw Error('device denied'); } }) } });
     await expect(confirmNeuralDownload()).rejects.toThrow('No models were downloaded.');
   });
+  it('accepts a browser default GPU when its high-performance preference returns no adapter', async () => {
+    const destroy=vi.fn(),requestAdapter=vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({requestDevice:async()=>({destroy})});
+    vi.stubGlobal('localStorage',{getItem:()=> 'accepted'});
+    vi.stubGlobal('navigator',{gpu:{requestAdapter}});
+    await confirmNeuralDownload();
+    expect(requestAdapter.mock.calls).toEqual([[{powerPreference:'high-performance'}],[]]);
+    expect(destroy).toHaveBeenCalledOnce();
+  });
   it('remembers acceptance and requests persistence without fetching any model', async () => {
     const destroy = vi.fn(), persist = vi.fn(async () => false), fetch = vi.fn();
     vi.stubGlobal('localStorage', { getItem: () => 'accepted' }); vi.stubGlobal('fetch', fetch);

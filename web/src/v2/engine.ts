@@ -189,7 +189,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         if(remoteNeural)compute='gpu';
         else{
           report(onProgress,'compute','Detecting CPU and WebGPU capabilities…',0,0);
-          try {const adapter=await gpuSetupDeadline(globalThis.navigator?.gpu?.requestAdapter({powerPreference:'high-performance'})??Promise.resolve(null));compute=adapter?'gpu':'cpu';softwareGpu=!!adapter?.info?.isFallbackAdapter;if(['procedural','procedural-phasor'].includes(runtime!.source)&&softwareGpu)compute='cpu';}catch { compute = 'cpu'; }
+          try {const adapter=await gpuSetupDeadline((await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter());compute=adapter?'gpu':'cpu';softwareGpu=!!adapter?.info?.isFallbackAdapter;if(['procedural','procedural-phasor'].includes(runtime!.source)&&softwareGpu)compute='cpu';}catch { compute = 'cpu'; }
         }
       }
       const gpuGeneration = ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '');

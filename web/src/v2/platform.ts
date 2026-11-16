@@ -72,7 +72,7 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
     progress({ phase: 'detecting', source: 'browser', message: 'Vérification du périphérique WebGPU…' });
     let device: GPUDevice | undefined;
     try {
-      const adapter = await globalThis.navigator?.gpu?.requestAdapter({ powerPreference: 'high-performance' });
+      const adapter = await (await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter();
       if (adapter) {
         device = await adapter.requestDevice();
         result.webgpu = true;

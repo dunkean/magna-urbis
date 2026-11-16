@@ -4,6 +4,7 @@ import { obtainNeuralRuntime } from '../../rust/bridge/neuralRuntime';
 import {
   loadNeuralManifest, listStoredNeuralModels, obtainNeuralModel, deleteStoredNeuralModel, neuralModelUrl,
   NEURAL_MODEL_NAMES, type NeuralManifest,
+  hasStoredNeuralModels,
 } from '../../rust/bridge/neuralModels';
 
 const assets = 'https://example.test/neural/';
@@ -29,6 +30,23 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('browser neural model storage shared by settings and inference', () => {
+  it('opens setup for an absent or incomplete model set without contacting the network', async () => {
+    expect(await hasStoredNeuralModels(assets)).toBe(false);
+    files.set(new URL('models/manifest.json',assets).href,new Response(JSON.stringify(manifest)));
+    await obtainNeuralModel(assets,manifest,'base');fetcher.mockClear();
+    expect(await hasStoredNeuralModels(assets)).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('recognizes a complete current set and notices deletion or a different model address', async () => {
+    files.set(new URL('models/manifest.json',assets).href,new Response(JSON.stringify(manifest)));
+    for(const name of NEURAL_MODEL_NAMES)await obtainNeuralModel(assets,manifest,name);
+    fetcher.mockClear();
+    expect(await hasStoredNeuralModels(assets)).toBe(true);
+    expect(await hasStoredNeuralModels('https://example.test/other/')).toBe(false);
+    await deleteStoredNeuralModel(neuralModelUrl(assets,manifest.models.coarse));
+    expect(await hasStoredNeuralModels(assets)).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('assembles ordered chunks, verifies them and the whole file, then reuses the whole cache offline', async () => {
     const chunks = [payload.slice(0, 2), payload.slice(2)];
     manifest.models.base.chunks = await Promise.all(chunks.map(async (bytes, i) => ({ file: `base.bin.part${i}`, bytes: bytes.length,

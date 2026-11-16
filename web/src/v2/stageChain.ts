@@ -77,6 +77,8 @@ export interface StageChainBindings {
   /** Detected backends (Settings); unavailable choices are disabled with their reason. */
   /** Opens Settings on the Execution block. */
   openExecution(): void;
+  /** A source selection can need model setup, including when the source is already selected. */
+  onNeuralSelected?(): void;
   availability(): { checked: boolean; webgpu: boolean; native: boolean; python: boolean };
   heightmap: { source(host: HTMLElement): { sync(): void } };
   onFamily?(family: StageFamily): void;
@@ -311,7 +313,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   // ── Relief source alternatives ───────────────────────────────────────────
   function setSource(mode: StageContext['relief']): void {
     const settings = get(), current = reliefOf(settings);
-    if (mode === current && !(mode === 'heightmap' && pendingHeightmap)) { if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' }); return; }
+    if (mode === current && !(mode === 'heightmap' && pendingHeightmap)) { if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' }); if (mode === 'neural') b.onNeuralSelected?.(); return; }
     if (current === 'heightmap' && mode !== 'heightmap') {
       stashes.heightmap = { drawing:settings.terrain?.drawing,sketch: settings.terrain?.sketch?.processing ? settings.terrain.sketch : undefined, image: settings.options.importedHeight };
       if(settings.terrain?.drawing)delete settings.terrain.drawing;
@@ -331,6 +333,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     }
     b.onChange(); b.terrain.sync(); markStale('relief-source'); sync();
     if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' });
+    if (mode === 'neural') b.onNeuralSelected?.();
   }
   function sourceSwitch(): HTMLElement {
     const group = document.createElement('div'); group.className = 'source-switch'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', translate(T.source));
@@ -345,7 +348,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       for (const [value, button] of buttons) {
         button.setAttribute('aria-checked', String(value === mode)); button.tabIndex = value === mode ? 0 : -1;
         const blocked = value === 'neural' && !!neuralReason && mode !== 'neural';
-        button.disabled = busy || blocked; button.title = blocked ? translate(neuralReason!) : '';
+        // Neural is also the entry point to model/setup Settings when this browser cannot run it yet.
+        button.disabled = busy; button.title = blocked ? translate(neuralReason!) : '';
       }
     });
     return group;

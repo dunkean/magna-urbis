@@ -9,7 +9,7 @@ import { confirmNeuralDownload } from './neuralDownload';
 
 const copy = (en: string, fr: string) => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
-  title: copy('Downloaded neural models', 'Modèles neuronaux téléchargés'),
+  title: copy('Download models', 'Télécharger les modèles'),
   intro: copy('Neural generation works best in the desktop app. It requires a capable GPU with WebGPU and downloads about 163 MB once.', 'La génération neuronale fonctionne mieux dans l’application de bureau. Elle nécessite une carte graphique performante avec WebGPU et télécharge environ 163 Mo une seule fois.'),
   scope: copy('Stored on this device, for this browser profile and site address. Clearing site data removes the models. These files do not install Python/CUDA models.', 'Conservés sur cet appareil, pour ce profil de navigateur et cette adresse du site. Effacer les données du site supprime les modèles. Ces fichiers n’installent pas les modèles Python/CUDA.'),
   offlineScope: copy('Downloaded weights still need WebGPU and must be loaded into GPU memory at each new session. This does not make the whole application available offline.', 'Les poids téléchargés nécessitent toujours WebGPU et doivent être chargés en mémoire GPU à chaque nouvelle session. Cela ne rend pas toute l’application disponible hors connexion.'),

@@ -145,6 +145,11 @@ try {
   });
   assert(report.gpu.vendor, 'No real WebGPU adapter');
   await page.locator('#source-neural').click();
+  await page.waitForFunction(()=>document.querySelector('#source-neural').getAttribute('aria-busy')!=='true');
+  if(await page.locator('#hardware-dialog').isVisible()) {
+    assert(await page.locator('#neural-model-manager').isVisible());
+    await page.locator('#hardware-dialog [data-close]').first().click();
+  }
   if (process.env.MAGNA_V2_RECIPE) {
     const input = JSON.parse(await readFile(resolve(process.env.MAGNA_V2_RECIPE), 'utf8'));
     await recipe(value => { for (const key of Object.keys(value)) delete value[key]; Object.assign(value, input.settings ?? input); });

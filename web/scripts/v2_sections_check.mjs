@@ -87,6 +87,8 @@ try {
   assert.equal(recipe.settings.options.biome, 'temperate');
   if (!await page.locator('#source-neural').isDisabled()) {
     await page.locator('#source-neural').click();
+    await page.waitForFunction(()=>document.querySelector('#source-neural').getAttribute('aria-busy')!=='true');
+    if(await page.locator('#hardware-dialog').isVisible())await page.locator('#hardware-dialog [data-close]').first().click();
     assert(await page.locator('#row-relief-neural-coarse').isVisible());
     assert(await page.locator('#family-region .family-general .climate-strip').isVisible());
     assert.equal(await page.locator('[data-climate="arid"]').getAttribute('aria-checked'), 'true');

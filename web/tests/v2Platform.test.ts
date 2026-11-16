@@ -32,6 +32,13 @@ describe('V2 execution capability boundaries', () => {
     vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ requestDevice: async () => { throw Error('device rejected'); } }) } });
     expect((await detectPlatform({ profile: 'web' })).webgpu).toBe(false);
   });
+  it('tries the browser default adapter when a performance preference is rejected',async()=>{
+    const destroy=vi.fn(),requestAdapter=vi.fn().mockRejectedValueOnce(new Error('Preference unsupported')).mockResolvedValueOnce({requestDevice:async()=>({destroy})});
+    vi.stubGlobal('navigator',{gpu:{requestAdapter}});
+    expect((await detectPlatform({profile:'web'})).webgpu).toBe(true);
+    expect(requestAdapter.mock.calls).toEqual([[{powerPreference:'high-performance'}],[]]);
+    expect(destroy).toHaveBeenCalledOnce();
+  });
   it('validates Rust and Python identities and preserves model loading state', async () => {
     vi.stubGlobal('navigator', {});
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes('8791')

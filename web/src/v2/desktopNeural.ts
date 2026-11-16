@@ -44,6 +44,12 @@ export async function ensureDesktopNeuralServer(server: string, onProgress: (mes
 
 type NeuralStatus = { profile: string; directory: string; busy: boolean; models: { file: string; bytes: number; present: boolean }[];
   progress: { phase: string; file?: string; received?: number; total?: number; message?: string } };
+/** The selection itself never starts a service or downloads a model. */
+export async function desktopNeuralModelsReady():Promise<boolean> {
+  const invoke=typeof window==='undefined'?undefined:(window as DesktopWindow).__TAURI_INTERNALS__?.invoke;
+  if(!invoke)return false;
+  try {const state=await invoke('desktop_neural_status') as NeuralStatus;return state.models.length>0&&state.models.every(model=>model.present);}catch{return false;}
+}
 registerMessages({
   'Native neural terrain': { en: 'Native neural terrain', fr: 'Terrain neuronal natif' },
   'Download terrain models': { en: 'Download terrain models', fr: 'Télécharger les modèles de terrain' },
@@ -72,6 +78,7 @@ export function mountDesktopNeural(host: HTMLElement): boolean {
   const status = document.createElement('p'); status.setAttribute('role', 'status');
   const bar = document.createElement('progress'); bar.max = 1; bar.hidden = true;
   const button = document.createElement('button'); button.type = 'button'; button.className = 'small'; setText(button, 'Download terrain models');
+  button.id = 'neural-model-download-all';
   const directory = document.createElement('p'); directory.className = 'hint'; directory.style.overflowWrap = 'anywhere';
   let timer: ReturnType<typeof setTimeout> | undefined, disposed = false, pending = false;
   async function refresh(): Promise<void> {
