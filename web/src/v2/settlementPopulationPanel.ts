@@ -4,6 +4,7 @@ import { POPULATION_CLASSES, regionalPopulation, automaticSettlementLimits, auto
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './settlementPopulationPanel.css';
 import { activitySitesOf } from './activitySites';
+import { editRegionalPopulation, type RegionalPopulationField } from './regionalPopulationEdits';
 
 registerMessages(Object.fromEntries(Object.entries({
   'Region population': 'Population régionale', 'Global density': 'Densité globale',
@@ -12,6 +13,7 @@ registerMessages(Object.fromEntries(Object.entries({
   'Automatic from the region': 'Automatique selon la région', 'Automatic': 'Automatique', 'Manual': 'Manuel',
   'Restore automatic distribution': 'Rétablir la répartition automatique',
   'Density follows climate, relief and culture. Edit any value to override it; ↶ restores automatic calculation.': 'La densité suit le climat, le relief et la culture. Modifiez une valeur pour l’imposer ; ↶ rétablit le calcul automatique.',
+  'Changing population or density recalculates the distribution. Editing a settlement count fixes only that class; ↶ restores its automatic count.': 'Changer la population ou la densité recalcule la répartition. Modifier un effectif impose seulement cette catégorie ; ↶ rétablit son calcul automatique.',
   '{area} km² · largest settlement: {population} inhabitants': '{area} km² · plus grand lieu : {population} habitants',
   'Allocated: {population} inhabitants. The requested population does not fit the selected counts.': 'Répartition : {population} habitants. La population demandée ne tient pas dans les effectifs choisis.',
   'Manual list active. Editing these controls returns to regional distribution.': 'Liste manuelle active. Modifier ces réglages réactive la répartition régionale.',
@@ -23,20 +25,9 @@ registerMessages(Object.fromEntries(Object.entries({
 export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSettings(): V2Settings; getWorld(): World | undefined; changed(): void; syncForms(): void }) {
   const root = document.createElement('section'); root.className = 'regional-population'; host.append(root);
   const controls: { key: keyof RegionalDemography | PopulationClass; input: HTMLInputElement; reset: HTMLButtonElement; row: HTMLElement; count: boolean }[] = [];
-  const hint = document.createElement('p'); hint.className = 'hint'; setText(hint, 'Density follows climate, relief and culture. Edit any value to override it; ↶ restores automatic calculation.');
+  const hint = document.createElement('p'); hint.className = 'hint'; setText(hint, 'Changing population or density recalculates the distribution. Editing a settlement count fixes only that class; ↶ restores its automatic count.');
   function update(key: string, value: number | undefined, count: boolean): void {
-    const s = api.getSettings();
-    // A manual composition retains the other displayed counts: automatic
-    // population carry must not silently change neighbouring counters.
-    const composition = count && value !== undefined ? regionalPopulation(s).counts : undefined;
-    s.region ??= {}; s.region.demography ??= {};
-    if (s.region.placement?.mode === 'list') s.region.placement.mode = 'auto';
-    if (count) {
-      const counts = s.region.demography.counts = { ...composition, ...s.region.demography.counts };
-      if (value === undefined) { delete counts[key as PopulationClass]; if (s.region.placement?.counts) delete s.region.placement.counts[key]; }
-      else counts[key as PopulationClass] = value;
-    } else if (value === undefined) delete (s.region.demography as Record<string, unknown>)[key];
-    else (s.region.demography as Record<string, unknown>)[key] = value;
+    editRegionalPopulation(api.getSettings(), key as RegionalPopulationField, value);
     api.changed(); api.syncForms(); sync();
   }
   function field(title: string, key: keyof RegionalDemography | PopulationClass, max: number, step: string, count = false, icon?: number) {
@@ -57,7 +48,10 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
         if (Object.entries(current).reduce((n,[id,v])=>n+(id === key ? value : v),0) > 1000) { input.setCustomValidity('At most 1000 settlements.'); input.reportValidity(); return; }
       }
       update(key,value,count);
-    }; input.oninput = () => input.setCustomValidity('');
+    }; input.oninput = () => {
+      input.setCustomValidity('');
+      if ((key === 'population' || key === 'density') && input.value !== '' && input.validity.valid) update(key,Number(input.value),false);
+    };
     controls.push({ key,input,reset,row,count }); return input;
   }
   field('Global density','density',10000,'any');

@@ -68,9 +68,10 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   const width = typeof settings.extent === 'number' ? settings.extent : settings.options.mapSize ?? 40000;
   const areaKm2 = width * width / 1e6;
   const environmentFactor = Math.pow((CLIMATE_SETTLEMENT_FACTORS[env.climate] ?? .65) * (RELIEF_SETTLEMENT_FACTORS[env.relief] ?? .65), profile.resilience) * (env.coast ? .82 : 1) * (env.underdark ? .3 : 1);
-  const defaultDensity = profile.density * environmentFactor, density = d.density ?? defaultDensity;
-  const recommendedPopulation = Math.min(100000000, Math.max(0, Math.round(areaKm2 * density)));
+  const defaultDensity = profile.density * environmentFactor, requestedDensity = d.density ?? defaultDensity;
+  const recommendedPopulation = Math.min(100000000, Math.max(0, Math.round(areaKm2 * requestedDensity)));
   const population = d.population ?? recommendedPopulation;
+  const density = d.population === undefined ? requestedDensity : areaKm2 ? population / areaKm2 : 0;
   const manual = settings.region?.placement;
   if (manual?.mode === 'list' || !manual?.mode && manual?.list?.length) {
     const places = (manual.list ?? []).map(p=>({...p,...(settings.local[p.key]?.population !== undefined ? {population:settings.local[p.key].population!}:{}),...(settings.local[p.key]?.culture ? {culture:settings.local[p.key].culture!}:{})}));

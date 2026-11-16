@@ -196,6 +196,6 @@ export function mountTerrainSketchControls(root: HTMLElement, b: Bindings): { sy
     s.terrain.sampleSpacing=Math.max(s.terrain.sampleSpacing??30,adaptedExtent(s)/imported.terrain.resolution);b.onChange();root.dispatchEvent(new CustomEvent('relief-source-changed',{bubbles:true,detail:'import'}));if(dialog.open){load();draw();}
   }catch(error){if(!dialog.open)open('draw');state.textContent=String(error);}};
   const observer=new ResizeObserver(()=>{if(dialog.open)view();});observer.observe(viewport);const unsubscribe=onLanguageChange(draw);
-  function sync():void {const s=b.getSettings();available=!(b.disabled?.()??false)&&s.runtime?.backend!=='typescript';for(const id of ['relief-draw-open','relief-modify-open']){const trigger=document.getElementById(id) as HTMLButtonElement|null;if(trigger)trigger.disabled=!available||id==='relief-modify-open'&&!b.context?.getWorld();}if(dialog.open&&!available)close();}
+  function sync():void {const s=b.getSettings();available=!(b.disabled?.()??false)&&s.runtime?.backend!=='typescript';for(const id of ['relief-symbolic-open','relief-modify-open']){const trigger=document.getElementById(id) as HTMLButtonElement|null;if(trigger)trigger.disabled=!available||id==='relief-modify-open'&&!b.context?.getWorld();}if(dialog.open&&!available)close();}
   sync();return{sync,open,dispose:()=>{close();observer.disconnect();unsubscribe();root.replaceChildren();}};
 }

@@ -511,7 +511,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const sidebarTools = document.createElement('section'); sidebarTools.className = 'relief-sidebar-tools'; methodPanel.after(sidebarTools);
   const importHost = document.createElement('div'); importHost.id = 'relief-import'; sidebarTools.append(importHost);
   const importSync = b.heightmap.source(importHost); syncers.push(() => { importHost.hidden = reliefOf(get()) !== 'heightmap'; importSync.sync(); importHost.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = b.busy(); }); });
-  const drawButton=document.createElement('button');drawButton.type='button';drawButton.id='relief-draw-open';drawButton.className='relief-draw-open';drawButton.setAttribute('aria-haspopup','dialog');drawButton.setAttribute('aria-controls','relief-paint-dialog');
+  const drawButton=document.createElement('button');drawButton.type='button';drawButton.id='relief-symbolic-open';drawButton.className='relief-draw-open';drawButton.setAttribute('aria-haspopup','dialog');drawButton.setAttribute('aria-controls','relief-paint-dialog');
   const drawIcon=modifyIcon.cloneNode(true);const drawCaption=document.createElement('span');setText(drawCaption,copy('Draw relief','Dessiner le relief'));drawButton.append(drawIcon,drawCaption);drawButton.onclick=()=>b.terrain.openEditor('draw');importHost.prepend(drawButton);
   syncers.push(()=>{drawButton.disabled=b.busy()||context().classicTerrain;modifyButton.disabled=b.busy()||!b.getWorld()||context().classicTerrain;});
   root.append(sketchHost);
