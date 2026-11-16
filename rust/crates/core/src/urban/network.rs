@@ -3569,8 +3569,21 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
     let bank_graph = Graph::new(&dry);
     let bank_grid = BoxGrid::new(&bank_segments.iter().map(|&(a, b)| segment_box(a, b, 0.0)).collect::<Vec<_>>(), 64.0);
     let ramps = |r: &Request<'_>, ends: [Point; 2]| -> Option<Vec<Vec<Point>>> {
-        let joint = |p: Point, end: Point| -> Option<Vec<Point>> {
+        // Deck axis, pointing outwards from each landing.
+        let span = distance(ends[0], ends[1]).max(1e-9);
+        let axis = Point { x: (ends[0].x - ends[1].x) / span, y: (ends[0].y - ends[1].y) / span };
+        let joint = |p: Point, end: Point, out: Point| -> Option<Vec<Point>> {
             if distance(p, end) < 0.05 { return Some(vec![]); }
+            // A street meeting a square deck at an angle runs straight off the
+            // deck first, then turns: the bend sits on land, not on the abutment.
+            let lead = (2.5 * r.width).clamp(4.0, 15.0);
+            let (dx, dy) = (p.x - end.x, p.y - end.y);
+            let along = dx * out.x + dy * out.y;
+            if along > 1.5 * lead && (dx * out.y - dy * out.x).abs() > 0.2 * along {
+                let knee = Point { x: end.x + out.x * lead, y: end.y + out.y * lead };
+                if !r.surface.wet(knee) && routing::segment_clear(r.surface, knee, end, max_grade)
+                    && routing::segment_clear(r.surface, p, knee, max_grade) { return Some(vec![p, knee, end]); }
+            }
             if routing::segment_clear(r.surface, p, end, max_grade) { return Some(vec![p, end]); }
             // A clipped bank tip need not be the junction: use an existing
             // street on this bank and let planarization share the new point.
@@ -3597,7 +3610,8 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
             }
             None
         };
-        let mut paths = vec![joint(r.a, ends[0])?, joint(r.b, ends[1])?];
+        let back = Point { x: -axis.x, y: -axis.y };
+        let mut paths = vec![joint(r.a, ends[0], axis)?, joint(r.b, ends[1], back)?];
         // Bank ramps may swallow a quay/street junction between the old
         // landing and the water. Keep its identity and attach it on land.
         for (i, &p) in r.path.iter().enumerate() {
@@ -4055,6 +4069,8 @@ pub(super) fn select_bridges_graded(layout: &mut super::Layout, population: u32,
     laps.lap("harbour_clearance");
     if cfg.river_spur_filter { policy::river_spurs(layout, surface); }
     laps.lap("river_spurs");
+    clear_bank_ends(&mut layout.streets, surface);
+    laps.lap("clear_bank_ends");
     remap_reservations(layout, &reserved);
     laps.lap("remap");
 }
@@ -4306,6 +4322,131 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
     let selected: BTreeSet<_> = kept.into_iter().flat_map(|i| candidates[i].parts.iter().copied()).collect();
     let mut i = 0;
     streets.retain(|s| { let keep = s.role != "bridge" || selected.contains(&i); i += 1; keep });
+}
+
+/// Invariant (no street into water): once the decks are chosen, a street end
+/// that nothing else meets (the approach of a dropped deck, a stub left on the
+/// bank) clears the water by half its width plus 1 m. Such an end is walked
+/// back along its own path to the first point whose clearance ring is dry,
+/// never past a point another street meets. An end that runs along the bank
+/// (no dry ring within a few widths) is only pulled back until it no longer
+/// points into the water. A stub left shorter than two widths that links
+/// nothing along its length is removed. Crossings, quays and harbour ways keep
+/// their water ends; a junction used by another street is never cut.
+fn clear_bank_ends(streets: &mut Vec<Street>, surface: super::Surface<'_>) {
+    use super::geometry as g;
+    const TOUCH: f64 = 0.05;
+    const STEP: f64 = 1.0;
+    let exempt = |s: &Street| CROSSINGS.contains(&s.role.as_str()) || matches!(s.role.as_str(), "port" | "port-street");
+    // Water, not the edge of the planning surface (which `wet` also reports):
+    // a road leaving the map keeps its end.
+    let water = |p: Point| p.x >= 0.0 && p.y >= 0.0 && p.x < surface.width && p.y < surface.width && surface.wet(p);
+    // Water within `r` of `p`: the point, then two rings of samples.
+    let wet_near = |p: Point, r: f64| -> bool {
+        water(p) || (0..12).any(|i| {
+            let (s, c) = (i as f64 * std::f64::consts::TAU / 12.0).sin_cos();
+            water(Point { x: p.x + r * c, y: p.y + r * s }) || water(Point { x: p.x + 0.5 * r * c, y: p.y + 0.5 * r * s })
+        })
+    };
+    for _ in 0..3 {
+        let mut count: std::collections::HashMap<Key, usize> = Default::default();
+        for s in streets.iter() {
+            let n = s.path.len();
+            for (i, &p) in s.path.iter().enumerate() { *count.entry(key(p)).or_default() += if i == 0 || i + 1 == n { 1 } else { 2 }; }
+        }
+        let mut loose: Vec<(usize, bool)> = vec![];
+        for (i, s) in streets.iter().enumerate() {
+            if s.path.len() < 2 || exempt(s) { continue; }
+            for (at_start, k) in [(true, 0), (false, s.path.len() - 1)] {
+                let p = s.path[k];
+                if count.get(&key(p)) == Some(&1) && wet_near(p, width(s, k) * 0.5 + 1.0) { loose.push((i, at_start)); }
+            }
+        }
+        if loose.is_empty() { break; }
+        // Every vertex and segment, to find what meets a street off its shared vertices.
+        let vertices: Vec<(Point, usize)> = streets.iter().enumerate().flat_map(|(i, s)| s.path.iter().map(move |&p| (p, i))).collect();
+        let vgrid = BoxGrid::new(&vertices.iter().map(|&(p, _)| (p.x, p.y, p.x, p.y)).collect::<Vec<_>>(), 32.0);
+        let segments: Vec<(Point, Point, usize)> = streets.iter().enumerate()
+            .flat_map(|(i, s)| s.path.windows(2).map(move |w| (w[0], w[1], i))).collect();
+        let sgrid = BoxGrid::new(&segments.iter().map(|&(a, b, _)| segment_box(a, b, 0.0)).collect::<Vec<_>>(), 32.0);
+        let mut removed = vec![false; streets.len()];
+        let mut changed = false;
+        for (i, at_start) in loose {
+            if removed[i] { continue; }
+            let s = &streets[i];
+            let mut path = s.path.clone();
+            let mut widths: Vec<f64> = (0..path.len()).map(|k| width(s, k)).collect();
+            if !at_start { path.reverse(); widths.reverse(); }
+            let end = path[0];
+            // Another street meeting the end off a shared vertex: not loose.
+            let attached = sgrid.query(end.x - TOUCH, end.y - TOUCH, end.x + TOUCH, end.y + TOUCH).into_iter()
+                .any(|k| { let (a, b, o) = segments[k]; o != i && g::distance(end, a, b).0 <= TOUCH })
+                || vgrid.query(end.x - TOUCH, end.y - TOUCH, end.x + TOUCH, end.y + TOUCH).into_iter()
+                    .any(|k| vertices[k].1 != i && distance(vertices[k].0, end) <= TOUCH);
+            if attached { continue; }
+            let mut arc = vec![0.0; path.len()];
+            for k in 1..path.len() { arc[k] = arc[k - 1] + distance(path[k - 1], path[k]); }
+            let total = arc[path.len() - 1];
+            // Where other streets meet this one, measured from the loose end.
+            let (mut first, mut interior) = (total, false);
+            for k in 0..path.len() - 1 {
+                let (a, b) = (path[k], path[k + 1]);
+                let (x0, y0, x1, y1) = segment_box(a, b, TOUCH);
+                for j in vgrid.query(x0, y0, x1, y1) {
+                    let (q, o) = vertices[j];
+                    if o == i { continue; }
+                    let (d, t, _) = g::distance(q, a, b);
+                    if d > TOUCH { continue; }
+                    let at = arc[k] + t * (arc[k + 1] - arc[k]);
+                    if at <= TOUCH { continue; }
+                    first = first.min(at);
+                    interior |= at < total - TOUCH;
+                }
+            }
+            // Point at arc length `t` and the unit direction towards the loose end there.
+            let sample = |t: f64| -> (Point, (f64, f64), usize) {
+                let k = (1..path.len()).find(|&k| arc[k] >= t).unwrap_or(path.len() - 1) - 1;
+                let length = (arc[k + 1] - arc[k]).max(EPS);
+                let (a, b) = (path[k], path[k + 1]);
+                (lerp(a, b, ((t - arc[k]) / length).clamp(0.0, 1.0)), ((a.x - b.x) / length, (a.y - b.y) / length), k)
+            };
+            let (w, clear) = (widths[0], widths[0] * 0.5 + 1.0);
+            let heading_dry = |t: f64| {
+                let (p, d, _) = sample(t);
+                !water(p) && !water(Point { x: p.x + d.0 * clear, y: p.y + d.1 * clear })
+            };
+            let limit = first.min(total);
+            let steps = |reach: f64| (1..).map(|n| n as f64 * STEP).take_while(move |&t| t <= reach + EPS);
+            let ring = steps(limit.min((4.0 * clear).max(3.0 * w))).find(|&t| !wet_near(sample(t).0, clear));
+            let cut = match ring {
+                Some(t) => Some(t),
+                // A dead end along the bank that does not point into the water stays.
+                None if heading_dry(0.0) => continue,
+                None => steps(limit).find(|&t| heading_dry(t)),
+            };
+            let remove = match cut {
+                Some(t) => !interior && total - t < 2.0 * w,
+                None => !interior,
+            };
+            changed = true;
+            if remove { removed[i] = true; continue; }
+            let t = cut.unwrap_or(limit);
+            let (p, _, k) = sample(t);
+            let (mut kept, mut kept_widths) = (vec![], vec![]);
+            if distance(p, path[k + 1]) > 0.01 {
+                let f = ((t - arc[k]) / (arc[k + 1] - arc[k]).max(EPS)).clamp(0.0, 1.0);
+                kept.push(p); kept_widths.push(widths[k] + (widths[k + 1] - widths[k]) * f);
+            }
+            kept.extend_from_slice(&path[k + 1..]); kept_widths.extend_from_slice(&widths[k + 1..]);
+            if kept.len() < 2 { removed[i] = true; continue; }
+            if !at_start { kept.reverse(); kept_widths.reverse(); }
+            streets[i].path = kept;
+            streets[i].widths = kept_widths;
+        }
+        let mut n = 0;
+        streets.retain(|_| { let keep = !removed[n]; n += 1; keep });
+        if !changed { break; }
+    }
 }
 
 /// Invariant (no dangling bridge approach): a street that stops on the bank a
@@ -5245,6 +5386,70 @@ mod tests {
             widths: vec![5.0; points.len()],
             rank: 2,
             role: role.into(),
+        }
+    }
+
+    #[test]
+    fn dropped_bridge_approaches_clear_the_river_and_banks_stay_connected() {
+        use super::super::{Block, Layout, Surface, geometry as g};
+        // A river at x in [980, 1020) and five crossings between two built
+        // banks; a village keeps one deck, the other approaches end on the bank.
+        let n = 200;
+        let height = vec![20.0; n * n];
+        let water: Vec<u8> = (0..n * n).map(|i| u8::from((98..102).contains(&(i % n)))).collect();
+        let surface = Surface { geometry: None, width: 2000.0, n, height: &height, water: &water, interpolation: Default::default() };
+        let ys = [200.0, 300.0, 400.0, 500.0, 600.0];
+        let bank = |x: f64| street(&std::iter::once(100.0).chain(ys).chain([700.0]).map(|y| (x, y)).collect::<Vec<_>>(), "street");
+        let mut streets = vec![bank(900.0), bank(1100.0)];
+        for y in ys {
+            streets.extend([
+                street(&[(900.0, y), (980.0, y)], "approach"),
+                street(&[(980.0, y), (1020.0, y)], "bridge"),
+                street(&[(1020.0, y), (1100.0, y)], "gate-street"),
+            ]);
+        }
+        let mut layout: Layout = serde_json::from_value(serde_json::json!({
+            "key":"bank-ends", "culture":"bastide", "center":{"x":1000.0,"y":400.0},
+            "streets":[], "quarters":[], "blocks":[], "warnings":[]
+        })).unwrap();
+        layout.streets = streets;
+        layout.blocks = [(810.0, 100.0, 890.0, 700.0), (1110.0, 100.0, 1190.0, 700.0)].iter().map(|&(a, b, c, d)| Block {
+            shape: g::rectangle(a, b, c, d), quarter: 0, kind: "block".into(),
+            axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), phase: None,
+        }).collect();
+        select_bridges(&mut layout, 500, surface, &[]);
+        let decks: Vec<_> = layout.streets.iter().filter(|s| s.role == "bridge").collect();
+        assert!(!decks.is_empty() && decks.len() < ys.len(), "the quota drops some decks: {}", decks.len());
+        let deck_ends: Vec<Point> = decks.iter().flat_map(|s| [s.path[0], *s.path.last().unwrap()]).collect();
+        for s in layout.streets.iter().filter(|s| s.role != "bridge") {
+            for (k, p) in [(0, s.path[0]), (s.path.len() - 1, *s.path.last().unwrap())] {
+                if deck_ends.iter().any(|&e| distance(e, p) < 1e-6) { continue; }
+                let clear = width(s, k) * 0.5 + 1.0;
+                assert!(p.x <= 980.0 - clear || p.x >= 1020.0 + clear, "{} end {p:?} within {clear} m of the river", s.role);
+            }
+        }
+        // Every approach is trimmed back, not removed: each still reaches near its bank.
+        for y in ys {
+            for (lo, hi) in [(970.0, 980.0), (1020.0, 1030.0)] {
+                assert!(layout.streets.iter().any(|s| s.role != "bridge" && s.path.iter().any(|p| p.y == y && p.x >= lo && p.x <= hi)),
+                    "approach at y={y} near x in [{lo}, {hi}] was lost");
+            }
+        }
+        // Both banks, with their approaches, stay one network through the kept deck.
+        let mut reached = vec![Point { x: 900.0, y: 100.0 }];
+        loop {
+            let before = reached.len();
+            for s in &layout.streets {
+                if s.path.iter().any(|p| reached.contains(p)) {
+                    for &p in &s.path { if !reached.contains(&p) { reached.push(p); } }
+                }
+            }
+            if reached.len() == before { break; }
+        }
+        for x in [900.0, 1100.0] {
+            for y in std::iter::once(100.0).chain(ys).chain([700.0]) {
+                assert!(reached.contains(&Point { x, y }), "bank point ({x}, {y}) disconnected");
+            }
         }
     }
 

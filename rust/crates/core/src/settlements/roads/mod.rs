@@ -5,6 +5,7 @@
 //! road profile of its culture ([`profile`]), most important first, so lesser roads join
 //! the trunks; all routes then merge into one network ([`network`]) whose class comes from
 //! the trips it carries and whose surface comes from the development level and culture.
+mod deck;
 mod exits;
 mod network;
 pub mod profile;
@@ -456,6 +457,12 @@ impl Router<'_> {
         if cells.len() < 2 {
             return false;
         }
+        // A spoke goes out into its place's own countryside: it never opens a river crossing to
+        // end in a field on the far bank. Water already on the network (an existing bridge) is
+        // fine; links between two spokes (`from_site` false) may still cross.
+        if from_site && cells.iter().any(|&c| f.r.water[c] != 0 && !self.marked[c]) {
+            return false;
+        }
         self.net.add_path(f.r.n, &cells);
         for &cell in &cells {
             if !self.marked[cell] {
@@ -898,7 +905,8 @@ pub(super) fn route(
         } else {
             f64::INFINITY
         };
-        let path = smooth_path(f, p, &raw, limit);
+        // Shallow bridges turned to the minimum angle on the final path, before its crossings.
+        let path = deck::straighten(f, smooth_path(f, p, &raw, limit), class, limit);
         let length: f64 = path.windows(2).map(|w| w[0].distance(w[1])).sum();
         *out.length_by_class
             .entry(CLASSES[class].into())
@@ -1065,68 +1073,12 @@ fn smooth_path(f: &Fields, profile: &Profile, raw: &[Point], limit: f64) -> Vec<
     out.push(p[last]);
     out
 }
-/// Wet runs along the path; a run that dips onto a dry corner for less than about a cell and a
-/// half (a road clipping a bank while crossing) stays one crossing.
+/// Wet runs along the path ([`deck::spans`]).
 fn crossings(f: &Fields, path: &[Point], class: usize) -> Vec<Crossing> {
-    const GAP: usize = 6;
-    let mut out = vec![];
-    let mut run: Vec<Point> = vec![];
-    let mut kind = 0_u8;
-    let mut widest = 0.0_f32;
-    let mut dry = 0;
-    let mut previous = path[0];
-    let flush =
-        |run: &mut Vec<Point>, dry: usize, kind: u8, widest: f32, out: &mut Vec<Crossing>| {
-            // Keep one dry point past the water as the abutment.
-            run.truncate(run.len() - dry.saturating_sub(1));
-            if run.len() > 1 {
-                let name = match kind {
-                    2 => "causeway",
-                    _ if widest < 3.5 && class >= 3 => "ford",
-                    _ => "bridge",
-                };
-                out.push(Crossing {
-                    kind: name.into(),
-                    path: std::mem::take(run),
-                });
-            }
-            run.clear();
-        };
-    for seg in path.windows(2) {
-        let steps = (seg[0].distance(seg[1]) / (f.cell * 0.25)).ceil().max(1.0) as usize;
-        for s in 1..=steps {
-            let t = s as f64 / steps as f64;
-            let p = Point {
-                x: seg[0].x + (seg[1].x - seg[0].x) * t,
-                y: seg[0].y + (seg[1].y - seg[0].y) * t,
-            };
-            let i = f.index(p);
-            let w = f.r.water[i];
-            if w == 2 || w == 3 {
-                if !run.is_empty() && w != kind {
-                    flush(&mut run, dry, kind, widest, &mut out);
-                }
-                if run.is_empty() {
-                    run.push(previous);
-                    widest = 0.0;
-                }
-                kind = w;
-                widest = widest.max(f.r.river_width[i]);
-                run.push(p);
-                dry = 0;
-            } else if !run.is_empty() {
-                run.push(p);
-                dry += 1;
-                if dry > GAP {
-                    flush(&mut run, dry, kind, widest, &mut out);
-                    dry = 0;
-                }
-            }
-            previous = p;
-        }
-    }
-    flush(&mut run, dry, kind, widest, &mut out);
-    out
+    deck::spans(f, path, class)
+        .into_iter()
+        .map(|s| Crossing { kind: s.kind.into(), path: s.points })
+        .collect()
 }
 /// Steepest grade between samples about one cell apart along the road, on dry ground.
 fn measured_grade(f: &Fields, path: &[Point]) -> f64 {
@@ -1206,5 +1158,25 @@ mod tests {
         assert!(cut.points.len() >= 2 && cut.points[0] == top, "the stair still leaves from the place");
         assert!(out.segments.iter().any(|s| to_path(end, &s.path) < 1.5 * f.cell), "the stair ends on a road");
         assert!(out.segments.iter().all(|s| to_path(foot, &s.path) > 200.0), "a spur leads to the old foot");
+    }
+
+    /// A town beside a river with open fields on both banks: its rural spokes stay on its own
+    /// bank instead of bridging the river to stop in a field on the other side.
+    #[test]
+    fn rural_spokes_do_not_bridge_a_river() {
+        let (n, width) = (120, 6000.0);
+        let h = vec![20.0f32; n * n];
+        // A straight river two cells wide, y from 2950 to 3050, across the whole map.
+        let water: Vec<u8> = (0..n * n).map(|i| if (59..=60).contains(&(i / n)) { 3 } else { 0 }).collect();
+        let rivers: Vec<f32> = water.iter().map(|&w| if w == 3 { 20.0 } else { 0.0 }).collect();
+        let ids: Vec<i32> = water.iter().map(|&w| if w == 3 { 0 } else { -1 }).collect();
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids });
+        let town = RoadSite { key: "town".into(), population: 600, culture: "european-organic".into(), center: Point { x: 3000.0, y: 2500.0 }, ..Default::default() };
+        let cfg = RoadConfig { density: 1.0, exits: ExitCounts::default(), ..Default::default() };
+        let out = route("spokes", &f, &[town], &cfg).unwrap();
+        assert!(!out.segments.is_empty(), "the town has no rural access track");
+        let crossings: usize = out.segments.iter().map(|s| s.crossings.len()).sum();
+        assert_eq!(crossings, 0, "{crossings} rural access crossings");
+        assert!(out.segments.iter().all(|s| s.path.iter().all(|p| p.y < 2950.0)), "a track reaches the far bank");
     }
 }
