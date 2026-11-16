@@ -53,6 +53,7 @@ import { mountStageChain, type StageChain } from './stageChain';
 import { stagesForAction, stageById, type StageDef, type StageFamily } from './stageRegistry';
 import { mountHeightmapSource } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus } from './settingsPanel';
+import { backendAlternative, backendFailure, fallbackRuntime, runtimeNeedsProbe, F as RUNTIME_FALLBACK } from './runtimeChoices';
 import { mountNeuralModelManager } from './neuralModelManager';
 import { mountDesktopNeural } from './desktopNeural';
 import { mountDesktopModules } from './desktopModules';
@@ -285,7 +286,7 @@ setHTML($('#app'), `
 <div class="toast" id="toast" role="status" hidden></div>`);
 
 const canvas = $<HTMLCanvasElement>('#map-canvas');
-const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minimap'), updateProgress, e => toast(e.message, true), () => {
+const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minimap'), updateProgress, e => void reportGenerationFailure(e.message), () => {
   const view = client.viewer.getView();
   setText($('#scale-label'), formatDistance(80 / view.scale, getDistanceUnit(), numberLocale()));
 });
@@ -606,7 +607,35 @@ const editingTools=mountEditingTools({canEdit:()=>!!world&&!busy&&!previewBase&&
 // Layer toggles live in the Display stages (widget:layer-*).
 insertHTML($('#hardware-details'), 'afterend', `<details class="section"><summary>Local service addresses</summary><p class="hint">The desktop edition starts Rust automatically. Python can use an existing local service. Addresses stay on your machine.</p><label class="label" for="rust-server">Native Rust</label><input id="rust-server" type="url" value="${esc(bootRuntime.localServer)}"><label class="label" for="python-server">Neural Python</label><input id="python-server" type="url" value="${esc(bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Save & verify</button><p class="hint">Python and model configuration: <a href="./scientific/index.html#runtime" target="_blank" rel="noopener">read the atlas ↗</a></p></details>`);
 insertHTML($('#project-file'), 'beforebegin', `<label class="label" for="import-scope">What should be imported from this file?</label><select id="import-scope"><option value="complete">Complete project · map + recipe + edits</option><option value="terrain">Territory · keep my settlement recipe</option><option value="urban">Settlement recipe · keep my territory</option></select><p class="hint" style="margin:8px 0 14px">Compositions retain the exact terrain and reset urban geometry: rebuild the settlements with the selected recipe.</p>`);
-function toast(message: string, error = false): void { clearTimeout(toastTimer); setText($('#toast'), message); $('#toast').dataset.error = String(error); $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, error ? 12000 : 5000); }
+interface ToastAction { detail?: string; label: string; run(): void }
+function toast(message: string, error = false, action?: ToastAction): void {
+  clearTimeout(toastTimer); const element = $('#toast'), text = document.createElement('span'); setText(text, message); element.replaceChildren(text);
+  if (action) {
+    if (action.detail) { const detail = document.createElement('p'); detail.className = 'toast-detail'; detail.textContent = action.detail; element.append(detail); }
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'small toast-action'; setText(button, action.label);
+    button.onclick = () => { element.hidden = true; action.run(); }; element.append(button);
+  }
+  element.dataset.error = String(error); element.hidden = false; toastTimer = setTimeout(() => { element.hidden = true; }, action ? 20000 : error ? 12000 : 5000);
+}
+const runtimeCapabilities = () => { const s = backendStatus(); return { checked: s.checked, webgpu: s.webgpu, native: s.native.available, python: s.python.available }; };
+/** A recipe restored from another machine, or a service that went away, must not fail the run: switch to the best available backend first. */
+async function ensureRuntimeBackends(): Promise<void> {
+  if (runtimeNeedsProbe(settings, runtimeCapabilities())) { try { await refreshBackends(backendBindings); } catch (error) { log(String(error)); } }
+  const notes = fallbackRuntime(settings, runtimeCapabilities());
+  if (!notes.length) return;
+  notes.forEach(note => log(note));
+  toast(notes.map(note => translate(note)).join(' '), false, { label: RUNTIME_FALLBACK.open, run: openExecutionSettings });
+  backendBindings.onRuntimeChange(); settingsPanel.render();
+}
+/** A missing backend names the best available alternative and opens Settings on demand. */
+async function reportGenerationFailure(message: string): Promise<void> {
+  const failure = backendFailure(message);
+  if (!failure) { toast(message, true); return; }
+  try { await refreshBackends(backendBindings); } catch { /* The suggestion uses the last known capabilities. */ }
+  const alternative = backendAlternative(settings, runtimeCapabilities(), failure);
+  toast(message, true, { detail: alternative ? translate(RUNTIME_FALLBACK.suggest).replace('{alternative}', translate(alternative)) : translate(RUNTIME_FALLBACK.check),
+    label: RUNTIME_FALLBACK.open, run: openExecutionSettings });
+}
 const logLine=(entry:{time:Date;message:string}):string=>`${entry.time.toLocaleTimeString(numberLocale())}  ${translate(entry.message)}`;
 let logScroll=0;
 function scrollLog():void{if(logScroll)return;logScroll=requestAnimationFrame(()=>{logScroll=0;const el=$('#job-log');el.scrollTop=el.scrollHeight;});}
@@ -717,6 +746,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
   setBusy(true);
   // A user run takes the engine: the background place in flight (if any) completes and is dropped.
   await smallPlaces?.stop(); if (cancelled) return false;
+  await ensureRuntimeBackends(); if (cancelled) return false;
   const started = performance.now(); const revision = projectRevision; let completed = false;
   if (['terrain','region','settlements','town'].includes(action)) chain.clearCityResults();
   chain.beginRun(action === 'town' ? [] : stagesForAction(action, townStage, terrainStage, settings.terrain?.procedural?.coastAfter));
@@ -753,7 +783,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     } else if (key) showInspector(key);
     smallPlaceRecipe = ['town','towns','all'].includes(action) && !cityOutput && !terrainStage ? smallPlaceRecipeKey() : undefined;
     completed = true;
-  } catch (e) { if (!cancelled) { const message = e instanceof Error ? e.message : String(e); log(`Failed: ${message}`); toast(message.startsWith('plan_refused:') ? 'This model does not fit the parcel. The previous building is retained.' : message,true); } }
+  } catch (e) { if (!cancelled) { const message = e instanceof Error ? e.message : String(e); log(`Failed: ${message}`); if (message.startsWith('plan_refused:')) toast('This model does not fit the parcel. The previous building is retained.',true); else void reportGenerationFailure(message); } }
   finally { chain.endRun(completed); setBusy(false); if (projectRevision !== revision) setText($('#footer-status'), 'New settings ready to generate'); if (completed) smallPlaces?.start(); }
   return completed;
 }

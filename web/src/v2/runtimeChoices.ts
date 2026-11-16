@@ -164,3 +164,73 @@ export function runtimeSummary(settings: V2Settings, effectiveGpu?: boolean): st
   if (isNeural(settings)) parts.push(runtime.source === 'neural-python' ? 'neural Python' : runtime.source === 'neural' ? 'neural native' : 'neural browser');
   return parts.join(' · ');
 }
+
+// ── Offline backends ──────────────────────────────────────────────────────────────────────
+/** `nativeNeural`: the native neural service (:8792); undefined = not probed, assumed usable. */
+export interface ServiceCapabilities extends RuntimeCapabilities { nativeNeural?: boolean }
+export const F = {
+  engineToBrowser: copy('The native Rust service is offline: the engine switched to Rust in the browser.', 'Le service Rust natif est hors ligne : le moteur passe sur Rust dans le navigateur.'),
+  neuralToBrowser: copy('The neural service is offline: neural generation switched to the browser (Rust · WebGPU).', 'Le service neuronal est hors ligne : la génération neuronale passe dans le navigateur (Rust · WebGPU).'),
+  neuralToPython: copy('No usable neural engine on this path: neural generation switched to the Python/CUDA service.', 'Aucun moteur neuronal utilisable sur ce chemin : la génération neuronale passe sur le service Python/CUDA.'),
+  pythonToNative: copy('The Python/CUDA service is offline: neural generation now follows the native Rust engine.', 'Le service Python/CUDA est hors ligne : la génération neuronale suit désormais le moteur Rust natif.'),
+  urbanToEngine: copy('The native Rust service is offline: cities now follow the main engine.', 'Le service Rust natif est hors ligne : les villes suivent désormais le moteur principal.'),
+  suggest: copy('You can select {alternative} in Settings instead.', 'Vous pouvez choisir {alternative} dans les Réglages à la place.'),
+  check: copy('Check the available engines in Settings.', 'Vérifiez les moteurs disponibles dans les Réglages.'),
+  open: copy('Open Settings', 'Ouvrir les Réglages'),
+  altBrowserGpu: copy('the Rust engine in the browser, with WebGPU', 'le moteur Rust du navigateur, avec WebGPU'),
+  altBrowserCpu: copy('the Rust engine in the browser, on CPU', 'le moteur Rust du navigateur, sur CPU'),
+  altBrowserNeural: copy('browser neural generation (Rust · WebGPU)', 'la génération neuronale du navigateur (Rust · WebGPU)'),
+  altPython: copy('the Python/CUDA neural service', 'le service neuronal Python/CUDA'),
+  altNativeNeural: copy('native Rust neural generation', 'la génération neuronale Rust native'),
+};
+
+/** True when a service the settings rely on has not been probed, or was last seen offline (it may be back). */
+export function runtimeNeedsProbe(settings: V2Settings, caps: RuntimeCapabilities): boolean {
+  const runtime = settings.runtime; if (!runtime) return false;
+  const native = runtime.backend === 'native' || settings.urban?.backend === 'native';
+  const python = isNeural(settings) && runtime.source === 'neural-python';
+  const gpuNeural = isNeural(settings) && runtime.source === 'neural-wasm';
+  return !caps.checked ? native || python || gpuNeural : native && !caps.native || python && !caps.python;
+}
+
+/** Moves every choice whose backend is known to be offline to the best available alternative.
+ * Returns one note per change ([] when nothing is offline, or when no alternative exists: the run then reports the error). */
+export function fallbackRuntime(settings: V2Settings, caps: ServiceCapabilities): string[] {
+  if (!caps.checked || !settings.runtime) return [];
+  const runtime = settings.runtime, notes: string[] = [], neural = isNeural(settings);
+  if (runtime.backend === 'native' && (!caps.native || caps.nativeNeural === false && neural && runtime.source !== 'neural-python')) {
+    if (!neural || runtime.source === 'neural-python') { runtime.backend = 'rust'; notes.push(F.engineToBrowser); }
+    else if (caps.webgpu) { runtime.backend = 'rust'; runtime.source = 'neural-wasm'; notes.push(F.neuralToBrowser); }
+    else if (caps.python) { runtime.backend = 'rust'; runtime.source = 'neural-python'; notes.push(F.neuralToPython); }
+  }
+  if (neural && runtime.source === 'neural-python' && !caps.python) {
+    if (runtime.backend === 'native' && caps.nativeNeural !== false) { runtime.source = 'neural'; notes.push(F.pythonToNative); }
+    else if (caps.webgpu) { runtime.backend = 'rust'; runtime.source = 'neural-wasm'; notes.push(F.neuralToBrowser); }
+  }
+  if (neural && runtime.backend === 'rust' && runtime.source === 'neural-wasm' && !caps.webgpu && caps.python) { runtime.source = 'neural-python'; notes.push(F.neuralToPython); }
+  if (settings.urban?.backend === 'native' && !caps.native) { delete settings.urban.backend; notes.push(F.urbanToEngine); }
+  if (notes.length) normalizeRuntime(settings);
+  return notes;
+}
+
+export type BackendFailure = 'native' | 'neural-service' | 'webgpu';
+/** Recognises the errors raised when the selected backend is missing (French sources and their English translations). */
+export function backendFailure(message: string): BackendFailure | undefined {
+  if (/Moteur (Rust local|natif) inaccessible|local Rust engine is unreachable|native engine is unreachable|Native generation requires the local Rust backend/i.test(message)) return 'native';
+  if (/Neural service unreachable|Service neuronal inaccessible|Could not start the neural service|Impossible de démarrer le service neuronal/i.test(message)) return 'neural-service';
+  if (/WebGPU is unavailable|WebGPU indisponible|nécessitent WebGPU/i.test(message)) return 'webgpu';
+  return undefined;
+}
+
+/** The English label of the best alternative to a failed backend, or undefined when none is available. */
+export function backendAlternative(settings: V2Settings, caps: RuntimeCapabilities, failure: BackendFailure): string | undefined {
+  const trial = { ...settings, runtime: settings.runtime && { ...settings.runtime }, urban: settings.urban && { ...settings.urban },
+    terrain: settings.terrain && { ...settings.terrain } } as V2Settings;
+  const source = settings.runtime?.source;
+  const failed: ServiceCapabilities = { ...caps, checked: true, ...(failure === 'native' ? { native: false } : failure === 'webgpu' ? { webgpu: false }
+    : source === 'neural-python' ? { python: false } : { nativeNeural: false }) };
+  if (!fallbackRuntime(trial, failed).length) return undefined;
+  const runtime = trial.runtime!;
+  if (isNeural(trial)) return runtime.source === 'neural-python' ? F.altPython : runtime.source === 'neural' ? F.altNativeNeural : F.altBrowserNeural;
+  return failed.webgpu && runtime.compute !== 'cpu' ? F.altBrowserGpu : F.altBrowserCpu;
+}
