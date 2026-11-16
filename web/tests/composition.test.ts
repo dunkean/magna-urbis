@@ -14,15 +14,39 @@ const edit = (id: Parameters<typeof presetComposition>[0], change: (c: Compositi
 const moved = (a: CompositionRecipe, b: CompositionRecipe) => { const x = resolve(a).keys, y = resolve(b).keys; return (Object.keys(x) as (keyof typeof x)[]).filter(key => x[key] !== y[key]); };
 
 describe('render composition', () => {
+  it('validates Minimal and resolves its independent path, palette and optional layers', () => {
+    const c = presetComposition('minimal');
+    expect(() => validateComposition(c)).not.toThrow();
+    expect(c.ground).toEqual({ look: 'minimal', variant: 'minimal', contours: false });
+    expect(c.effects.relief).toBe(false); expect(c.vegetation.look).toBe('none');
+    expect(c.landuse).toMatchObject({ rural: 'off', urban: 'off' });
+    expect(c.buildings).toMatchObject({ visible: true, look: 'footprints', parcels: false });
+    expect(c.annotations).toEqual({ legend: false, cartouche: false });
+    expect(Object.entries(c.text.groups).filter(([, visible]) => visible).map(([group]) => group)).toEqual(['places']);
+    c.effects.ambience = 'night'; c.effects.relief = true;
+    c.landuse.rural = 'categorical'; c.landuse.classes = { forest: false }; c.landuse.opacity = .65;
+    expect(() => validateComposition(c)).not.toThrow();
+    for (const target of ['view2d', 'view3d', 'export'] as const) {
+      const r = resolveAppearance({ style: 'minimal', composition: c }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+      expect(r.path).toBe('minimal'); expect(r.styleId).toBe('minimal'); expect(r.palette.mapStyle).toBe('minimal');
+      expect(r.traits.family).toBe('map'); expect(r.composition.ambience).toBe('day');
+      expect(r.ground.layers.relief).toBe(true); expect(r.composition.landuse.classes.forest).toBe(false);
+    }
+    expect(resolve(c).composition.buildings.look).toBe('footprints');
+    const invalid = structuredClone(c); invalid.ground.variant = 'missing' as never;
+    expect(() => validateComposition(invalid)).toThrow();
+  });
+
   it('fills a valid recipe from every preset', () => {
     for (const id of STYLE_IDS) { const c = presetComposition(id); expect(() => validateComposition(c), id).not.toThrow(); expect(GROUND_VARIANTS[c.ground.look]).toContain(c.ground.variant); }
   });
-  it('draws the mixed recipe without changing the ground', () => {
+  it('draws the mixed recipe on the same ground with its canonical detailed 2D buildings', () => {
     const r = resolve(edit('parchment', c => { c.vegetation.look = 'procedural-canopy'; c.landuse.rural = 'categorical'; c.networks.roads.look = 'ink'; c.buildings.look = 'footprints'; }));
     expect(r.ground.style).toBe('parchment');
     expect(r.composition.vegetation).toMatchObject({ procedural: true, cartographic: false });
     expect(r.composition.landuse.rural).toBe('categorical');
-    expect(r.city.buildingStyle).toBe('silhouette');
+    expect(r.city.buildingStyle).toBe('cartographic');
+    expect(r.composition.buildings.look).toBe('detailed-volumes');
   });
   it('keeps semantic data on a material ground', () => {
     const r = resolve(edit('satellite', c => { c.landuse.rural = 'subtle'; }));
@@ -35,7 +59,7 @@ describe('render composition', () => {
   });
   it('leaves the other passes alone when one is hidden or changed', () => {
     const base = presetComposition('parchment');
-    expect(moved(base, edit('parchment', c => { c.buildings.look = 'footprints'; }))).toEqual(['city']);
+    expect(moved(base, edit('parchment', c => { c.buildings.parcels = true; }))).toEqual(['city']);
     expect(moved(base, edit('parchment', c => { c.networks.roads.visible = false; }))).not.toContain('forest');
     expect(moved(base, edit('parchment', c => { c.networks.roads.visible = false; }))).not.toContain('semantic');
   });
@@ -45,8 +69,8 @@ describe('render composition', () => {
     expect(resolve(c).composition.limitations.map(l => l.pass)).not.toContain('ambience');
     expect(resolve(c).composition.recipe.effects.ambience).toBe('night');
   });
-  it('has six styles, a cadastre default variant and validated global effects', () => {
-    expect(STYLE_IDS).toEqual(['atlas', 'cadastre', 'topographic', 'satellite', 'satellite-2', 'parchment', 'illustration']);
+  it('lists the styles, a cadastre default variant and validated global effects', () => {
+    expect(STYLE_IDS).toEqual(['minimal', 'atlas', 'cadastre', 'topographic', 'satellite', 'satellite-2', 'parchment', 'illustration']);
     expect(GROUND_VARIANTS.cadastre[0]).toBe('cadastre');
     expect(presetComposition('cadastre').ground.variant).toBe('cadastre');
     expect(presetComposition('atlas').effects).toMatchObject({ ambience: 'day', season: .5, relief: true });
@@ -82,6 +106,7 @@ describe('independent text composition', () => {
       { id: 'castle', kind: 'castle', text: 'Castle', rank: 0, anchor: { x: 140, y: 100 } },
     ] }, site: { center: { x: 200, y: 200 } }, mapAnnotations: { enabled: true, pins: [{ id: 'quest', kind: 'quest', text: 'Quest', x: 160, y: 100 }] } };
     const text = presetComposition('parchment').text, pal = PALETTES.parchment;
+    text.levels = { ...text.levels, pins: 100 };
     text.groups.water = false; text.groups.pins = false;
     const labels = buildMapLabels(world, pal.name, pal, text);
     expect(labels.map(l => l.kind)).toEqual(['street', 'castle']);
@@ -121,7 +146,7 @@ it('caps and throttles 3D placement, then does no work for a still camera', () =
     const host = { clientWidth: 1024, clientHeight: 800, append() {} } as unknown as HTMLElement;
     const projector = vi.fn(() => ({ scale: 1, project: (x: number, y: number) => [x, y] as [number, number] }));
     const overlay = mountTextOverlay3d(host, () => ({ labelProjector: projector }) as unknown as Terrain3d);
-    const text = presetComposition('parchment').text; text.density = 'low';
+    const text = presetComposition('parchment').text; text.density = 'low'; text.levels = { ...text.levels, places: 100 };
     const world: MapLabelWorld = { names: { family: 'french', town: '', entries: Array.from({ length: 1000 }, (_, i) => ({ id: String(i), kind: 'farm', text: 'a', rank: 0, anchor: { x: i % 30 * 32 + 20, y: Math.floor(i / 30) * 22 + 20 } })) } };
     const labels = buildMapLabels(world, 'parchment', PALETTES.parchment, text);
     overlay.set({ labels, text, palette: PALETTES.parchment }); vi.runOnlyPendingTimers();

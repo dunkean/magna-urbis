@@ -125,7 +125,7 @@
 #app .toolbar-row>.city3d-bar .city3d-relief-control{gap:6px}
 #app .toolbar-row>.city3d-bar .city3d-relief-control input{width:78px}
 #app .toolbar-row>.city3d-bar [data-relief-value]{min-width:3.5ch;color:var(--gold);font-size:10px;font-variant-numeric:tabular-nums}
-body:has(.map-area>.city3d:not([hidden])) #app .toolbar-row>#scene-controls{display:none}
+/* Season, day/night and lighting share the 2D recipe and also drive the 3D shaders. */
 #app .city-display-options{margin:0;flex-wrap:wrap}
 #view3d-advanced-controls:empty{display:none}
 @media(min-width:1700px){.workbench-advanced{left:406px;width:calc(100vw - 422px)}}

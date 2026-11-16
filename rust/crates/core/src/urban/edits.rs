@@ -86,6 +86,15 @@ pub(super) fn validate_quarters(cfg: &LayoutConfig) -> Result<(), String> {
 }
 /// `deleted` is `merge` or `garden`; anything else is a malformed edit.
 pub(super) fn validate_parcels(cfg: &super::ParcelConfig) -> Result<(), String> {
+    for (id, edit) in &cfg.overrides.blocks {
+        if id.parse::<usize>().is_err()
+            || edit.density.is_some_and(|d| !d.is_finite() || !(0.1..=10.0).contains(&d))
+            || edit.culture.as_deref().is_some_and(|c| super::culture::mapping(c).is_none())
+            || edit.role.as_deref().is_some_and(|r| !r.is_empty() && r != "auto" && super::roles::role_function(r).is_none())
+            || edit.operator.as_deref().is_some_and(|op| !matches!(op, "culture" | "strips" | "oriented" | "compact" | "inherited" | "courtyard" | "frontage" | "compound" | "wholeBlock" | "garden")) {
+            return Err(format!("Réglages de l’îlot {id} invalides"));
+        }
+    }
     for (id, o) in &cfg.overrides.parcels {
         if o.deleted
             .as_deref()

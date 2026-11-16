@@ -7,8 +7,71 @@ import { rerollSubdivisionBuildings, resetSubdivisionChildren } from '../src/v2/
 import type { V2Settings } from '../src/v2/contracts';
 import type { World } from '../src/gen/types';
 import { featureDisplayName } from '../src/v2/mapPresentation';
+import { rerollSettlement } from '../src/v2/urbanSeeds';
+import { urbanEffectiveValues, writeUrbanControl } from '../src/v2/urbanControls';
+import { defaultSettings } from '../src/v2/settings';
+import { parseProject, serializeProject } from '../src/v2/project';
+import { presetComposition } from '../src/render/composition';
+import { blockEditId, runtimeBlockEdits } from '../../rust/bridge/urbanBlockEdits';
+import { resolveRustUrbanControls } from '../src/v2/rustUrban';
 
 describe('subdivision architecture inheritance and variations', () => {
+  it('keeps a saved block edit attached to its geometry when another quarter changes block indices', () => {
+    const shape = (x:number) => ({outer:[{x,y:0},{x:x+10,y:0},{x:x+10,y:20},{x,y:20}],holes:[]});
+    const first={shape:shape(0)}, selected={shape:shape(20)}, inserted={shape:shape(40)};
+    const layout={key:'town',blocks:[first,selected]} as never;
+    const id=blockEditId({key:'town'},selected.shape);
+    const cfg={...defaultParcelConfig(),overrides:{blocks:{[id]:{culture:'elven',salt:12}}}};
+    expect(runtimeBlockEdits(cfg,[layout]).overrides!.blocks!['1'].culture).toBe('elven');
+    const shifted={key:'town',blocks:[inserted,first,selected]} as never;
+    const applied=runtimeBlockEdits(cfg,[shifted]).overrides!.blocks!;
+    expect(Object.keys(applied)).toEqual(['2']); expect(applied['2'].salt).toBe(12);
+    const reversed={outer:[...selected.shape.outer].reverse(),holes:[]};
+    expect(blockEditId({key:'town'},reversed)).toBe(id);
+  });
+  it('lets an explicit city culture replace inherited templates without changing the house renderer', () => {
+    const settings=defaultSettings();settings.urban={architecture:'detailed',layout:{culture:'medina',preset:'morph/medina',tissue:'grid'},houses:{house_config:houseControlDefaults()},local:{town:{layout:{culture:'elven'}}}};
+    const resolved=resolveRustUrbanControls(settings,'town',settings.options);
+    expect(resolved.layout.culture).toBe('elven');expect(resolved.layout.tissue).toBe('culture');
+    expect(resolved.parcels.culture).toBe('elven');expect(resolved.houses.house_config).toBeUndefined();expect(resolved.houses.culture).toBe('elven');
+    expect(settings.urban.architecture).toBe('detailed');
+  });
+  it('propagates the main quarter culture to houses and clears stale model pins while preserving rendering', () => {
+    const settings = defaultSettings(); settings.urban = { architecture: 'detailed', local: { town: { layout: { overrides: { quarters: { '2': { culture: 'medina', buildingCulture: 'byzantine-greek', houseConfig: { pack: 'EUR-MED' } } } } } } } };
+    settings.appearance = { style: 'parchment', textured: true };
+    writeUrbanControl(settings, { kind: 'quarter', key: 'town', id: '2' }, 'culture', 'elven');
+    const layout = { ...defaultLayoutConfig(), ...settings.urban.local!.town.layout };
+    expect(layout.overrides!.quarters!['2']).toEqual({ culture: 'elven', tissue: 'culture' });
+    const profile = JSON.parse(architectureProfile(localArchitectureSettings({}, layout, defaultParcelConfig(), {}))!);
+    expect(profile.houses.quarters['2'].styles).toEqual([{ culture: 'elven', weight: 1 }]);
+    expect(settings.urban.architecture).toBe('detailed'); expect(settings.appearance.textured).toBe(true);
+  });
+  it('persists block edits, inherits house choices through the block and preserves textured detailed rendering on reroll', () => {
+    const settings = defaultSettings();
+    settings.urban = { backend: 'native', architecture: 'detailed', local: { town: { layout: { houseComplexity: 'complex', overrides: { quarters: { '2': { houseConfig: { wealth: .8 } } } } } } } };
+    const composition = presetComposition('parchment'); composition.buildings.look = 'detailed-volumes';
+    settings.appearance = { style: 'parchment', textured: true, composition };
+    const appearance = structuredClone(settings.appearance);
+    const block = { kind: 'block', key: 'town', id: '4', quarter: '2' } as const;
+    writeUrbanControl(settings, block, 'culture', 'medina');
+    writeUrbanControl(settings, block, 'density', .5);
+    writeUrbanControl(settings, block, 'salt', 123);
+    writeUrbanControl(settings, block, 'houseConfig.overrides.floors', 3);
+    const local = settings.urban.local!.town;
+    expect(local.parcels!.overrides!.blocks!['4']).toMatchObject({ culture: 'medina', density: .5, salt: 123 });
+    const parcel = { kind: 'parcel', key: 'town', id: 'lot', quarter: '2', block: '4' } as const;
+    expect(urbanEffectiveValues(settings, parcel)).toMatchObject({ culture: 'medina', houseConfig: { wealth: .8, overrides: { floors: 3 } } });
+    expect(scopedHouseEdit(defaultLayoutConfig(), { ...defaultParcelConfig(), ...local.parcels }, '2', 'lot', undefined, '4').overrides?.floors).toBe(3);
+    const profile = JSON.parse(architectureProfile(localArchitectureSettings({}, defaultLayoutConfig(), { ...defaultParcelConfig(), ...local.parcels }, {}))!);
+    expect(profile.houses.blocks['4'].styles).toEqual([{ culture: 'medina', weight: 1 }]);
+    resetSubdivisionChildren(settings, 'town', 'block', { parcels: ['lot'], requests: ['house'] });
+    rerollSettlement(settings, 'town');
+    const restored = parseProject(serializeProject(settings)).settings;
+    expect(restored.urban!.architecture).toBe('detailed');
+    expect(restored.urban!.local!.town.layout!.houseComplexity).toBe('complex');
+    expect(restored.appearance).toEqual(appearance);
+    expect(restored.urban!.local!.town.parcels!.overrides!.blocks!['4'].salt).toBe(123);
+  });
   it('routes a procedural roof edit through native massing without selecting a new house template',()=>{
     const patch={overrides:{roof:'RF-HIP',floors:2} as never};
     expect(isMassingEdit(patch)).toBe(true);expect(isMassingEdit({...patch,pack:'AS-CHI'})).toBe(false);

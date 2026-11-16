@@ -3,11 +3,163 @@
   "version": 1,
   "paletteSource": "web/src/render/styles.ts",
   "sourceFilesSha256": {
-    "web/src/render/styles.ts": "068bef63f8406667b826fd0317b3e55a1fc043c7a3e7909ffd5e0c9b47b3c72e",
+    "web/src/render/styles.ts": "52a9fa8db83675877f2bc12e10a4551a178a8ce7d5a2b4b809eb06c4f47291e6",
     "web/src/render/waterStyle.ts": "002c3ab51c8aec7b7a7c5aa79b4129084fd90def4389106b3d2eeca93ec95bdf",
-    "web/src/render/terrainStyle.ts": "2b9aded9848152af645df9d8d6cc7449265514de2d152f7322a2d7ce7d575d57"
+    "web/src/render/terrainStyle.ts": "8bea6e0959819185e9e3107dde7fcb73fcb930f2aa75b5e42adb8cc82f704e8d"
   },
   "palettes": {
+    "minimal": {
+      "name": "minimal",
+      "label": "Minimal",
+      "paper": "#f4f1ea",
+      "ink": "#4a443d",
+      "inkSoft": "#a8957f",
+      "hypso": [
+        [
+          0,
+          "#f4f1ea"
+        ],
+        [
+          0.6,
+          "#e9e8db"
+        ],
+        [
+          1,
+          "#e1ddd4"
+        ]
+      ],
+      "shade": 0.3,
+      "hatch": 0,
+      "grain": 0,
+      "seaFill": "#bfd9e8",
+      "water": {
+        "stops": [
+          [
+            0,
+            "#9fc3d8"
+          ],
+          [
+            1,
+            "#bfd9e8"
+          ]
+        ],
+        "bandFraction": 0.016
+      },
+      "lakeFill": "#bfd9e8",
+      "waterEdge": "#9fc3d8",
+      "ripple": "#5d7e82",
+      "rippleOpacity": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "riverFill": "#a9cde2",
+      "riverEdge": "#a9cde2",
+      "waterLines": null,
+      "contour": "#8a6b47",
+      "contourOpacity": 0,
+      "contourIndexW": 1.9,
+      "frame": "#4e3b28",
+      "frameKind": "none",
+      "accent": "#8a6b47",
+      "grid": null,
+      "fontFamily": "sans-serif",
+      "land": {
+        "field": "#efe9d2",
+        "meadow": "#e4edd3",
+        "pasture": "#e6ecd6",
+        "forest": "#d6e5cb",
+        "orchard": "#dce9c8",
+        "garden": "#dde9cd",
+        "marsh": "#d5e4e0",
+        "commons": "#e8ead7"
+      },
+      "landOpacity": 0.4,
+      "landBlend": "normal",
+      "tex": {
+        "field": false,
+        "meadow": false,
+        "pasture": false,
+        "forest": false,
+        "orchard": false,
+        "garden": false,
+        "marsh": false,
+        "commons": false
+      },
+      "treeShape": "blob",
+      "stripA": "#e8d9a4",
+      "stripB": "#d9c488",
+      "stripAlpha": [
+        0,
+        0
+      ],
+      "furrow": "#8d7443",
+      "furrowAlpha": 0,
+      "hedge": "#5f6d3d",
+      "hedgeOn": false,
+      "treeFill": "#98a57b",
+      "treeInk": "#596144",
+      "grass": "#5f7a3c",
+      "reed": "#4f7a72",
+      "orchardDot": "#55703a",
+      "roadEdge": "#cfc8bb",
+      "roadFill": "#ffffff",
+      "trackFill": "#c9c1b3",
+      "rural": {
+        "track": 0.6,
+        "way": 0.42,
+        "headland": 0.32
+      },
+      "bridgeDeck": "#ece0bc",
+      "bridgeInk": "#4a3a28",
+      "farmRoof": "#c69b70",
+      "farmInk": "#4e3b28",
+      "farmYard": "#d8c79a",
+      "marker": "#8b2f1f",
+      "urban": {
+        "street": "#ffffff",
+        "streetEdge": "#cfc8bb",
+        "yard": "#ebe5da",
+        "garden": "#d3cf98",
+        "gardenInk": "#6f7a42",
+        "mass": "#cbbba8",
+        "massEdge": "#a8957f",
+        "massEdgeW": 0.3,
+        "plotLine": "#5a4530",
+        "plotAlpha": 0.45,
+        "plotLightAlpha": 0.28,
+        "plotW": 0.14,
+        "place": "#ece0bf",
+        "placeInk": "#8a7050",
+        "wall": "#6f655b",
+        "wallFill": "#6f655b",
+        "wallScale": 1,
+        "towerScale": 1,
+        "blockEdge": "#5a4530",
+        "blockEdgeW": 0.4,
+        "landmark": "#9c8a76",
+        "landmarkEdge": "#a8957f",
+        "shadow": null,
+        "lit": null
+      },
+      "lab": {
+        "water": "#4a443d",
+        "wood": "#4a443d",
+        "town": "#4a443d",
+        "halo": "#f4f1ea",
+        "haloOp": 0.8,
+        "areaCaps": "small",
+        "waterItalic": true
+      },
+      "cart": {
+        "fill": "#eee2c3",
+        "stroke": "#4e3b28",
+        "accent": "#4e3b28",
+        "ornate": false,
+        "op": 0.9
+      }
+    },
     "parchment": {
       "name": "parchment",
       "label": "Parchment",
@@ -102,28 +254,28 @@
       "furrowAlpha": 0.6,
       "hedge": "#5f6d3d",
       "hedgeOn": true,
-      "treeFill": "#8aa065",
-      "treeInk": "#4a5a33",
+      "treeFill": "#98a57b",
+      "treeInk": "#596144",
       "grass": "#5f7a3c",
       "reed": "#4f7a72",
       "orchardDot": "#55703a",
-      "roadEdge": "#4e3b28",
-      "roadFill": "#f6edd0",
-      "trackFill": "#6b5236",
+      "roadEdge": "#6a543b",
+      "roadFill": "#e9dbb4",
+      "trackFill": "#7a6248",
       "rural": {
         "track": 0.6,
         "way": 0.42,
         "headland": 0.32
       },
-      "bridgeDeck": "#f6edd0",
-      "bridgeInk": "#3b2c1c",
+      "bridgeDeck": "#ece0bc",
+      "bridgeInk": "#4a3a28",
       "farmRoof": "#c69b70",
       "farmInk": "#4e3b28",
       "farmYard": "#d8c79a",
       "marker": "#8b2f1f",
       "urban": {
-        "street": "#f4ead0",
-        "streetEdge": "#6b5236",
+        "street": "#ebdeba",
+        "streetEdge": "#7a6248",
         "yard": "#e6d6a8",
         "garden": "#d3cf98",
         "gardenInk": "#6f7a42",
@@ -173,64 +325,80 @@
       "hypso": [
         [
           0,
-          "#a8c98d"
+          "#79b072"
         ],
         [
-          0.12,
-          "#c2d798"
+          0.08,
+          "#9cc787"
         ],
         [
-          0.32,
-          "#e4d9a2"
+          0.2,
+          "#cfdf9e"
         ],
         [
-          0.52,
-          "#d9bd8b"
+          0.34,
+          "#f0dd9a"
         ],
         [
-          0.72,
-          "#bb9675"
+          0.5,
+          "#e2b578"
         ],
         [
-          0.88,
-          "#d6cdc6"
+          0.66,
+          "#c38a5c"
+        ],
+        [
+          0.82,
+          "#9d7360"
         ],
         [
           1,
-          "#f6f6f6"
+          "#efebe7"
         ]
       ],
-      "shade": 1.05,
+      "shade": 0.84,
       "hatch": 0,
       "grain": 0,
-      "seaFill": "#8fc0e2",
+      "seaFill": "#6aa5d6",
       "water": {
         "stops": [
           [
             0,
-            "#4a86b3"
+            "#4f8fc2"
           ],
           [
-            1,
-            "#8fc0e2"
+            0.12,
+            "#bfe0f3"
+          ],
+          [
+            2.5,
+            "#a3d0ee"
+          ],
+          [
+            8,
+            "#83bbe3"
+          ],
+          [
+            20,
+            "#6aa5d6"
           ]
         ],
         "bandFraction": 0.016
       },
-      "lakeFill": "#8fc0e2",
-      "waterEdge": "#4a86b3",
+      "lakeFill": "#6aa5d6",
+      "waterEdge": "#5f7a7d",
       "ripple": "#e9f4fb",
       "rippleOpacity": [
-        0.7,
-        0.5,
-        0.35,
-        0.2
+        0,
+        0,
+        0,
+        0
       ],
-      "riverFill": "#4a86b3",
+      "riverFill": "#4f8fc2",
       "riverEdge": "#4a86b3",
       "waterLines": null,
       "contour": "#8b5a3c",
-      "contourOpacity": 0.55,
+      "contourOpacity": 0.4,
       "contourIndexW": 1.9,
       "frame": "#33404a",
       "frameKind": "double",
@@ -238,60 +406,60 @@
       "grid": null,
       "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
       "land": {
-        "field": "#f0e6a6",
-        "meadow": "#b9dc95",
-        "pasture": "#cfe3a2",
-        "forest": "#7fba78",
-        "orchard": "#c5dc8a",
-        "garden": "#d5e3a0",
-        "marsh": "#a6d1b8",
-        "commons": "#dde3aa"
+        "field": "#ecd57e",
+        "meadow": "#b4d68e",
+        "pasture": "#bfda95",
+        "forest": "#66a65c",
+        "orchard": "#a4cd86",
+        "garden": "#c4dd98",
+        "marsh": "#94cbc0",
+        "commons": "#c3da9c"
       },
-      "landOpacity": 0.72,
+      "landOpacity": 0.3,
       "landBlend": "multiply",
       "tex": {
-        "field": true,
-        "meadow": true,
-        "pasture": true,
-        "forest": true,
-        "orchard": true,
-        "garden": true,
+        "field": false,
+        "meadow": false,
+        "pasture": false,
+        "forest": false,
+        "orchard": false,
+        "garden": false,
         "marsh": true,
-        "commons": true
+        "commons": false
       },
       "treeShape": "blob",
       "stripA": "#f4ecb4",
       "stripB": "#e6dc92",
       "stripAlpha": [
-        0.55,
-        0.5
+        0,
+        0
       ],
       "furrow": "#a89a55",
-      "furrowAlpha": 0.6,
+      "furrowAlpha": 0,
       "hedge": "#4f8a4a",
-      "hedgeOn": true,
+      "hedgeOn": false,
       "treeFill": "#5fa35a",
       "treeInk": "#2f6a34",
       "grass": "#4c8f3f",
       "reed": "#3a8f88",
       "orchardDot": "#3f8a3a",
-      "roadEdge": "#5a4a3c",
-      "roadFill": "#fffdf4",
+      "roadEdge": "#7b6c5c",
+      "roadFill": "#f4eedb",
       "trackFill": "#8a7660",
       "rural": {
-        "track": 0.6,
-        "way": 0.42,
-        "headland": 0.32
+        "track": 0.55,
+        "way": 0.3,
+        "headland": 0
       },
-      "bridgeDeck": "#fffdf4",
+      "bridgeDeck": "#f4eedb",
       "bridgeInk": "#3b3b3b",
       "farmRoof": "#d9a678",
       "farmInk": "#5a4a3c",
       "farmYard": "#e8dcae",
       "marker": "#b3261e",
       "urban": {
-        "street": "#fbf7ec",
-        "streetEdge": "#6a5a4a",
+        "street": "#f3edda",
+        "streetEdge": "#7b6c5c",
         "yard": "#efe5c9",
         "garden": "#d8e2ad",
         "gardenInk": "#6f9a4f",
@@ -330,7 +498,10 @@
         "accent": "#4a86b3",
         "ornate": false,
         "op": 0.9
-      }
+      },
+      "forestTint": 0.26,
+      "furlongAlpha": 0,
+      "waterAboveLand": true
     },
     "watabou": {
       "name": "watabou",
@@ -730,8 +901,8 @@
         0,
         0.5
       ],
-      "furrow": "#1f1c1e",
-      "furrowAlpha": 0.65,
+      "furrow": "#5a5048",
+      "furrowAlpha": 0.42,
       "hedge": "#3e5a2b",
       "hedgeOn": false,
       "treeFill": "#b8d08f",
@@ -749,7 +920,7 @@
       },
       "bridgeDeck": "#f8f3e3",
       "bridgeInk": "#1f1c1e",
-      "farmRoof": "#dc6f86",
+      "farmRoof": "#d3939a",
       "farmInk": "#1f1c1e",
       "farmYard": "#f0e8d0",
       "marker": "#b3261e",
@@ -759,7 +930,7 @@
         "yard": "#f3ecd8",
         "garden": "#cfe4b4",
         "gardenInk": "#6d9a4a",
-        "mass": "#dc6f86",
+        "mass": "#d3939a",
         "massEdge": "#2a1c20",
         "massEdgeW": 0.36,
         "plotLine": "#111111",
@@ -794,7 +965,8 @@
         "accent": "#c4566b",
         "ornate": false,
         "op": 0.96
-      }
+      },
+      "waterAboveLand": true
     },
     "blueprint": {
       "name": "blueprint",
@@ -1167,23 +1339,19 @@
       "riverFill": "#3d9ac7",
       "riverEdge": "#3d9ac7",
       "waterLines": null,
-      "contour": "#b8753a",
-      "contourOpacity": 0.75,
-      "contourIndexW": 2.1,
+      "contour": "#9a5524",
+      "contourOpacity": 0.9,
+      "contourIndexW": 2.5,
       "frame": "#262626",
       "frameKind": "ticks",
       "accent": "#3d9ac7",
-      "grid": {
-        "color": "#4b9dc9",
-        "opacity": 0.3,
-        "step": 100
-      },
+      "grid": null,
       "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
       "land": {
         "field": "#f8f2cc",
         "meadow": "#dceeb2",
         "pasture": "#e4efbd",
-        "forest": "#b5d99b",
+        "forest": "#bfe0a4",
         "orchard": "#c9e3a4",
         "garden": "#d3e8ac",
         "marsh": "#c2e0d2",
@@ -1209,7 +1377,7 @@
         0.5
       ],
       "furrow": "#b9ae74",
-      "furrowAlpha": 0.5,
+      "furrowAlpha": 0.2,
       "hedge": "#5f9a4c",
       "hedgeOn": true,
       "treeFill": "#8fc27a",
@@ -1217,23 +1385,23 @@
       "grass": "#5f9a4c",
       "reed": "#3d9ac7",
       "orchardDot": "#4b8a3a",
-      "roadEdge": "#9a5a1c",
-      "roadFill": "#ffc869",
+      "roadEdge": "#a8803f",
+      "roadFill": "#f0d596",
       "trackFill": "#7a6a52",
       "rural": {
         "track": 0.6,
         "way": 0.42,
         "headland": 0.32
       },
-      "bridgeDeck": "#ffc869",
+      "bridgeDeck": "#f0d596",
       "bridgeInk": "#262626",
       "farmRoof": "#6a6a6a",
       "farmInk": "#262626",
       "farmYard": "#ebe6d0",
       "marker": "#b3261e",
       "urban": {
-        "street": "#fffdf6",
-        "streetEdge": "#8a8a8a",
+        "street": "#f4eedc",
+        "streetEdge": "#9a948a",
         "yard": "#eeeadb",
         "garden": "#d3e8ac",
         "gardenInk": "#5f9a4c",
@@ -1272,7 +1440,11 @@
         "accent": "#3d9ac7",
         "ornate": false,
         "op": 0.96
-      }
+      },
+      "contourThinW": 1.35,
+      "forestTint": 0.85,
+      "waterAboveLand": true,
+      "furlongAlpha": 0.35
     },
     "night": {
       "name": "night",
@@ -1283,35 +1455,39 @@
       "hypso": [
         [
           0,
-          "#10182b"
+          "#152335"
         ],
         [
           0.5,
-          "#16203a"
+          "#1a2a40"
         ],
         [
           1,
-          "#202c4a"
+          "#23364d"
         ]
       ],
-      "shade": 1.5,
+      "shade": 1.1,
       "hatch": 0,
-      "grain": 0,
-      "seaFill": "#060a14",
+      "grain": 0.12,
+      "seaFill": "#20364f",
       "water": {
         "stops": [
           [
             0,
-            "#2a3b66"
+            "#344d68"
+          ],
+          [
+            0.2,
+            "#2b435f"
           ],
           [
             1,
-            "#060a14"
+            "#20364f"
           ]
         ],
         "bandFraction": 0.016
       },
-      "lakeFill": "#060a14",
+      "lakeFill": "#20364f",
       "waterEdge": "#2a3b66",
       "ripple": "#3a4f88",
       "rippleOpacity": [
@@ -1320,7 +1496,7 @@
         0.3,
         0.2
       ],
-      "riverFill": "#2a3b66",
+      "riverFill": "#344d68",
       "riverEdge": "#2a3b66",
       "waterLines": {
         "color": "#3a4f88",
@@ -1335,7 +1511,7 @@
       "frameKind": "thin",
       "accent": "#e8b867",
       "grid": null,
-      "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
+      "fontFamily": "Georgia, 'Times New Roman', 'Liberation Serif', serif",
       "land": {
         "field": "#1a2440",
         "meadow": "#14263a",
@@ -1437,6 +1613,191 @@
     }
   },
   "terrainStyles": {
+    "minimal": {
+      "id": "minimal",
+      "label": "Minimal",
+      "palette": {
+        "name": "minimal",
+        "label": "Minimal",
+        "paper": "#f4f1ea",
+        "ink": "#4a443d",
+        "inkSoft": "#a8957f",
+        "hypso": [
+          [
+            0,
+            "#f4f1ea"
+          ],
+          [
+            0.6,
+            "#e9e8db"
+          ],
+          [
+            1,
+            "#e1ddd4"
+          ]
+        ],
+        "shade": 0.3,
+        "hatch": 0,
+        "grain": 0,
+        "seaFill": "#bfd9e8",
+        "water": {
+          "stops": [
+            [
+              0,
+              "#9fc3d8"
+            ],
+            [
+              1,
+              "#bfd9e8"
+            ]
+          ],
+          "bandFraction": 0.016
+        },
+        "lakeFill": "#bfd9e8",
+        "waterEdge": "#9fc3d8",
+        "ripple": "#5d7e82",
+        "rippleOpacity": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "riverFill": "#a9cde2",
+        "riverEdge": "#a9cde2",
+        "waterLines": null,
+        "contour": "#8a6b47",
+        "contourOpacity": 0,
+        "contourIndexW": 1.9,
+        "frame": "#4e3b28",
+        "frameKind": "none",
+        "accent": "#8a6b47",
+        "grid": null,
+        "fontFamily": "sans-serif",
+        "land": {
+          "field": "#efe9d2",
+          "meadow": "#e4edd3",
+          "pasture": "#e6ecd6",
+          "forest": "#d6e5cb",
+          "orchard": "#dce9c8",
+          "garden": "#dde9cd",
+          "marsh": "#d5e4e0",
+          "commons": "#e8ead7"
+        },
+        "landOpacity": 0.4,
+        "landBlend": "normal",
+        "tex": {
+          "field": false,
+          "meadow": false,
+          "pasture": false,
+          "forest": false,
+          "orchard": false,
+          "garden": false,
+          "marsh": false,
+          "commons": false
+        },
+        "treeShape": "blob",
+        "stripA": "#e8d9a4",
+        "stripB": "#d9c488",
+        "stripAlpha": [
+          0,
+          0
+        ],
+        "furrow": "#8d7443",
+        "furrowAlpha": 0,
+        "hedge": "#5f6d3d",
+        "hedgeOn": false,
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
+        "grass": "#5f7a3c",
+        "reed": "#4f7a72",
+        "orchardDot": "#55703a",
+        "roadEdge": "#cfc8bb",
+        "roadFill": "#ffffff",
+        "trackFill": "#c9c1b3",
+        "rural": {
+          "track": 0.6,
+          "way": 0.42,
+          "headland": 0.32
+        },
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
+        "farmRoof": "#c69b70",
+        "farmInk": "#4e3b28",
+        "farmYard": "#d8c79a",
+        "marker": "#8b2f1f",
+        "urban": {
+          "street": "#ffffff",
+          "streetEdge": "#cfc8bb",
+          "yard": "#ebe5da",
+          "garden": "#d3cf98",
+          "gardenInk": "#6f7a42",
+          "mass": "#cbbba8",
+          "massEdge": "#a8957f",
+          "massEdgeW": 0.3,
+          "plotLine": "#5a4530",
+          "plotAlpha": 0.45,
+          "plotLightAlpha": 0.28,
+          "plotW": 0.14,
+          "place": "#ece0bf",
+          "placeInk": "#8a7050",
+          "wall": "#6f655b",
+          "wallFill": "#6f655b",
+          "wallScale": 1,
+          "towerScale": 1,
+          "blockEdge": "#5a4530",
+          "blockEdgeW": 0.4,
+          "landmark": "#9c8a76",
+          "landmarkEdge": "#a8957f",
+          "shadow": null,
+          "lit": null
+        },
+        "lab": {
+          "water": "#4a443d",
+          "wood": "#4a443d",
+          "town": "#4a443d",
+          "halo": "#f4f1ea",
+          "haloOp": 0.8,
+          "areaCaps": "small",
+          "waterItalic": true
+        },
+        "cart": {
+          "fill": "#eee2c3",
+          "stroke": "#4e3b28",
+          "accent": "#4e3b28",
+          "ornate": false,
+          "op": 0.9
+        }
+      },
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
+      "water": {
+        "stops": [
+          [
+            0,
+            "#9fc3d8"
+          ],
+          [
+            1,
+            "#bfd9e8"
+          ]
+        ],
+        "bandFraction": 0.016
+      }
+    },
     "parchment": {
       "id": "parchment",
       "label": "Parchment",
@@ -1534,28 +1895,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -1638,64 +1999,80 @@
         "hypso": [
           [
             0,
-            "#a8c98d"
+            "#79b072"
           ],
           [
-            0.12,
-            "#c2d798"
+            0.08,
+            "#9cc787"
           ],
           [
-            0.32,
-            "#e4d9a2"
+            0.2,
+            "#cfdf9e"
           ],
           [
-            0.52,
-            "#d9bd8b"
+            0.34,
+            "#f0dd9a"
           ],
           [
-            0.72,
-            "#bb9675"
+            0.5,
+            "#e2b578"
           ],
           [
-            0.88,
-            "#d6cdc6"
+            0.66,
+            "#c38a5c"
+          ],
+          [
+            0.82,
+            "#9d7360"
           ],
           [
             1,
-            "#f6f6f6"
+            "#efebe7"
           ]
         ],
-        "shade": 1.05,
+        "shade": 0.84,
         "hatch": 0,
         "grain": 0,
-        "seaFill": "#8fc0e2",
+        "seaFill": "#6aa5d6",
         "water": {
           "stops": [
             [
               0,
-              "#4a86b3"
+              "#4f8fc2"
             ],
             [
-              1,
-              "#8fc0e2"
+              0.12,
+              "#bfe0f3"
+            ],
+            [
+              2.5,
+              "#a3d0ee"
+            ],
+            [
+              8,
+              "#83bbe3"
+            ],
+            [
+              20,
+              "#6aa5d6"
             ]
           ],
           "bandFraction": 0.016
         },
-        "lakeFill": "#8fc0e2",
-        "waterEdge": "#4a86b3",
+        "lakeFill": "#6aa5d6",
+        "waterEdge": "#5f7a7d",
         "ripple": "#e9f4fb",
         "rippleOpacity": [
-          0.7,
-          0.5,
-          0.35,
-          0.2
+          0,
+          0,
+          0,
+          0
         ],
-        "riverFill": "#4a86b3",
+        "riverFill": "#4f8fc2",
         "riverEdge": "#4a86b3",
         "waterLines": null,
         "contour": "#8b5a3c",
-        "contourOpacity": 0.55,
+        "contourOpacity": 0.4,
         "contourIndexW": 1.9,
         "frame": "#33404a",
         "frameKind": "double",
@@ -1703,60 +2080,60 @@
         "grid": null,
         "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
         "land": {
-          "field": "#f0e6a6",
-          "meadow": "#b9dc95",
-          "pasture": "#cfe3a2",
-          "forest": "#7fba78",
-          "orchard": "#c5dc8a",
-          "garden": "#d5e3a0",
-          "marsh": "#a6d1b8",
-          "commons": "#dde3aa"
+          "field": "#ecd57e",
+          "meadow": "#b4d68e",
+          "pasture": "#bfda95",
+          "forest": "#66a65c",
+          "orchard": "#a4cd86",
+          "garden": "#c4dd98",
+          "marsh": "#94cbc0",
+          "commons": "#c3da9c"
         },
-        "landOpacity": 0.72,
+        "landOpacity": 0.3,
         "landBlend": "multiply",
         "tex": {
-          "field": true,
-          "meadow": true,
-          "pasture": true,
-          "forest": true,
-          "orchard": true,
-          "garden": true,
+          "field": false,
+          "meadow": false,
+          "pasture": false,
+          "forest": false,
+          "orchard": false,
+          "garden": false,
           "marsh": true,
-          "commons": true
+          "commons": false
         },
         "treeShape": "blob",
         "stripA": "#f4ecb4",
         "stripB": "#e6dc92",
         "stripAlpha": [
-          0.55,
-          0.5
+          0,
+          0
         ],
         "furrow": "#a89a55",
-        "furrowAlpha": 0.6,
+        "furrowAlpha": 0,
         "hedge": "#4f8a4a",
-        "hedgeOn": true,
+        "hedgeOn": false,
         "treeFill": "#5fa35a",
         "treeInk": "#2f6a34",
         "grass": "#4c8f3f",
         "reed": "#3a8f88",
         "orchardDot": "#3f8a3a",
-        "roadEdge": "#5a4a3c",
-        "roadFill": "#fffdf4",
+        "roadEdge": "#7b6c5c",
+        "roadFill": "#f4eedb",
         "trackFill": "#8a7660",
         "rural": {
-          "track": 0.6,
-          "way": 0.42,
-          "headland": 0.32
+          "track": 0.55,
+          "way": 0.3,
+          "headland": 0
         },
-        "bridgeDeck": "#fffdf4",
+        "bridgeDeck": "#f4eedb",
         "bridgeInk": "#3b3b3b",
         "farmRoof": "#d9a678",
         "farmInk": "#5a4a3c",
         "farmYard": "#e8dcae",
         "marker": "#b3261e",
         "urban": {
-          "street": "#fbf7ec",
-          "streetEdge": "#6a5a4a",
+          "street": "#f3edda",
+          "streetEdge": "#7b6c5c",
           "yard": "#efe5c9",
           "garden": "#d8e2ad",
           "gardenInk": "#6f9a4f",
@@ -1795,7 +2172,10 @@
           "accent": "#4a86b3",
           "ornate": false,
           "op": 0.9
-        }
+        },
+        "forestTint": 0.26,
+        "furlongAlpha": 0,
+        "waterAboveLand": true
       },
       "traits": {
         "family": "map",
@@ -1817,11 +2197,23 @@
         "stops": [
           [
             0,
-            "#4a86b3"
+            "#4f8fc2"
           ],
           [
-            1,
-            "#8fc0e2"
+            0.12,
+            "#bfe0f3"
+          ],
+          [
+            2.5,
+            "#a3d0ee"
+          ],
+          [
+            8,
+            "#83bbe3"
+          ],
+          [
+            20,
+            "#6aa5d6"
           ]
         ],
         "bandFraction": 0.016
@@ -2294,8 +2686,8 @@
           0,
           0.5
         ],
-        "furrow": "#1f1c1e",
-        "furrowAlpha": 0.65,
+        "furrow": "#5a5048",
+        "furrowAlpha": 0.42,
         "hedge": "#3e5a2b",
         "hedgeOn": false,
         "treeFill": "#b8d08f",
@@ -2313,7 +2705,7 @@
         },
         "bridgeDeck": "#f8f3e3",
         "bridgeInk": "#1f1c1e",
-        "farmRoof": "#dc6f86",
+        "farmRoof": "#d3939a",
         "farmInk": "#1f1c1e",
         "farmYard": "#f0e8d0",
         "marker": "#b3261e",
@@ -2323,7 +2715,7 @@
           "yard": "#f3ecd8",
           "garden": "#cfe4b4",
           "gardenInk": "#6d9a4a",
-          "mass": "#dc6f86",
+          "mass": "#d3939a",
           "massEdge": "#2a1c20",
           "massEdgeW": 0.36,
           "plotLine": "#111111",
@@ -2358,7 +2750,8 @@
           "accent": "#c4566b",
           "ornate": false,
           "op": 0.96
-        }
+        },
+        "waterAboveLand": true
       },
       "traits": {
         "family": "map",
@@ -2830,23 +3223,19 @@
         "riverFill": "#3d9ac7",
         "riverEdge": "#3d9ac7",
         "waterLines": null,
-        "contour": "#b8753a",
-        "contourOpacity": 0.75,
-        "contourIndexW": 2.1,
+        "contour": "#9a5524",
+        "contourOpacity": 0.9,
+        "contourIndexW": 2.5,
         "frame": "#262626",
         "frameKind": "ticks",
         "accent": "#3d9ac7",
-        "grid": {
-          "color": "#4b9dc9",
-          "opacity": 0.3,
-          "step": 100
-        },
+        "grid": null,
         "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
         "land": {
           "field": "#f8f2cc",
           "meadow": "#dceeb2",
           "pasture": "#e4efbd",
-          "forest": "#b5d99b",
+          "forest": "#bfe0a4",
           "orchard": "#c9e3a4",
           "garden": "#d3e8ac",
           "marsh": "#c2e0d2",
@@ -2872,7 +3261,7 @@
           0.5
         ],
         "furrow": "#b9ae74",
-        "furrowAlpha": 0.5,
+        "furrowAlpha": 0.2,
         "hedge": "#5f9a4c",
         "hedgeOn": true,
         "treeFill": "#8fc27a",
@@ -2880,23 +3269,23 @@
         "grass": "#5f9a4c",
         "reed": "#3d9ac7",
         "orchardDot": "#4b8a3a",
-        "roadEdge": "#9a5a1c",
-        "roadFill": "#ffc869",
+        "roadEdge": "#a8803f",
+        "roadFill": "#f0d596",
         "trackFill": "#7a6a52",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#ffc869",
+        "bridgeDeck": "#f0d596",
         "bridgeInk": "#262626",
         "farmRoof": "#6a6a6a",
         "farmInk": "#262626",
         "farmYard": "#ebe6d0",
         "marker": "#b3261e",
         "urban": {
-          "street": "#fffdf6",
-          "streetEdge": "#8a8a8a",
+          "street": "#f4eedc",
+          "streetEdge": "#9a948a",
           "yard": "#eeeadb",
           "garden": "#d3e8ac",
           "gardenInk": "#5f9a4c",
@@ -2935,7 +3324,11 @@
           "accent": "#3d9ac7",
           "ornate": false,
           "op": 0.96
-        }
+        },
+        "contourThinW": 1.35,
+        "forestTint": 0.85,
+        "waterAboveLand": true,
+        "furlongAlpha": 0.35
       },
       "traits": {
         "family": "map",
@@ -2979,35 +3372,39 @@
         "hypso": [
           [
             0,
-            "#10182b"
+            "#152335"
           ],
           [
             0.5,
-            "#16203a"
+            "#1a2a40"
           ],
           [
             1,
-            "#202c4a"
+            "#23364d"
           ]
         ],
-        "shade": 1.5,
+        "shade": 1.1,
         "hatch": 0,
-        "grain": 0,
-        "seaFill": "#060a14",
+        "grain": 0.12,
+        "seaFill": "#20364f",
         "water": {
           "stops": [
             [
               0,
-              "#2a3b66"
+              "#344d68"
+            ],
+            [
+              0.2,
+              "#2b435f"
             ],
             [
               1,
-              "#060a14"
+              "#20364f"
             ]
           ],
           "bandFraction": 0.016
         },
-        "lakeFill": "#060a14",
+        "lakeFill": "#20364f",
         "waterEdge": "#2a3b66",
         "ripple": "#3a4f88",
         "rippleOpacity": [
@@ -3016,7 +3413,7 @@
           0.3,
           0.2
         ],
-        "riverFill": "#2a3b66",
+        "riverFill": "#344d68",
         "riverEdge": "#2a3b66",
         "waterLines": {
           "color": "#3a4f88",
@@ -3031,7 +3428,7 @@
         "frameKind": "thin",
         "accent": "#e8b867",
         "grid": null,
-        "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
+        "fontFamily": "Georgia, 'Times New Roman', 'Liberation Serif', serif",
         "land": {
           "field": "#1a2440",
           "meadow": "#14263a",
@@ -3151,11 +3548,15 @@
         "stops": [
           [
             0,
-            "#2a3b66"
+            "#344d68"
+          ],
+          [
+            0.2,
+            "#2b435f"
           ],
           [
             1,
-            "#060a14"
+            "#20364f"
           ]
         ],
         "bandFraction": 0.016
@@ -3196,11 +3597,15 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
+            ],
+            [
+              0.4,
+              "#0b2945"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -3258,28 +3663,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -3389,11 +3794,15 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
+            ],
+            [
+              0.4,
+              "#0b2945"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -3451,28 +3860,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -3582,11 +3991,15 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
+            ],
+            [
+              0.4,
+              "#0b2945"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -3644,28 +4057,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -3775,11 +4188,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -3837,28 +4250,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -3966,11 +4379,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -4028,28 +4441,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -4157,11 +4570,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -4219,28 +4632,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -4348,11 +4761,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -4410,28 +4823,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -4539,11 +4952,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#1a4d5c"
             ],
             [
               1,
-              "#bccbc8"
+              "#051126"
             ]
           ],
           "bandFraction": 0.016
@@ -4601,28 +5014,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -4697,7 +5110,7 @@
     },
     "parchment-render": {
       "id": "parchment-render",
-      "label": "Satellite 2 · Painted",
+      "label": "Painted satellite",
       "palette": {
         "name": "parchment",
         "label": "Parchment",
@@ -4792,28 +5205,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -4921,11 +5334,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#666968"
             ],
             [
               1,
-              "#bccbc8"
+              "#e5e7e6"
             ]
           ],
           "bandFraction": 0.016
@@ -4983,28 +5396,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -5111,11 +5524,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#648f99"
             ],
             [
               1,
-              "#bccbc8"
+              "#b9ccd0"
             ]
           ],
           "bandFraction": 0.016
@@ -5173,28 +5586,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
@@ -5301,11 +5714,11 @@
           "stops": [
             [
               0,
-              "#5f7a7d"
+              "#237daf"
             ],
             [
               1,
-              "#bccbc8"
+              "#082860"
             ]
           ],
           "bandFraction": 0.016
@@ -5363,28 +5776,28 @@
         "furrowAlpha": 0.6,
         "hedge": "#5f6d3d",
         "hedgeOn": true,
-        "treeFill": "#8aa065",
-        "treeInk": "#4a5a33",
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
         "grass": "#5f7a3c",
         "reed": "#4f7a72",
         "orchardDot": "#55703a",
-        "roadEdge": "#4e3b28",
-        "roadFill": "#f6edd0",
-        "trackFill": "#6b5236",
+        "roadEdge": "#6a543b",
+        "roadFill": "#e9dbb4",
+        "trackFill": "#7a6248",
         "rural": {
           "track": 0.6,
           "way": 0.42,
           "headland": 0.32
         },
-        "bridgeDeck": "#f6edd0",
-        "bridgeInk": "#3b2c1c",
+        "bridgeDeck": "#ece0bc",
+        "bridgeInk": "#4a3a28",
         "farmRoof": "#c69b70",
         "farmInk": "#4e3b28",
         "farmYard": "#d8c79a",
         "marker": "#8b2f1f",
         "urban": {
-          "street": "#f4ead0",
-          "streetEdge": "#6b5236",
+          "street": "#ebdeba",
+          "streetEdge": "#7a6248",
           "yard": "#e6d6a8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",

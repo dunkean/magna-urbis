@@ -90,7 +90,7 @@
     "caucasian-highland": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 3], "cover": "earth", "wall": "stone" } } },
     "dravidian-temple": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "plaster", "wall": "stone" } } },
     "egyptian-planned": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "levant" } },
-    "elven": { "traits": { "form": "tree", "formShare": 0.5 } },
+    "elven": { "traits": { "form": "tree", "formShare": 0.85 } },
     "ethiopian-highland": { "traits": { "tradition": { "roof": "cone", "pitch": 38, "storeys": [1, 1], "cover": "thatch", "wall": "wood" } } },
     "flemish-cloth-town": { "traits": { "tradition": { "roof": "gable", "pitch": 52, "storeys": [3, 4], "cover": "tile", "wall": "brick", "gableToStreet": true } } },
     "giant-hold": { "traits": { "tradition": { "roof": "gable", "pitch": 40, "storeys": [2, 3], "cover": "stone", "wall": "stone" }, "metricScale": 2.5, "massiveStorey": true } },

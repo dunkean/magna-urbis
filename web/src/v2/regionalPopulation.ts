@@ -80,6 +80,16 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
     const index = [...POPULATION_CLASSES.keys()].find(i => MINIMUM[i] <= population && MINIMUM[i] <= profile.maximum && overrides[POPULATION_CLASSES[i]] === undefined);
     if (index !== undefined) counts[POPULATION_CLASSES[index]] = 1;
   }
+  // A demographic remainder must not spawn hundreds of tiny, fully generated towns.
+  // Prefer fewer, fuller places; explicit counts win, and retain enough capacity for every resident.
+  for (const [id, perResidents, maximum] of [['farmstead', 2000, 24], ['hamlet', 1000, 48]] as const) {
+    if (overrides[id] !== undefined) continue;
+    const i = POPULATION_CLASSES.indexOf(id);
+    const otherCapacity = POPULATION_CLASSES.reduce((sum, cls, j) => sum + (j === i ? 0 : counts[cls] * Math.min(MAXIMUM[j], profile.maximum)), 0);
+    const required = Math.ceil(Math.max(0, population - otherCapacity) / Math.min(MAXIMUM[i], profile.maximum));
+    const limit = Math.min(maximum, Math.ceil(population / perResidents));
+    counts[id] = Math.min(counts[id], Math.max(required, limit));
+  }
   const root = new Rng(`regional-population:${stepSeed(settings.options.seed, 'settle-sites')}`);
   const slots: { spec: SettlementSpec; min: number; max: number; weight: number }[] = [];
   for (const [i, id] of POPULATION_CLASSES.entries()) for (let j = 0; j < counts[id]; j++) {

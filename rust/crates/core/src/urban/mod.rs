@@ -1026,7 +1026,21 @@ pub struct ParcelConfig {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ParcelOverrides {
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub blocks: std::collections::BTreeMap<String, BlockOverride>,
     pub parcels: std::collections::BTreeMap<String, ParcelOverride>,
+}
+/// Local cadastral layout inside a retained street block. Borders and streets stay fixed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BlockOverride {
+    pub culture: Option<String>,
+    pub role: Option<String>,
+    pub density: Option<f64>,
+    pub operator: Option<String>,
+    pub salt: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub house_config: Option<serde_json::Value>,
 }
 /// Forced use of one lot: a catalogue role (`worship.parish`, `commerce.inn`,
 /// `open.garden`, `dwelling.mansion`…), a houses function, a household count.

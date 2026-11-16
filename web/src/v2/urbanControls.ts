@@ -7,7 +7,7 @@ import { siteArchetypeNames } from './regionControls';
 import { defaultParcelConfig } from '../../../rust/bridge/urbanConfig';
 import type { CatalogueBundle, HouseConfig } from '../../../rust/bridge/housesContract';
 import type { Options } from '../gen/types';
-import { bindTree, registerMessages, setDynamicText, setText, translate } from './i18n';
+import { bindTree, registerMessages, setDynamicText, setText, translate, getLanguage, onLanguageChange } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { houseControlDefaults, workshopControlDefaults, morphologyTemplate, urbanCatalogue, urbanChoiceNames, urbanControlFields, urbanField, urbanFieldNames, urbanName, urbanSectionNames, URBAN_ZONES, type UrbanParameterField } from './urbanControlSchema';
 import './urbanControls.css';
@@ -16,7 +16,9 @@ import type { StyleFacet, StyleMix } from '../../../rust/bridge/urbanConfig';
 import { CITY_ARCHITECTURES, DEFAULT_CITY_ARCHITECTURE, type CityArchitecture } from '../render/cityContract';
 import { mergeHouseEdits, type HouseEditConfig } from '../../../rust/bridge/urbanHouseEdits';
 import { culturalChoice } from '../../../rust/bridge/culturalChoices';
-import { resetUrbanChildren } from './generationEdits';
+import { resetUrbanChildren, urbanParentControls } from './generationEdits';
+import { compatibleBuildingTypes } from './urbanEditOptions';
+import { housePackLabel, houseMaterialLabel, houseArchetypeLabel } from '../ui/houseCatalogueLocale';
 
 const architectureNames: Record<CityArchitecture, string> = { silhouette: 'City volumes', compact: 'Compact plans (houses generator)', detailed: 'Detailed houses (houses generator)' };
 const houseCatalogues = new Map<string, Promise<CatalogueBundle>>();
@@ -24,8 +26,8 @@ const houseCatalogues = new Map<string, Promise<CatalogueBundle>>();
 export type UrbanControlScope =
   | { kind: 'global' }
   | { kind: 'settlement'; key: string; defaults?: Partial<Options> }
-  | { kind: 'quarter' | 'parcel'; key: string; id: string; quarter?: string; defaults?: Record<string, unknown> }
-  | { kind: 'building'; key: string; id: string; quarter?: string; parcel?: string; defaults?: HouseEditConfig };
+  | { kind: 'quarter' | 'block' | 'parcel'; key: string; id: string; quarter?: string; block?: string; defaults?: Record<string, unknown> }
+  | { kind: 'building'; key: string; id: string; quarter?: string; block?: string; parcel?: string; defaults?: HouseEditConfig };
 export interface UrbanControls { sync(): void; dispose(): void }
 export type UrbanControlExtra = 'header' | 'phases' | 'mixtures' | 'archetypes' | 'catalogue';
 /** A subset of the form, so the staged V2 chain can place each native section in its own stage row. */
@@ -34,6 +36,8 @@ export interface UrbanControlParts {
   targets?: () => readonly string[];
   placeDefaults?: (key: string) => Partial<Options> | undefined;
   disabled?: () => boolean;
+  /** The inspector owns one reset action, next to its regenerate action. */
+  hideReset?: boolean;
 }
 // Plain JSON-like values are copied by hand: the forms merge thousands of small leaves while they
 // mount, and one structuredClone call per leaf was 1.3 s of the page's start-up at 4x CPU throttling.
@@ -81,7 +85,7 @@ export function urbanScopeValues(settings: V2Settings, scope: UrbanControlScope 
     return settings.urban?.buildings?.[`${scope.key}/${scope.id}`] as Record<string, unknown> ?? {};
   }
   const controls = cityControls(settings, scope.key, create) as unknown as Record<string, any>;
-  const stage = scope.kind === 'quarter' ? 'layout' : 'parcels', collection = scope.kind === 'quarter' ? 'quarters' : 'parcels';
+  const stage = scope.kind === 'quarter' ? 'layout' : 'parcels', collection = scope.kind === 'quarter' ? 'quarters' : scope.kind === 'block' ? 'blocks' : 'parcels';
   if (create) { controls[stage] ??= {}; controls[stage].overrides ??= {}; controls[stage].overrides[collection] ??= {}; controls[stage].overrides[collection][scope.id] ??= {}; }
   return controls[stage]?.overrides?.[collection]?.[scope.id] ?? {};
 }
@@ -115,17 +119,21 @@ function morphologyDefaults(effective: Record<string, unknown>): Record<string, 
 /** Effective inherited values, without this scope's own patches. */
 export function urbanInheritedValues(settings: V2Settings, scope: UrbanControlScope = { kind: 'global' }): Record<string, unknown> {
   if (scope.kind === 'global') return morphologyDefaults(nativeDefaults(settings));
-  const city = morphologyDefaults(mergeUrbanControlValues(nativeDefaults(settings, scope.key, scope.kind === 'settlement' ? scope.defaults : undefined), controlProducts(settings.urban), scope.kind === 'settlement' ? undefined : controlProducts(settings.urban?.local?.[scope.key])));
+  const city = morphologyDefaults(mergeUrbanControlValues(nativeDefaults(settings, scope.key, scope.kind === 'settlement' ? scope.defaults : undefined), controlProducts(urbanParentControls(settings.urban, settings.urban?.local?.[scope.key])), scope.kind === 'settlement' ? undefined : controlProducts(settings.urban?.local?.[scope.key])));
   if (scope.kind === 'settlement') return city;
   const parentQuarter = scope.kind === 'quarter' ? undefined : scope.quarter;
   const quarterHouse = parentQuarter === undefined ? undefined : (city.layout as any).overrides?.quarters?.[parentQuarter]?.houseConfig;
-  const parentHouse = mergeHouseEdits(settings.urban?.houses?.house_config, settings.urban?.local?.[scope.key]?.houses?.house_config, quarterHouse, scope.kind === 'building' && scope.parcel ? (city.parcels as any).overrides?.parcels?.[scope.parcel]?.houseConfig : undefined);
+  const blockHouse = scope.block === undefined || scope.kind === 'block' ? undefined : (city.parcels as any).overrides?.blocks?.[scope.block]?.houseConfig;
+  const parentHouse = mergeHouseEdits(urbanParentControls(settings.urban, settings.urban?.local?.[scope.key])?.houses?.house_config, settings.urban?.local?.[scope.key]?.houses?.house_config, quarterHouse, blockHouse, scope.kind === 'building' && scope.parcel ? (city.parcels as any).overrides?.parcels?.[scope.parcel]?.houseConfig : undefined);
   if (scope.kind === 'building') return mergeUrbanControlValues(houseControlDefaults(), scope.defaults, parentHouse);
   const layout = city.layout as Record<string, unknown>;
-  return mergeUrbanControlValues(scope.kind === 'quarter' ? { culture: layout.culture, tissue: layout.tissue, density: layout.density, wealth: .5, role: 'auto', deleted: false } : { households: undefined, function: 'auto', role: 'auto' }, { houseConfig: mergeHouseEdits(houseControlDefaults(), parentHouse) }, scope.defaults);
+  const quarter = parentQuarter === undefined ? undefined : (city.layout as any).overrides?.quarters?.[parentQuarter];
+  const block = scope.block === undefined ? undefined : (city.parcels as any).overrides?.blocks?.[scope.block];
+  const culture = block?.culture ?? quarter?.culture ?? layout.culture;
+  return mergeUrbanControlValues(scope.kind === 'quarter' ? { culture: layout.culture, tissue: layout.tissue, density: layout.density, wealth: .5, role: 'auto', deleted: false, salt: 0 } : scope.kind === 'block' ? { culture, density: quarter?.density ?? layout.density, operator: (city.parcels as any).operator, salt: 0 } : { salt: 0, culture, function: 'auto', role: 'auto' }, { houseConfig: mergeHouseEdits(houseControlDefaults(), parentHouse) }, scope.defaults);
 }
 export function urbanEffectiveValues(settings: V2Settings, scope: UrbanControlScope = { kind: 'global' }): Record<string, unknown> {
-  if (scope.kind === 'global' || scope.kind === 'settlement') return morphologyDefaults(mergeUrbanControlValues(nativeDefaults(settings, scope.kind === 'settlement' ? scope.key : undefined, scope.kind === 'settlement' ? scope.defaults : undefined), controlProducts(settings.urban), scope.kind === 'settlement' ? controlProducts(settings.urban?.local?.[scope.key]) : undefined));
+  if (scope.kind === 'global' || scope.kind === 'settlement') return morphologyDefaults(mergeUrbanControlValues(nativeDefaults(settings, scope.kind === 'settlement' ? scope.key : undefined, scope.kind === 'settlement' ? scope.defaults : undefined), controlProducts(urbanParentControls(settings.urban, scope.kind === 'global' ? undefined : settings.urban?.local?.[scope.key])), scope.kind === 'settlement' ? controlProducts(settings.urban?.local?.[scope.key]) : undefined));
   return mergeUrbanControlValues(urbanInheritedValues(settings, scope), urbanScopeValues(settings, scope));
 }
 function prune(value: Record<string, unknown>): void {
@@ -136,12 +144,21 @@ function prune(value: Record<string, unknown>): void {
 export function writeUrbanControl(settings: V2Settings, scope: UrbanControlScope, path: string, value: unknown): void {
   resetUrbanChildren(settings,scope,path);
   const root = urbanScopeValues(settings, scope, true), inherited = urbanInheritedValues(settings, scope);
+  // Culture is the whole area's identity. An old pinned model must not survive
+  // a deliberate culture change; rendering complexity/textures live elsewhere.
+  if (path === 'culture' && ['quarter', 'block', 'parcel'].includes(scope.kind)) {
+    delete root.houseConfig;
+    if (scope.kind === 'quarter') { delete root.buildingCulture; if (value === undefined) delete root.tissue; else root.tissue = 'culture'; }
+    if (scope.kind === 'block') { if (value === undefined) delete root.operator; else root.operator = 'culture'; }
+  }
+  if (path === 'role' && (scope.kind === 'parcel' || scope.kind === 'block')) { delete root.function; delete root.households; delete root.houseConfig; }
+  if (path === 'function' && scope.kind === 'parcel') delete root.role;
   const keys = path.split('.'), arrayAt = keys.findIndex(k => /^\d+$/.test(k));
   if (value !== undefined && scope.kind !== 'building' && path.startsWith('houses.house_config.')) {
     const houses = root.houses as Record<string, unknown> ?? (root.houses = {}) as Record<string, unknown>;
     houses.house_config ??= clone(readSettingPath(inherited, 'houses.house_config') ?? houseControlDefaults());
   }
-  const workshopPath = scope.kind === 'building' ? 'workshop' : scope.kind === 'quarter' || scope.kind === 'parcel' ? 'houseConfig.workshop' : 'houses.house_config.workshop';
+  const workshopPath = scope.kind === 'building' ? 'workshop' : scope.kind === 'quarter' || scope.kind === 'block' || scope.kind === 'parcel' ? 'houseConfig.workshop' : 'houses.house_config.workshop';
   // Support is a complete native catalogue record (unlike optional house
   // overrides); clearing its required kind restores the inherited/native kind.
   if (value === undefined && path === `${workshopPath}.support.kind` && readSettingPath(root, workshopPath)) value = readSettingPath(inherited, path) ?? 'ground';
@@ -169,6 +186,22 @@ export function writeUrbanControl(settings: V2Settings, scope: UrbanControlScope
 }
 
 const textMessages: Record<string, string> = {
+  'Block': 'Îlot',
+  'Street pattern changes interior streets; boundary roads stay in place.': 'La trame refait les rues intérieures ; les routes qui bordent le quartier restent en place.',
+  'Culture sets streets, parcels and buildings. Regenerate replaces descendant overrides.': 'La culture règle les rues, les parcelles et les bâtiments. Régénérer remplace les réglages des descendants.',
+  'Separate building culture': 'Culture des bâtiments uniquement',
+  'Optional: override architecture only. Culture above controls the whole area.': 'Facultatif : impose une culture aux bâtiments seulement. La culture principale règle toute la zone.',
+  'Building templates and materials': 'Modèles de bâtiments et matériaux',
+  'Culture selects suitable building templates and materials automatically. Override them below only for a specific architecture.': 'La culture choisit automatiquement les modèles de bâtiments et leurs matériaux. Ces réglages permettent d’imposer une architecture particulière.',
+  'Loading building choices…': 'Chargement des modèles et matériaux…',
+  'Retry loading building choices': 'Réessayer de charger les modèles',
+  'Area purpose': 'Fonction du quartier', 'Parcel use': 'Usage de la parcelle',
+  'Building type': 'Type de bâtiment',
+  'Only types declared for this culture, building engine and available area are offered.': 'Seuls les types déclarés pour cette culture, ce moteur de bâtiments et la surface disponible sont proposés.',
+  'Changes the use of this parcel and regenerates its buildings.': 'Change l’usage de cette parcelle et régénère ses bâtiments.',
+  'Automatic uses population, culture and nearby activities to choose a suitable use.': 'Le mode automatique choisit un usage selon la population, la culture et les activités voisines.',
+  'Local random seed': 'Graine aléatoire locale', 'Original seed': 'Graine d’origine',
+  'The dice chooses a new seed for this area and regenerates its descendants.': 'Le dé choisit une nouvelle graine pour cette zone et régénère ses descendants.',
   'Different values': 'Valeurs différentes',
   'Changes apply on generation.': 'Les changements s’appliquent à la génération.',
   'Restore default settings': 'Rétablir les réglages par défaut',
@@ -203,13 +236,15 @@ function message(root: HTMLElement, source: string): HTMLElement { const p = doc
 function button(root: HTMLElement, source: string, onClick: () => void): HTMLButtonElement { const b = document.createElement('button'); b.type = 'button'; setText(b, source); b.onclick = onClick; root.append(b); return b; }
 function localFields(scope: UrbanControlScope): UrbanParameterField[] {
   const houseFields = () => urbanControlFields().filter(f => f.section === 'house' || f.section === 'workshop').map(f => ({ ...f, path: f.path.replace('houses.house_config.', scope.kind === 'building' ? '' : 'houseConfig.') }));
-  if (scope.kind === 'quarter') return [...Object.entries({ culture: '', tissue: 'culture', zone: '', density: 1, role: '', wealth: .5, deleted: false, salt: 1 }).map(([key, value]) => { const field = urbanField(key, value, 'quarter'); if (key === 'role') field.type = 'text'; return field; }), { ...urbanField('buildingCulture', '', 'house'), label: 'Building style', type: 'select', options: urbanField('culture', '', 'house').options } as UrbanParameterField, ...houseFields()];
+  if (scope.kind === 'quarter') return [...Object.entries({ culture: '', tissue: 'culture', zone: '', density: 1, role: '', wealth: .5, deleted: false, salt: 1 }).map(([key, value]) => ({ ...urbanField(key, value, 'quarter'), ...(key === 'culture' ? { help: 'Culture sets streets, parcels and buildings. Regenerate replaces descendant overrides.' } : key === 'tissue' ? { help: 'Street pattern changes interior streets; boundary roads stay in place.' } : {}) })), { ...urbanField('culture', '', 'house'), path: 'buildingCulture', label: 'Separate building culture', help: 'Optional: override architecture only. Culture above controls the whole area.' }, ...houseFields()];
+  if (scope.kind === 'block') return [urbanField('culture', '', 'parcel'), urbanField('density', 1, 'parcel'), urbanField('operator', 'culture', 'parcel'), urbanField('role', '', 'parcel'), urbanField('salt', 1, 'parcel'), ...houseFields()];
   if (scope.kind === 'parcel') return [...Object.entries({ role: '', function: '', households: 1, deleted: '', salt: 1 }).map(([key, value]) => {
     const field = urbanField(key, value, 'parcel');
     if (key === 'deleted') { field.type = 'select'; field.options = [{ value: 'merge', label: 'Merge into neighbours' }, { value: 'garden', label: 'Keep as a garden' }]; }
+    if (key === 'role') field.help = 'Only types declared for this culture, building engine and available area are offered.';
     return field;
-  }), { ...urbanField('culture', '', 'house'), label: 'Building style' }, ...houseFields()];
-  if (scope.kind === 'building') return [{ ...urbanField('culture', '', 'house'), label: 'House style' }, urbanField('seed', '', 'house'), ...houseFields()];
+  }), { ...urbanField('culture', '', 'house'), label: 'Culture' }, ...houseFields()];
+  if (scope.kind === 'building') return [{ ...urbanField('culture', '', 'house'), label: 'Culture' }, urbanField('seed', '', 'house'), ...houseFields()];
   return urbanControlFields();
 }
 
@@ -217,7 +252,7 @@ function localFields(scope: UrbanControlScope): UrbanParameterField[] {
  * Deliberately returns a stable form: sync updates values and inheritance without replacing controls. */
 export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Settings, changed: () => void, scope: UrbanControlScope = { kind: 'global' }, parts?: UrbanControlParts): UrbanControls {
   const extra = (name: UrbanControlExtra) => !parts?.extras || parts.extras.includes(name);
-  root.classList.add('v2-urban-controls');
+  root.classList.add('v2-urban-controls'); root.dataset.controlScope = scope.kind;
   const forms: ParameterForm[] = [], effects: (() => void)[] = [];
   const fields = localFields(scope), global = scope.kind === 'global' || scope.kind === 'settlement';
   const scopeId = scope.kind === 'global' ? 'global' : `${scope.kind}-${scope.key}-${'id' in scope ? scope.id : ''}`.replace(/[^a-z0-9-]/gi, '-');
@@ -257,16 +292,16 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     }
     changed(); sync();
   };
-  if (extra('header')) {
+  if (extra('header') && !parts?.hideReset) {
   message(root, 'Changes apply on generation.');
   button(root, 'Restore default settings', () => {
     for (const target of scopes()) {
       const settings = getSettings(), values = urbanScopeValues(settings, target);
-      if (target.kind === 'global') { delete values.seed; delete values.seeds; delete values.layout; delete values.parcels; delete values.houses; delete values.through; delete values.architecture; }
+      if (target.kind === 'global') { delete values.seed; delete values.seeds; delete values.layout; delete values.parcels; delete values.houses; delete values.through; delete values.local; delete values.buildings; }
       else for (const key of Object.keys(values)) delete values[key];
     }
     changed(); sync();
-  }).className = 'subtle';
+  }).className = 'quiet small urban-reset';
   if (global) {
     const stageRoot = document.createElement('div'); root.append(stageRoot);
     forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', type: 'select', options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) },
@@ -305,7 +340,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
         const basic = urbanName(field.path.includes('.params.') ? field.path.split('.params.')[1].split('.')[0] : keyName), suffix = fieldLabel.slice(basic[0].length);
         if (fieldLabel.startsWith(basic[0])) registerMessages({ [fieldLabel]: { en: fieldLabel, fr: basic[1] + suffix.replace(/Core/g, 'Cœur').replace(/Middle/g, 'Extension').replace(/Edge/g, 'Périphérie') } });
       }
-      const next = { ...field, emptyLabel: 'Automatic', id: `urban-${scopeId}-${field.path.replace(/[^a-z0-9]/gi, '-')}` };
+      const next = { ...field, placeholder: field.placeholder ?? (field.type === 'number' ? 'From culture' : undefined), emptyLabel: 'From culture', id: `urban-${scopeId}-${field.path.replace(/[^a-z0-9]/gi, '-')}` };
       if (field.path.endsWith('.resources') || field.path.endsWith('.lore')) { next.toInput = value => Array.isArray(value) ? value.join(', ') : value; next.fromInput = value => String(value).split(/[,\n]/).map(s => s.trim()).filter(Boolean); }
       if (field.path === 'houses.culture') next.options = field.options?.filter(o => o.value !== 'site');
       if (!global && (field.path === 'buildingCulture' || field.path === 'culture' && scope.kind !== 'quarter')) next.options = field.options?.filter(o => o.value !== 'site');
@@ -313,12 +348,21 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     });
     const form = mountParameterForm(body, decorated, {
       getValue: effective, isMixed, automaticChoice: resolvedChoice, setValue: set,
+      choices: path => path === 'role' && (scope.kind === 'parcel' || scope.kind === 'block') ? compatibleBuildingTypes({
+        culture: String(effective('culture') ?? getSettings().options.culture),
+        area: Number(effective(scope.kind === 'block' && effective('operator') === 'wholeBlock' ? 'blockArea' : 'area')),
+        architecture: getSettings().urban?.architecture, pack: String(effective('houseConfig.pack') ?? ''),
+        mode: String(effective('historicalMode') ?? 'inspired'), period: String(effective('period') ?? ''), navigableAccess: effective('navigableAccess') === true,
+      }) : undefined,
       disabled: () => !!parts?.disabled?.() || global && (key === 'house' || key === 'workshop') && !modelEnabled?.checked,
     }); forms.push(form);
     if (key === 'programme') message(details, 'Names, roles, resources and lore are identifiers used by the generator; resource lists accept commas or line breaks.');
   }
   if (global) { if (extra('phases')) { mountPhaseControls(); mountStyleSheet(); } if (extra('mixtures')) mountHouseMixtures(); if (extra('archetypes')) mountSiteArchetypes(); }
-  if (scope.kind === 'quarter' || scope.kind === 'parcel') mountOutline();
+  if (scope.kind === 'parcel') effects.push(() => {
+    const field = root.querySelector<HTMLElement>('[data-field-path="households"]');
+    if (field) { const role = String(effective('role') ?? 'auto'); field.hidden = role !== 'auto' && !role.startsWith('dwelling'); }
+  });
   if (extra('catalogue')) mountCatalogue();
   function sync(): void { root.inert = !!parts?.disabled?.(); effectiveCache = scopes().map(s => memoEffectiveValues(getSettings(), s)); effects.forEach(effect => effect()); forms.forEach(form => form.sync()); }
   function mountPhaseControls(): void {
@@ -372,50 +416,29 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     button(box, 'Add site rule', () => { if (!id.value.trim()) return; set('layout.siteArchetypes', { ...effective('layout.siteArchetypes') as object ?? {}, [id.value.trim()]: 'auto' }); id.value = ''; });
     button(box, 'Reset field', () => set('layout.siteArchetypes', undefined));
   }
-  function mountOutline(): void {
-    const box = section(root, 'Native outline coordinates (metres)'), rows = document.createElement('div'); box.append(rows);
-    let identity = '';
-    effects.push(() => {
-      const shape = effective('shape') as { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] } | undefined;
-      const next = JSON.stringify(shape); if (identity === next) return; identity = next; rows.replaceChildren();
-      const rings = [shape?.outer ?? [], ...shape?.holes ?? []];
-      rings.forEach((ring, r) => {
-        const area = document.createElement('div'); area.className = 'urban-outline-ring'; const heading = document.createElement('h4'); setText(heading, r === 0 ? 'Outer boundary' : 'Hole'); area.append(heading);
-        const commit = (points: { x: number; y: number }[]) => { const nextRings = clone(rings); nextRings[r] = points; set('shape', { outer: nextRings[0], holes: nextRings.slice(1) }); };
-        ring.forEach((point, i) => {
-          const row = document.createElement('div'); row.className = 'urban-outline-point';
-          const inputs = (['x', 'y'] as const).map(axis => { const input = document.createElement('input'); input.type = 'number'; input.step = '.1'; input.value = String(point[axis]); input.setAttribute('aria-label', `${axis} ${i + 1}`); input.dataset.settingPath = `shape.${r === 0 ? 'outer' : `holes.${r - 1}`}.${i}.${axis}`; return input; });
-          const update = () => { const x = Number(inputs[0].value), y = Number(inputs[1].value); if (!Number.isFinite(x) || !Number.isFinite(y)) return; const points = clone(ring); points[i] = { x, y }; commit(points); };
-          inputs.forEach(input => input.onchange = update); row.append(...inputs); button(row, 'Remove vertex', () => commit(ring.filter((_, j) => i !== j))); area.append(row);
-        });
-        button(area, 'Add vertex', () => { const previous = ring.at(-1) ?? { x: 0, y: 0 }; commit([...ring, { x: previous.x + 10, y: previous.y }]); });
-        if (r > 0) button(area, 'Remove hole', () => set('shape', { outer: rings[0], holes: rings.slice(1).filter((_, j) => j !== r - 1) }));
-        rows.append(area);
-      });
-    });
-    button(box, 'Add hole', () => { const shape = effective('shape') as { outer: unknown[]; holes?: unknown[][] } | undefined; set('shape', { outer: shape?.outer ?? [], holes: [...shape?.holes ?? [], []] }); });
-    button(box, 'Clear outline override', () => set('shape', undefined)); message(box, 'At least three finite vertices per ring are required.');
-  }
   function mountCatalogue(): void {
-    const status = message(root, 'Native refusal is reported when a model is incompatible with the culture, era, lot or slope.');
-    const load = button(root, 'Load native architecture catalogue', () => {
-      load.disabled = true; root.setAttribute('aria-busy', 'true'); setText(status, 'Loading native house catalogue…');
+    const box = section(root, 'Building templates and materials');
+    message(box, 'Culture selects suitable building templates and materials automatically. Override them below only for a specific architecture.');
+    const status = message(box, 'Loading building choices…');
+    const load = button(box, 'Retry loading building choices', () => {
+      load.disabled = true; root.setAttribute('aria-busy', 'true'); setText(status, 'Loading building choices…'); load.hidden = true;
       const settings = getSettings(), cacheKey = settings.urban?.backend === 'native' ? settings.runtime?.localServer ?? 'http://127.0.0.1:8791' : 'wasm';
       let pending = houseCatalogues.get(cacheKey);
       if (!pending) { pending = import('../../../rust/bridge/houses').then(async houses => {
         const settings = getSettings(), runtime = settings.urban?.backend === 'native' ? { profile: 'local' as const, server: settings.runtime?.localServer ?? 'http://127.0.0.1:8791' } : undefined;
         return houses.parseHouseCatalogue(await houses.callHouses({ ticket: 1, kind: 'catalogue', runtime }));
       }); houseCatalogues.set(cacheKey, pending); pending.catch(() => houseCatalogues.delete(cacheKey)); }
-      void pending.then(bundle => { if (!alive) return; loadedCatalogue=bundle; populateCatalogue(bundle); setText(status, 'Native catalogue ready'); })
-        .catch(error => { if (alive) setDynamicText(status, () => translate('Catalogue unavailable: {error}').replace('{error}', String(error))); })
+      void pending.then(bundle => { if (!alive) return; loadedCatalogue=bundle; populateCatalogue(bundle); status.hidden = true; })
+        .catch(error => { if (alive) { load.hidden = false; setDynamicText(status, () => translate('Catalogue unavailable: {error}').replace('{error}', String(error))); } })
         .finally(() => { if (alive) { load.disabled = false; root.removeAttribute('aria-busy'); } });
     });
     if (!global) queueMicrotask(() => { if (alive) load.click(); });
+    else root.addEventListener('click', event => { if (!loadedCatalogue && !load.disabled && (event.target as Element).closest('.advanced-open')) load.click(); });
   }
   function populateCatalogue(bundle: CatalogueBundle): void {
     const prefix = scope.kind === 'building' ? '' : !global ? 'houseConfig.' : 'houses.house_config.', catalogue = bundle.catalogue;
     const pack = effective(`${prefix}pack`), selected = effective(`${prefix}recipe`);
-    const valuesKey = JSON.stringify([catalogue.catalogue_version, pack, selected]);
+    const valuesKey = JSON.stringify([catalogue.catalogue_version, pack, selected, getLanguage()]);
     if (valuesKey === catalogueValuesKey) return;
     catalogueValuesKey = valuesKey;
     const recipes = catalogue.recipes.filter(recipe => !pack || recipe.pack_id === pack);
@@ -432,18 +455,22 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     for (const slot of ['roof_frame', 'base', 'material']) values[`workshop.${slot === 'material' ? 'support.material' : slot}`] = catalogue.materials.filter(m => m.roles.some(role => materialRoles[slot].includes(role))).map(m => m.id);
     values['workshop.footprint'] = values['overrides.footprint']; values['workshop.roof'] = values['overrides.roof'];
     for (const [path, suggestions] of Object.entries(values)) {
-      const input = Array.from(root.querySelectorAll<HTMLInputElement>('[data-setting-path]')).find(input => input.dataset.settingPath === `${prefix}${path}`);
-      if (!input || input.tagName !== 'INPUT') continue;
-      const id = `${input.id}-catalogue`, old = root.querySelector(`#${id}`); old?.remove();
-      const list = document.createElement('datalist'); list.id = id;
-      for (const suggestion of suggestions.filter(Boolean)) {
-        const label = path === 'pack' ? catalogue.packs.find(p => p.id === suggestion)?.label : path === 'recipe' ? catalogue.recipes.find(r => r.id === suggestion)?.label : undefined;
-        list.append(new Option(label ? `${suggestion} · ${label}` : suggestion, suggestion));
+      const input = Array.from(root.querySelectorAll<HTMLSelectElement>('[data-setting-path]')).find(input => input.dataset.settingPath === `${prefix}${path}`);
+      if (!input || input.tagName !== 'SELECT') continue;
+      const current = input.value;
+      const automatic = document.createElement('option'); automatic.value = ''; setText(automatic, 'From culture');
+      input.replaceChildren(automatic);
+      for (const suggestion of [...new Set(suggestions.filter(Boolean))]) {
+        const label = path === 'pack' ? catalogue.packs.find(p => p.id === suggestion)?.label : path === 'recipe' ? catalogue.recipes.find(r => r.id === suggestion)?.label : catalogue.materials.find(m => m.id === suggestion)?.label;
+        const localized = label ? path === 'pack' ? housePackLabel(suggestion,label,getLanguage()) : path === 'recipe' ? houseArchetypeLabel(suggestion,label,getLanguage()) : houseMaterialLabel(suggestion,label,getLanguage()) : undefined;
+        const option = new Option(localized ? `${localized} · ${suggestion}` : suggestion, suggestion); option.dataset.l10nKeep = ''; input.append(option);
       }
-      root.append(list); input.setAttribute('list', id);
+      if (current && !Array.from(input.options).some(o => o.value === current)) input.append(new Option(current, current));
+      input.value = current;
+
     }
   }
   organizeUrbanForm(root);
-  let alive = true; bindTree(root); sync();
-  return { sync, dispose: () => { alive = false; forms.forEach(form => form.dispose()); root.replaceChildren(); } };
+  let alive = true; const offLanguage = onLanguageChange(sync); bindTree(root); sync();
+  return { sync, dispose: () => { alive = false; offLanguage(); forms.forEach(form => form.dispose()); root.replaceChildren(); } };
 }

@@ -74,7 +74,18 @@ export function styleSheetEmpty(sheet?: StyleSheet): boolean {
  * and single lots (keyed by parcel id, Rust `ParcelOverrides`). */
 export interface UrbanEdits {
   quarters?: Record<string, QuarterOverride>;
+  blocks?: Record<string, BlockOverride>;
   parcels?: Record<string, ParcelOverride>;
+}
+/** One retained street block, keyed by its index in the layout. */
+export interface BlockOverride {
+  culture?: string;
+  /** Default building type for the block's parcels; a parcel's own type takes priority. */
+  role?: string;
+  density?: number;
+  operator?: ParcelConfig['operator'];
+  salt?: number;
+  houseConfig?: Partial<import('./housesContract').HouseConfig>;
 }
 /** A user-drawn polygon in world metres (outer ring, optional holes); rounded to 0.1 m by the UI. */
 export interface EditShape { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }

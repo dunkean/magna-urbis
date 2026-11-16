@@ -1062,7 +1062,7 @@ pub(super) fn massing(m: &Input) -> Value {
     let traits = super::forms::kit::traits(m.culture);
     let (metric_scale, form) = super::forms::kit::house_parameters(m.culture);
     // A culture may give its home form to a share of its lots only (elven
-    // settlements mix tree dwellings and ordinary houses half and half).
+    // settlements favour tree dwellings, with a small share of ground houses).
     let takes_form = traits.form_share <= 0.0 || Rng::new(m.seed).fork("tree-share").float() < traits.form_share;
     if !form.is_empty() && takes_form { tr.form = form; }
     match tr.form {
@@ -2090,7 +2090,7 @@ mod tests {
             let mut i = input(&parts, &arch, &[], &seed); i.culture = "elven";
             massing(&i)[0]["volumes"].as_array().unwrap().iter().any(|v| v["form"] == "tree")
         }).count();
-        assert!((35..=65).contains(&trees), "{trees} tree dwellings / 100 homes");
+        assert!((80..=95).contains(&trees), "{trees} tree dwellings / 100 homes; ground houses must remain a small minority");
     }
 
     #[test]

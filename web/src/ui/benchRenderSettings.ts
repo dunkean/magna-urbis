@@ -2,7 +2,7 @@ import { mountRenderSettingsPanel, mountRenderColorControls, splitSectionLevels,
 import { compositionMessages, mountCompositionSection, renderControlFields, RENDER_SECTION_FIELDS, writeCompositionField, LIMITATION_ROW, NOTE_STYLE } from './compositionControls';
 import { mountParameterForm, readSettingPath, type ParameterForm, type ParameterField } from './parameterForm';
 import { getBenchComposition, setBenchComposition, resolveBenchAppearance, setBenchAppearanceField } from './benchComposition';
-import { GROUND_VARIANTS, groundRoadLook } from '../render/composition';
+import { GROUND_VARIANTS, groundRoadLook, styleAvailableOnPage } from '../render/composition';
 import { resolveAppearance, resolvedValues } from '../render/appearanceRecipe';
 import { registerMessages, setLanguage } from '../v2/i18n';
 import { getBenchRenderColors, setBenchRenderColors } from './benchRenderColors';
@@ -24,7 +24,7 @@ export function installBenchRenderSettings(): void {
   const mountIn = (parent: HTMLElement, fields: readonly ParameterField[]) => {
     if (!fields.length) return;
     const body = document.createElement('div'); parent.append(body);
-    forms.push(mountParameterForm(body, fields, {
+    forms.push(mountParameterForm(body, fields.map(field => field.options ? { ...field, options: field.options.filter(option => styleAvailableOnPage(String(option.value), 'bench')) } : field), {
       getValue: path => readSettingPath({ appearance: resolvedValues(resolveBenchAppearance({}, 'view2d')) }, path),
       setValue: (path, value) => {
         if (path.startsWith('appearance.composition.')) setBenchComposition(writeCompositionField(getBenchComposition(), path.slice('appearance.composition.'.length), value));
@@ -114,6 +114,7 @@ export function installBenchRenderSettings(): void {
     for (const select of [style, background, panel.root.querySelector<HTMLSelectElement>('[data-setting-path="appearance.composition.preset"]')]) if (select) markStyleCustomized(select, customized);
   };
   const collect = () => {
+    for (const select of Array.from(document.querySelectorAll<HTMLSelectElement>('#style, #backgroundStyle'))) for (const option of Array.from(select.options)) if (!styleAvailableOnPage(option.value, 'bench')) option.remove();
     move('general', '#showFrame, #showLegend, #backgroundOpacity');
     move('relief', '#showRelief, #showContours, #showShading, #lightAzimuth, #lightElevation, #lightStrength, #lightExaggeration, #resetLighting, #refinement3dControl, #perspectiveControls');
     move('ground', '#style, #showHypsometry, #showBackground, #backgroundStyle');

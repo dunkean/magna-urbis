@@ -1,11 +1,12 @@
 import type { V2Settings } from './contracts';
 import { rerollSeed } from '../../../rust/bridge/generationSeed';
 
-export interface SubdivisionChildren { parcels: readonly string[]; requests: readonly string[] }
+export interface SubdivisionChildren { blocks?: readonly string[]; parcels: readonly string[]; requests: readonly string[] }
 /** Explicit propagation discards lower overrides so every child inherits this scope. */
-export function resetSubdivisionChildren(settings: V2Settings, key: string, kind: 'quarter' | 'parcel', children: SubdivisionChildren): void {
+export function resetSubdivisionChildren(settings: V2Settings, key: string, kind: 'quarter' | 'block' | 'parcel', children: SubdivisionChildren): void {
   const scope = settings.urban?.local?.[key];
-  if (kind === 'quarter') for (const id of children.parcels) {
+  if (kind === 'quarter') for (const id of children.blocks ?? []) if (scope?.parcels?.overrides?.blocks) delete scope.parcels.overrides.blocks[id];
+  if (kind !== 'parcel') for (const id of children.parcels) {
     if (scope?.parcels?.overrides?.parcels) delete scope.parcels.overrides.parcels[id];
   }
   for (const id of children.requests) if (settings.urban?.buildings) {

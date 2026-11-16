@@ -12,6 +12,25 @@ function region(culture='european-organic',climate='temperate',relief='flat') {
   s.terrain!.climate=climate as NonNullable<typeof s.terrain>['climate'];s.terrain!.relief=relief as NonNullable<typeof s.terrain>['relief'];return s;
 }
 describe('regional population and distribution',()=>{
+  it('keeps 10,000 inhabitants without hundreds of automatic farmsteads and hamlets',()=>{
+    for (const culture of ['european-organic', 'elven', 'halfling']) {
+      const s=region(culture);s.region={demography:{population:10000}};
+      const plan=regionalPopulation(s);
+      expect(plan.counts.farmstead).toBeLessThanOrEqual(5);
+      expect(plan.counts.hamlet).toBeLessThanOrEqual(10);
+      expect(plan.allocatedPopulation).toBe(10000);
+      expect(plan.places.length).toBeLessThan(50);
+      expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(plan);
+      s.region.demography!.counts={farmstead:150,hamlet:55};
+      expect(regionalPopulation(s).counts).toMatchObject({farmstead:150,hamlet:55});
+    }
+  });
+  it('retains enough small-place capacity for cultures with no large towns',()=>{
+    const s=region('inuit-camp');s.region={demography:{population:10000}};
+    const plan=regionalPopulation(s);
+    expect(plan.allocatedPopulation).toBe(10000);
+    expect(Math.max(...plan.places.map(p=>p.population))).toBeLessThanOrEqual(120);
+  });
   it('scales with area, environmental carrying density and culture instead of a principal settlement',()=>{
     const s=region(),plain=regionalPopulation(s);s.extent=20000;
     expect(regionalPopulation(s).population).toBe(plain.population/4);
@@ -73,6 +92,13 @@ describe('regional population and distribution',()=>{
     const mods=resetRegionalChildren(s,[{type:'building',settlement:'main'},{type:'other'}]);
     expect(s.local).toEqual({});expect(s.urban?.local).toBeUndefined();expect(s.urban?.layout).toBeUndefined();expect(s.urban?.buildings).toBeUndefined();
     expect(mods).toEqual([{type:'other'}]);expect(stepSeed(s.options.seed,'relief-noise')).toBe(terrain);
+  });
+  it('replaces block, parcel and building overrides when changing the parent parcel layout',()=>{
+    const s=region();s.urban={local:{main:{parcels:{overrides:{blocks:{'block:a':{density:2}},parcels:{lot:{role:'temple'}}}}},east:{parcels:{density:2}}},buildings:{'main/house':{culture:'medina'}}};
+    resetUrbanChildren(s,{kind:'settlement',key:'main'},'parcels.operator');
+    expect(s.urban.local!.main.parcels!.overrides).toEqual({});
+    expect(s.urban.local!.east.parcels!.density).toBe(2);
+    expect(s.urban.buildings!['main/house']).toBeUndefined();
   });
   it('resets only a chosen settlement’s descendants, retaining its current culture and its neighbours',()=>{
     const s=region();s.local.main={culture:'medina'};s.urban={local:{main:{layout:{culture:'medina',overrides:{quarters:{'1':{density:2}}}},parcels:{density:2}},east:{layout:{culture:'chinese'}}},buildings:{'main/house':{culture:'medina'},'east/house':{culture:'chinese'}}};

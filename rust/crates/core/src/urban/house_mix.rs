@@ -175,6 +175,8 @@ pub struct HouseMix {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HouseSettings {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub blocks: BTreeMap<String, HouseMix>,
     /// Shape-preserving procedural roof/storey edits by q:, p: or b: identity.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub massing: BTreeMap<String, serde_json::Value>,
@@ -194,7 +196,7 @@ pub struct HouseSettings {
 impl HouseSettings {
     /// No mix chosen at any level.
     pub fn is_empty(&self) -> bool {
-        self.massing.is_empty() && !self.parcels.values().any(HouseMix::usable)
+        self.massing.is_empty() && !self.blocks.values().any(HouseMix::usable) && !self.parcels.values().any(HouseMix::usable)
             && !self.buildings.values().any(HouseMix::usable)
             && !self.city.as_ref().is_some_and(HouseMix::usable)
             && !self.zones.values().any(HouseMix::usable)
@@ -275,6 +277,7 @@ impl HouseSettings {
         let mix = [
             self.buildings.get(&format!("{lot}/building")),
             self.parcels.get(lot),
+            self.blocks.get(&block.to_string()),
             self.quarters.get(&quarter.to_string()),
             self.zones.get(zone),
             self.city.as_ref(),
@@ -410,6 +413,18 @@ mod tests {
             HouseSettings::default().pick("s", "L", "l", 0, 0, "core"),
             None
         );
+    }
+
+    #[test]
+    fn block_style_inherits_quarter_and_yields_to_a_parcel() {
+        let mut settings = HouseSettings::default();
+        settings.quarters.insert("0".into(), mix("lot", &[("norse", 1.)]));
+        settings.blocks.insert("1".into(), mix("lot", &[("medina", 1.)]));
+        assert!(!settings.is_empty());
+        assert_eq!(settings.pick("s", "L", "lot", 0, 0, "core"), Some("norse"));
+        assert_eq!(settings.pick("s", "L", "lot", 1, 0, "core"), Some("medina"));
+        settings.parcels.insert("lot".into(), mix("lot", &[("roman-core", 1.)]));
+        assert_eq!(settings.pick("s", "L", "lot", 1, 0, "core"), Some("roman-core"));
     }
 
     #[test]

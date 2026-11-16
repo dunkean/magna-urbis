@@ -22,11 +22,13 @@ export function organizeUrbanForm(root: HTMLElement): void {
   if (!sections.length) return;
   const advanced = advancedPanel(root, 'Advanced');
   const main = document.createElement('div'); main.className = 'urban-primary'; root.prepend(main);
-  const primary = /^(architecture|through|layout\.(culture|tissue|density|recipe|phases)|parcels\.(culture|operator|density)|houses\.culture|buildingCulture|houseConfig\.(pack|recipe|mode)|overrides\.(roof|floors)|culture|tissue|zone|density|role|function|households|recipe|pack|era|seed|salt)$/;
-  for (const field of Array.from(root.querySelectorAll<HTMLElement>('[data-field-path=architecture],[data-field-path=through]'))) main.append(field);
+  const primary = root.dataset.controlScope === 'settlement'
+    ? /^(layout\.(tissue|density|phases))$/
+    : /^(layout\.(culture|tissue|density|phases)|parcels\.(operator|density)|overrides\.(roof|floors)|culture|tissue|density|operator|households)$/;
+  for (const field of Array.from(root.querySelectorAll<HTMLElement>('[data-field-path=architecture],[data-field-path=through]'))) advanced.grid.append(field);
   for (const section of sections) {
     for (const field of Array.from(section.querySelectorAll<HTMLElement>('[data-field-path]'))) {
-      if (primary.test(field.dataset.fieldPath!)) {
+      if (primary.test(field.dataset.fieldPath!) || field.dataset.fieldPath === 'role' && ['block', 'parcel'].includes(root.dataset.controlScope ?? '')) {
         const preview = field.nextElementSibling?.matches('.city-pattern-choices') ? field.nextElementSibling : undefined;
         main.append(field); if (preview) main.append(preview);
       }
@@ -43,7 +45,9 @@ export function organizeInspector(host: HTMLElement): void {
     .filter(node => !node.closest('details,.workbench-advanced'));
   const stages=Array.from(host.querySelectorAll<HTMLElement>('.section:has(>.urban-stage-buttons)')).filter(node=>!node.closest('.workbench-advanced'));
   if (!details.length && !textareas.length && !stages.length) return;
-  const advanced = advancedPanel(host, 'Advanced');
+  // One Advanced button for the selected object: reuse its live settings panel.
+  const existing = host.querySelector<HTMLElement>('.v2-urban-controls .workbench-advanced .advanced-grid');
+  const advanced = existing ? { grid: existing } : advancedPanel(host, 'Advanced');
   advanced.grid.append(...stages);
   for (const detail of details) { detail.open = true; advanced.grid.append(detail); }
   for (const textarea of textareas) {

@@ -411,7 +411,7 @@ mod tests {
             assert_eq!(house_parameters(id), wanted, "{id}");
         }
         assert_eq!([traits("gnomish").body_scale, traits("halfling").body_scale, traits("goblin-warren").body_scale], [0.6, 0.65, 0.75]);
-        assert_eq!((traits("elven").form_share, traits("ottoman").light_wall_openness), (0.5, 0.8));
+        assert_eq!((traits("elven").form_share, traits("ottoman").light_wall_openness), (0.85, 0.8));
         // A culture without an entry is neutral.
         assert_eq!(house_parameters("european-organic"), (1.0, ""));
     }

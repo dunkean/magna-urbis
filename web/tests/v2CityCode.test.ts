@@ -10,6 +10,7 @@ import { rerollSeed, seedRoot, stepSeed } from '../../rust/bridge/generationSeed
 import defaults from '../src/v2/cityCodeDefaults.json';
 import { CULTURES } from '../src/gen/options';
 import type { V2Settings } from '../src/v2/contracts';
+import { presetComposition } from '../src/render/composition';
 import { applySceneClock, DEFAULT_SCENE } from '../src/v2/sceneClock';
 
 const terrain = (s: V2Settings) => effectiveTerrainSettings(s, adaptedExtent(s));
@@ -17,6 +18,21 @@ const restored = (s: V2Settings) => decodeCityCode(encodeCityCode(s)).settings;
 const base = () => { const s = defaultSettings(); s.options.seed = '42'; return s; };
 
 describe('V2 compact generation codes', () => {
+  it('shares every selected-area edit and scene control, including block layout seeds and detailed textured houses', () => {
+    const settings = base();
+    settings.urban = { architecture: 'detailed', local: { east: {
+      layout: { houseComplexity: 'complex', overrides: { quarters: { '1': { culture: 'medina', density: .8, salt: 27 } } } },
+      parcels: { overrides: { blocks: { '4': { culture: 'norse', role: 'worship.temple', density: .6, operator: 'courtyard', salt: 9823, houseConfig: { wealth: .7 } } }, parcels: { 'lot/one': { culture: 'byzantine-greek', role: 'civic.wizard-tower', households: 2, salt: 36 } } } },
+    } }, buildings: { 'east/lot/one/building': { seed: 'specific-house', pack: 'EUR-MED', overrides: { floors: 3, roof: 'RF-HIP' } as never } } };
+    const composition = presetComposition('parchment'); composition.buildings.look = 'detailed-volumes'; Object.assign(composition.effects, { season: .75, ambience: 'night' }); Object.assign(composition.effects.lighting, { azimuth: 270, elevation: 20, strength: 1.5 });
+    settings.appearance = { style: 'parchment', textured: true, composition };
+    const before = structuredClone(settings), code = encodeCityCode(settings), decoded = decodeCityCode(code).settings;
+    expect(decoded.urban).toEqual(settings.urban);
+    expect(decoded.appearance).toEqual(settings.appearance);
+    expect(urbanEffectiveValues(decoded, { kind: 'block', key: 'east', id: '4', quarter: '1' })).toEqual(urbanEffectiveValues(settings, { kind: 'block', key: 'east', id: '4', quarter: '1' }));
+    expect(encodeCityCode(decoded)).toBe(code);
+    expect(settings).toEqual(before);
+  });
   it('recomputes solar values from the portable clock rather than storing derived floating-point controls', () => {
     const settings=base();applySceneClock(settings,DEFAULT_SCENE);
     const code=encodeCityCode(settings),manual=structuredClone(settings);delete manual.scene;

@@ -154,6 +154,21 @@ fn contract_new_fields_are_optional_and_validated() {
 /// I4, I5, I8: a salt redraws one quarter; every other block, every main
 /// street and every other quarter's lot stays; the draw reproduces itself.
 #[test]
+fn quarter_tissue_redraws_internal_streets_with_the_same_seed() {
+    let base = town(&LayoutConfig::default());
+    let k = busiest(&base);
+    let draw = |tissue: &str| town(&with_quarter(k, QuarterOverride { tissue: Some(tissue.into()), ..Default::default() }));
+    let (grid, radial) = (draw("grid"), draw("radial"));
+    let inner = |layout: &Layout| {
+        let paths: Vec<_> = layout.streets.iter().filter(|s| s.rank >= 2 && s.path.iter().any(|p| g::contains(&layout.quarters[k].shape, *p))).map(|s| &s.path).collect();
+        json(&paths)
+    };
+    assert!(!grid.streets.is_empty());
+    assert_ne!(inner(&grid), inner(&radial), "the chosen pattern must change real interior streets");
+    assert_eq!(inner(&radial), inner(&draw("radial")), "regeneration with the same pattern and seed replays exactly");
+}
+
+#[test]
 fn quarter_salt_redraws_only_that_quarter() {
     let base = town(&LayoutConfig::default());
     let k = busiest(&base);

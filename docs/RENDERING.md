@@ -83,3 +83,13 @@ The [scientific note in English](methods/render3d-vegetation.md) describes the f
 ## Verification
 
 From `web/`, `node scripts/styles_ui_check.mjs` checks sea/lake colors for the twelve styles on the GPU, layer independence, diagnostic composition and link replay in WebGL and SVG renderers. `tests/render.water-style.test.ts` covers palettes, caches, legacy decors and successive crops. Existing rendering and export suites remain applicable.
+
+## Minimal (V2)
+
+Minimal is a light, modern Canvas 2D basemap for slow laptops and software graphics. It shows roads, water, town blocks, building footprints and settlement names. Relief and rural land use start off; enable them with the existing relief and land-use controls. Land-use class switches and opacity apply to flat pastel fills. Night ambience, parcels, textures, shadows and other decorative passes are omitted.
+
+The independent `minimal` render path bypasses the composite renderer, GPU contexts, tiles and display-preparation workers. `render/minimalMap.ts` retains world-coordinate paths in an 8×8 spatial grid with building-size LOD; geometry is built in short slices only when product revisions change. Optional relief is a CPU-baked bitmap capped at 512×512. Live density is capped at 1.5×; expensive frames reuse the previous canvas during gestures and repaint after 160 ms of rest. Names use existing settlement names, with cached greedy overlap placement.
+
+PNG export repaints these exact paths at the requested resolution. The 3D view uses the existing map-family renderer and the Minimal palette. City Bench hides Minimal through `styleAvailableOnPage` until it can supply the same retained inputs without preparing its existing GPU layers. SVG export keeps the existing map-family exporter with the Minimal palette; it does not promise the dedicated 2D painter's appearance.
+
+For comparisons, `#map-canvas.dataset` exposes `renderer="minimal"`, `renderFrameMs` (last full live paint), `renderGeometryBuildMs` (active geometry construction, excluding slice waits), and `renderFeatures`. These are CPU submission times; slow-hardware qualification still requires measuring on that hardware.

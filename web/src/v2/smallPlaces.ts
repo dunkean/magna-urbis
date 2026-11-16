@@ -3,16 +3,15 @@ import type { Settlement, World } from '../gen/types';
 /**
  * Background build of the small places of a region (farmsteads, hamlets, villages under a population limit).
  *
- * Each place goes through the same engine request as "Build targeted cities" with that one place selected
- * (`generateTowns(world, settings, progress, [key])`), so a place built here is in the same state as one built
- * on demand. One place at a time, nearest to the view (or the main town) first; a place the user targets jumps
+ * Each bounded batch goes through "Build targeted cities" (`generateTowns`): four engine lanes,
+ * one world clone, one regional land-use/naming update and one redraw for up to eight places.
+ * Nearest to the view (or the main town) first; a place the user targets jumps
  * the queue. Any user run, recipe change, edit or project load cancels the pass; a late result is dropped when the
  * pass was cancelled or the map it was computed from is no longer the current one.
  *
  * Cost per place (native engine, release build, 6 km region, perf-2026-11-07 captures): urban request
  * ~0.2 s for a hamlet (45 inh.), 0.2–0.75 s for villages of 150–460 inh., extrapolated ~1.3 s at 1,000 inh.
- * (2,500 inh. = 2.6 s), plus the shared land-use and naming update (~1 s) and the redraw. WASM (web profile):
- * roughly 1.5–2x the urban part. Default limit 500: an ordinary region's 2–3 small places finish in a few seconds.
+ * (2,500 inh. = 2.6 s), plus the shared land-use and naming update (~1 s) and the redraw per batch.
  */
 
 /** A secondary place the background pass may build: not built yet and at most `limit` inhabitants. */
@@ -43,17 +42,19 @@ export interface SmallPlaceBase {
 }
 
 export interface SmallPlaceHost {
+  /** Bounded work between cancellation/priority checks; defaults to eight places. */
+  batchSize?: number;
   /** The current state to build from, or undefined when the pass must not run (nothing displayed, stale recipe, preview…). */
   base(): SmallPlaceBase | undefined;
   /** Where the user looks (world metres), if known. */
   focus(): { x: number; y: number } | undefined;
-  /** One place through the targeted-build path; resolves with the whole new world. */
-  build(world: World, key: string): Promise<World>;
+  /** A batch through the targeted-build path; resolves with the whole new world. */
+  build(world: World, keys: readonly string[]): Promise<World>;
   /** Shows the new world exactly as after a targeted build. */
-  apply(result: World, key: string): Promise<void> | void;
+  apply(result: World, keys: readonly string[]): Promise<void> | void;
   /** Resolves when the page is idle (no user run, no gesture in progress). */
   idle(): Promise<void>;
-  onError?(key: string, error: unknown): void;
+  onError?(keys: readonly string[], error: unknown): void;
 }
 
 export class SmallPlaceQueue {
@@ -61,6 +62,7 @@ export class SmallPlaceQueue {
   private loopEpoch = -1;
   private inflight?: Promise<unknown>;
   private attempted = new Set<string>();
+  private retrySingles = new Set<string>();
   private recipe?: string;
   private priority: string[] = [];
   constructor(private readonly host: SmallPlaceHost) {}
@@ -105,26 +107,36 @@ export class SmallPlaceQueue {
       while (this.inflight) { await this.inflight.catch(() => undefined); if (epoch !== this.epoch) return; }
       const base = this.host.base();
       if (!base) return;
-      if (base.recipe !== this.recipe) { this.recipe = base.recipe; this.attempted.clear(); }
-      const key = nextSmallPlace(base.world, base.limit, base.backend, this.host.focus(), this.attempted, this.priority);
-      if (!key) return;
-      this.attempted.add(key);
-      this.priority = this.priority.filter(item => item !== key);
-      const job = this.host.build(base.world, key);
+      if (base.recipe !== this.recipe) { this.recipe = base.recipe; this.attempted.clear(); this.retrySingles.clear(); }
+      const keys: string[] = [];
+      const batchSize = Math.max(1, Math.min(8, Math.floor(this.host.batchSize ?? 8)));
+      const focus = this.host.focus();
+      for (let i = 0; i < batchSize; i++) {
+        const key = nextSmallPlace(base.world, base.limit, base.backend, focus, this.attempted, this.priority);
+        if (!key) break;
+        if (this.retrySingles.has(key) && keys.length) break;
+        keys.push(key); this.attempted.add(key);
+        if (this.retrySingles.delete(key)) break;
+      }
+      if (!keys.length) return;
+      this.priority = this.priority.filter(item => !keys.includes(item));
+      const job = this.host.build(base.world, keys);
       this.inflight = job;
       let result: World;
       try { result = await job; }
       catch (error) {
-        if (epoch !== this.epoch) { this.attempted.delete(key); return; }
-        this.host.onError?.(key, error); continue;
+        if (epoch !== this.epoch) { keys.forEach(key => this.attempted.delete(key)); return; }
+        // An atomic batch failed: isolate its bad place without losing the other results forever.
+        if (keys.length > 1) for (const key of keys) { this.attempted.delete(key); this.retrySingles.add(key); }
+        this.host.onError?.(keys, error); continue;
       }
       finally { if (this.inflight === job) this.inflight = undefined; }
       await this.host.idle();
       // Dropped, not failed: the next pass tries this place again.
-      if (epoch !== this.epoch) { this.attempted.delete(key); return; }
+      if (epoch !== this.epoch) { keys.forEach(key => this.attempted.delete(key)); return; }
       // The map changed under the build (rename, edit…): try this place again on the new map.
-      if (this.host.base()?.world !== base.world) { this.attempted.delete(key); continue; }
-      await this.host.apply(result, key);
+      if (this.host.base()?.world !== base.world) { keys.forEach(key => this.attempted.delete(key)); continue; }
+      await this.host.apply(result, keys);
     }
   }
 }

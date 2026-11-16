@@ -4134,11 +4134,23 @@ pub(super) fn generate(
     // Blocks are cut independently (each forks its own random stream from its
     // geometric identity) and merged in block order: identical output on any
     // number of threads.
+    let mut block_morphs = BTreeMap::new();
+    for (id, edit) in &cfg.overrides.blocks {
+        let Some(block) = id.parse::<usize>().ok().and_then(|i| layout.blocks.get(i)) else { continue; };
+        if edit.culture.is_some() || edit.density.is_some() {
+            let culture = edit.culture.as_deref().unwrap_or_else(|| cultural_context(layout, block, culture));
+            let density = edit.density.or_else(|| edits.and_then(|e| e.get(&block.quarter.to_string())).and_then(|e| e.density)).unwrap_or(cfg.density);
+            let m = super::composition::phase_morph(culture, "auto", &block.zone, &cfg.preset, &cfg.recipe, density, &cfg.params, "parcels")?;
+            block_morphs.insert(id.clone(), m);
+        }
+    }
     let zone_blends = super::zone_blend::blocks(layout);
     laps.lap("prepare");
     let blocks = super::par::map(&layout.blocks, |bi, block| {
         let mut out = BlockCut::default();
         let block_id = block_identity(layout, &block.shape);
+        let block_edit = cfg.overrides.blocks.get(&bi.to_string());
+        let block_culture = block_edit.and_then(|e| e.culture.as_deref()).unwrap_or_else(|| cultural_context(layout, block, culture));
         let edit = edits.and_then(|e| e.get(&block.quarter.to_string()));
         let phase_index = layout
             .quarters
@@ -4151,7 +4163,7 @@ pub(super) fn generate(
             _ => None,
         };
         let borrowed = plan.is_some_and(|c| c.borrowed_quarters.contains(&block.quarter));
-        let morph = edited
+        let morph = block_morphs.get(&bi.to_string()).or(edited)
             .or_else(|| {
                 phase_index.and_then(|pi| {
                     if borrowed {
@@ -4182,14 +4194,14 @@ pub(super) fn generate(
             local_morph.value["_innerWalls"] = serde_json::json!(true);
         }
         // `zoneDensity: gradient`: near another phase the lot tables lean toward it.
-        if edited.is_none() {
+        if edited.is_none() && !block_morphs.contains_key(&bi.to_string()) {
             let zone = if cfg.zone == "auto" { block.zone.as_str() } else { cfg.zone.as_str() };
             super::zone_blend::blend_block(layout, zone_blends[bi], bi, zone, &mut local_morph, |pi, _, _| {
                 let m = if borrowed { borrowed_morphs.get(pi) } else { phase_morphs.get(pi) }?;
                 Some(super::with_tissue(m.clone(), tissue))
             });
         }
-        let operator = cfg.zone_operators.get(&block.zone).unwrap_or(&cfg.operator);
+        let operator = block_edit.and_then(|e| e.operator.as_ref()).unwrap_or_else(|| cfg.zone_operators.get(&block.zone).unwrap_or(&cfg.operator));
         if operator != "culture" {
             local_morph.value["plotOp"] = serde_json::json!(match operator.as_str() {
                 "strips" => "burgage",
@@ -4201,7 +4213,6 @@ pub(super) fn generate(
             && cfg.preset == "culture"
             && cfg.params.get("plotOp").is_none()
         {
-            let block_culture = cultural_context(layout, block, culture);
             if let Some(mapping) = super::culture::contextual_mapping(
                 block_culture,
                 layout
@@ -4227,7 +4238,6 @@ pub(super) fn generate(
                 }
             }
         }
-        let block_culture = cultural_context(layout, block, culture);
         let zone = if cfg.zone == "auto" {
             &block.zone
         } else {
@@ -4320,7 +4330,8 @@ pub(super) fn generate(
             resolve_identity(out.parcels.last_mut().unwrap(), bi, &block_id);
             return out;
         }
-        let fork_label = super::edits::block_fork(&block_id, layout, block.quarter); // edits hook (urban/edits.rs): salt
+        let mut fork_label = super::edits::block_fork(&block_id, layout, block.quarter);
+        if let Some(salt) = block_edit.and_then(|e| e.salt).filter(|s| *s > 0) { fork_label.push_str(&format!("/block-salt:{salt}")); }
         // Probe memo (`probe_cache`): the cut below reads exactly the inputs
         // keyed here. Camps read the whole layout and are never memoised.
         let block_fronts = frontages(&block.shape, layout, &index);
@@ -4399,7 +4410,6 @@ pub(super) fn generate(
             out.diagnostics.unserved_area += area(&block.shape);
             return out;
         }
-        let block_culture = cultural_context(layout, block, culture);
         let shared_courts = matches!(operator.as_str(), "courtyard" | "compound")
             || super::culture::mapping(block_culture)
                 .is_some_and(|m| m.admissibility.shared_access);
@@ -5472,6 +5482,31 @@ mod tests {
             b1 < a1,
             "a sparser quarter has fewer, wider lots: {a1} -> {b1}"
         );
+    }
+
+    #[test]
+    fn block_edit_recuts_only_its_own_lots_and_retains_streets() {
+        let blocks = [0.0, 130.0].into_iter().map(|x| Block { phase: None,
+            shape: rectangle(x, 0., x + 120., 30.), quarter: 0, kind: "block".into(),
+            axis: Point { x: 1., y: 0. }, zone: "edge".into() }).collect();
+        let layout = strip_layout("edited-block", blocks, vec![Street {
+            path: vec![Point { x: -10., y: -3. }, Point { x: 260., y: -3. }],
+            widths: vec![6.; 2], rank: 1, role: "street".into() }]);
+        let original = serde_json::to_value(&layout).unwrap();
+        let mut cfg = ParcelConfig::default();
+        let base = super::super::generate_parcels("block-edit", std::slice::from_ref(&layout), &cfg).unwrap().remove(0);
+        cfg.overrides.blocks.insert("1".into(), super::super::BlockOverride { salt: Some(4567), density: Some(0.25), ..Default::default() });
+        let changed = super::super::generate_parcels("block-edit", std::slice::from_ref(&layout), &cfg).unwrap().remove(0);
+        let lots = |p: &Partition, b| serde_json::to_value(p.parcels.iter().filter(|p| p.block == b).collect::<Vec<_>>()).unwrap();
+        assert_eq!(lots(&base, 0), lots(&changed, 0), "the neighbouring block is unchanged");
+        assert_ne!(lots(&base, 1), lots(&changed, 1), "the edited block is recut");
+        assert_eq!(original, serde_json::to_value(&layout).unwrap(), "streets and block borders are retained");
+        let repeat = super::super::generate_parcels("block-edit", std::slice::from_ref(&layout), &cfg).unwrap().remove(0);
+        assert_eq!(lots(&changed, 1), lots(&repeat, 1), "saved block seeds replay exactly");
+        cfg.overrides.blocks.get_mut("1").unwrap().operator = Some("garden".into());
+        let garden = super::super::generate_parcels("block-edit", &[layout], &cfg).unwrap().remove(0);
+        assert_eq!(lots(&base, 0), lots(&garden, 0));
+        assert!(garden.parcels.iter().filter(|p| p.block == 1).all(|p| p.use_kind == "garden"));
     }
 
     /// A one-quarter european layout of the given blocks and streets.

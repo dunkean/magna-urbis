@@ -50,18 +50,16 @@ const materials: Record<string, Translations> = {
   'MAT-MEGALITH':['Megalithic monoliths','巨石单体','Monolitos megalíticos','Monólitos megalíticos'], 'MAT-WOOD-MORTISE':['Complex timber joinery','复杂木结构榫接','Ensamblajes complejos de madera','Encaixes complexos de madeira'], 'MAT-ROCKCUT':['Rock-cut excavation','岩石开凿','Excavación en roca','Escavação na rocha'], 'MAT-DRIFTWOOD':['Driftwood','漂流木','Madera flotante','Madeira flutuante'], 'MAT-WOVEN-TEXTILE':['Woven textile','编织纺织物','Tejido','Tecido'], 'MAT-BONE':['Structural bone','承重骨材','Hueso estructural','Osso estrutural'], 'MAT-CORDAGE':['Cordage, unspecified fibre','绳索，纤维未指定','Cordaje, fibra no especificada','Cordame, fibra não especificada'], 'MAT-LIMESTONE':['Limestone','石灰岩','Caliza','Calcário'],
 };
 
-function translated(values: Translations | undefined, fallback: string): string {
-  const locale = typeof window === 'undefined' ? 'fr' : savedLocale();
+function translated(values: Translations | undefined, fallback: string, locale: string = typeof window === 'undefined' ? 'fr' : savedLocale()): string {
   if (!values || locale === 'fr') return fallback;
-  return values[(['en', 'zh', 'es', 'pt'] as const).indexOf(locale)] ?? fallback;
+  return values[(['en', 'zh', 'es', 'pt'] as const).indexOf(locale as 'en'|'zh'|'es'|'pt')] ?? values[0] ?? fallback;
 }
-export function housePackLabel(id: string, fallback: string): string { return translated(packs[id], fallback); }
-export function houseMaterialLabel(id: string, fallback: string): string { return translated(materials[id], fallback); }
-export function houseArchetypeLabel(id: string, fallback: string): string {
-  const locale = typeof window === 'undefined' ? 'fr' : savedLocale();
+export function housePackLabel(id: string, fallback: string, locale?: string): string { return translated(packs[id], fallback, locale); }
+export function houseMaterialLabel(id: string, fallback: string, locale?: string): string { return translated(materials[id], fallback, locale); }
+export function houseArchetypeLabel(id: string, fallback: string, locale: string = typeof window === 'undefined' ? 'fr' : savedLocale()): string {
   if (locale === 'en') return houseAtlasEnglish[id] ?? fallback;
-  if (locale === 'zh' || locale === 'es' || locale === 'pt') return houseArchetypeTranslations[id]?.[(['zh', 'es', 'pt'] as const).indexOf(locale)] ?? fallback;
-  return fallback;
+  if (locale === 'zh' || locale === 'es' || locale === 'pt') return houseArchetypeTranslations[id]?.[(['zh', 'es', 'pt'] as const).indexOf(locale)] ?? houseAtlasEnglish[id] ?? fallback;
+  return locale === 'fr' ? fallback : houseAtlasEnglish[id] ?? fallback;
 }
 export function houseSourceDescription(id: string, fallback: string[]): string[] {
   if (typeof window === 'undefined') return fallback;

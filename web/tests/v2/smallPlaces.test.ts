@@ -11,15 +11,16 @@ const region = (): World => ({ seed: 's', mapSize: 6000, stats: {}, urban: {} as
 ] } as unknown as World);
 
 /** Stubbed urban build: builds the place on a copy of the world, resolved when the test releases it. */
-function harness(limit = 500) {
+function harness(limit = 500, batchSize = 1) {
   let world = region();
-  const built: string[] = [], waiting: { key: string; release: () => void }[] = [];
+  const built: string[] = [], waiting: { key: string; keys: readonly string[]; release: () => void }[] = [];
   let allowed = true;
   const queue = new SmallPlaceQueue({
+    batchSize,
     base: (): SmallPlaceBase | undefined => allowed ? { world, limit, backend: 'native', recipe: 'r' } : undefined,
     focus: () => undefined,
-    build: (from, key) => new Promise<World>(resolve => waiting.push({ key, release: () => {
-      resolve({ ...from, settlements: from.settlements!.map(p => p.key === key ? { ...p, urban: {} as Settlement['urban'], detail: 'eager' } : p) });
+    build: (from, keys) => new Promise<World>(resolve => waiting.push({ key: keys[0], keys, release: () => {
+      resolve({ ...from, settlements: from.settlements!.map(p => keys.includes(p.key) ? { ...p, urban: {} as Settlement['urban'], detail: 'eager' } : p) });
     } })),
     apply: result => { world = result; built.push(...result.settlements!.filter(p => p.urban && !built.includes(p.key)).map(p => p.key)); },
     idle: () => Promise.resolve(),
@@ -29,6 +30,40 @@ function harness(limit = 500) {
 }
 
 describe('background build of small places', () => {
+  it('isolates a failed batch so one invalid place does not discard its neighbours', async () => {
+    let world=region();const requests:string[][]=[];
+    const queue=new SmallPlaceQueue({
+      base:()=>({world,limit:500,backend:'native',recipe:'r'}),focus:()=>undefined,idle:()=>Promise.resolve(),
+      build:async(from,keys)=>{
+        requests.push([...keys]);
+        if(keys.includes('farm')) throw new Error('invalid farm');
+        return {...from,settlements:from.settlements!.map(p=>keys.includes(p.key)?{...p,urban:{} as Settlement['urban']}:p)};
+      },
+      apply:result=>{world=result;},
+    });
+    queue.start();await queue.settled();
+    expect(requests).toEqual([['near','farm','mid','far'],['near'],['farm'],['mid'],['far']]);
+    expect(world.settlements!.filter(p=>p.urban).map(p=>p.key).sort()).toEqual(['far','mid','near']);
+  });
+  it('builds a bounded group through one request and applies the world once', async () => {
+    const h = harness(500, 8);
+    h.queue.start(); await h.tick();
+    expect(h.waiting).toHaveLength(1);
+    expect(h.waiting[0].keys).toEqual(['near', 'farm', 'mid', 'far']);
+    h.waiting.shift()!.release(); await h.queue.settled();
+    expect(h.built.sort()).toEqual(['far', 'farm', 'mid', 'near']);
+  });
+
+  it('drops the whole batch when cancelled, then retries it on the current map', async () => {
+    const h = harness(500, 8);
+    h.queue.start(); await h.tick();
+    const stop = h.queue.stop(); h.setWorld(region());
+    h.waiting.shift()!.release(); await stop; await h.queue.settled();
+    expect(h.built).toEqual([]);
+    h.queue.start(); await h.tick();
+    expect(h.waiting[0].keys).toEqual(['near', 'farm', 'mid', 'far']);
+    h.waiting.shift()!.release(); await h.queue.settled();
+  });
   it('orders by distance to the main town and keeps the population limit', () => {
     const world = region();
     const order: string[] = [];

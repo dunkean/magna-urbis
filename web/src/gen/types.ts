@@ -209,6 +209,7 @@ export interface UrbanLine { kind: string; path: Polyline; closed?: boolean; wid
 export interface UrbanTree { x: number; y: number; r: number }
 export type ParcelUse = 'plot' | 'garden' | 'place' | 'market' | 'church' | 'green' | 'farm';
 export interface UrbanParcel {
+  nativeId?: string;
   poly: Polygon; use: ParcelUse | string; block: number;
   /** Street frontage segment (for plots). */
   front?: [Vec2, Vec2];

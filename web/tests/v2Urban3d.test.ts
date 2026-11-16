@@ -14,6 +14,17 @@ function town(id: string, stage: RustTownSnapshot['stage'] = 'buildings'): RustT
     scene: { schema_version: '1', generator_version: 'architectural-plans-2', buildings: [{ id } as NonNullable<RustTownSnapshot['scene']>['buildings'][number]], refusals: [], open_spaces: [], plan_archives: { [id]: `retained-exact-${id}` } } };
 }
 describe('V2 City Bench 3D retained-scene boundary', () => {
+  it('applies the shared scene controls to 3D without changing generation or the selected house renderer', () => {
+    const options = makeOptions({ seed: '3d-controls' });
+    const world = { seed: options.seed, options, mapSize: 1000, terrain: { height: { cell: 25 } } } as unknown as World;
+    const settings: V2Settings = { options, extent: 1000, settlementCount: 0, local: {}, generation: 'procedural', urban: { architecture: 'detailed' }, appearance: { style: 'parchment', composition: snowComposition(), textured: true } };
+    const generation = JSON.stringify([settings.options, settings.urban]);
+    for (const [key, value] of Object.entries({ season: .75, ambience: 'night', 'lighting.azimuth': 270, 'lighting.elevation': 20, 'lighting.strength': 1.5 }))
+      writeAppearanceControl(settings, `appearance.composition.effects.${key}`, value);
+    expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ v2Season: .75, ambience: 'night', lighting: { azimuth: 270, elevation: 20, strength: 1.5 } });
+    expect(JSON.stringify([settings.options, settings.urban])).toBe(generation);
+    expect(settings.appearance!.textured).toBe(true);
+  });
   it('combines only completed building stages and preserves actual retained records and archives', () => {
     const a = town('a'), b = town('b'), upstream = town('hidden', 'layout');
     const scene = combineV2NativeScenes([a, upstream, b])!;

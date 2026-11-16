@@ -3483,6 +3483,7 @@ fn generate_once(
                     .filter(|t| !t.is_empty())
             })
             .unwrap_or(local_tissue);
+        local_cfg.tissue = local_tissue.to_owned();
         // A quarter of the plan's borrowed share is cut with the donor's
         // street spacing and lots (its houses stay the receiving culture's).
         let borrowed = edited.is_none()
@@ -3517,7 +3518,7 @@ fn generate_once(
             reads,
             p: &local_morph,
             noise: Noise::new(rng.fork("field")),
-            radial: (cfg.tissue == "radial" || field.radial)
+            radial: (local_tissue == "radial" || local_tissue == "culture" && field.radial)
                 && phases.get(q.phase).is_none_or(|p| p.kind != "faubourg"),
             center: local_center,
             phases: &phases,

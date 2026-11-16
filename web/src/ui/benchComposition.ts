@@ -1,7 +1,7 @@
 import { buildMapLabels, placeMapLabels, estimateWidth, type MapLabelWorld, type MapLabel } from '../render/mapLabels';
 import { cityTextLabels, textPlacement } from '../render/textLayer';
 import { placedMapLabelsSvg } from '../render/svgLabels';
-import { presetComposition, validateComposition, withCompositionQuality, withoutHiddenStyle, type CompositionRecipe, type Limitation } from '../render/composition';
+import { presetComposition, validateComposition, withCompositionQuality, withoutHiddenStyle, styleAvailableOnPage, type CompositionRecipe, type Limitation } from '../render/composition';
 import { setDisplayAppearanceQuality, setDisplayQualityPreference, onDisplayQualityChange } from '../render/displayQuality';
 import { resolveAppearance, type AppearanceInput, type RenderCapabilities, type RenderTarget } from '../render/appearanceRecipe';
 import { getBenchRenderColors } from './benchRenderColors';
@@ -21,7 +21,7 @@ function load(): CompositionRecipe {
   try {
     // A recipe carried by the URL is kept verbatim; a stored one is refilled from the current preset definitions unless it is custom.
     const fromUrl = new URLSearchParams(location.search).get('composition'), saved = fromUrl ?? localStorage.getItem(STORAGE);
-    if (saved) { const value: unknown = JSON.parse(saved); validateComposition(value); return withoutHiddenStyle(fromUrl !== null || value.preset === 'custom' ? value : presetComposition(value.preset))!; }
+    if (saved) { const value: unknown = JSON.parse(saved); validateComposition(value); if (!styleAvailableOnPage(value.ground.look, 'bench')) return presetComposition('parchment'); return withoutHiddenStyle(fromUrl !== null || value.preset === 'custom' ? value : presetComposition(value.preset))!; }
   } catch { /* Invalid or unavailable storage starts with the explicit default. */ }
   return presetComposition('parchment');
 }
@@ -38,6 +38,7 @@ export const getBenchComposition = (): CompositionRecipe => composition;
 export function writeBenchCompositionQuery(query: URLSearchParams): void { query.set('composition', JSON.stringify(composition)); }
 export function setBenchComposition(next: CompositionRecipe): void {
   validateComposition(next);
+  if (!styleAvailableOnPage(next.ground.look, 'bench')) return;
   if (composition.quality === 'light' && next.quality === 'full' && next.preset !== 'custom') setDisplayQualityPreference('full');
   const stable = (value: CompositionRecipe) => JSON.stringify({ ...value, preset: 'custom', text: undefined, annotations: undefined });
   const nightStable=(value:CompositionRecipe)=>JSON.stringify({...value,preset:'custom',effects:{...value.effects,ambience:undefined}});

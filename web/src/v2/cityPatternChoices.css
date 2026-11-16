@@ -3,3 +3,5 @@
 .city-pattern-choices i{display:block;width:54px;height:64px;background-image:url('./assets/city-patterns-v1.png');background-size:300% 200%;background-repeat:no-repeat;border-radius:5px}
 .city-pattern-choices button[aria-pressed=true]{border-color:var(--gold,#dcb86f);background:#dcb86f22}
 .city-pattern-choices span{overflow-wrap:anywhere}
+.city-pattern-select{display:none!important}
+.city-pattern-choices .city-pattern-auto{grid-column:1/-1;flex-direction:row;justify-content:center;min-height:26px}

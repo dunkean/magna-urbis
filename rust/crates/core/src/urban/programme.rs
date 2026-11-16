@@ -2181,15 +2181,21 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     // whatever their admission; every later band re-balances around them.
     // Dwelling capacity is counted once the plot household capacity is known.
     let mut forced: Vec<Option<(String, Option<f64>)>> = vec![None; parcels.len()];
-    if let Some(cfg) = &part.config
-        && !cfg.overrides.parcels.is_empty()
-    {
+    if let Some(cfg) = &part.config {
+        // A block supplies its parcels' default building type; explicit lot edits win.
+        let mut overrides = cfg.overrides.parcels.clone();
+        for parcel in parcels.iter() {
+            if let Some(role) = cfg.overrides.blocks.get(&parcel.block.to_string()).and_then(|b| b.role.as_ref()).filter(|r| !r.is_empty() && *r != "auto") {
+                let edit = overrides.entry(parcel.id.clone()).or_default();
+                if edit.role.is_none() && edit.function.is_none() { edit.role = Some(role.clone()); }
+            }
+        }
         let index: HashMap<&str, usize> = parcels
             .iter()
             .enumerate()
             .map(|(i, p)| (p.id.as_str(), i))
             .collect();
-        for (id, ov) in &cfg.overrides.parcels {
+        for (id, ov) in &overrides {
             // edits hook (urban/edits.rs): shape-only and deletion edits force no use.
             if !super::edits::sets_use(ov) {
                 continue;

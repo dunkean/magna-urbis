@@ -6,7 +6,7 @@ import { defaultSettings } from '../src/v2/settings';
 import { canvasPng, cropCanvasPng } from '../src/ui/canvasExport';
 
 describe('exports of the current style', () => {
-  it.each(['atlas', 'cadastre', 'topographic', 'parchment'] as const)('keeps vector export for %s, including the composite renderer', style => {
+  it.each(['minimal', 'atlas', 'cadastre', 'topographic', 'parchment'] as const)('keeps vector export for %s, including the composite renderer', style => {
     const settings = defaultSettings();
     settings.appearance = { style: 'parchment', composition: presetComposition(style) };
     const before = structuredClone(settings);

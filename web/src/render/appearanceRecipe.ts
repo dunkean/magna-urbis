@@ -20,7 +20,7 @@ import { applyComposition, contourDrawOf, resolveComposition, withGroundVariant,
 import type { ResolvedDisplayQuality } from './displayQuality';
 
 export type RenderTarget = 'view2d' | 'view3d' | 'export';
-export type RenderPath = 'classic' | 'composite';
+export type RenderPath = 'classic' | 'composite' | 'minimal';
 
 export interface CityInput {
   view?: CityView; palette?: CityPalette; buildingStyle?: UrbanBuildingStyle; diagnostic?: UrbanBuildingDiagnostic; layers?: Partial<CityLayers>;
@@ -153,7 +153,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   const mapStyle = a?.style ?? base.mapStyle, styleId = a?.terrainStyle ?? mapStyle, traits = styleTraits(styleId);
   const diagnostic: DiagnosticId | 'none' = preview ? 'elevation' : a?.diagnostic ?? 'none';
   const groundStyle: TerrainStyle = diagnostic === 'elevation' ? 'copernicus' : styleId, groundTraits = styleTraits(groundStyle);
-  const path: RenderPath = preview ? 'composite' : a?.renderer === 'classic' ? 'classic' : a?.renderer === 'bench' ? 'composite'
+  const path: RenderPath = styleId === 'minimal' ? 'minimal' : preview ? 'composite' : a?.renderer === 'classic' ? 'classic' : a?.renderer === 'bench' ? 'composite'
     // A style picked in the terrain look selector (terrainStyle) is drawn by the composite renderer, map palettes included.
     : a?.terrainStyle !== undefined || traits.family !== 'map' || diagnostic !== 'none' || capabilities.nativeCities ? 'composite' : 'classic';
 
@@ -169,8 +169,8 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   const vegetation: VegetationComponent = { representation: composition.vegetation.procedural ? 'material' : symbols, symbols, forest,
     forestSettings: { ...DEFAULT_FOREST_SETTINGS, ...base.forest, ...forest }, fantasy: { ...DEFAULT_FANTASY_OPTIONS, followLanduse: false, ...a?.fantasy, forests: composition.vegetation.groundForests } };
   const terrainColors = a?.colors && Object.fromEntries(TERRAIN_COLOR_KEYS.map(token => [token, a.colors![token]])) as RenderColors;
-  // The two flat map styles own their building ink; material colours remain per house.
-  const flatBuildings = styleId === 'cadastre' || styleId === 'topographic';
+  // The flat map styles own their building ink; material colours remain per house.
+  const flatBuildings = styleId === 'minimal' || styleId === 'cadastre' || styleId === 'topographic';
   const houseColors = styleId === 'cadastre' ? { ...a?.colors, building: '#323232', buildingEdge: '#000000' }
     : styleId === 'topographic' ? { ...a?.colors, building: undefined, buildingEdge: '#262626' } : a?.colors;
   const palette: PaletteComponent = { mapStyle, colors: houseColors, terrainColors, applicableColors: applicable(a?.colors, groundTraits) };

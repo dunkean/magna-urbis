@@ -66,6 +66,10 @@ La surface automatique sans largeur explicite vaut 40 × 40 km ; elle n'est plus
 
 Les identifiants exacts sont résolus par `populationProfile` dans `web/src/v2/regionalPopulation.ts`. Les cultures modernes sont identifiées par `cultureEra`, et non par une recherche du mot « modern » dans leur nom.
 
+Les parts démographiques ne doivent pas multiplier les petits lieux coûteux à construire. En automatique, les fermes isolées sont limitées à une pour 2 000 habitants (24 au maximum), et les hameaux à un pour 1 000 habitants (48 au maximum). Les habitants sont redistribués entre les lieux restants, sans réduction de la population régionale. Une culture dont les lieux sont tous petits conserve le nombre nécessaire pour loger sa population. Les effectifs explicitement imposés restent prioritaires. Une région historique ou elfique de 10 000 habitants produit ainsi au plus 5 fermes et 10 hameaux.
+
+La construction de fond se fait par lots de huit lieux au maximum, en utilisant les quatre voies de génération du parcours « Construire les villes sélectionnées ». Les cultures agricoles, noms et affichage régionaux sont actualisés une seule fois par lot. Une annulation ou une modification de la carte rejette tout résultat tardif ; le lieu sélectionné est prioritaire dans le lot suivant.
+
 Exemples sur **40 × 40 km avec côte**, graine `42` :
 
 | Culture et milieu | Population régionale | Plus grand lieu | Sites isolés demandés |

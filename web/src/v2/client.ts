@@ -17,6 +17,7 @@ import { packWorldLanduse, unpackWorldLanduse } from './landusePack';
 import { packWorldPartitions, unpackWorldPartitions } from './urbanPack';
 import { sameDisplay } from './displayState';
 import type { BenchRenderer } from './benchRenderer';
+import type { MinimalRenderer } from './minimalRenderer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { FrameRequest } from '../ui/viewer';
@@ -65,6 +66,9 @@ export class StudioClient {
   private world: World | null = null;
   private appearanceSettings?: V2Settings;
   private bench?: BenchRenderer;
+  private minimal?: MinimalRenderer;
+  private minimalActive = false;
+  private minimalBackground?: HTMLCanvasElement;
   private benchActive = false;
   private appearanceRevision = 0;
   private brushSourcesSent = false;
@@ -151,6 +155,8 @@ export class StudioClient {
     this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
   }
   async init(): Promise<void> {
+    // Composite and Minimal own their surfaces; start the classic worker only when it is actually selected.
+    if (!this.appearanceSettings || this.resolve(this.appearanceSettings, this.world ?? undefined, true).path !== 'classic') return;
     let render:Worker;
     try{render=new RenderWorker();}catch{return;}
     const ready = await new Promise<boolean>(resolve => {
@@ -163,7 +169,7 @@ export class StudioClient {
     this.render = render;this.brushSourcesSent=false;
     this.viewer.setSource({ request: frame => render.postMessage({ type: 'view', ...frame }) });
     render.onmessage = ({ data: m }: MessageEvent<RResponse>) => {
-      if(this.benchActive){if(m.type==='frame')this.viewer.present(m,false);return;}
+      if(this.benchActive||this.minimalActive){if(m.type==='frame')this.viewer.present(m,false);return;}
       if (m.type === 'content') this.viewer.contentChanged(m.mapSize, true, m.marker);
       else if (m.type === 'frame') {
         const shown=this.viewer.present(m, m.gen === this.drawingId);
@@ -181,9 +187,11 @@ export class StudioClient {
     progress?: (p: V2Progress) => void): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
-    void import('./benchRenderer').catch(() => undefined);
-    void import('../ui/terrainRenderer').then(module => module.prewarmTerrainRenderer(), () => undefined);
-    if (['town', 'towns', 'all'].includes(action)) void import('../render/cityBuildingsParallel').then(module => module.prewarmCityBuildingWorkers(), () => undefined);
+    if (this.resolve(settings, world, true).path !== 'minimal') {
+      void import('./benchRenderer').catch(() => undefined);
+      void import('../ui/terrainRenderer').then(module => module.prewarmTerrainRenderer(), () => undefined);
+      if (['town', 'towns', 'all'].includes(action)) void import('../render/cityBuildingsParallel').then(module => module.prewarmCityBuildingWorkers(), () => undefined);
+    }
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject, progress };
@@ -240,6 +248,7 @@ export class StudioClient {
   invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}
   async clear():Promise<void>{
     this.viewer.clear();
+    this.minimalActive=false;this.minimal?.dispose();this.minimal=undefined;this.minimalBackground=undefined;
     this.resolutions=[];this.presentations=new WeakMap();this.resourceCache=undefined;
     this.benchActive=false;this.appearanceRevision++;this.bench?.dispose();this.bench=undefined;this.classicBackground=undefined;
     this.invalidateRetained();this.world=null;this.syncRenderer?.dispose();this.syncRenderer=null;
@@ -249,12 +258,27 @@ export class StudioClient {
   async show(world: World, keepView = false, requested?: RenderReadiness): Promise<void> {
     const nextRequest = requested ?? new RenderReadiness(this.view3dActive ? '3d' : '2d');
     this.readiness = nextRequest;
-    if (!renderGeometryReady()) await loadRenderGeometry(); // synchronous Rust render geometry (city ground, coast, contours)
     const mapChanged = this.world?.mapSize !== world.mapSize;
     if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
     this.world = world;
     // A language/unit change redraws the same retained world with different labels.
     this.benchMiniRevision = -1;
+    const minimalSettings = this.appearanceSettings;
+    const minimalAppearance = minimalSettings && this.resolve(minimalSettings, world, true);
+    if (minimalSettings && minimalAppearance?.path === 'minimal') {
+      this.benchActive=false;this.bench?.dispose();this.bench=undefined;
+      this.syncRenderer?.dispose();this.syncRenderer=null;
+      this.render?.terminate();this.render=null;
+      const { MinimalRenderer } = await import('./minimalRenderer');
+      this.minimal ??= new MinimalRenderer(() => this.viewer.invalidate());
+      await this.minimal.set(world, minimalSettings, minimalAppearance, {}, nextRequest);
+      this.minimalBackground=undefined;this.minimalActive=true;
+      this.viewer.setDirectSource({ element: this.minimal.element, draw: frame => this.drawMinimal(frame) });
+      this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
+      return;
+    }
+    this.minimalActive=false;this.minimal?.dispose();this.minimal=undefined;this.minimalBackground=undefined;
+    if (!renderGeometryReady()) await loadRenderGeometry();
     world = this.presentWorld(world);
     this.syncRenderer?.dispose(); this.syncRenderer = null;
     const settings=this.appearanceSettings;
@@ -275,6 +299,7 @@ export class StudioClient {
       return;
     }
     this.benchActive=false;
+    if (!this.render) await this.init();
     if(this.render)this.viewer.setSource({request:frame=>this.render!.postMessage({type:'view',...frame})});
     if (this.render) {
       const channel = new MessageChannel();
@@ -295,6 +320,21 @@ export class StudioClient {
       this.viewer.setRenderer(this.syncRenderer, world.mapSize, keepView);
       return Promise.resolve();
     }
+  }
+  private drawMinimal(frame: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number } {
+    const renderer=this.minimal;
+    if (!renderer || !this.minimalActive || this.view3dActive) return { ms:0, band:0, scale:frame.view.scale };
+    renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
+    let mini: HTMLCanvasElement | undefined;
+    if(frame.mini && (this.benchMiniRevision!==this.appearanceRevision || this.benchMiniSize!==frame.mini)) {
+      mini=renderer.drawMini(frame.mini);this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;
+    }
+    this.canvas.dataset.renderer='minimal';this.canvas.dataset.renderStyle='minimal';
+    this.canvas.dataset.renderFrameMs=String(renderer.stats.frameMs);
+    this.canvas.dataset.renderGeometryBuildMs=String(renderer.stats.geometryBuildMs);
+    this.canvas.dataset.renderFeatures=String(renderer.stats.features);
+    this.canvas.dataset.terrainBackend='cpu';this.canvas.dataset.renderPending='0';this.canvas.dataset.renderPasses='[]';this.canvas.dataset.cityRender='{}';
+    return { mini, ms:renderer.stats.frameMs, band:0, scale:frame.view.scale };
   }
   private drawBench(frame:FrameRequest):{mini?:HTMLCanvasElement;ms:number;band:number;scale:number}{
     const started=performance.now();
@@ -322,8 +362,8 @@ export class StudioClient {
     return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
   }
   /** Progressive display finished (captures and test scripts wait for it). */
-  displaySettled():Promise<void>{return this.benchActive&&this.bench?this.bench.settled():Promise.resolve();}
-  prepareViewportCapture():void{if(this.benchActive)this.bench?.prepareCapture();}
+  displaySettled():Promise<void>{if(this.minimalActive)return this.minimal!.settled();return this.benchActive&&this.bench?this.bench.settled():Promise.resolve();}
+  prepareViewportCapture():void{if(this.minimalActive)this.minimal?.prepareCapture();if(this.benchActive)this.bench?.prepareCapture();}
   /** Resolve the appearance for the current products. `previewAware`: a stage-preview world is inspected through its elevation. */
   private resolve(settings:V2Settings,world:World|undefined,previewAware:boolean):ResolvedAppearance{
     const preview=previewAware&&!!world&&!!world.stats['v2.previewStage'];
@@ -345,9 +385,9 @@ export class StudioClient {
     this.appearanceSettings=settings;this.appearanceRevision++;
     const display=this.resolve(settings,this.world??undefined,false);
     this.display={...this.display,...resolvedDisplayOptions(display),colors:display.palette.colors};
-    const needsBench=this.resolve(settings,this.world??undefined,true).path==='composite';
+    const needsBench=this.resolve(settings,this.world??undefined,true).path!=='classic';
     if(this.render&&!needsBench&&display.cartography.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
-    if(this.world&&(!this.render||this.benchActive||needsBench))await this.show(this.world,true,this.readiness);
+    if(this.world&&(!this.render||this.benchActive||this.minimalActive||needsBench))await this.show(this.world,true,this.readiness);
     else if(this.world){if(!sameDisplay(previousDisplay,this.display))this.render?.postMessage({type:'display',display:this.display});this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
     else if(this.render&&!needsBench&&!sameDisplay(previousDisplay,this.display))this.render.postMessage({type:'display',display:this.display});
     } catch(error) {
@@ -360,6 +400,7 @@ export class StudioClient {
     // A style switch may still be setting up the bench and compiling its look. Capturing earlier
     // would cache the old map or its preview, or enter a second synchronous pipeline compilation.
     for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
+    if(this.minimalActive){await this.minimal?.settled();this.minimalBackground??=this.minimal?.groundBackground();return;}
     if(this.benchActive){await this.bench?.exactReady();if(!this.bench?.groundBackground())this.bench?.backgroundUrl();return;}
     if(!this.world)return;
     const key=JSON.stringify(this.display);
@@ -369,14 +410,18 @@ export class StudioClient {
     const svg=renderSvg(this.world,{...this.display,brushes,width:2048,labels:false,legend:false,cartouche:false,layers:{city:false,streets:false,roads:false,labels:false,decor:false}}); // roads: vectors per 3D tile (city3d), not this map raster
     this.classicBackground={world:this.world,key,url:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`};
   }
-  groundBackground():HTMLCanvasElement|undefined{return this.benchActive?this.bench?.groundBackground():undefined;}
-  backgroundUrl():string|undefined{return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}
+  groundBackground():HTMLCanvasElement|undefined{if(this.minimalActive)return this.minimalBackground??=this.minimal?.groundBackground();return this.benchActive?this.bench?.groundBackground():undefined;}
+  backgroundUrl():string|undefined{if(this.minimalActive)return this.groundBackground()?.toDataURL('image/png');return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}
   /** The classic 3D background already holds the land use. */
   physicalGround(){return this.benchActive?this.bench?.physicalGround():undefined;}
   async exportBench(settings:V2Settings,resolved:ResolvedAppearance,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
     // Style switches may still be preparing the shared GPU resources. Export waits for that work.
     for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
     if(!this.world)throw new Error('Create a region first.');
+    if (resolved.path === 'minimal') {
+      const { MinimalRenderer } = await import('./minimalRenderer'), renderer = new MinimalRenderer(() => {});
+      try { await renderer.set(this.world, settings, resolved, layers); return await renderer.capture(size); } finally { renderer.dispose(); }
+    }
     const {BenchRenderer}=await import('./benchRenderer');
     // Use the viewer's async GPU path for exports too. Forcing the raster path recompiles the
     // satellite material in synchronous WebGL even when the viewer already runs on WebGPU.
@@ -393,5 +438,5 @@ export class StudioClient {
     if (this.render) { if(!this.benchActive)this.render.postMessage({ type: 'display', display: this.display }); }
     else if (this.world) this.show({ ...this.world, options: { ...this.world.options, contours: this.display.contours ?? true, landuse: this.display.landuse ?? true, labels: this.display.labels } }, true);
   }
-  destroy(): void { this.cancel();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
+  destroy(): void { this.cancel();this.minimal?.dispose();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
 }

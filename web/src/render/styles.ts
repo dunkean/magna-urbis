@@ -9,7 +9,7 @@
 import type { StyleName } from '../gen/options';
 import { waterRamp, type WaterStyle } from './waterStyle';
 
-export type MapStyle = StyleName | 'watabou' | 'engraving' | 'cadastre' | 'blueprint' | 'illuminated' | 'topographic' | 'night';
+export type MapStyle = StyleName | 'minimal' | 'watabou' | 'engraving' | 'cadastre' | 'blueprint' | 'illuminated' | 'topographic' | 'night';
 export type LandKindKey = 'field' | 'meadow' | 'pasture' | 'forest' | 'orchard' | 'garden' | 'marsh' | 'commons';
 export type FrameKind = 'double' | 'thin' | 'ticks' | 'blueprint' | 'illuminated' | 'none';
 
@@ -442,8 +442,23 @@ const night = derive('night', 'Night', {
   cart: { fill: '#10182b', stroke: '#56679a', accent: '#e8b867', op: 0.94 },
 });
 
+const minimal = derive('minimal', 'Minimal', {
+  paper: '#f4f1ea', ink: '#4a443d', inkSoft: '#a8957f', fontFamily: 'sans-serif',
+  hypso: [[0, '#f4f1ea'], [.6, '#e9e8db'], [1, '#e1ddd4']], landOpacity: .4, contourOpacity: 0,
+  seaFill: '#bfd9e8', lakeFill: '#bfd9e8', waterEdge: '#9fc3d8', water: waterRamp('#9fc3d8', '#bfd9e8'), riverFill: '#a9cde2', riverEdge: '#a9cde2',
+  shade: .3, hatch: 0, grain: 0, frameKind: 'none', grid: null, waterLines: null, rippleOpacity: [0, 0, 0, 0],
+  land: { forest: '#d6e5cb', field: '#efe9d2', meadow: '#e4edd3', pasture: '#e6ecd6', orchard: '#dce9c8', garden: '#dde9cd', marsh: '#d5e4e0', commons: '#e8ead7' },
+  tex: Object.fromEntries(Object.keys(ALL_TEX).map(key => [key, false])) as Palette['tex'], landBlend: 'normal', hedgeOn: false, furrowAlpha: 0, stripAlpha: [0, 0],
+  roadFill: '#ffffff', roadEdge: '#cfc8bb', trackFill: '#c9c1b3',
+  urban: { street: '#ffffff', streetEdge: '#cfc8bb', yard: '#ebe5da', mass: '#cbbba8', massEdge: '#a8957f', landmark: '#9c8a76', landmarkEdge: '#a8957f', wall: '#6f655b', wallFill: '#6f655b', shadow: null, lit: null },
+  lab: { town: '#4a443d', halo: '#f4f1ea', water: '#4a443d', wood: '#4a443d' },
+});
+
+// Rivers are slightly brighter than the shore; the generic derivation uses the shore token.
+minimal.riverFill = '#a9cde2';
+
 export const PALETTES: Record<MapStyle, Palette> = {
-  parchment: PARCHMENT, atlas, watabou, engraving, cadastre, blueprint, illuminated, topographic, night,
+  minimal, parchment: PARCHMENT, atlas, watabou, engraving, cadastre, blueprint, illuminated, topographic, night,
 };
 
 /** Display order for the UI. */

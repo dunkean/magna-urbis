@@ -140,13 +140,14 @@ fn shared_boundaries(a: &super::Shape, b: &super::Shape) -> Vec<[Point; 2]> {
 fn drawn_culture(architecture_culture: Option<&str>, seed: &str, layout: &Layout, partition: &Partition, parcel: &super::Parcel, role: &str, function: &str) -> Option<(String, bool)> {
     let profile = super::house_mix::HouseSettings::parse(architecture_culture);
     let block = layout.blocks.get(parcel.block)?;
-    if let Some(h) = profile.as_ref().filter(|h| h.buildings.contains_key(&format!("{}/building", parcel.id)) || h.parcels.contains_key(&parcel.id) || h.quarters.contains_key(&block.quarter.to_string())) {
+    if let Some(h) = profile.as_ref().filter(|h| h.buildings.contains_key(&format!("{}/building", parcel.id)) || h.parcels.contains_key(&parcel.id) || h.blocks.contains_key(&parcel.block.to_string()) || h.quarters.contains_key(&block.quarter.to_string())) {
         if let Some(culture) = h.pick(seed, &layout.key, &parcel.id, parcel.block, block.quarter, &block.zone) {
             return Some((culture.to_owned(), true));
         }
     }
     let local = partition.config.as_ref().and_then(|c| c.overrides.parcels.get(&parcel.id)).and_then(|o| o.culture.as_deref())
-        .or_else(|| layout.config.as_ref().and_then(|c| c.overrides.quarters.get(&block.quarter.to_string())).and_then(|o| o.building_culture.as_deref()));
+        .or_else(|| partition.config.as_ref().and_then(|c| c.overrides.blocks.get(&parcel.block.to_string())).and_then(|o| o.culture.as_deref()))
+        .or_else(|| layout.config.as_ref().and_then(|c| c.overrides.quarters.get(&block.quarter.to_string())).and_then(|o| o.building_culture.as_deref().or(o.culture.as_deref())));
     if let Some(culture) = local.filter(|c| !c.is_empty() && *c != "site") {
         return Some((culture.to_owned(), true));
     }
@@ -169,13 +170,14 @@ fn apply_massing_overrides(request: &mut Value, layout: &Layout, partition: &Par
     parcel: &super::Parcel, architecture_culture: Option<&str>) -> Result<(), String> {
     let quarter = layout.blocks.get(parcel.block).map(|block| block.quarter.to_string());
     let quarter_edit = quarter.as_ref().and_then(|id| layout.config.as_ref()?.overrides.quarters.get(id)?.house_config.as_ref());
+    let block_edit = partition.config.as_ref().and_then(|cfg| cfg.overrides.blocks.get(&parcel.block.to_string())).and_then(|edit| edit.house_config.as_ref());
     let parcel_edit = partition.config.as_ref().and_then(|cfg| cfg.overrides.parcels.get(&parcel.id)).and_then(|edit| edit.house_config.as_ref());
     let profile = super::house_mix::HouseSettings::parse(architecture_culture);
     let id = request["id"].as_str().ok_or("Missing procedural building identifier")?;
     let keys: Vec<String> = quarter.map(|id| format!("q:{id}")).into_iter()
-        .chain([format!("p:{}", parcel.id), format!("b:{id}")]).collect();
+        .chain([format!("block:{}", parcel.block), format!("p:{}", parcel.id), format!("b:{id}")]).collect();
     let selected = keys.iter().filter_map(|key| profile.as_ref()?.massing.get(key));
-    for patch in [quarter_edit, parcel_edit].into_iter().flatten().chain(selected).filter(|patch| super::massing::is_shape_edit(patch)) {
+    for patch in [quarter_edit, block_edit, parcel_edit].into_iter().flatten().chain(selected).filter(|patch| super::massing::is_shape_edit(patch)) {
         let shapes: Vec<super::Shape> = serde_json::from_value(request["preview"].clone()).map_err(|error| error.to_string())?;
         super::massing::apply_edit(&mut request["programme"]["massing"], &shapes, patch)?;
     }
@@ -194,15 +196,16 @@ fn inherit_house_config(request: &mut Value, layout: &Layout, partition: &Partit
     }
     let quarter = layout.blocks.get(parcel.block).and_then(|b| layout.config.as_ref()?.overrides.quarters.get(&b.quarter.to_string())).and_then(|o| o.house_config.as_ref());
     let lot = partition.config.as_ref().and_then(|c| c.overrides.parcels.get(&parcel.id)).and_then(|o| o.house_config.as_ref());
-    if quarter.is_none() && lot.is_none() { return; }
-    for patch in [quarter, lot].into_iter().flatten() {
+    let block = partition.config.as_ref().and_then(|c| c.overrides.blocks.get(&parcel.block.to_string())).and_then(|o| o.house_config.as_ref());
+    if quarter.is_none() && block.is_none() && lot.is_none() { return; }
+    for patch in [quarter, block, lot].into_iter().flatten() {
         if patch.get("pack").is_some_and(|pack| *pack != request["config"]["pack"]) && patch.get("recipe").is_none() {
             request["config"]["recipe"] = Value::Null;
             request["config"]["overrides"]["variant"] = Value::Null;
         }
         merge(&mut request["config"], patch);
     }
-    if let Some(seed) = lot.and_then(|p| p["seed"].as_str()).or_else(|| quarter.and_then(|p| p["seed"].as_str())).map(|s| format!("{s}/{}/building", parcel.id)) {
+    if let Some(seed) = lot.and_then(|p| p["seed"].as_str()).or_else(|| block.and_then(|p| p["seed"].as_str())).or_else(|| quarter.and_then(|p| p["seed"].as_str())).map(|s| format!("{s}/{}/building", parcel.id)) {
         request["seed"] = json!(seed);
         request["config"]["seed"] = json!(seed);
     }
@@ -904,8 +907,7 @@ impl BuildingSiteIndex {
             apply_massing_overrides(&mut request, layout, partition, parcel, architecture_culture)?;
             return Ok(request);
         }
-        // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
-        // own; a pack that refuses the lot falls back to it, never a refusal.
+        // A scoped culture replaces the whole tissue, including its house form.
         let picked = drawn_culture(architecture_culture, seed, layout, partition, parcel, &allocation.role, &allocation.function)
             .filter(|p| p.0 != allocation.culture);
         let from_sheet = picked.as_ref().is_some_and(|p| p.1);
@@ -1068,7 +1070,10 @@ impl BuildingSiteIndex {
         });
         let programme = programme_of(allocation, parcel, layout, &layout_index.districts);
         let wealth = programme["wealth"].as_f64().unwrap_or(0.5);
-        let site_seed = super::edits::building_seed(seed, &parcel.id, partition); // edits hook (urban/edits.rs): lot salt
+        let mut site_seed = super::edits::building_seed(seed, &parcel.id, partition);
+        if let Some(salt) = partition.config.as_ref().and_then(|cfg| cfg.overrides.blocks.get(&parcel.block.to_string())).and_then(|e| e.salt).filter(|s| *s > 0) {
+            site_seed.push_str(&format!("/block-salt:{salt}"));
+        }
         let role = programme["role"].as_str().unwrap_or("").to_string();
         let functional = super::culture::functional_programme(
             &culture.architecture_pack,
@@ -1898,6 +1903,38 @@ mod tests {
             );
         }
         (layouts, partitions)
+    }
+
+    #[test]
+    fn block_building_type_reaches_all_its_parcels_and_a_lot_can_override_it() {
+        let (layouts, mut partitions) = paging_fixture();
+        let partition = &mut partitions[0];
+        let special = partition.parcels[0].id.clone();
+        partition.config.as_mut().unwrap().overrides.blocks.insert("0".into(), serde_json::from_value(json!({"role":"worship.temple"})).unwrap());
+        partition.config.as_mut().unwrap().overrides.parcels.insert(special.clone(), serde_json::from_value(json!({"role":"civic.wizard-tower"})).unwrap());
+        super::super::programme::allocate(&layouts[0], partition);
+        let allocations = &partition.programme.as_ref().unwrap().allocations;
+        assert!(!allocations.is_empty());
+        assert!(allocations.iter().any(|a| a.parcel_id == special && a.role == "civic.wizard-tower"));
+        assert!(allocations.iter().filter(|a| a.parcel_id != special).all(|a| a.role == "worship.temple"));
+    }
+
+    #[test]
+    fn selected_area_culture_replaces_every_house_tissue_deterministically() {
+        let (mut layouts, mut partitions) = paging_fixture();
+        layouts[0].config.as_mut().unwrap().overrides.quarters.insert("0".into(), serde_json::from_value(json!({"culture":"elven"})).unwrap());
+        for parcel in &partitions[0].parcels {
+            assert_eq!(drawn_culture(None, "same-seed", &layouts[0], &partitions[0], parcel, "dwelling", "domestic"), Some(("elven".into(), true)));
+        }
+        // A block's explicit style must select its whole tissue too, rather
+        // than borrowing a new pack while retaining the old ground-house form.
+        partitions[0].config.as_mut().unwrap().overrides.blocks.insert("0".into(), serde_json::from_value(json!({"culture":"elven"})).unwrap());
+        let profile = json!({"houses":{"blocks":{"0":{"styles":[{"culture":"elven","weight":1}]}}}}).to_string();
+        for seed in ["same-seed", "rerolled"] {
+            for parcel in &partitions[0].parcels {
+                assert_eq!(drawn_culture(Some(&profile), seed, &layouts[0], &partitions[0], parcel, "dwelling", "domestic"), Some(("elven".into(), true)));
+            }
+        }
     }
 
     #[test]

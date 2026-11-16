@@ -26,7 +26,7 @@ import type { Options } from '../../src/gen/types';
 import { city3dScene } from '../../src/render/city3dMeshes';
 import { pieceShadow, pieceShadows, pieceVolumes, planRoof, volumeRoof, type MassingPiece } from '../../src/render/cityMassing';
 import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from '../../src/render/urbanBuildingGeometry';
-import { PRESET_IDS, isHiddenPreset, presetComposition, validateComposition, withCompositionQuality } from '../../src/render/composition';
+import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality } from '../../src/render/composition';
 import { PRESET_OPTIONS, compositionMessages } from '../../src/ui/compositionControls';
 import { passKeys } from '../../src/v2/passes/pass';
 import { LiveGround } from '../../src/ui/liveGround';
@@ -114,6 +114,18 @@ describe('shared live tile filling', () => {
 });
 
 describe('V2 and City Bench stay in sync', () => {
+  it('exposes Minimal only where the independent shared painter is wired', () => {
+    expect(styleAvailableOnPage('minimal', 'v2')).toBe(true);
+    expect(styleAvailableOnPage('minimal', 'bench')).toBe(false);
+    for (const preset of PRESET_IDS.filter(id => id !== 'minimal')) expect(styleAvailableOnPage(preset, 'bench')).toBe(true);
+    expect(read('../../src/ui/benchRenderSettings.ts')).toContain('styleAvailableOnPage(');
+    expect(read('../../src/ui/benchComposition.ts')).toContain('styleAvailableOnPage(');
+    expect(read('../../src/v2/minimalRenderer.ts')).toContain("from '../render/minimalMap'");
+    const client = read('../../src/v2/client.ts');
+    expect(client).toContain("minimalAppearance?.path === 'minimal'");
+    expect(client).toContain("this.resolve(settings, world, true).path !== 'minimal'");
+  });
+
   it('budgets shared 3D preparation by frame, prioritises near work and cancels stale inputs', async () => {
     const frames = new Map<number, FrameRequestCallback>(); let serial = 0, time = 0;
     vi.stubGlobal('requestAnimationFrame', (frame: FrameRequestCallback) => { frames.set(++serial, frame); return serial; });

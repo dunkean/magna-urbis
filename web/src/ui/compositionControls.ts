@@ -43,7 +43,7 @@ export const limitationText: Record<string, string> = {
   "The 3D bench cannot drape footprints from retained building projections.": copy("The 3D bench cannot drape footprints from retained building projections.", "Le banc 3D ne peut pas draper les emprises des projections de bâtiments conservées."),
 };
 // Level 1 and 2: every row writes appearance.composition (render/composition.ts) and nothing else.
-const STYLE_ENTRIES = [['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Painted satellite', 'Satellite peint'],
+const STYLE_ENTRIES = [['minimal', 'Minimal', 'Minimal'], ['atlas', 'Atlas', 'Atlas'], ['cadastre', 'Cadastre', 'Cadastre'], ['topographic', 'Topographic', 'Topographique'], ['satellite', 'Satellite', 'Satellite'], ['satellite-2', 'Painted satellite', 'Satellite peint'],
   ['parchment', 'Parchment', 'Parchemin'], ['illustration', 'Illustration', 'Illustration']] as const satisfies readonly (readonly [StyleId, string, string])[];
 const PRESET_ENTRIES = [...STYLE_ENTRIES.filter(entry => !isHiddenPreset(entry[0])).flatMap((entry): readonly (readonly [PresetId, string, string])[] => entry[0] === 'satellite'
   ? [entry, ['satellite-light', 'Satellite · Fast', 'Satellite · Rapide'] as const]

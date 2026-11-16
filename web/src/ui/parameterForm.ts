@@ -36,6 +36,8 @@ export interface ParameterFormBindings {
   isMixed?(path: string): boolean;
   /** Display the resolved automatic choice while retaining its sentinel in the recipe. */
   automaticChoice?(path: string, value: unknown): ParameterChoice | undefined;
+  /** Contextual choices, e.g. building types compatible with the selected culture and lot. */
+  choices?(path: string): readonly ParameterChoice[] | undefined;
 }
 export interface ParameterForm { sync(): void; dispose(): void }
 let parameterFormSequence = 0;
@@ -62,6 +64,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   const cleanups: (() => void)[] = [];
   const previews: ReturnType<typeof mountCityPatternChoices>[] = [];
   const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement; reset?: HTMLButtonElement; automatic: HTMLElement }[] = [];
+  const choiceKeys = new Map<string, string>();
   for (const field of fields) {
     const label = document.createElement('label'); label.className = `parameter-field parameter-${field.type}`;
     if(field.path.includes('.text.levels.'))label.classList.add('name-importance-field');
@@ -131,6 +134,16 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   bindTree(root);
   const sync = () => {
     for (const { field, input, slider, reset, automatic } of controls) {
+      const dynamic = input instanceof HTMLSelectElement ? bindings.choices?.(field.path) : undefined;
+      if (dynamic) {
+        const key = JSON.stringify(dynamic);
+        if (choiceKeys.get(field.path) !== key) {
+          choiceKeys.set(field.path, key); input.replaceChildren();
+          for (const choice of [...(field.optional ? [{ value: '', label: field.emptyLabel ?? 'Automatic' }] : []), ...dynamic]) {
+            const option = document.createElement('option'); option.value = choice.value; setText(option, choice.label); input.append(option);
+          }
+        }
+      }
       automatic.hidden = true; delete input.dataset.resolvedValue;
       input.setAttribute('aria-label', fieldCaption(field));
       const sourceUnit = physicalUnit(field);
@@ -186,7 +199,11 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
           }
         }
         if (input instanceof HTMLSelectElement && text !== '' && !Array.from(input.options).some(option => option.value === text)) {
-          const retained = document.createElement('option'); retained.value = text; retained.textContent = text; retained.dataset.l10nKeep = ''; input.append(retained);
+          const retained = document.createElement('option'); retained.value = text;
+          const label = field.options?.find(option => option.value === text)?.label;
+          if (dynamic) retained.disabled = true;
+          if (label) setText(retained, label); else { retained.textContent = text; retained.dataset.l10nKeep = ''; }
+          input.append(retained);
         }
         input.value = text;
       }

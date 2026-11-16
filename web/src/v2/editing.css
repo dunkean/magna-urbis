@@ -12,6 +12,9 @@
 .v2-edit-panel input[type=color]{height:34px;padding:3px}
 .v2-edit-panel [role=status]{font-size:11px;line-height:1.5;color:var(--gold);margin-top:8px}
 .v2-edit-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;overflow:hidden}
+/* Map-space outlines belong to 2D; the 3D viewer projects its own selection. */
+.map-area:has(>.city3d:not([hidden])) [data-urban-selection],.map-area:has(>.city3d:not([hidden])) .urban-selection-name{display:none!important}
+body:has(#inspect-mode:not(:checked)) [data-urban-selection],body:has(#inspect-mode:not(:checked)) .urban-selection-name{display:none!important}
 .v2-edit-overlay .edit-handle{pointer-events:all;cursor:move;fill:#fff7e4;stroke:#9b671d;stroke-width:2}
 .v2-edit-overlay .edit-line{fill:none;stroke:#e7ab39;stroke-width:3;pointer-events:stroke;cursor:move}
 .v2-edit-overlay .edit-label{pointer-events:all;cursor:move}

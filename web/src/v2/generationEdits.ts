@@ -1,6 +1,15 @@
-import type { V2Settings } from './contracts';
+import type { V2Settings, V2UrbanControls } from './contracts';
 import { readGenerationSeed, writeGenerationSeed, seedSubset } from '../../../rust/bridge/generationSeed';
 import { cultureEnvironment } from './environmentCultures';
+
+/** An explicit city culture replaces inherited cultural templates, while keeping
+ * geographic controls and the independently selected representation/renderer. */
+export function urbanParentControls(base: V2UrbanControls | undefined, local: V2UrbanControls | undefined): V2UrbanControls | undefined {
+  if (!local?.layout?.culture || !base) return base;
+  const { culture: _culture, preset: _preset, recipe: _recipe, params: _params, tissue: _tissue, styleSheet: _sheet, mixCulture: _mix, phaseOverrides: _phases, ...layout } = base.layout ?? {};
+  const { culture: _plotsCulture, preset: _plotsPreset, recipe: _plotsRecipe, params: _plotsParams, operator: _operator, zoneOperators: _operators, ...parcels } = base.parcels ?? {};
+  return { ...base, layout, parcels, houses: undefined };
+}
 
 export function regionalParentKey(settings: V2Settings): string {
   const d=settings.region?.demography,p=settings.region?.placement;
@@ -39,11 +48,12 @@ export function resetUrbanChildren(settings: V2Settings, scope: { kind: string; 
       else if (record.layout?.overrides) delete record.layout.overrides.quarters;
       delete record.parcels;delete record.houses;
     } else if (stage === 'parcels') {
-      if (record.parcels?.overrides) delete record.parcels.overrides.parcels;
+      if (record.parcels?.overrides) { delete record.parcels.overrides.blocks; delete record.parcels.overrides.parcels; }
       delete record.houses;
     } else {
       for (const q of Object.values(record.layout?.overrides?.quarters ?? {})) if (q) { delete q.houseConfig;delete q.buildingCulture; }
       for (const p of Object.values(record.parcels?.overrides?.parcels ?? {})) if (p) { delete p.houseConfig;delete p.culture; }
+      for (const b of Object.values(record.parcels?.overrides?.blocks ?? {})) if (b) delete b.houseConfig;
     }
   }
   if (u.buildings) for (const id of Object.keys(u.buildings)) if (scope.kind === 'global' || id.startsWith(`${scope.key}/`)) delete u.buildings[id];
