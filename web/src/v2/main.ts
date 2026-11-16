@@ -62,7 +62,7 @@ import { iconUrl, type IconId } from './stageIcons';
 import { mountRegionControls } from './regionControls';
 import { effectiveRegion } from './regionSettings';
 import { cityStageValidityKeys } from './stageValidity';
-import { SmallPlaceQueue } from './smallPlaces';
+import { SmallPlaceQueue, boundedSmallPlaceRun } from './smallPlaces';
 import { mountMapControls } from './mapControls';
 import { mountNameOriginControls } from './nameOriginControls';
 import { mountMapLabelEditor } from './mapLabelEditor';
@@ -672,6 +672,8 @@ for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const)
 function smallPlaceRecipeKey(): string { return cityStageValidityKeys(settings, pristine, JSON.stringify(['all', []])).get('city-houses')!; }
 const GESTURE_QUIET_MS = 400;
 smallPlaces = new SmallPlaceQueue({
+  canonicalOrder: true,
+  canBuild: (base, keys) => boundedSmallPlaceRun(base, settings, keys, effectiveRegion(settings).autoBuildPopulation),
   base: () => {
     if (busy || !pristine || !world || previewBase || !pristine.urban || pristine.stats['v2.cityOutput']
       || smallPlaceRecipe === undefined || smallPlaceRecipe !== smallPlaceRecipeKey()) return undefined;
@@ -680,7 +682,8 @@ smallPlaces = new SmallPlaceQueue({
   },
   focus: () => { const view = client.viewer.getView(); return Number.isFinite(view.cx) && Number.isFinite(view.cy) ? { x: view.cx, y: view.cy } : undefined; },
   // One bounded batch uses the existing parallel targeted-city path; silent progress.
-  build: (base, keys) => client.run('towns', settings, base, undefined, undefined, undefined, [...keys], undefined, () => undefined),
+  build: (base, keys) => client.run('towns', settings, base, undefined, undefined, undefined, [...keys], undefined, () => undefined, true),
+  release: () => client.releaseUrbanLanes(),
   apply: async (result, keys) => {
     labelBaseline = undefined; applyLabelEdits(result, settings.naming?.labels);
     pristine = result; world = applyBuildingEdits(result, mods).world;

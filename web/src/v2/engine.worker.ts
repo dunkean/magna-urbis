@@ -14,7 +14,7 @@ let queue = Promise.resolve();
 const retained=new WorkerWorld();
 // Every action below ends with renameMap: the town stage need not name its result first.
 namesRenamedAfterActions();
-scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceRequest|{type:'release'}>) => {
+scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceRequest|{type:'release'|'release-urban-lanes'}>) => {
   if('type'in request&&request.type==='resources'){
     const {id,settings}=request;
     queue=queue.then(async()=>{
@@ -26,7 +26,12 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
     });
     return;
   }
-  if('type'in request){queue=queue.then(async()=>{retained.clear();clearTerrainPreviews();const {releaseTerrainCheckpoints}=await import('../../../rust/bridge/terrain');releaseTerrainCheckpoints();});return;}
+  if('type'in request){queue=queue.then(async()=>{
+    await(await import('./rustUrban')).releaseUrbanLanes();
+    if(request.type==='release'){
+      retained.clear();clearTerrainPreviews();const {releaseTerrainCheckpoints}=await import('../../../rust/bridge/terrain');releaseTerrainCheckpoints();
+    }
+  });return;}
   queue = queue.then(async () => {
     const { id, action, settings } = request;
     const send = (message: V2WorkerResponse): void => scope.postMessage(message);
@@ -38,7 +43,7 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       if (!world) throw new Error('No map to process.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await planRegion(world, settings, progress, action === 'all');
       if (action === 'roads') world = await rerouteRegion(world, settings, progress);
-      if (action === 'towns' || action === 'all') world = await generateTowns(world, settings, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined);
+      if (action === 'towns' || action === 'all') world = await generateTowns(world, settings, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes);
       if (action === 'town') {
         if (!request.key) throw new Error('Choose a settlement.');
         world = request.townStage ? await generateTownStage(world, settings, request.key, request.townStage, progress)
@@ -54,8 +59,8 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       const landuse = packWorldLanduse(world), packed = packWorldPartitions(landuse.world);
       const heavy = packed.transfer.reduce((sum, buffer) => sum + buffer.byteLength, 0) > HEAVY_RESULT_BYTES;
       // A heavy result (a town of about a million people): the page replaces this worker, so nothing is retained here.
-      if (heavy) retained.clear();
+      if (heavy) {retained.clear();await(await import('./rustUrban')).releaseUrbanLanes();}
       scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo(), ...(heavy ? { heavy } : {}) } satisfies V2WorkerResponse, [...landuse.transfer, ...packed.transfer]);
-    } catch (error) { send({ id, type: 'error', error: error instanceof Error ? error.message : String(error), wasm: wasmThreadsInfo() }); }
+    } catch (error) { await(await import('./rustUrban')).releaseUrbanLanes();send({ id, type: 'error', error: error instanceof Error ? error.message : String(error), wasm: wasmThreadsInfo() }); }
   });
 };

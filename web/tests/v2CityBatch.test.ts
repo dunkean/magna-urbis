@@ -4,9 +4,10 @@ import { generateTerrain, planRegion, generateTown, generateTowns } from '../src
 import { TerrainCache } from '../src/v2/cache';
 import { cityStageValidityKeys, settlementStageValidityKeys } from '../src/v2/stageValidity';
 import type { World } from '../src/gen/types';
+import { regionSpec } from '../src/v2/regionSettings';
 
-const native = vi.hoisted(() => ({ build: vi.fn() }));
-vi.mock('../src/v2/rustUrban', () => ({ generateRustTown: native.build }));
+const native = vi.hoisted(() => ({ build: vi.fn(), release: vi.fn() }));
+vi.mock('../src/v2/rustUrban', () => ({ generateRustTown: native.build, retainCityGround:()=>undefined, releaseUrbanLanes:native.release }));
 beforeEach(() => { native.build.mockReset(); });
 
 async function fixture() {
@@ -14,6 +15,7 @@ async function fixture() {
   settings.generation = 'procedural';
   settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
   settings.extent = 2400; settings.settlementCount = 1;
+  settings.region = { placement: { mode: 'list', list: [regionSpec('main',80)] } };
   Object.assign(settings.options, { population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
     importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
   const terrain = await generateTerrain(settings, undefined, new TerrainCache());
@@ -29,6 +31,14 @@ async function fixture() {
 }
 
 describe('Cities batch scope', () => {
+  it('uses one WASM engine lane rather than duplicating synchronous terrain and pools', async () => {
+    const {settings,world}=await fixture(),build=native.build.getMockImplementation()!;
+    let active=0,peak=0;
+    native.build.mockImplementation(async(...args)=>{active++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,0));try{return await build(...args);}finally{active--;}});
+    await generateTowns(world,settings,undefined,undefined,'layout',true);
+    expect(peak).toBe(1);
+    expect(native.build.mock.calls.every(call=>call[5]===undefined)).toBe(true);
+  });
   it('runs an explicit stage for a deduplicated subset and preserves all other cities and regional geometry', async () => {
     const { settings, world } = await fixture();
     const original = structuredClone(world);

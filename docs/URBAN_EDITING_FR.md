@@ -72,3 +72,30 @@ Le code de partage conserve les réglages de chaque périmètre, les types chois
 La validation couvre l’aller-retour du code, l’isolation d’une édition d’îlot, la propagation de culture, la régénération déterministe des rues intérieures, le changement de type compatible, le refus d’un type impossible sans terrain vide et la conservation du rendu complexe texturé.
 
 Le profil elfique privilégie les habitations arboricoles : part cible de 85 %, contre 15 % de maisons ordinaires, avec un tirage reproductible par parcelle.
+
+## Répartition régionale et limites de génération
+
+La population régionale est un budget d’habitants, pas une instruction de multiplier les petits lieux. Les effectifs automatiques sont bornés à la fois par la surface de la carte et par une croissance en racine carrée de la population. Une population importante remplit d’abord les capacités des lieux existants ; si nécessaire, un centre plus grand est ajouté dans les mêmes plafonds. Le plafond culturel habituel guide la composition initiale, mais ne force plus une population imposée à se disperser dans des centaines de camps ou de fermes.
+
+| Classe | Quota de surface : un lieu par tranche de | Maximum automatique par carte |
+| --- | ---: | ---: |
+| Ville / cité | 200 km² | 32 |
+| Bourg | 100 km² | 8 |
+| Village | 50 km² | 10 |
+| Hameau | 100 km² | 6 |
+| Ferme habitée | 150 km² | 4 |
+| Site isolé sans habitants | 50 km² | 16 |
+
+Les tranches sont arrondies au supérieur. Le quota de surface est un plafond, pas un objectif : la population, la culture et les terrains disponibles peuvent donner moins de lieux. Les sites isolés suivent également la population en racine carrée ; leur densité ne permet pas de dépasser le plafond automatique.
+
+Exemple déterministe, culture européenne, plaine tempérée, graine `42`, carte de 40 × 40 km et population imposée de 10 000 : un bourg, deux villages, un hameau, une ferme habitée et trois sites isolés. Les 10 000 habitants restent répartis entre les cinq lieux habités. La ferme ne reçoit pas un budget agricole distinct : la surface cultivée reste liée à la population.
+
+Des effectifs explicitement saisis ou une liste manuelle restent des choix de l’utilisateur. « Rétablir la répartition automatique » retire ces effectifs imposés. Si les plafonds de surface, les effectifs imposés ou les populations locales fixées ne permettent pas de loger toute la population demandée, le panneau indique la population effectivement répartie ; le calcul ne contourne pas les plafonds en ajoutant des centaines de petits lieux. Le plafond moteur d’un lieu reste de cinq millions d’habitants.
+
+Les choix et les populations locales restent conservés dans le code MU3 ; les effectifs automatiques sont recalculés de façon déterministe avec la version du générateur. Une nouvelle génération régionale invalide les anciennes répartitions conservées par le moteur.
+
+La construction automatique des petits lieux traite jusqu’à **32 lieux ou 8 000 habitants par lot**, avec une occupation du sol, un renommage et un redessin communs au lot. Les quatre sessions du moteur natif conservent le terrain entre les lots, puis sont libérées à la fin ou à l’arrêt de la passe. Une voie native prend un lieu dont les voisins préalables sont prêts ; les lieux indépendants peuvent avancer pendant qu’un autre attend son voisin. L’installation des résultats garde l’ordre canonique. Le navigateur WASM utilise un seul moteur urbain conservé, pour éviter quatre copies du terrain et quatre pools de travail sur le même thread JavaScript ; le moteur peut paralléliser ses étapes internes.
+
+Les lots automatiques respectent les dépendances de voisinage : les lieux plus grands passent avant leurs petits voisins. Un lieu qui imposerait une ville non sélectionnée, la reconstruction de voisins déjà bâtis ou le dépassement du budget est reporté. Il reste disponible pour une construction explicite dans l’onglet Cités. Les modifications et constructions demandées explicitement gardent leur propagation normale.
+
+Le benchmark reproductible `web/scripts/v2_small_places_bench.mjs` mesure uniquement le calcul urbain et les échanges avec le moteur natif, à géométrie identique. Sur l’essai local de 32 fermes et 142 bâtiments, après chauffe et ordre ABBA, la réutilisation des sessions réduit le temps moyen de 915 à 761 ms (environ 17 %) et les données raster envoyées de 4,46 à 1,12 Mo. Ce chiffre exclut le rendu et l’occupation du sol ; le regroupement de 64 petites fermes en deux lots au lieu de huit réduit aussi le nombre de ces traitements régionaux. Le coût total n’est pas garanti identique à celui d’une grande ville : chaque lieu conserve son implantation et son plan propre.

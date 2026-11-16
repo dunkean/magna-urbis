@@ -1,6 +1,6 @@
 import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
-import { POPULATION_CLASSES, regionalPopulation, type RegionalDemography, type PopulationClass } from './regionalPopulation';
+import { POPULATION_CLASSES, regionalPopulation, automaticSettlementLimits, automaticIsolatedLimit, type RegionalDemography, type PopulationClass } from './regionalPopulation';
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './settlementPopulationPanel.css';
 import { activitySitesOf } from './activitySites';
@@ -17,6 +17,7 @@ registerMessages(Object.fromEntries(Object.entries({
   'Manual list active. Editing these controls returns to regional distribution.': 'Liste manuelle active. Modifier ces réglages réactive la répartition régionale.',
   'Non-residential sites: mills, workshops, shrines… Inhabited farms are counted above. Placement depends on suitable terrain and resources.': 'Sites sans résidents : moulins, ateliers, sanctuaires… Les fermes habitées sont comptées au-dessus. L’implantation dépend des terrains et ressources disponibles.',
   'Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites': 'Implantés : {places} lieux · {population} habitants · {isolated} sites isolés',
+  'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. More inhabitants enlarge towns and cities. Exact counts override these limits.': 'Plafonds automatiques de cette carte : {villages} villages, {hamlets} hameaux, {farms} fermes habitées, {isolated} sites isolés. Davantage d’habitants agrandissent les bourgs et les villes. Des effectifs imposés remplacent ces plafonds.',
 }).map(([en,fr]) => [en,{en,fr}])));
 
 export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSettings(): V2Settings; getWorld(): World | undefined; changed(): void; syncForms(): void }) {
@@ -74,10 +75,14 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
   const resetAll = document.createElement('button'); resetAll.type = 'button'; resetAll.className = 'quiet small'; setText(resetAll,'Restore automatic distribution');
   resetAll.onclick = () => { const s = api.getSettings(); const followCulture = s.region?.demography?.followCulture; s.region ??= {}; s.region.demography = followCulture === undefined ? {} : {followCulture}; if (s.region.placement) { delete s.region.placement.counts; s.region.placement.mode = 'auto'; } api.changed(); api.syncForms(); sync(); };
   const help = document.createElement('details'); help.className = 'regional-population-help';
-  const helpTitle = document.createElement('summary'); setText(helpTitle,'Automatic from the region'); help.append(helpTitle,hint,isolatedHint);
+  const limitsHint = document.createElement('p'); limitsHint.className = 'hint';
+  const helpTitle = document.createElement('summary'); setText(helpTitle,'Automatic from the region'); help.append(helpTitle,hint,isolatedHint,limitsHint);
   root.append(summary,placed,resetAll,help);
   function sync(): void {
     const s = api.getSettings(), plan = regionalPopulation(s), d = s.region?.demography ?? {};
+    const limits = automaticSettlementLimits(plan.areaKm2, plan.population);
+    limitsHint.textContent = translate('Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. More inhabitants enlarge towns and cities. Exact counts override these limits.')
+      .replace('{villages}',String(limits.village)).replace('{hamlets}',String(limits.hamlet)).replace('{farms}',String(limits.farmstead)).replace('{isolated}',String(automaticIsolatedLimit(plan.areaKm2)));
     for (const control of controls) {
       const {key,input,reset,row,count} = control;
       const own = count ? d.counts?.[key as PopulationClass] ?? s.region?.placement?.counts?.[key] : (d as Record<string,unknown>)[key];

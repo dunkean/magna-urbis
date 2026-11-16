@@ -119,7 +119,7 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
     if (d.counts !== undefined) { const counts = object(d.counts, 'demographic counts'); fields(counts, ['city','town','village','hamlet','farmstead'], 'demographic counts'); let total = 0; for (const n of Object.values(counts)) { number(n, 'Settlement count', 0, 1000, true); total += n as number; } if (total > 1000) throw new Error('At most 1000 settlements can be requested.'); }
   }
   if (region.resolution !== undefined) number(region.resolution, 'Regional raster resolution', 64, 1024, true);
-  if (region.autoBuildPopulation !== undefined) number(region.autoBuildPopulation, 'Automatic small-place population', 0, 100000, true);
+  if (region.autoBuildPopulation !== undefined) number(region.autoBuildPopulation, 'Automatic small-place population', 0, 5000, true);
   if (region.cropSurplus !== undefined) number(region.cropSurplus, 'Crop surplus', 0, 3);
   if (region.placement !== undefined) {
     const p = object(region.placement, 'placement settings');

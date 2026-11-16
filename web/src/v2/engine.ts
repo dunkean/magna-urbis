@@ -16,7 +16,7 @@ import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/b
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
 import { effectiveRegion, generationRegion } from './regionSettings';
-import { regionalPopulation } from './regionalPopulation';
+import { regionalPopulation, REGIONAL_POPULATION_VERSION } from './regionalPopulation';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
 import { routeNetwork } from '../gen/settlements/network';
@@ -27,6 +27,7 @@ import { EAGER_MAIN_POP } from '../gen/urban/mega/types';
 import { getCulture, populationCulture } from '../gen/urban/culture';
 import { generateNames, settlementNames } from '../gen/names';
 import { neighbourClaimsOf, planTownRun, townSeats, type TownRun } from './townNeighbours';
+import { createTownRunQueue } from './townRunQueue';
 import type { Claim } from '../../../rust/bridge/urban';
 import { mainPopulation, applyNameOverrides } from '../gen/pipeline';
 import type { World, TerrainLayer, LandUseLayer } from '../gen/types';
@@ -395,7 +396,7 @@ function regionKey(settings: V2Settings): string {
       .sort(([a], [b]) => a.localeCompare(b)).map(([key, o]) =>
       [key, o.center, o.siteType, o.sitePrefs, key === 'main' ? o.roads : undefined]),
     ...(stepSeed(o.seed, 'settle-sites') !== seedRoot(o.seed) || stepSeed(o.seed, 'settle-roads') !== seedRoot(o.seed)
-      ? [stepSeed(o.seed, 'settle-sites'), stepSeed(o.seed, 'settle-roads')] : [])]);
+      ? [stepSeed(o.seed, 'settle-sites'), stepSeed(o.seed, 'settle-roads')] : []), REGIONAL_POPULATION_VERSION]);
 }
 function historicalClassicRegionKey(settings: V2Settings): string {
   const frame: unknown[] = JSON.parse(regionKey(settings)); frame.splice(8, 2);
@@ -564,7 +565,7 @@ export async function generateTown(regionWorld: World, settings: V2Settings, key
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
 }
-export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage): Promise<World> {
+export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage, keepUrbanLanes = false): Promise<World> {
   if (regionWorld.settlements?.length === 0 && regionWorld.stats['v2.stage'] === 'region') return cloneV2WorldForGeneration(regionWorld);
   validateSettings(settings); assertRegion(regionWorld, settings);
   if (keys) {
@@ -578,7 +579,9 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
   const run = townRun(world, settings, chosen.map(s => s.key));
   const places = run ? run.order.map(key => world.settlements!.find(s => s.key === key)!) : chosen;
   const stages = runStages(world, run, places.map(place => place.key), through);
-  if (backend === 'typescript' || places.length < 2 || TOWN_CONCURRENCY < 2) {
+  // WASM calls share this worker's JS thread: concurrent lanes only duplicate terrain/pools.
+  // Its one engine uses the internal Rust/pool parallelism where a stage has enough work.
+  if (backend !== 'native' || places.length < 2 || TOWN_CONCURRENCY < 2) {
     for (let i = 0; i < places.length; i++) {
       report(onProgress, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, places.length);
       await buildTown(world, settings, places[i].key, onProgress, stages.get(places[i].key));
@@ -593,11 +596,12 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     let leader = 0; const last: (Parameters<ProgressCallback>[0] | undefined)[] = [];
     const forward = (i: number) => (p: Parameters<ProgressCallback>[0]): void => { last[i] = p; if (i === leader) onProgress?.(p); };
     const { generateRustTown, releaseUrbanLanes } = await import('./rustUrban');
-    let next = 0, stop = false;
+    let completed = false;
     const index = new Map(places.map((place, i) => [place.key, i]));
+    const work = createTownRunQueue(places.map(place => (run?.waits.get(place.key) ?? []).map(key => index.get(key)!)));
     const lane = async (laneId: number): Promise<void> => {
       for (;;) {
-        const i = next++; if (stop || i >= n) return;
+        const i = await work.next(); if (i === undefined) return;
         try {
           // A town starts once the earlier towns it may border are done (they come first in `places`), with their fresh claims.
           const fresh = new Map<string, Claim>();
@@ -611,6 +615,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
           waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), stages.get(places[i].key), laneId, neighbours) });
         }
         catch (error) { waiters[i]({ ok: false, error }); }
+        finally { work.complete(i); }
       }
     };
     const lanes: Promise<void>[] = [];
@@ -624,7 +629,8 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
         if (!outcome.ok) throw outcome.error;
         await buildTown(world, settings, places[i].key, undefined, stages.get(places[i].key), Promise.resolve(outcome.value));
       }
-    } finally { stop = true; await Promise.allSettled(lanes); await releaseUrbanLanes(); }
+      completed = true;
+    } finally { work.stop(); await Promise.allSettled(lanes); if (!keepUrbanLanes || !completed) await releaseUrbanLanes(); }
   }
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);

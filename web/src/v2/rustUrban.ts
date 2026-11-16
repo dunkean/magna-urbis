@@ -94,6 +94,14 @@ function fingerprint(value: unknown): string {
   return JSON.stringify(value, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
 }
+const roadFingerprints = new WeakMap<Street[], string>();
+/** Roads are immutable regional products. Serialize their sorted keys once while preserving
+ * the exact historical composition-key bytes (the roads remain an array, never an encoded string). */
+export function townCompositionFingerprint(before: unknown[], roads: Street[], after: unknown[] = []): string {
+  let retained = roadFingerprints.get(roads);
+  if (retained === undefined) { retained = fingerprint(roads); roadFingerprints.set(roads, retained); }
+  return '[' + [fingerprint(before).slice(1, -1), retained, fingerprint(after).slice(1, -1)].filter(Boolean).join(',') + ']';
+}
 export function urbanBackend(settings: V2Settings): 'typescript' | 'rust' | 'native' {
   return settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript';
 }
@@ -276,8 +284,8 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const seed = urbanSeed(settings, key, 'composition'), streetSeed = urbanSeed(settings, key, 'streets');
   // A town is regenerated when the claims of its neighbours change; a town without neighbours keeps its key and payload.
   const neighbours = [...(neighbourClaims ?? neighbourClaimsOf(world, settings, key))];
-  const compositionKey = fingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout, roads,
-    ...(neighbours.length ? [neighbourFingerprint(neighbours)] : [])]);
+  const compositionKey = townCompositionFingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout], roads,
+    neighbours.length ? [neighbourFingerprint(neighbours)] : []);
   const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
   const previousComposition = previous?.compositionKey === compositionKey ? previous.compositionLayouts
     : !previous?.compositionKey && previous?.layoutKey === compositionKey ? previous.layouts : undefined;

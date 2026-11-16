@@ -11,7 +11,10 @@ describe('workbench environmental settlement suggestions', () => {
     expect(total(recommendedCounts(settings, 2))).toBeGreaterThan(plain);
     expect(total(recommendedCounts(settings, 0))).toBe(0);
     settings.extent = 40000;
-    expect(total(recommendedCounts(settings))).toBeGreaterThan(plain * 3);
+    const larger = total(recommendedCounts(settings));
+    expect(larger).toBeGreaterThan(plain);
+    // Four times the surface/population should grow the centres, not quadruple sites.
+    expect(larger).toBeLessThan(plain * 3);
     settings.extent = 20000; settings.terrain!.relief = 'high-mountains'; settings.options.biome = 'desert';
     expect(total(recommendedCounts(settings))).toBeLessThan(plain / 5);
   });

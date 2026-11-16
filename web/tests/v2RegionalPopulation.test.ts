@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
-import { regionalPopulation, chooseIsolatedSites } from '../src/v2/regionalPopulation';
+import { regionalPopulation, chooseIsolatedSites, automaticSettlementLimits, automaticIsolatedLimit } from '../src/v2/regionalPopulation';
 import { effectiveRegion, validateRegionSettings } from '../src/v2/regionSettings';
 import { encodeCityCode, decodeCityCode } from '../src/v2/cityCode';
 import { rerollSettlement, urbanSeed, URBAN_SEED_STAGES } from '../src/v2/urbanSeeds';
@@ -16,20 +16,60 @@ describe('regional population and distribution',()=>{
     for (const culture of ['european-organic', 'elven', 'halfling']) {
       const s=region(culture);s.region={demography:{population:10000}};
       const plan=regionalPopulation(s);
-      expect(plan.counts.farmstead).toBeLessThanOrEqual(5);
-      expect(plan.counts.hamlet).toBeLessThanOrEqual(10);
+      expect(plan.counts.farmstead).toBeLessThanOrEqual(1);
+      expect(plan.counts.hamlet).toBeLessThanOrEqual(1);
+      expect(plan.counts.village).toBeLessThanOrEqual(2);
+      expect(plan.isolatedCount).toBeLessThanOrEqual(3);
       expect(plan.allocatedPopulation).toBe(10000);
-      expect(plan.places.length).toBeLessThan(50);
+      expect(plan.places.length).toBeLessThanOrEqual(5);
       expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(plan);
       s.region.demography!.counts={farmstead:150,hamlet:55};
       expect(regionalPopulation(s).counts).toMatchObject({farmstead:150,hamlet:55});
     }
   });
-  it('retains enough small-place capacity for cultures with no large towns',()=>{
+  it('grows a larger settlement instead of bypassing rural limits for a small-place culture',()=>{
     const s=region('inuit-camp');s.region={demography:{population:10000}};
     const plan=regionalPopulation(s);
     expect(plan.allocatedPopulation).toBe(10000);
-    expect(Math.max(...plan.places.map(p=>p.population))).toBeLessThanOrEqual(120);
+    expect(plan.places.length).toBeLessThanOrEqual(5);
+    expect(Math.max(...plan.places.map(p=>p.population))).toBeGreaterThan(9000);
+  });
+  it('bounds every automatic class by map surface and densifies larger settlements',()=>{
+    const s=region();s.extent=10000;s.region={demography:{population:100000}};
+    const small=regionalPopulation(s), limits=automaticSettlementLimits(100,100000);
+    expect(small.counts.village).toBeLessThanOrEqual(2);
+    expect(small.counts.hamlet).toBeLessThanOrEqual(1);
+    expect(small.counts.farmstead).toBeLessThanOrEqual(1);
+    expect(small.isolatedCount).toBeLessThanOrEqual(2);
+    expect(small.allocatedPopulation).toBe(100000);
+    s.region.demography!.population=1000000;
+    const dense=regionalPopulation(s);
+    expect(dense.counts).toEqual(small.counts);
+    expect(Math.max(...dense.places.map(p=>p.population))).toBeGreaterThan(Math.max(...small.places.map(p=>p.population))*5);
+    expect(dense.allocatedPopulation).toBe(1000000);
+    expect(dense.isolatedCount).toBeLessThanOrEqual(automaticIsolatedLimit(100));
+    for(const id of Object.keys(limits) as (keyof typeof limits)[]) expect(dense.counts[id]).toBeLessThanOrEqual(limits[id]);
+  });
+  it('never lifts the small-place or isolated ceilings on a very large populated region',()=>{
+    const s=region();s.extent=100000;s.region={demography:{population:100000000,isolatedDensity:10}};
+    const p=regionalPopulation(s);
+    expect(p.counts).toMatchObject({village:10,hamlet:6,farmstead:4});
+    expect(p.places.length).toBeLessThanOrEqual(60);
+    expect(p.isolatedCount).toBeLessThanOrEqual(16);
+    expect(p.allocatedPopulation).toBe(100000000);
+    expect(Math.max(...p.places.map(s=>s.population))).toBeGreaterThan(1000000);
+    expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(p);
+  });
+  it('reports a population that cannot fit a surface ceiling instead of making more places',()=>{
+    const s=region();s.extent=2400;s.region={demography:{population:100000000}};
+    const p=regionalPopulation(s);
+    expect(p.counts).toEqual({city:1,town:1,village:1,hamlet:1,farmstead:1});
+    expect(p.unallocated).toBeGreaterThan(0);
+    expect(p.allocatedPopulation+p.unallocated).toBe(p.population);
+    expect(p.places.every(s=>s.population<=5000000)).toBe(true);
+    s.region.demography!.counts={city:0,town:0,village:0,hamlet:0,farmstead:0};
+    expect(regionalPopulation(s).places).toEqual([]);
+    expect(regionalPopulation(s).unallocated).toBe(100000000);
   });
   it('scales with area, environmental carrying density and culture instead of a principal settlement',()=>{
     const s=region(),plain=regionalPopulation(s);s.extent=20000;
@@ -60,10 +100,15 @@ describe('regional population and distribution',()=>{
     const s=region();s.region={demography:{population:5000,counts:{city:0,town:1},followCulture:false}};
     const p=regionalPopulation(s);expect(p.counts.town).toBe(1);expect(p.allocatedPopulation).toBe(5000);
     s.local.main={population:2300};expect(regionalPopulation(s).places[0].population).toBe(2300);
-    expect(regionalPopulation(s).allocatedPopulation).toBe(5000);
+    // The only town is fixed at 2,300. Automatic villages/hamlets/farms cannot
+    // bypass their ceilings to hide the capacity conflict.
+    const fixed=regionalPopulation(s);expect(fixed.allocatedPopulation).toBe(4461);
+    expect(fixed.allocatedPopulation+fixed.unallocated).toBe(5000);
     delete s.local.main;s.region.demography!.counts={city:1};expect(regionalPopulation(s).unallocated).toBeLessThan(0);
     expect(()=>validateRegionSettings({demography:{population:-1}})).toThrow();
     expect(()=>validateRegionSettings({demography:{counts:{village:800,hamlet:800}}})).toThrow();
+    expect(()=>validateRegionSettings({autoBuildPopulation:5000})).not.toThrow();
+    expect(()=>validateRegionSettings({autoBuildPopulation:8001})).toThrow('Automatic small-place population');
   });
   it('allows a completely empty region and restores automatic choices after removing overrides',()=>{
     const s=region();s.region={demography:{density:0}};

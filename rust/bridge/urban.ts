@@ -480,7 +480,13 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     }
     return response;
   };
-  return { release: runtime => native.release(runtime), run(request) {
+  return { async release(runtime) {
+    pool?.dispose(); pool = undefined;
+    terrain?.free(); terrain = undefined;
+    retainedLayouts = undefined; retainedPartitions = undefined;
+    pendingRaster = terrainRaster = undefined;
+    await native.release(runtime);
+  }, run(request) {
     if (request.source) {
       try {
         validateUrbanSource(request.source);
