@@ -264,7 +264,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
       const palette = city.palette, buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
       const requestedLayers = city.plan ? city.layers : EMPTY_LAYERS;
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
-        streets: appearance.composition.networks.roads.visible && visibility.roads !== false && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
+        streets: appearance.composition.networks.roads.visible && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
       const painted = city.painted, textured = city.textured;
       const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
       const buildingsVisible = visibility.city !== false && city.visible;

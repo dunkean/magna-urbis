@@ -374,14 +374,19 @@ export class StudioClient {
   /** The classic 3D background already holds the land use. */
   physicalGround(){return this.benchActive?this.bench?.physicalGround():undefined;}
   async exportBench(settings:V2Settings,resolved:ResolvedAppearance,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
+    // Style switches may still be preparing the shared GPU resources. Export waits for that work.
+    for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
     if(!this.world)throw new Error('Create a region first.');
     const {BenchRenderer}=await import('./benchRenderer');
-    const world=mapPresentation(this.world,settings),snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},true,this.bench?.rasterContext(),this.bench?.sharedResources());
+    // Use the viewer's async GPU path for exports too. Forcing the raster path recompiles the
+    // satellite material in synchronous WebGL even when the viewer already runs on WebGPU.
+    const world=mapPresentation(this.world,settings),snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},false,this.bench?.rasterContext(),this.bench?.sharedResources());
     renderer.resourceSource=w=>this.resources(w);
+    let rendered:HTMLCanvasElement|undefined;
     try{
       await renderer.set(world,snapshot,resolved,layers);
-      const rendered=await renderer.capture(size),copy=document.createElement('canvas');copy.width=copy.height=size;copy.getContext('2d')!.drawImage(rendered,0,0);return copy;
-    }finally{renderer.dispose();}
+      rendered=await renderer.capture(size);const copy=document.createElement('canvas');copy.width=copy.height=size;copy.getContext('2d')!.drawImage(rendered,0,0);return copy;
+    }finally{if(rendered)rendered.width=rendered.height=0;renderer.dispose();}
   }
   setDisplay(patch: Partial<DisplayOpts>): void {
     const next={...this.display,...patch};if(sameDisplay(this.display,next))return;this.display=next;

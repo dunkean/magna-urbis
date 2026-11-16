@@ -16,10 +16,7 @@ import { mountEditingTools } from './editingTools';
 import logo from '../ui/assets/logo-magna-urbis.png';
 import { CULTURE_LABELS, SITE_ARCHETYPES, type Options } from '../gen/options';
 import { STYLE_LIST, type MapStyle } from '../render/styles';
-import { isMapStyle } from '../render/styles';
-import { TERRAIN_STYLE_LIST, styleTraits, type TerrainStyle } from '../render/terrainStyle';
 import { mountRenderControls, currentComposition, writeAppearanceControl, PRESET_OPTIONS } from './renderControls';
-import { withGroundVariant, HIDDEN_STYLE_IDS, GROUND_VARIANTS } from '../render/composition';
 import { showBrowserAdvice } from '../ui/browserAdvice';
 import { ruralSemanticLegend } from '../render/semanticLayer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
@@ -29,7 +26,9 @@ import { cityReachedPopulation, populationText, populationShortfallText } from '
 import type { World, UrbanBuilding } from '../gen/types';
 import { screenToWorld } from '../render/view';
 import { EXPORT_LAYER_NAMES, type ExportLayers } from '../render/exportLayers';
-import { chooseExportCrop } from '../ui/exportCrop';
+import { chooseExportArea, chooseExportCrop } from '../ui/exportCrop';
+import { canvasPng, cropCanvasPng } from '../ui/canvasExport';
+import { supportsSvgExport } from './exportOptions';
 import { exportPng } from '../ui/pngExport';
 import { readHeightmap } from '../ui/heightmap';
 import { StudioClient, type Action } from './client';
@@ -103,9 +102,6 @@ registerMessages({'Render3D · Multiscale':{en:'Render3D · Multiscale',fr:'Rend
 registerMessages({'Réglages':{en:'Settings',fr:'Réglages'},'Réglages, moteurs et activité':{en:'Settings, engines and activity',fr:'Réglages, moteurs et activité'},'Toute la chaîne':{en:'Whole chain',fr:'Toute la chaîne'},'Générer toute la chaîne : relief, peuplements et villes':{en:'Generate the whole chain: relief, settlements and cities',fr:'Générer toute la chaîne : relief, peuplements et villes'},'Implanter et construire':{en:'Place and build',fr:'Implanter et construire'},'Recette JSON':{en:'Recipe JSON',fr:'Recette JSON'},'Les lieux':{en:'Places',fr:'Les lieux'},'Replier la liste':{en:'Collapse the list',fr:'Replier la liste'},'Créer le relief':{en:'Create the relief',fr:'Créer le relief'},'Redraw the map':{en:'Redraw the map',fr:'Redessiner la carte'},'Implanter et relier':{en:'Place and connect',fr:'Implanter et relier'},'Construire tous les lieux':{en:'Build every place',fr:'Construire tous les lieux'},'Courbes':{en:'Contours',fr:'Courbes'},'Milieux':{en:'Land cover',fr:'Milieux'},'Noms':{en:'Names',fr:'Noms'},'Adresses des modèles et services':{en:'Model and service addresses',fr:'Adresses des modèles et services'},'Chaîne de génération':{en:'Generation chain',fr:'Chaîne de génération'},'Réglages & moteurs':{en:'Settings & engines',fr:'Réglages & moteurs'}});
 const icon = (id: IconId, size = 22): string => `<img class="v2-icon" src="${iconUrl(id) ?? ''}" alt="" width="${size}" height="${size}" aria-hidden="true">`;
 registerMessages({'Full generation':{en:'Full generation',fr:'Génération complète'}});
-const hiddenVariants: readonly string[] = HIDDEN_STYLE_IDS.flatMap(look => GROUND_VARIANTS[look]);
-const renderStyles = [...TERRAIN_STYLE_LIST.filter(style => !hiddenVariants.includes(style.id)), { id: 'copernicus', label: 'Elevation · DEM', traits: styleTraits('copernicus') }];
-const renderStyleOptions = (): string => [['Cartographic maps',renderStyles.filter(style=>style.traits.family==='map')],['Terrain materials',renderStyles.filter(style=>style.traits.family==='material')],['Painted fantasy maps',renderStyles.filter(style=>style.traits.family==='brush')],['Diagnostics',renderStyles.filter(style=>style.traits.family==='diagnostic')]].map(([label,styles])=>`<optgroup data-render-label="${label}" label="${translate(String(label))}">${(styles as typeof renderStyles).map(style=>`<option value="${style.id}">${esc(style.label)}</option>`).join('')}</optgroup>`).join('');
 type Item = string | readonly [string, string];
 function options(items: readonly Item[]): string { return items.map(item => { const [value,label] = typeof item === 'string' ? [item,item] : item; return `<option value="${esc(value)}">${esc(label)}</option>`; }).join(''); }
 function field(label: string, key: string, items?: readonly Item[], attrs = ''): string { const id=`option-${key.replace(/\./g,'-')}`;return `<label class="label" for="${id}">${label}</label>${items ? `<select id="${id}" data-option="${key}">${options(items)}</select>` : `<input id="${id}" data-option="${key}" ${attrs || 'type="number"'}>`}`; }
@@ -266,7 +262,7 @@ setHTML($('#app'), `
   </section>
 </main>
 <dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">Return to a region</span><h2>Open & compose</h2></div><button data-close="import-dialog" aria-label="Close">×</button></div><p class="hint">A project contains the map, settings and edits. A recipe recreates a region with the same engine version.</p><div class="file-card"><h3>Magna Urbis V2 project or recipe</h3><p class="hint">Complete JSON or seeds + settings. Projects retain the elevation grids.</p><input id="project-file" type="file" accept=".json,application/json" aria-label="Import a V2 project or recipe"></div><div class="file-card"><h3>Heightmap → territory</h3><p class="hint">Grayscale PNG, JPEG or WebP, cropped to a square. Set the elevation and sea level before creating the terrain. The import replaces the current terrain.</p><input id="heightmap-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Import a heightmap"><button id="clear-heightmap" class="quiet small">Remove imported terrain</button><p class="hint" id="import-height-info">No heightmap imported.</p></div><div class="dialog-actions"><button data-close="import-dialog">Close</button></div></dialog>
-<dialog id="export-dialog"><div class="dialog-head"><div><span class="eyebrow">Take your region with you</span><h2>Export your way</h2></div><button data-close="export-dialog" aria-label="Close">×</button></div><p class="hint">A complete map, a crop, or just the elements you need for your game.</p><div class="control-grid"><div><label class="label" for="export-format">Format</label><select id="export-format"><option value="png">Image PNG</option><option value="svg">SVG vector map</option><option value="project">Complete project · JSON</option><option value="recipe">Seeds + settings + edits</option><option value="seed">Seed only · JSON</option><option value="heightmap">Heightmap · 8-bit PNG</option></select></div><div><label class="label" for="export-style">Style</label><select id="export-style">${STYLE_LIST.map(s=>`<option value="${s.id}">${s.label}</option>`).join('')}</select></div></div><div id="export-map-options"><h3>Elements to include</h3><div class="export-layers">${EXPORT_LAYER_NAMES.map(k=>`<label class="checkline"><input type="checkbox" data-layer="${k}" checked>${layerNames[k]}</label>`).join('')}</div><div class="control-grid"><div><label class="label" for="export-resolution">Longest edge</label><select id="export-resolution"><option value="1600">1,600 px · quick</option><option value="3000" selected>3,000 px · standard</option><option value="4096">4,096 px · detailed</option></select></div><label class="checkline"><input id="export-crop" type="checkbox" checked>Choose the export area</label></div></div><p class="hint" id="export-note" style="margin-top:15px">Visual exports use the current map without rerunning generation.</p><div class="dialog-actions"><button data-close="export-dialog">Cancel</button><button class="primary" id="export-go">Export</button></div></dialog>
+<dialog id="export-dialog"><div class="dialog-head"><div><span class="eyebrow">Take your region with you</span><h2>Export your way</h2></div><button data-close="export-dialog" aria-label="Close">×</button></div><p class="hint">A complete map, a crop, or just the elements you need for your game.</p><div class="control-grid"><div><label class="label" for="export-format">Format</label><select id="export-format"><option value="png">Image PNG</option><option value="svg">SVG vector map</option><option value="project">Complete project · JSON</option><option value="recipe">Seeds + settings + edits</option><option value="seed">Seed only · JSON</option><option value="heightmap">Heightmap · 8-bit PNG</option></select></div></div><div id="export-map-options"><h3>Elements to include</h3><div class="export-layers">${EXPORT_LAYER_NAMES.map(k=>`<label class="checkline"><input type="checkbox" data-layer="${k}" checked>${layerNames[k]}</label>`).join('')}</div><div class="control-grid"><div><label class="label" for="export-resolution">Longest edge</label><select id="export-resolution"><option value="1600">1,600 px · quick</option><option value="3000" selected>3,000 px · standard</option><option value="4096">4,096 px · detailed</option></select></div><label class="checkline"><input id="export-crop" type="checkbox" checked>Choose the export area</label></div></div><p class="hint" id="export-note" style="margin-top:15px">Visual exports use the current map without rerunning generation.</p><div class="dialog-actions"><button data-close="export-dialog">Cancel</button><button class="primary" id="export-go">Export</button></div></dialog>
 <dialog id="expert-dialog"><div class="dialog-head"><div><span class="eyebrow">The region recipe</span><h2>Expert settings</h2></div><button data-close="expert-dialog" aria-label="Close">×</button></div><p class="hint">Global settings, local overrides by stable key, growth plans and site preferences. Imported terrain data is retained separately.</p><label class="label" for="expert-json">JSON recipe</label><textarea id="expert-json" spellcheck="false"></textarea><p class="warning" id="expert-error" role="alert"></p><div class="dialog-actions"><button data-close="expert-dialog">Cancel</button><button class="primary" id="expert-apply">Apply recipe</button></div></dialog>
 <dialog id="hardware-dialog"><div class="dialog-head"><div><span class="eyebrow">The workshop at work</span><h2>Settings & engines</h2></div><button data-close="hardware-dialog" aria-label="Close">×</button></div><p class="hint">Choose the engine for each process. Available hardware and the last execution are shown separately.</p><details class="section preferences-section"><summary>Preferences & documentation</summary><div id="workbench-preferences" class="workbench-preferences"></div><a class="science-link" href="./scientific/index.html" target="_blank" rel="noopener">Scientific atlas ↗</a></details><div id="hardware-details"></div><details class="section"><summary>Generation log</summary><pre class="job-log" id="job-log">The workshop is ready.</pre></details><div class="dialog-actions"><button id="hardware-refresh">Refresh connections</button><button data-close="hardware-dialog">Close</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>`);
@@ -328,17 +324,16 @@ function reportAppearanceError(error:unknown):void{
   }
   toast(message,true);
 }
-setHTML($('#export-style'),renderStyleOptions());
 // The top-bar selector is the preset select of the render panel; 'custom' is shown but cannot be picked.
 setHTML($('#map-style'),PRESET_OPTIONS.map(o=>`<option value="${o.value}"${o.value==='custom'?' disabled':''}>${esc(o.label)}</option>`).join(''));
-/** The top-bar preset and the export style read appearance.composition; the layer toggles are the shared render form (quick controls of the Map rows). */
+/** The preset and export availability follow the current composition. */
 function syncDisplayWidgets():void{
   sceneControls.sync();
   const recipe=currentComposition(settings,world??undefined);
-  $<HTMLSelectElement>('#map-style').value=recipe.preset;$<HTMLSelectElement>('#export-style').value=recipe.ground.variant;
+  $<HTMLSelectElement>('#map-style').value=recipe.preset;
+  syncExportOptions();
 }
 function writeRecipe(path:string,value:unknown):void{writeAppearanceControl(settings,`appearance.composition.${path}`,value);projectRevision++;void refreshAppearance();}
-setText($('#export-format option[value="svg"]'),'SVG · map / embedded render');
 insertHTML($('.style-control'),'beforeend','<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG 3D ↗</button>');
 insertHTML($('#header-menu'),'beforeend','<button id="preview-close" type="button" class="quiet small" hidden></button>');
 setDynamicText($('#preview-close'), () => 'Close preview');
@@ -574,7 +569,7 @@ function log(message: string): void {
   if(logs.length>150){logs.shift();renderLog();return;}
   const el=$('#job-log');el.append((logs.length>1?'\n':'')+logLine(entry));scrollLog();
 }
-function dialog(id: string): void { $<HTMLDialogElement>(id).showModal(); }
+function dialog(id: string): void { if(id==='#export-dialog')syncExportOptions();$<HTMLDialogElement>(id).showModal(); }
 client.onEngineReset=()=>chain.clearResults();
 let workbenchLayout: ReturnType<typeof mountWorkbenchLayout> | undefined, roadDisplay: ReturnType<typeof mountRoadDisplayControl> | undefined;
 function touchRecipe(): void { workbenchLayout?.sync(); projectRevision++; scheduleAutosave();
@@ -957,21 +952,43 @@ function projectJob<T>(request:unknown):Promise<T>{const worker=new ProjectWorke
 function composeJob(request:unknown):Promise<{settings:V2Settings;world?:World;mods:unknown[]}>{const worker=new ComposeWorker();return new Promise((resolve,reject)=>{worker.onmessage=({data})=>{worker.terminate();if(data.error)reject(new Error(data.error));else resolve(data.result);};worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};worker.postMessage(request);});}
 function download(blob: Blob,name: string): void { const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000); }
 async function svgExport(): Promise<Blob> {
-  const layers=Object.fromEntries(Array.from(document.querySelectorAll<HTMLInputElement>('[data-layer]')).map(c=>[c.dataset.layer,c.checked]));
-  const style=$<HTMLSelectElement>('#export-style').value as TerrainStyle,width=Number($<HTMLSelectElement>('#export-resolution').value);
-  const appearance={style:settings.options.style,...settings.appearance,composition:withGroundVariant(currentComposition(settings,world??undefined),style)};
-  if(isMapStyle(style))appearance.style=style;
-  const exported={...settings,appearance},resolved=resolveSettingsAppearance(exported,world??undefined,'export');
-  if(resolved.path==='composite'){
-    const image=await client.exportBench(exported,resolved,width,layers);
-    return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${width}" viewBox="0 0 ${width} ${width}" data-style="${style}" data-rendering="embedded-raster"><image width="${width}" height="${width}" href="${image.toDataURL('image/png')}"/></svg>`],{type:'image/svg+xml'});
-  }
+  const layers=exportLayers(),width=Number($<HTMLSelectElement>('#export-resolution').value);
+  const resolved=resolveSettingsAppearance(settings,world,'export');
+  if(!supportsSvgExport(resolved))throw new Error(translate('SVG is unavailable for the current style. Use PNG.'));
+  if(!resolved.cartography.roads){layers.roads=false;layers.streets=false;}
+  if(!resolved.ground.layers.water)layers.water=false;
   const display=resolvedDisplayOptions(resolved);
+  if(!resolved.ground.layers.relief)display.raster=false;
   const lu=resolved.composition.landuse;
   if(world&&layers.landuse!==false&&lu.rural!=='off')display.semanticLegend=ruralSemanticLegend(world.landuse,lu.classes,lu.rural); // urban entries need the city scenes (composite path only)
   const brushes=resolved.cartography.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
   const worker=new ExportWorker();
-  try { return await new Promise<Blob>((resolve,reject)=>{worker.onmessage=({data})=>data.error?reject(new Error(data.error)):resolve(data.blob);worker.onerror=e=>reject(new Error(e.message));worker.postMessage({id:1,world:world?exportWorld(mapPresentation(world,settings)):world,options:{width,style:appearance.style,layers},display,brushes});}); }finally{worker.terminate();}
+  try { return await new Promise<Blob>((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(new Error('SVG export timed out')),120000);
+    worker.onmessage=({data})=>{clearTimeout(timer);data.error?reject(new Error(data.error)):resolve(data.blob);};
+    worker.onerror=e=>{clearTimeout(timer);reject(new Error(e.message));};
+    worker.onmessageerror=()=>{clearTimeout(timer);reject(new Error('Could not read the SVG export.'));};
+    try{worker.postMessage({id:1,world:world?exportWorld(mapPresentation(world,settings)):world,options:{width,style:resolved.palette.mapStyle,layers,roadLook:resolved.composition.networks.roads.look,roadEmphasis:resolved.composition.networks.roads.emphasis,roadNight:resolved.composition.ambience==='night'},display,brushes});}
+    catch(error){clearTimeout(timer);reject(error);}
+  }); }finally{worker.terminate();}
+}
+function exportLayers():Partial<ExportLayers>{return Object.fromEntries(Array.from($('#export-dialog').querySelectorAll<HTMLInputElement>('[data-layer]')).map(c=>[c.dataset.layer,c.checked]));}
+async function pngMapExport(width:number,crop:boolean):Promise<Blob|null>{
+  const resolved=resolveSettingsAppearance(settings,world,'export');
+  if(resolved.path==='classic'){
+    let blob=await svgExport(),dimensions:number|{width:number;height:number}=width;
+    if(crop){const result=await chooseExportCrop(blob,width,bindTree);if(!result)return null;blob=result.blob;dimensions=result;}
+    return exportPng(blob,dimensions,phase=>{setText($('#export-note'),`Export PNG : ${phase}`);log(`Export PNG : ${phase}`);});
+  }
+  const image=await client.exportBench(settings,resolved,width,exportLayers());
+  try{
+    setText($('#export-note'),'Encoding PNG…');
+    const png=await canvasPng(image);
+    if(!crop)return png;
+    const bounds={x:0,y:0,width:world!.mapSize,height:world!.mapSize};
+    const area=await chooseExportArea(png,bounds,width,bindTree);
+    return area?await cropCanvasPng(image,bounds,area.rect,area):null;
+  }finally{image.width=image.height=0;}
 }
 /** The SVG export never reads the native town snapshots: they are not cloned into its worker. */
 function exportWorld(world:World):World{
@@ -979,27 +996,52 @@ function exportWorld(world:World):World{
   const {v2RustCities:_cities,...debug}=world.debug;
   return {...world,debug};
 }
-function heightmapBlob(): Promise<Blob> {
+async function heightmapBlob(): Promise<{blob:Blob;metadata:Blob}> {
   if(!world)throw new Error('Create a map first.');const grid=world.terrain.height,c=document.createElement('canvas');c.width=grid.w;c.height=grid.h;
   const ctx=c.getContext('2d')!,pixels=ctx.createImageData(grid.w,grid.h);let lo=Infinity,hi=-Infinity;for(const value of grid.data){lo=Math.min(lo,value);hi=Math.max(hi,value);}
   for(let i=0;i<grid.data.length;i++){const value=Math.round(255*(grid.data[i]-lo)/Math.max(1e-9,hi-lo));pixels.data.set([value,value,value,255],i*4);}ctx.putImageData(pixels,0,0);log(`8-bit heightmap: black ${lo.toFixed(3)} m, white ${hi.toFixed(3)} m. Use a JSON project to retain FP32.`);
-  download(new Blob([JSON.stringify({format:'magna-urbis-heightmap',version:1,width:grid.w,height:grid.h,mapSize:world.mapSize,minHeight:lo,maxHeight:hi,seed:world.seed},null,2)],{type:'application/json'}),'magna-urbis-heightmap.metadata.json');
-  return new Promise((resolve,reject)=>c.toBlob(blob=>blob?resolve(blob):reject(new Error('Heightmap encoding failed.')),'image/png'));
+  const metadata=new Blob([JSON.stringify({format:'magna-urbis-heightmap',version:1,width:grid.w,height:grid.h,mapSize:world.mapSize,minHeight:lo,maxHeight:hi,seed:world.seed},null,2)],{type:'application/json'});
+  try{return {blob:await canvasPng(c),metadata};}finally{c.width=c.height=0;}
 }
-$<HTMLSelectElement>('#export-format').onchange=e=>{const format=(e.target as HTMLSelectElement).value;$('#export-map-options').hidden=!['png','svg'].includes(format);setText($('#export-note'), format==='heightmap'?'256-level PNG accompanied by minimum/maximum elevations. The JSON project retains the exact FP32 grids.':format==='recipe'?'The recipe retains settings and edits. Faithful reproduction requires the same engine version.':format==='seed'?'The seed alone contains neither your settings nor your edits.':'Visual exports use the current map without rerunning generation.');};
+registerMessages({
+  'SVG is unavailable for the current style. Use PNG.':{en:'SVG is unavailable for the current style. Use PNG.',fr:'Le SVG n’est pas disponible pour le style actuel. Utilisez le PNG.'},
+  'SVG vector map · unavailable for this style':{en:'SVG vector map · unavailable for this style',fr:'Carte vectorielle SVG · indisponible pour ce style'},
+  'Encoding PNG…':{en:'Encoding PNG…',fr:'Encodage du PNG…'},
+});
+function syncExportOptions():void{
+  const svg=$<HTMLOptionElement>('#export-format option[value="svg"]'),available=supportsSvgExport(resolveSettingsAppearance(settings,world,'export'));
+  svg.disabled=!available;
+  setText(svg,available?'SVG vector map':'SVG vector map · unavailable for this style');
+  const select=$<HTMLSelectElement>('#export-format');if(!available&&select.value==='svg')select.value='png';
+  const format=select.value;$('#export-map-options').hidden=!['png','svg'].includes(format);
+  setText($('#export-note'),format==='heightmap'?'256-level PNG accompanied by minimum/maximum elevations. The JSON project retains the exact FP32 grids.':format==='recipe'?'The recipe retains settings and edits. Faithful reproduction requires the same engine version.':format==='seed'?'The seed alone contains neither your settings nor your edits.':!available?'SVG is unavailable for the current style. Use PNG.':'Visual exports use the current map without rerunning generation.');
+}
+$<HTMLSelectElement>('#export-format').onchange=syncExportOptions;
 $('#export-go').onclick=async()=>{
-  if(busy)return;const format=$<HTMLSelectElement>('#export-format').value;
+  if(busy||$<HTMLButtonElement>('#export-go').disabled)return;const format=$<HTMLSelectElement>('#export-format').value;
   migrateUrbanSeeds(settings); $<HTMLInputElement>('#seed').value = settings.options.seed;
   if(!world&&!['recipe','seed'].includes(format)){toast('Create a map first.');return;}
   $<HTMLButtonElement>('#export-go').disabled=true;
+  let exportError:string|undefined;
   try {
     const name=`magna-urbis-${settings.options.seed.replace(/[^\w-]/g,'_').slice(0,45)}`;
     if(format==='project'||format==='recipe'){download(await projectJob<Blob>({action:'serialize',settings:format==='recipe'&&world?{...settings,extent:world.mapSize,options:{...settings.options,mapSize:world.mapSize}}:settings,world:format==='project'?(previewBase?.pristine??previewBase?.world??pristine??world):undefined,mods}),`${name}.${format}.json`);}
     else if(format==='seed'){download(new Blob([JSON.stringify({format:'magna-urbis-v2-seed',version:1,seed:settings.options.seed})],{type:'application/json'}),`${name}.seed.json`);}
-    else if(format==='heightmap')download(await heightmapBlob(),`${name}.heightmap.png`);
-    else {toast('Preparing map layers…');let blob=await svgExport();let dimensions:{width:number;height:number}|number=Number($<HTMLSelectElement>('#export-resolution').value);if($<HTMLInputElement>('#export-crop').checked){const cropped=await chooseExportCrop(blob,Number(dimensions),bindTree);if(!cropped)return;blob=cropped.blob;dimensions={width:cropped.width,height:cropped.height};}if(format==='png')blob=await exportPng(blob,dimensions,phase=>log(`Export PNG : ${phase}`));download(blob,`${name}.${format}`);}
+    else if(format==='heightmap'){const result=await heightmapBlob();download(result.blob,`${name}.heightmap.png`);download(result.metadata,`${name}.heightmap.metadata.json`);}
+    else {
+      toast('Preparing map layers…');setText($('#export-note'),'Preparing map layers…');
+      await new Promise<void>(resolve=>setTimeout(resolve,0));
+      const width=Number($<HTMLSelectElement>('#export-resolution').value),crop=$<HTMLInputElement>('#export-crop').checked;
+      let blob:Blob|null;
+      if(format==='png')blob=await pngMapExport(width,crop);
+      else{blob=await svgExport();if(crop)blob=(await chooseExportCrop(blob,width,bindTree))?.blob??null;}
+      if(!blob)return;download(blob,`${name}.${format}`);
+    }
     log(`Export : ${format}`);toast('Export downloaded.');$<HTMLDialogElement>('#export-dialog').close();
-  }catch(e){toast(String(e),true);}finally{$<HTMLButtonElement>('#export-go').disabled=false;}
+  }catch(e){exportError=String(e);toast(exportError,true);}finally{
+    $<HTMLButtonElement>('#export-go').disabled=false;syncExportOptions();
+    if(exportError)setText($('#export-note'),exportError);
+  }
 };
 async function inspectHardware():Promise<void>{
   settingsPanel.render();

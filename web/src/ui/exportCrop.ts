@@ -2,7 +2,7 @@ import './exportCrop.css';
 import { clampExportRect, exportPixelSize, type ExportRect } from './exportCropGeometry';
 
 export interface CroppedExport { blob: Blob; width: number; height: number }
-const ns = 'http://www.w3.org/2000/svg';
+export interface ExportArea { rect: ExportRect; width: number; height: number }
 
 /** Preview the captured SVG, then change only its viewport. The generated map stays intact. */
 export async function chooseExportCrop(blob: Blob, longestEdge: number, localize?: (dialog:HTMLDialogElement)=>void): Promise<CroppedExport | null> {
@@ -13,6 +13,16 @@ export async function chooseExportCrop(blob: Blob, longestEdge: number, localize
     throw new Error('Invalid SVG export bounds');
   }
   const bounds: ExportRect = { x: values[0], y: values[1], width: values[2], height: values[3] };
+  const area = await chooseExportArea(blob, bounds, longestEdge, localize);
+  if (!area) return null;
+  const { rect, width, height } = area;
+  svg.setAttribute('viewBox', `${rect.x} ${rect.y} ${rect.width} ${rect.height}`);
+  svg.setAttribute('width', String(width)); svg.setAttribute('height', String(height));
+  return { blob: new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }), width, height };
+}
+
+/** The same crop UI accepts raster previews without wrapping or decoding them as SVG. Bounds are map metres. */
+export function chooseExportArea(blob: Blob, bounds: ExportRect, longestEdge: number, localize?: (dialog: HTMLDialogElement) => void): Promise<ExportArea | null> {
   let selection = { ...bounds };
   const dialog = document.createElement('dialog');
   dialog.className = 'export-crop'; dialog.setAttribute('aria-labelledby', 'export-crop-title');
@@ -32,7 +42,7 @@ export async function chooseExportCrop(blob: Blob, longestEdge: number, localize
   // A fixed aspect ratio avoids letterboxing: pointer coordinates match the source viewBox.
   preview.style.width = `${Math.min(720, 430 * bounds.width / bounds.height)}px`;
   preview.style.aspectRatio = `${bounds.width} / ${bounds.height}`;
-  overlay.setAttribute('viewBox', values.join(' '));
+  overlay.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
   const refresh = (): void => {
     for (const input of fields) {
       const key = input.dataset.field as keyof ExportRect;
@@ -86,14 +96,12 @@ export async function chooseExportCrop(blob: Blob, longestEdge: number, localize
   document.body.append(dialog);
   localize?.(dialog);
   return new Promise((resolve, reject) => {
-    let result: CroppedExport | null = null;
+    let result: ExportArea | null = null;
     dialog.onclose = () => { URL.revokeObjectURL(url); dialog.remove(); resolve(result); };
     dialog.querySelector<HTMLButtonElement>('[data-action="cancel"]')!.onclick = () => dialog.close();
     dialog.querySelector<HTMLButtonElement>('[data-action="export"]')!.onclick = () => {
       const pixels = exportPixelSize(selection, longestEdge);
-      svg.setAttribute('viewBox', `${selection.x} ${selection.y} ${selection.width} ${selection.height}`);
-      svg.setAttribute('width', String(pixels.width)); svg.setAttribute('height', String(pixels.height));
-      result = { blob: new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }), ...pixels };
+      result = { rect: { ...selection }, ...pixels };
       dialog.close();
     };
     try { dialog.showModal(); } catch (error) { URL.revokeObjectURL(url); dialog.remove(); reject(error); }

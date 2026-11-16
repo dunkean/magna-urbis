@@ -123,7 +123,7 @@ describe('V2 retained native city map', () => {
     vi.stubGlobal('OffscreenCanvas', undefined); draw.mockImplementation(drawNative);
     const map = createNativeCityMap(world(), vi.fn()), ctx = new Context(), camera = { cx: 70, cy: 20, scale: 10 };
     const appearance = resolved({ style: 'atlas', textured: false });
-    const streets = map.draw(ctx.asContext(), camera, 1600, 400, 2, appearance, { city: false, streets: true, labels: false });
+    const streets = map.draw(ctx.asContext(), camera, 1600, 400, 2, appearance, { city: false, streets: true, roads: false, labels: false });
     const streetOptions = draw.mock.calls[0][2];
     expect(streetOptions.buildingsVisible).toBe(false); expect(streets.visibleBuildings).toBe(0);
     expect(streetOptions.layers.streets).toBe(true); expect(streetOptions.labels).toBe(false);
