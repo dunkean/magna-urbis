@@ -31,6 +31,7 @@ import { buildingOccupationShapes } from '../ui/forestOccupation';
 import { v2DisplayForestAsync, v2ForestOccupation, v2ForestOccupationParts, withBuildingOccupationAsync } from './displayForest';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { nativeCitiesOf } from './nativeProducts';
+import { cityRegionalNetwork } from '../render/cityBridges';
 import { activityScene } from './activitySites';
 import { setMapClimateZone, setMapSeason, mapSeasonKey } from '../render/seasonPalette';
 import { biomePalette } from '../render/biomes';
@@ -566,7 +567,11 @@ export class BenchRenderer {
     const world = this.world!, layers = this.exportLayers, r = this.resolved!;
     // Native city plans and houses are drawn exactly once by CityBench. Natural vegetation, regional roads and names still use the original map renderer.
     const hideUrban = this.scene!.capabilities.nativeCities || layers.city === false;
-    const shown = displayWorld(world, { roads: layers.roads, city: hideUrban ? false : undefined }, r.city.visible), seed = displaySeed(world.seed);
+    let shown = displayWorld(world, { roads: layers.roads, city: hideUrban ? false : undefined }, r.city.visible);
+    const seed = displaySeed(world.seed);
+    // Around native towns the regional roads and decks are owned as in 3D: the town draws its approaches and decks.
+    const layouts = this.scene!.capabilities.nativeCities ? nativeCitiesOf(world).flatMap(city => city.layouts ?? []) : [];
+    if (layouts.length) shown = { ...shown, ...cityRegionalNetwork(shown.roads, shown.bridges, layouts) };
     return shown.seed === seed ? shown : { ...shown, seed };
   }
   /** Land classes the vector overlay paints. A material ground draws the physical land use in its shader, so the overlay keeps only the vegetation symbols asked for. */

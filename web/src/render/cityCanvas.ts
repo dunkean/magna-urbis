@@ -527,7 +527,8 @@ class Batches {
     ctx.globalAlpha = 1; ctx.setLineDash([]); this.groups.clear();
   }
 }
-const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
+/** Stroked over the street surface. A causeway is not one: it joins the surface as an ordinary raised road. */
+const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
 /** Trodden snow mixed with earth: busy streets and squares in winter. */
 const SLUSH = 'rgb(124,117,106)';
 /** Street surface rings per scene, by streets, widths and edges drawn (a few camera steps). */

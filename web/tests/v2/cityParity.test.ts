@@ -34,6 +34,8 @@ import { terrain3dPixelRatio, TERRAIN_3D_MOVING_PIXELS, TERRAIN_3D_FRAME_PIXELS 
 import { DISPLAY_QUALITIES, displayQualityFor, displayQualityUniform, onDisplayQualityChange, setDisplayQualityPreference, setDisplayAppearanceQuality } from '../../src/render/displayQuality';
 import { LiveTileFill } from '../../src/render/liveTileFill';
 import { drawFantasyRaster, suspendFantasyRaster, KEEP_NONE, type FantasyRaster } from '../../src/ui/fantasyRaster';
+import { STRUCTURE_ROLES } from '../../src/render/groundBlend';
+import { streetColors } from '../../src/render/cityGlStyle';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } } as unknown as V2Settings);
@@ -684,5 +686,23 @@ describe('retained city environment parity', () => {
     // V2 (native field) and City Bench (decor heights) paint the sea through the same helper.
     expect(read('../../src/v2/urban3d.ts')).toContain('paintSeaCover(');
     expect(read('../../src/ui/city3d.ts')).toContain('paintSeaCover(');
+  });
+});
+
+describe('causeways are ordinary raised roads', () => {
+  it('paints a causeway with the street paint of its rank on natural grounds and joins it to the street surface', () => {
+    expect(STRUCTURE_ROLES.has('causeway')).toBe(false);
+    expect(STRUCTURE_ROLES.has('bridge')).toBe(true);
+    const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const scene = { streets: [{ role: 'causeway', rank: 1, street: { path } }, { role: 'street', rank: 1, street: { path } }, { role: 'bridge', rank: 1, street: { path } }] } as any;
+    const { inner, outer } = streetColors(scene, 'terrain', true);
+    expect([...inner.slice(0, 4)]).toEqual([...inner.slice(4, 8)]);
+    expect([...outer.slice(0, 4)]).toEqual([...outer.slice(4, 8)]);
+    expect([...inner.slice(8, 12)]).not.toEqual([...inner.slice(4, 8)]);
+    for (const file of ['../../src/render/cityCanvas.ts', '../../src/render/cityGlBuild.ts']) {
+      const crossings = read(file).match(/const CROSSINGS = new Set\(\[([^\]]*)\]\)/)?.[1];
+      expect(crossings).toContain("'bridge'");
+      expect(crossings).not.toContain("'causeway'");
+    }
   });
 });

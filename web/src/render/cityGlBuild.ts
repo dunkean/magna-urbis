@@ -249,7 +249,7 @@ export interface CityGlStrokes {
   firstWithRank: number[];
 }
 const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
-const CROSSINGS = new Set(['bridge', 'causeway', 'ford', 'pier', 'boardwalk', 'walkway']);
+const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
 function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buffer: ArrayBuffer; n: number; put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void } {
   const buffer = new ArrayBuffer(Math.max(1, segments) * STROKE_STRIDE * 4), f = new Float32Array(buffer), u = new Uint32Array(buffer);
   const w = { f, u, buffer, n: 0, put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void {

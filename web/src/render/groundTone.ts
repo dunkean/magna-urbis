@@ -133,9 +133,8 @@ export function washAt(kind: WashKind, tone: BlendTone, shape: { outer: readonly
   return g ? toneWash(g, kind) : groundWash(kind, tone);
 }
 /** Map-tinted street paint of a street path, or undefined (switch off, no map, structures). */
-const TONED_STRUCTURES = new Set(['causeway']);   // a causeway is an ordinary raised road; bridges, quays, fords, stairs keep their paint
 export function streetToneAt(path: readonly { x: number; y: number }[], role: string, rank: number): ReturnType<typeof toneStreet> | undefined {
-  if (STRUCTURE_ROLES.has(role) && !TONED_STRUCTURES.has(role)) return undefined;
+  if (STRUCTURE_ROLES.has(role)) return undefined;
   const m = path.length ? path[path.length >> 1] : undefined, g = m && groundAt(m.x, m.y, 2);
   return g ? toneStreet(g, role, rank) : undefined;
 }

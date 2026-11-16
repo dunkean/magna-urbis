@@ -6,6 +6,7 @@ import { channelWidth, type RiverLine } from './riverVectors';
 import type { VectorWater } from './vectorWater';
 import { marchingSquares } from '../gen/terrain/contour';
 import { lakeSample } from './lakeGeometry';
+import { GridIndex } from '../gen/geo/spatial';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
@@ -511,6 +512,47 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
     }
   }
   return widths;
+}
+
+const clearances = new WeakMap<VectorWater, (x: number, y: number) => number>();
+/** Signed clearance (m) from the drawn water: at most 0 inside a river ribbon (the riverGeometry capsules both
+ * renderers draw), a lake or the sea; else the distance to the nearest drawn river bank, capped at 64 m (lakes and sea
+ * only answer wet or dry). Lines are indexed by their box and cut into capsules only when a query first reaches them,
+ * so probing a few crossings never expands the whole network. Cached per network. */
+export function drawnWaterClearance(water: VectorWater): (x: number, y: number) => number {
+  const cached = clearances.get(water); if (cached) return cached;
+  const h = water.hydro, width = h.width, CAP = 64, PAD = 300, net = water.rivers;
+  const area = water.riverArea && water.riverArea > 0 ? water.riverArea : Math.max(.02, .003 * (width / 1000) ** 2);
+  const lines: [RiverLine, number][] = net ? [...net.rivers, ...net.braids, ...net.distributaries].map(l => [l, 0] as [RiverLine, number]).concat(net.oxbows.map(l => [l, 1])) : [];
+  const boxes = new GridIndex<number>(1024), capsules = new GridIndex<number>(CAP), cap: number[] = [], expanded = new Uint8Array(lines.length);
+  lines.forEach(([l], i) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k + 1 < l.points.length; k += 2) { x0 = Math.min(x0, l.points[k]); x1 = Math.max(x1, l.points[k]); y0 = Math.min(y0, l.points[k + 1]); y1 = Math.max(y1, l.points[k + 1]); }
+    if (x0 <= x1) boxes.insertBox(x0 - PAD, y0 - PAD, x1 + PAD, y1 + PAD, i);
+  });
+  const expand = (i: number): void => {
+    expanded[i] = 1;
+    const [line, thinner] = lines[i], geo = riverGeometry(water, line, thinner, area), p = geo.points;
+    for (let k = 1; k < geo.widths.length; k++) {
+      const ax = p[2 * k - 2], ay = p[2 * k - 1], bx = p[2 * k], by = p[2 * k + 1], ra = geo.widths[k - 1] / 2, rb = geo.widths[k] / 2, r = Math.max(ra, rb);
+      capsules.insertBox(Math.min(ax, bx) - r, Math.min(ay, by) - r, Math.max(ax, bx) + r, Math.max(ay, by) + r, cap.length / 6);
+      cap.push(ax, ay, bx, by, ra, rb);
+    }
+  };
+  const probe = (x: number, y: number): number => {
+    const cx = Math.min(h.n - 1, Math.max(0, Math.floor(x / width * h.n))), cy = Math.min(h.n - 1, Math.max(0, Math.floor(y / width * h.n)));
+    if (h.sea[cy * h.n + cx] || lakeSample(water.lakeField, width, x, y) >= 0) return 0;
+    for (const i of boxes.query(x - CAP, y - CAP, x + CAP, y + CAP)) if (!expanded[i]) expand(i);
+    let best = CAP;
+    for (const id of capsules.query(x - CAP, y - CAP, x + CAP, y + CAP)) {
+      const o = id * 6, ax = cap[o], ay = cap[o + 1], dx = cap[o + 2] - ax, dy = cap[o + 3] - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+      best = Math.min(best, Math.hypot(x - ax - t * dx, y - ay - t * dy) - (cap[o + 4] + (cap[o + 5] - cap[o + 4]) * t));
+    }
+    return best;
+  };
+  clearances.set(water, probe);
+  return probe;
 }
 
 export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, material = true): string {

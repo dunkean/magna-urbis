@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Layout, Street } from '../../rust/bridge/urban';
 import type { RoadOutput } from '../../rust/bridge/settlements';
 import { outsideUrbanStreets } from '../../rust/bridge/urbanNetwork';
-import { bridgeRoadOwnership, bridgeWaterHeight, cityBridgeStreets, urbanReplacesCrossing } from '../src/render/cityBridges';
+import { bridgeRoadOwnership, bridgeWaterHeight, cityBridgeStreets, cityRegionalNetwork, snapCrossingToWater, snapRoadCrossings, urbanReplacesCrossing } from '../src/render/cityBridges';
 import { buildCityScene, drawCity } from '../src/render/cityCanvas';
 import { buildFillMeshSync, buildStreetStrokes, META, packPlan, STROKE_STRIDE } from '../src/render/cityGlBuild';
 import { DEFAULT_LAYERS, planColors } from '../src/render/cityGlStyle';
@@ -108,6 +108,23 @@ describe('bridge visibility and ownership', () => {
     expect(cityBridgeStreets([served],[old,far])).toEqual([...served.streets,old,far]);
   });
 
+  it('shows the 2D regional roads and decks a town owns exactly as the 3D does', () => {
+    // A town whose perpendicular deck replaced the diagonal regional crossing (same case as the 3D test above).
+    const canonical = street([[0, 0], [100, 0]], 6), city = layout([canonical]);
+    city.quarters = [{ phase: 0, shape: { outer: [{ x: -40, y: -60 }, { x: 140, y: -60 }, { x: 140, y: 60 }, { x: -40, y: 60 }], holes: [] } }] as never;
+    const road = { path: [{ x: -300, y: -90 }, { x: 0, y: -30 }, { x: 100, y: 30 }, { x: 400, y: 90 }], width: 6, kind: 'major' };
+    const regional = { a: { x: 0, y: -30 }, b: { x: 100, y: 30 }, width: 6 }, far = { a: { x: 500, y: 0 }, b: { x: 540, y: 0 }, width: 6 };
+    const roads = [road], bridges = [regional, far], shown = cityRegionalNetwork(roads, bridges, [city]);
+    // The deck the town replaced is gone from 2D, as from cityBridgeStreets in 3D; the far deck stays.
+    expect(shown.bridges).toEqual([far]);
+    expect(cityBridgeStreets([city], [street([[0, -30], [100, 30]], 6), street([[500, 0], [540, 0]], 6)]).filter(s => s !== canonical).map(s => s.path[0].x)).toEqual([500]);
+    // The diagonal road stops at the town's ownership: no 2D segment runs through the town to the old deck.
+    expect(shown.roads!.length).toBeGreaterThan(0);
+    expect(shown.roads!.every(r => r.kind === 'major' && r.width === 6 && r.path.every(p => p.x <= -40 + 1e-6 || p.x >= 140 - 1e-6))).toBe(true);
+    // Same inputs, same arrays: the scene cache sees no change.
+    expect(cityRegionalNetwork(roads, bridges, [city])).toBe(shown);
+  });
+
   it('opens a marine wall at the shore and keeps a river water gate as one span', () => {
     const enclosure = { path: [{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:0,y:100},{x:0,y:0}],
       kind:'wall',style:'curtain',material:'stone',height_m:7,curtain_width_m:3,
@@ -117,5 +134,80 @@ describe('bridge visibility and ownership', () => {
     const river = { ...enclosure, gatehouses: enclosure.gatehouses!.map(g => ({ ...g, kind:'water' })) };
     expect(wallDetail(river)!.pieces.filter(p => p.water)).toHaveLength(1);
     expect(city3dWalls([river], () => 0).filter(b => b.variant_id.endsWith(':water'))).toHaveLength(1);
+  });
+});
+
+describe('regional crossings snapped onto the drawn water', () => {
+  // A 30 m river drawn along x = 500: banks at 485 and 515.
+  const road = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 1000, y: 0 }];
+  const river = (x: number): number => Math.abs(x - 500) - 15;
+  const ends = (path: { x: number }[]): number[] => [path[0].x, path[path.length - 1].x];
+
+  it('lengthens and recentres a short, offset raster span within a bounded probe budget', () => {
+    let probes = 0;
+    const snapped = snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 470, y: 0 }, { x: 505, y: 0 }] }, x => { probes++; return river(x); }, 60)!;
+    const [a, b] = ends(snapped.path);
+    expect(a).toBeCloseTo(483, 0); expect(b).toBeCloseTo(517, 0);
+    expect(snapped.kind).toBe('bridge');
+    expect(probes).toBeLessThanOrEqual(40);
+  });
+
+  it('trims a span longer than the drawn water and keeps its direction', () => {
+    const snapped = snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 560, y: 0 }, { x: 420, y: 0 }] }, river, 60)!;
+    const [a, b] = ends(snapped.path);
+    expect(a).toBeCloseTo(517, 0); expect(b).toBeCloseTo(483, 0);
+  });
+
+  it('moves a span routed wholly beside a narrow drawn stream onto it', () => {
+    const snapped = snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 516, y: 0 }, { x: 524, y: 0 }] }, river, 40)!;
+    const [a, b] = ends(snapped.path);
+    expect(a).toBeCloseTo(483, 0); expect(b).toBeCloseTo(517, 0);
+  });
+
+  it('keeps the routed span when no drawn water lies near it', () => {
+    const crossing = { kind: 'ford', path: [{ x: 100, y: 0 }, { x: 140, y: 0 }] };
+    expect(snapCrossingToWater(road, crossing, river, 60)).toBe(crossing);
+  });
+
+  it('drops a bridge whose road crosses no drawn water, and never claims water further along the road', () => {
+    expect(snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 100, y: 0 }, { x: 140, y: 0 }] }, river, 60)).toBeUndefined();
+    // Drawn water 25 m past the routed end, within the old reach: the road does not cross it at this span.
+    expect(snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 440, y: 0 }, { x: 460, y: 0 }] }, river, 60)).toBeUndefined();
+    const dry = [{ x: 0, y: 0 }, { x: 400, y: 0 }];
+    expect(snapRoadCrossings([{ path: dry, crossings: [{ kind: 'bridge', path: [{ x: 100, y: 0 }, { x: 140, y: 0 }] }] }], river, 60)[0].crossings).toEqual([]);
+  });
+
+  it('decks drawn river water the router emitted no crossing for (a road slipping between raster cells)', () => {
+    // Raw Rust segment without any crossing, or with its only bridge misplaced on dry ground: one deck over the water.
+    for (const crossings of [[], [{ kind: 'bridge', path: [{ x: 100, y: 0 }, { x: 140, y: 0 }] }]]) {
+      const [s] = snapRoadCrossings([{ path: road, class: 'main', crossings }], river, 60);
+      expect(s.crossings).toHaveLength(1);
+      expect(s.crossings[0].kind).toBe('bridge');
+      const [a, b] = ends(s.crossings[0].path);
+      expect(a).toBeCloseTo(483, 0); expect(b).toBeCloseTo(517, 0);
+    }
+    // A covered crossing is never doubled; a narrow stream under a track is a ford; a bank graze or a lake edge is no crossing.
+    const routed = [{ kind: 'bridge', path: [{ x: 470, y: 0 }, { x: 505, y: 0 }] }];
+    expect(snapRoadCrossings([{ path: road, crossings: routed }], river, 60)[0].crossings).toHaveLength(1);
+    const stream = (x: number): number => Math.abs(x - 500) - 1.5;
+    expect(snapRoadCrossings([{ path: road, class: 'track', crossings: [] as { kind?: string; path: { x: number; y: number }[] }[] }], stream, 60)[0].crossings.map(c => c.kind)).toEqual(['ford']);
+    expect(snapRoadCrossings([{ path: road, crossings: [] }], x => Math.max(-0.3, Math.abs(x - 500) - 15), 60)[0].crossings).toEqual([]);
+    expect(snapRoadCrossings([{ path: road, crossings: [] }], x => Math.abs(x - 500) <= 15 ? 0 : 64, 60)[0].crossings).toEqual([]);
+  });
+
+  it('keeps the deck on its own leg of a hairpin, along the road direction', () => {
+    // East along y = 0, a U-turn, then west along y = 12 across the river.
+    const hairpin = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 12 }, { x: 0, y: 12 }];
+    const snapped = snapCrossingToWater(hairpin, { kind: 'bridge', path: [{ x: 520, y: 6.8 }, { x: 490, y: 5.5 }] }, river, 60)!; // routed ends between the legs
+    expect(snapped.path.every(p => p.y === 12)).toBe(true);
+    const [a, b] = ends(snapped.path);
+    expect(a).toBeCloseTo(517, 0); expect(b).toBeCloseTo(483, 0);
+  });
+
+  it('extends a short span to a bank beyond the window instead of ending in the water', () => {
+    const wide = (x: number): number => Math.abs(x - 500) - 60; // banks at 440 and 560
+    const snapped = snapCrossingToWater(road, { kind: 'bridge', path: [{ x: 490, y: 0 }, { x: 510, y: 0 }] }, wide, 30)!;
+    const [a, b] = ends(snapped.path);
+    expect(a).toBeCloseTo(438, 0); expect(b).toBeCloseTo(562, 0);
   });
 });

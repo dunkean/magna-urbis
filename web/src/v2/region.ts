@@ -127,6 +127,12 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
     for(const s of world.settlements){world.stats['v2.population:'+s.key]=s.population;world.stats['v2.culture:'+s.key]=s.culture;}
   }
   onProgress?.({stage:'roads',label:'Rust · projecting regional routes and crossings…',completed:2,total:3});
+  // Crossings are measured on routing cells: snap them once onto the drawn water, for every display and the towns.
+  const drawnWater=(world.terrain as typeof world.terrain&{v2NativeTerrain?:TerrainData}).v2NativeTerrain?.water;
+  if(response.roads&&drawnWater){
+    const [{drawnWaterClearance},{snapRoadCrossings}]=await Promise.all([import('../ui/vectorWaterRender'),import('../render/cityBridges')]);
+    response.roads={...response.roads,segments:snapRoadCrossings(response.roads.segments,drawnWaterClearance(drawnWater),1.5*world.mapSize/resolution)};
+  }
   world.roads=(response.roads?.segments??[]).map(s=>({path:s.path,width:s.width,kind:s.class==='highway'||s.class==='main'?'major':s.class==='local'?'minor':'track'}));
   world.bridges=(response.roads?.segments??[]).flatMap(s=>s.crossings.filter(c=>c.kind==='bridge').map(c=>({a:c.path[0],b:c.path[c.path.length-1],width:s.width})));
   world.debug={...world.debug,v2RustRegion:{placement:output,roads:response.roads} satisfies RustRegionSnapshot,v2BaseBridges:structuredClone(world.bridges),v2TownBridges:{}};
