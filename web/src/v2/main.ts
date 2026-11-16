@@ -56,7 +56,7 @@ import { mountStageChain, type StageChain } from './stageChain';
 import { stagesForAction, stageById, type StageDef, type StageFamily } from './stageRegistry';
 import { mountHeightmapSource } from './heightmapLibrary';
 import { mountSettingsPanel, refreshBackends, backendStatus } from './settingsPanel';
-import { backendAlternative, backendFailure, fallbackRuntime, runtimeNeedsProbe, F as RUNTIME_FALLBACK } from './runtimeChoices';
+import { backendAlternative, backendFailure, runtimeForRun, runtimeNeedsProbe, F as RUNTIME_FALLBACK } from './runtimeChoices';
 import { mountNeuralModelManager } from './neuralModelManager';
 import { mountDesktopNeural } from './desktopNeural';
 import { mountDesktopModules } from './desktopModules';
@@ -622,14 +622,18 @@ function toast(message: string, error = false, action?: ToastAction): void {
   element.dataset.error = String(error); element.hidden = false; toastTimer = setTimeout(() => { element.hidden = true; }, action ? 20000 : error ? 12000 : 5000);
 }
 const runtimeCapabilities = () => { const s = backendStatus(); return { checked: s.checked, webgpu: s.webgpu, native: s.native.available, python: s.python.available }; };
-/** A recipe restored from another machine, or a service that went away, must not fail the run: switch to the best available backend first. */
-async function ensureRuntimeBackends(): Promise<void> {
-  if (runtimeNeedsProbe(settings, runtimeCapabilities())) { try { await refreshBackends(backendBindings); } catch (error) { log(String(error)); } }
-  const notes = fallbackRuntime(settings, runtimeCapabilities());
-  if (!notes.length) return;
-  notes.forEach(note => log(note));
-  toast(notes.map(note => translate(note)).join(' '), false, { label: RUNTIME_FALLBACK.open, run: openExecutionSettings });
-  backendBindings.onRuntimeChange(); settingsPanel.render();
+function reportRuntimeFallback(note: string): void {
+  log(note);
+  toast(note, false, { label: RUNTIME_FALLBACK.open, run: openExecutionSettings });
+}
+client.onRuntimeFallback = reportRuntimeFallback;
+/** Resolve this run without changing the recipe's preferred engine. */
+async function ensureRuntimeBackends(): Promise<V2Settings> {
+  const caps = runtimeCapabilities();
+  if (runtimeNeedsProbe(settings, caps) && (!caps.checked || settings.runtime?.source === 'neural-python')) { try { await refreshBackends(backendBindings); } catch (error) { log(String(error)); } }
+  const selected = await runtimeForRun(settings, runtimeCapabilities());
+  selected.notes.forEach(reportRuntimeFallback);
+  return selected.settings;
 }
 /** A missing backend names the best available alternative and opens Settings on demand. */
 async function reportGenerationFailure(message: string): Promise<void> {
@@ -750,7 +754,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
   setBusy(true);
   // A user run takes the engine: the background place in flight (if any) completes and is dropped.
   await smallPlaces?.stop(); if (cancelled) return false;
-  await ensureRuntimeBackends(); if (cancelled) return false;
+  const runSettings = await ensureRuntimeBackends(); if (cancelled) return false;
   const started = performance.now(); const revision = projectRevision; let completed = false;
   if (['terrain','region','settlements','town'].includes(action)) chain.clearCityResults();
   chain.beginRun(action === 'town' ? [] : stagesForAction(action, townStage, terrainStage, settings.terrain?.procedural?.coastAfter));
@@ -759,7 +763,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
   log(`Started: ${action} · seed ${settings.options.seed}`);
   try {
     const retainedSelection = selectedBuilding ? { ...selectedBuilding } : undefined, retainedSubdivision = selectedSubdivision;
-    const result = await client.run(action,settings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys,cityOutput);
+    const result = await client.run(action,runSettings, previewBase?.pristine ?? previewBase?.world ?? pristine ?? world,key,townStage,terrainStage,keys,cityOutput);
     if (cancelled) return false;
     if (terrainStage && terrainStage !== 'cover-climate') {
       if (!world?.stats['v2.previewStage']) previewBase = { world, pristine };
@@ -1245,5 +1249,6 @@ await cityCodeSharing.restoreFromLocation();
   mountNewButton($('#import-open'));
   $('#export-open').before($('#city-code-open'));
 }
+await ensureRuntimeBackends();
 void inspectHardware();
 // Keep source, dimensions and coasts editable before the first generation.

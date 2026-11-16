@@ -4,6 +4,7 @@ import type { Rng } from '../../web/src/gen/core/rng';
 import { biomeName } from '../../web/src/gen/biomes';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { nativeRequest } from './nativeEngine';
+import { nativeFetch } from './nativeAvailability';
 import { loadCoreWasm, synchronousCoreWasm, recoverCoreWasm, onCoreWasmReset } from './wasmRuntime';
 import type { GroundAppearance } from '../../web/src/gen/landuse/groundAppearance';
 
@@ -159,7 +160,7 @@ async function native(runtime: ExecutionRuntime): Promise<boolean> {
   if (runtime.profile !== 'local' || !runtime.server) return false;
   let known = capability.get(runtime.server);
   if (!known) {
-    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500).then(r => r.json())
       .then((s: { capabilities?: string[] }) => !!s.capabilities?.includes('landuse.stage-v1'), () => false);
     capability.set(runtime.server, known); void known.then(ok => { if (!ok) capability.delete(runtime.server); });
   }

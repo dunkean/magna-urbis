@@ -15,6 +15,7 @@ import { refreshCavernMask } from '../gen/terrain/caverns';
 import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/bridge/landuseNative';
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
+import { matchesRustTransport } from './runtimeChoices';
 import { effectiveRegion, generationRegion } from './regionSettings';
 import { regionalPopulation, REGIONAL_POPULATION_VERSION } from './regionalPopulation';
 import { routeRoads } from '../gen/roads/regional';
@@ -118,7 +119,7 @@ export function retainedTerrainMatchesSettings(world: World, settings: V2Setting
   if (seedRoot(world.seed) !== seedRoot(settings.options.seed) || settings.extent !== 'auto' && Math.round(settings.extent) !== world.mapSize
     || settings.extent === 'auto' && settings.options.mapSize !== undefined && Math.round(settings.options.mapSize) !== world.mapSize) return false;
   const frozen = { ...settings, extent: world.mapSize }, current = terrainCacheKey(frozen), retained = world.stats['v2.terrainKey'];
-  if (retained === current) return true;
+  if (retained === current || matchesRustTransport(frozen, terrainCacheKey, retained)) return true;
   if (typeof retained !== 'string') return false;
   const version = retained.startsWith(`["${LEGACY_BENCH_KEY}",`) ? LEGACY_BENCH_KEY
     : retained.startsWith(`["${LEGACY_TS_KEY}",`) && classicTerrain(settings) && world.mapSize >= 600 && world.mapSize <= 40000 ? LEGACY_TS_KEY : undefined;
@@ -220,6 +221,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         resolution: controls.resolution, erosion: controls.erosion, terrain: controls, terrainStage }, (message,work) => onProgress?.({stage:work?.stage??'relief-engine',label:message,completed:work?.completed??0,total:work?.total??0,...(work?.detail?{detail:work.detail}:{})}));
       let generated;
       try { generated = await execute(); } catch (error) {
+        if (runtime!.backend === 'native') throw error;
         if (runtime!.compute !== 'auto' || compute !== 'gpu' || !['procedural', 'procedural-phasor'].includes(runtime!.source) || configuration.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(configuration.generationCompute ?? '')) throw error;
         report(onProgress, 'relief-engine', 'GPU unavailable: restarting procedural terrain on the CPU…', 0, 3);
         compute = 'cpu'; generated = await execute();
@@ -414,7 +416,7 @@ export async function rerouteRegion(source:World,settings:V2Settings,onProgress?
   validateSettings(settings);assertTerrain(source,settings);
   if(settings.runtime?.backend==='typescript'||!settings.runtime)throw new Error('Independent regional routing requires the Rust engine.');
   if(!source.settlements?.length)throw new Error('Place settlements before routing their roads.');
-  if(source.stats['v2.placementKey']!==placementKey(settings))throw new Error('The placement recipe has changed. Run placement before routing the new roads.');
+  if(!matchesRustTransport(settings,placementKey,source.stats['v2.placementKey']))throw new Error('The placement recipe has changed. Run placement before routing the new roads.');
   const world=cloneV2WorldForGeneration(source),oldTownBridges=world.debug?.v2TownBridges as Record<string,NonNullable<World['bridges']>>|undefined;
   const savedUrban=world.urban;
   await (await import('./region')).planRustRegion(world,settings,onProgress,true);
@@ -429,7 +431,7 @@ function assertRegion(world: World, settings: V2Settings): void {
   if (!world.site || !world.settlements?.length) throw new Error('Place the settlement sites and roads first.');
   const legacyClassic = typeof world.stats['v2.terrainKey'] === 'string'
     && world.stats['v2.terrainKey'].startsWith(`["${LEGACY_TS_KEY}",`) && classicTerrain(settings);
-  if (world.stats['v2.planKey'] !== regionKey(settings) && !(legacyClassic && world.stats['v2.planKey'] === historicalClassicRegionKey(settings)))
+  if (!matchesRustTransport(settings, regionKey, world.stats['v2.planKey']) && !(legacyClassic && world.stats['v2.planKey'] === historicalClassicRegionKey(settings)))
     throw new Error('Placement settings have changed. Recalculate settlement sites and roads.');
 }
 

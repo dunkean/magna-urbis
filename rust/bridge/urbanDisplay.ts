@@ -1,5 +1,6 @@
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { contentType, nativeRequest } from './nativeEngine';
+import { nativeFetch } from './nativeAvailability';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
 
 export interface UrbanDisplayRequest {
@@ -63,7 +64,7 @@ const siteVisualsV2 = new Map<string, Promise<boolean>>();
 function siteVisualsVersion(runtime: ExecutionRuntime): Promise<boolean> {
   let known = siteVisualsV2.get(runtime.server);
   if (!known) {
-    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500).then(r => r.json())
       .then((s: { capabilities?: unknown }) => Array.isArray(s.capabilities) && s.capabilities.includes('urban.site-visuals-v2'), () => false);
     siteVisualsV2.set(runtime.server, known); void known.then(ok => { if (!ok) siteVisualsV2.delete(runtime.server); });
   }

@@ -15,6 +15,7 @@ import { stepSeed } from '../../../rust/bridge/generationSeed';
 import { effectiveTerrainSettings } from './terrainSettings';
 import type { ResourcePayload } from '../../../rust/bridge/resources';
 import { chooseIsolatedSites, regionalPopulation } from './regionalPopulation';
+import { retryNativeStage } from './runtimeChoices';
 
 export interface RustRegionSnapshot {placement:SettlementOutput;roads:RoadOutput|null}
 let retainedEngine: { runtimeKey: string; terrainKey: string; engine: SettlementEngine } | undefined;
@@ -117,7 +118,8 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
     world.settlements=output.settlements.map((s,index):Settlement=>({key:s.key,index,main:index===0,cls:s.cls as Settlement['cls'],population:s.population,culture:s.culture,center:s.center,archetype:s.archetype as SiteArchetype,radius:s.radius,extent:clipConvex(circle(s.center,s.radius),regions[index]),region:regions[index],fixed:s.scores.manual,name:s.name||undefined,detail:index===0?'main':s.cls==='farmstead'?'farmstead':'lazy'}));
     const main=world.settlements[0],opts:Options={...settings.options,...settings.local[main.key],population:main.population,culture:main.culture,size:sizeForPop(main.population),center:main.center,siteType:main.archetype,mapSize:world.mapSize};
     // Native placement owns the site and land use computes its own fields: only the display planes (dWater, hab) are requested.
-    const site=chooseSiteRust(world.terrain,opts,world.mapSize,new Rng('magna-urbis:'+world.seed),runtime,true)
+    const site=retryNativeStage(settings, effective => chooseSiteRust(world.terrain,opts,world.mapSize,new Rng('magna-urbis:'+world.seed),runtimeOf(effective),true),
+      (_effective,note)=>onProgress?.({stage:'runtime-fallback',label:note,completed:0,total:0}))
       .then(site=>{site.center={...main.center};site.archetype=main.archetype;site.reserveRadius=main.radius;return site;});
     if(deferSite&&runtime.profile==='local'&&(settings.urban?.backend??settings.runtime?.backend)!=='typescript'){
       // The native engine answers it on its own connection while the town stages run; finishTowns installs it.

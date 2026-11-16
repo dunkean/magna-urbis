@@ -27,6 +27,8 @@ import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/re
 import { mapPresentation } from './mapPresentation';
 import { ensureDesktopNeuralServer } from './desktopNeural';
 import { prepareBrowserNeuralDownload } from './neuralDownload';
+import { runtimeForRun } from './runtimeChoices';
+import { markNativeUnavailable } from '../../../rust/bridge/nativeAvailability';
 
 /** Delay of the miniature after a new live frame (its first frame must not wait for it). */
 const MINI_DELAY_MS = 350;
@@ -136,7 +138,13 @@ export class StudioClient {
       const lazy = this.resourceRequests.get(m.id);
       if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
       if (m.id !== this.pending?.id) return;
-      if (m.type === 'progress') (this.pending!.progress ?? this.onProgress)(m.progress);
+      if (m.type === 'progress') {
+        if (m.progress.stage === 'runtime-fallback') {
+          if (m.progress.detail) markNativeUnavailable(m.progress.detail);
+          this.onRuntimeFallback?.(m.progress.label);
+        }
+        else (this.pending!.progress ?? this.onProgress)(m.progress);
+      }
       else if (m.type === 'result' && m.heavy) {
         // A heavy town: free the worker's copy (its whole heap) before materialising the page's, then unpack.
         const p = this.pending!; this.pending = null; this.replaceEngine();
@@ -183,6 +191,7 @@ export class StudioClient {
     if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
   }
   /** `progress` replaces the page progress for this run (background builds stay silent). */
+  onRuntimeFallback?: (note: string) => void;
   run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string,
     progress?: (p: V2Progress) => void, keepUrbanLanes = false): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
@@ -196,6 +205,10 @@ export class StudioClient {
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject, progress };
       const dispatch = async () => {
+        const selected = await runtimeForRun(settings);
+        if (this.pending?.id !== id) return;
+        settings = selected.settings;
+        selected.notes.forEach(note => this.onRuntimeFallback?.(note));
         if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural-wasm'
           && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
           const controller = new AbortController(); this.neuralDownload = controller;

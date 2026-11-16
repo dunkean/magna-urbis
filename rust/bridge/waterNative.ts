@@ -1,4 +1,5 @@
 /** V2 vector water, with one binary call per stage and no JS computation fallback. */
+import { nativeFetch } from './nativeAvailability';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { ConditioningResult, ConditioningSettings } from '../../web/src/ui/reliefConditioning';
 import type { SimpleHydrology, WaterSettings, WaterBodies } from '../../web/src/ui/simpleHydrology';
@@ -57,7 +58,7 @@ async function nativeAvailable(runtime: ExecutionRuntime): Promise<boolean> {
   if (runtime.profile !== 'local') return false;
   let known = capabilities.get(runtime.server);
   if (!known) {
-    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500).then(r => r.json())
       .then(s => Array.isArray(s.capabilities) && s.capabilities.includes('terrain.water-v1'), () => false);
     capabilities.set(runtime.server, known);
     void known.then(ok => { if (!ok) capabilities.delete(runtime.server); });

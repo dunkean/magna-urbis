@@ -2,6 +2,7 @@ import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { ArchitectureRequestSource } from './architectureBatch';
 import type { PlacementRequest } from './urbanArchitecture';
 import { nativeRequest } from './nativeEngine';
+import { nativeFetch } from './nativeAvailability';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
 
 export const URBAN_BUILDING_PAGE_LIMIT = 64;
@@ -69,7 +70,7 @@ export async function beginUrbanBuildingPages(input: UrbanBuildingPagesInput, ru
   const local = { ...runtime, server: runtime.server.replace(/\/+$/, '') };
   const start = performance.now();
   checkCancelled(options.cancelled);
-  const response = await fetch(`${local.server}/status`, { signal: AbortSignal.timeout(4000) });
+  const response = await nativeFetch(local, '/status', { cache: 'no-store' }, 4000);
   if (!response.ok) throw new Error('Moteur Rust local inaccessible pour les sites paginés.');
   const status = await response.json() as { service?: string; capabilities?: string[] };
   checkCancelled(options.cancelled);

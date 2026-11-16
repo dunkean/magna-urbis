@@ -27,6 +27,7 @@ import { browserNeural, neuralModule, releaseNeuralBrowser } from './neuralBrows
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { prepareNativeTerrain, sampleNativeTerrain } from './nativeTerrain';
 import { NativeReliefEngine } from './nativeRelief';
+import { nativeFetch } from './nativeAvailability';
 import { loadTerrainRuntime, gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 import { hydrologyGrid, MAX_GPU_SOURCE_RESOLUTION, preferCpuGeneration, sourceDefinition, unsupportedExplicitGpuResolution, type SourceDefinition } from './terrainDefinition';
 
@@ -283,9 +284,13 @@ async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, i
     body = { params: input, conditioning: JSON.parse(module.conditioning_json(JSON.stringify(input), sketch ? JSON.stringify(sketch) : '')), edited: !!sketch };
     progress?.('Neural Python · computing with PyTorch/CUDA');
   }
+  const request = { cache: 'no-store' as const, ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) };
   let response: Response;
-  try { response = await fetch(`${server}/generate?${params}`, { cache: 'no-store', ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) }); }
-  catch { throw new Error(`Neural service unreachable (${server}): run “npm run ${settings.source === 'neural-python' ? 'neural:python' : 'neural:serve'}” from web/`); }
+  if (settings.source === 'neural') response = await nativeFetch({ profile: 'local', server }, `/generate?${params}`, request);
+  else {
+    try { response = await fetch(`${server}/generate?${params}`, request); }
+    catch { throw new Error(`Neural service unreachable (${server}): run “npm run neural:python” from web/`); }
+  }
   if (!response.ok) throw new Error(`Neural service: ${await response.text()}`);
   const heights = new Float32Array(await response.arrayBuffer());
   const meta = JSON.parse(response.headers.get('X-Neural-Meta') ?? '{}');

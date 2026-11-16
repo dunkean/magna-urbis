@@ -1,6 +1,7 @@
 import type { UrbanRequest } from './urban';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { normalizeProgrammeFunctions } from './urbanConfig';
+import { nativeFetch } from './nativeAvailability';
 
 export const URBAN_PROGRAMME_FUNCTIONS_CAPABILITY = 'urban.programme-functions-v1';
 const unsupported = () => new Error('Ce moteur urbain ne prend pas en charge les fonctions combinées (version 1 requise). Les fonctions demandées n’ont pas été appliquées ; utilisez un moteur compatible ou revenez au profil automatique.');
@@ -23,7 +24,7 @@ function validateRequestedFunctions(request?: ProgrammeFunctionRequest): void {
  * an old cached result after a local server was restarted on the same port. */
 export async function requireLocalProgrammeFunctions(runtime: ExecutionRuntime, request?: ProgrammeFunctionRequest): Promise<void> {
   validateRequestedFunctions(request);
-  const response = await fetch(`${runtime.server.replace(/\/+$/, '')}/status`, { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+  const response = await nativeFetch(runtime, '/status', { cache: 'no-store' }, 4000);
   if (!response.ok) throw unsupported();
   const status = await response.json() as { service?: unknown; capabilities?: unknown };
   if (status.service !== 'magna-urbis-local' || !Array.isArray(status.capabilities) || !status.capabilities.includes(URBAN_PROGRAMME_FUNCTIONS_CAPABILITY)) throw unsupported();

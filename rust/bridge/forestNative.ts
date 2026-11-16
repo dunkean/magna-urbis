@@ -2,6 +2,7 @@
 // `/terrain/forest` in the local profile, the same code through WASM in the web profile.
 // Request and reply framing: u32 LE header length, JSON header padded to a multiple of 4, then planes.
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
+import { nativeFetch } from './nativeAvailability';
 
 export interface ForestRustRequest {
   seed: number; climate: readonly [number, number];
@@ -41,7 +42,7 @@ function nativeForest(runtime: ExecutionRuntime): Promise<boolean> {
   if (runtime.profile !== 'local') return Promise.resolve(false);
   let known = capability.get(runtime.server);
   if (!known) {
-    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500).then(r => r.json())
       .then((status: { capabilities?: unknown }) => Array.isArray(status.capabilities) && status.capabilities.includes('terrain.forest-v1'), () => false);
     capability.set(runtime.server, known);
     void known.then(ok => { if (!ok) capability.delete(runtime.server); });

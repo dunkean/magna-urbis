@@ -1,7 +1,9 @@
 /** Single source of truth for execution choices (engine, compute, neural runtime, advanced overrides):
- * every coherence rule lives here, as pure functions over V2Settings. */
+ * coherence rules are pure; per-run selection also checks native reachability. */
 import type { V2Settings } from './contracts';
 import { registerMessages } from './i18n';
+import { isNativeConnectionFailure, markNativeUnavailable, nativeRuntimeAvailable } from '../../../rust/bridge/nativeAvailability';
+import { loopbackServer } from './platform';
 
 export interface RuntimeCapabilities { checked: boolean; webgpu: boolean; native: boolean; python: boolean }
 export interface ChoiceState { enabled: boolean; reason?: string }
@@ -169,6 +171,7 @@ export function runtimeSummary(settings: V2Settings, effectiveGpu?: boolean): st
 /** `nativeNeural`: the native neural service (:8792); undefined = not probed, assumed usable. */
 export interface ServiceCapabilities extends RuntimeCapabilities { nativeNeural?: boolean }
 export const F = {
+  connection: copy('NativeConnectionError: Native engine is unreachable.', 'NativeConnectionError : Le moteur natif est inaccessible.'),
   engineToBrowser: copy('The native Rust service is offline: the engine switched to Rust in the browser.', 'Le service Rust natif est hors ligne : le moteur passe sur Rust dans le navigateur.'),
   neuralToBrowser: copy('The neural service is offline: neural generation switched to the browser (Rust · WebGPU).', 'Le service neuronal est hors ligne : la génération neuronale passe dans le navigateur (Rust · WebGPU).'),
   neuralToPython: copy('No usable neural engine on this path: neural generation switched to the Python/CUDA service.', 'Aucun moteur neuronal utilisable sur ce chemin : la génération neuronale passe sur le service Python/CUDA.'),
@@ -183,6 +186,61 @@ export const F = {
   altPython: copy('the Python/CUDA neural service', 'le service neuronal Python/CUDA'),
   altNativeNeural: copy('native Rust neural generation', 'la génération neuronale Rust native'),
 };
+
+export const usesNativeRuntime = (settings: V2Settings): boolean => settings.runtime?.backend === 'native' || settings.urban?.backend === 'native';
+const nativeRuntime = (settings: V2Settings) => ({ profile: 'local' as const, server: loopbackServer(settings.runtime?.localServer ?? 'http://127.0.0.1:8791') });
+function copyRuntimeSettings(settings: V2Settings): V2Settings {
+  return { ...settings, runtime: settings.runtime && { ...settings.runtime }, urban: settings.urban && { ...settings.urban },
+    terrain: settings.terrain && { ...settings.terrain } };
+}
+
+/** A run owns its effective choices; the recipe and the user's native preference stay intact. */
+export function browserRuntimeSettings(settings: V2Settings): V2Settings {
+  const browser = copyRuntimeSettings(settings);
+  if (browser.runtime?.backend === 'native') browser.runtime.backend = 'rust';
+  if (browser.runtime?.source === 'neural') browser.runtime.source = 'neural-wasm';
+  if (browser.urban?.backend === 'native') browser.urban.backend = 'rust';
+  if ((browser.terrain?.generationCompute as string) === 'native') delete browser.terrain!.generationCompute;
+  return browser;
+}
+
+/** Probe even a previously reachable service. A result lives for only three seconds. */
+export async function runtimeForRun(settings: V2Settings, capabilities?: ServiceCapabilities): Promise<{ settings: V2Settings; notes: string[] }> {
+  let effective = copyRuntimeSettings(settings), notes: string[] = [];
+  let native: boolean | undefined;
+  if (usesNativeRuntime(settings)) {
+    native = await nativeRuntimeAvailable(nativeRuntime(settings));
+    if (!native) { effective = browserRuntimeSettings(settings); notes.push(F.engineToBrowser); }
+  }
+  if (capabilities && native !== false) notes.push(...fallbackRuntime(effective, { ...capabilities, ...(native === undefined ? {} : { native }) }));
+  return { settings: effective, notes };
+}
+
+/** One retry of this stage, never a replay of earlier completed generation stages.
+ * JSON/HTTP engine failures have no transport marker and propagate unchanged. */
+export async function retryNativeStage<T>(settings: V2Settings, stage: (effective: V2Settings) => Promise<T>,
+  onFallback: (effective: V2Settings, note: string) => void): Promise<T> {
+  try { return await stage(settings); }
+  catch (error) {
+    if (!usesNativeRuntime(settings) || !isNativeConnectionFailure(error)) throw error;
+    markNativeUnavailable(nativeRuntime(settings).server);
+    const browser = browserRuntimeSettings(settings);
+    onFallback(browser, F.engineToBrowser);
+    return stage(browser);
+  }
+}
+
+/** Retained terrain/sites remain usable when only Rust's execution location changes.
+ * Cache creation still records the actual backend; all other recipe fields must match. */
+export function matchesRustTransport(settings: V2Settings, key: (settings: V2Settings) => string, retained: unknown): boolean {
+  if (retained === key(settings)) return true;
+  if (!settings.runtime || !['rust', 'native'].includes(settings.runtime.backend)) return false;
+  const peer = copyRuntimeSettings(settings), runtime = peer.runtime!;
+  runtime.backend = runtime.backend === 'native' ? 'rust' : 'native';
+  if (runtime.source === 'neural') runtime.source = 'neural-wasm';
+  else if (runtime.source === 'neural-wasm') runtime.source = 'neural';
+  return retained === key(peer);
+}
 
 /** True when a service the settings rely on has not been probed, or was last seen offline (it may be back). */
 export function runtimeNeedsProbe(settings: V2Settings, caps: RuntimeCapabilities): boolean {

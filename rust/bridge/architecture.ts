@@ -5,6 +5,7 @@ import { NATIVE_ASSEMBLY_CAPABILITY, NATIVE_ASSEMBLY_RUNTIME_CAPABILITY, NATIVE_
 import init, * as wasm from '../pkg/houses/magna_urbis_houses_wasm.js';
 import { compileHousesModule } from './houses';
 import { nativeRequest } from './nativeEngine';
+import { nativeFetch } from './nativeAvailability';
 import { parseArchitectureResult, hasHouseMix, type ArchitectureWasm, type PlacementBatch, type PlacementBatchRequest, type PlacedBuilding, type EnrichedPlacement } from './urbanArchitecture';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { placeArchitectureBatches, placeArchitectureSource, streamArchitectureBatches, streamArchitectureSource, type ArchitectureBatchHeader, type ArchitectureRequestSource, type ArchitectureBatchOptions, type ArchitectureStreamOptions, type ArchitectureStreamSummary } from './architectureBatch';
@@ -19,7 +20,7 @@ function hasNativeMinimumCandidates(input: unknown): boolean {
 async function requireNativeArchitecture(runtime: ExecutionRuntime, input: unknown, kind: ArchitectureCall): Promise<void> {
   let pending = nativeCapabilities.get(runtime.server);
   if (!pending) {
-    pending = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { signal: AbortSignal.timeout(4000) }).then(async response => {
+    pending = nativeFetch(runtime, '/status', { cache: 'no-store' }, 4000).then(async response => {
       if (!response.ok) throw new Error('Moteur Rust local inaccessible.');
       const status = await response.json() as { service?: string; capabilities?: string[] };
       if (status.service !== 'magna-urbis-local' || !status.capabilities?.includes('houses.placement')) throw new Error('Moteur Rust local ancien : reconstruisez le moteur local puis relancez les bancs pour activer les villes et les maisons.');
@@ -52,7 +53,7 @@ const isParentCall = (kind: ArchitectureCall) => kind === 'plan-parent-batch' ||
  * also called before reading a selected site's native constraints. */
 export async function requireNativeAssemblyCapability(runtime?: ExecutionRuntime, parent = false, session = false, qualified?: (value: NativeParentEngineStatus) => void): Promise<void> {
   if (runtime?.profile === 'local') {
-    const response = await fetch(`${runtime.server.replace(/\/+$/, '')}/status`, { signal: AbortSignal.timeout(4000) });
+    const response = await nativeFetch(runtime, '/status', { cache: 'no-store' }, 4000);
     if (!response.ok) throw new Error('Moteur natif inaccessible pour les assemblages.');
     const status = await response.json() as { service?: string; capabilities?: unknown };
     if (status.service !== 'magna-urbis-local' || !Array.isArray(status.capabilities)
@@ -60,7 +61,7 @@ export async function requireNativeAssemblyCapability(runtime?: ExecutionRuntime
       || parent && !status.capabilities.includes(NATIVE_PARENT_CAPABILITY)
       || session && !status.capabilities.includes(NATIVE_PARENT_SESSION_CAPABILITY))
       throw new Error(`Moteur ancien : capabilities ${NATIVE_ASSEMBLY_RUNTIME_CAPABILITY} et ${NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY}${parent ? ` et ${NATIVE_PARENT_CAPABILITY}` : ''}${session ? ` et ${NATIVE_PARENT_SESSION_CAPABILITY}` : ''} requises ; aucun appel d’assemblage effectué.`);
-    const pair = await fetch(`${runtime.server.replace(/\/+$/, '')}/houses/native-assembly-capability`, { signal: AbortSignal.timeout(4000) });
+    const pair = await nativeFetch(runtime, '/houses/native-assembly-capability', { cache: 'no-store' }, 4000);
     if (!pair.ok || parseArchitectureResult<string>(await pair.text()) !== NATIVE_ASSEMBLY_CAPABILITY)
       throw new Error(`Contrat natif incohérent : ${NATIVE_ASSEMBLY_CAPABILITY} attendu ; aucune lecture/assemblage effectué.`);
     qualified?.({ profile: 'local', service: status.service ?? null, capabilities: status.capabilities.filter((v: unknown): v is string => typeof v === 'string') });
@@ -214,7 +215,7 @@ export function nativeParentSessionApi(runtime?: ExecutionRuntime): NativeParent
 export async function nativeParentSessionSupport(runtime?: ExecutionRuntime): Promise<{ supported: boolean; reason: string }> {
   const required = [NATIVE_ASSEMBLY_RUNTIME_CAPABILITY, NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY, NATIVE_PARENT_CAPABILITY, NATIVE_PARENT_SESSION_CAPABILITY];
   if (runtime?.profile === 'local') {
-    const response = await fetch(`${runtime.server.replace(/\/+$/, '')}/status`, { signal: AbortSignal.timeout(4000) });
+    const response = await nativeFetch(runtime, '/status', { cache: 'no-store' }, 4000);
     if (!response.ok) throw new Error('Moteur local inaccessible pour qualifier la génération architecturale.');
     const status = await response.json() as { service?: string; capabilities?: unknown };
     if (status.service !== 'magna-urbis-local' || !Array.isArray(status.capabilities)) throw new Error('Statut natif invalide ; aucune génération de remplacement.');

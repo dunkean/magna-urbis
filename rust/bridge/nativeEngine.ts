@@ -1,19 +1,15 @@
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { SettlementRaster } from './settlements';
 import { validatePhysicalTerrain } from './settlements';
+import { nativeFetch } from './nativeAvailability';
 
 /** One ID per worker/bench; all native retained grids stay behind this handle. */
 export function nativeSession(): string { return crypto.randomUUID(); }
 
 export async function nativeRequest(runtime: ExecutionRuntime, path: string, body: BodyInit): Promise<Response> {
-  let response: Response;
-  try {
-    response = await fetch(`${runtime.server.replace(/\/$/, '')}${path}`, {
-      method: 'POST', headers: { 'Content-Type': body instanceof Blob ? 'application/octet-stream' : 'application/json' }, body,
-    });
-  } catch {
-    throw new Error(`Moteur Rust local inaccessible (${runtime.server}). Lancez le profil local ou l’application de bureau.`);
-  }
+  const response = await nativeFetch(runtime, path, {
+    method: 'POST', headers: { 'Content-Type': body instanceof Blob ? 'application/octet-stream' : 'application/json' }, body,
+  });
   if (!response.ok) {
     const message = await response.text();
     try { throw new Error((JSON.parse(message) as { error?: string }).error ?? message); }

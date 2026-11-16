@@ -5,6 +5,7 @@ import type { SiteLayer, TerrainLayer } from '../../web/src/gen/types';
 import type { Rng } from '../../web/src/gen/core/rng';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { nativeRequest } from './nativeEngine';
+import { nativeFetch } from './nativeAvailability';
 import { loadCoreWasm } from './wasmRuntime';
 import { encodeSiteRequest, decodeSiteReply } from './siteWire';
 
@@ -12,7 +13,7 @@ const nativeServers = new Map<string, Promise<boolean>>();
 function nativeAvailable(runtime: ExecutionRuntime): Promise<boolean> {
   let known = nativeServers.get(runtime.server);
   if (!known) {
-    known = fetch(`${runtime.server.replace(/\/$/, '')}/status`, { cache: 'no-store' }).then(r => r.json())
+    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500).then(r => r.json())
       .then((status: { capabilities?: unknown }) => Array.isArray(status.capabilities) && status.capabilities.includes('site.choose-v1'), () => false);
     nativeServers.set(runtime.server, known);
     void known.then(ok => { if (!ok) nativeServers.delete(runtime.server); });
