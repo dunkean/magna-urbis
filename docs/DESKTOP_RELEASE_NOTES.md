@@ -8,7 +8,7 @@
 
 Source validation: 688 Rust urban tests and 208 targeted frontend/integration tests passed, along with TypeScript, version alignment and portable/checksum checks. A real native-engine browser run covered block editing, renderer retention, localized options, selection cleanup and nine farmsteads built in two groups (eight plus one).
 
-Package and hardware qualification for this version is recorded separately after downloading the published artifacts. Existing 0.3.3 hardware results below describe that version only.
+The published portable Windows app passes procedural generation, exact save/reopen, complete native city generation, 3D, verified model download and real native Rust/Vulkan inference on an RTX 5090, followed by deterministic offline restart and owned-service shutdown. The extracted Windows installer payload passes startup and native-service checks. The Linux AppImage and extracted DEB app pass procedural generation, exact save/reopen and service shutdown under Ubuntu 22.04/WSL2; native GPU inference is not newly qualified on Linux. The public website passes real WebGPU generation, editing, 3D and offline model-cache reuse on the RTX 5090. All 14 public downloads pass size, link and SHA-256 checks. See the [0.3.4 verification record](https://github.com/dunkean/magna-urbis/blob/main/docs/DESKTOP_RELEASE_0.3.4_VERIFICATION.md) for methods and limits. Existing 0.3.3 results below describe that version only.
 
 macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
 
