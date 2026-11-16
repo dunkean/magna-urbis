@@ -2,8 +2,10 @@ import type { RoadConfig, SettlementConfig, SettlementSpec } from '../../../rust
 import type { V2Settings } from './contracts';
 import { CULTURES, SITE_ARCHETYPES, SIZE_SHORTCUT } from '../gen/options';
 import { TERRAIN_RELIEFS } from './terrainSettings';
+import { regionalPopulation, type RegionalDemography } from './regionalPopulation';
 
 export interface V2RegionSettings {
+  demography?: RegionalDemography;
   placement?: Partial<SettlementConfig>;
   /** null disables regional roads. */
   roads?: Partial<RoadConfig> | null;
@@ -25,6 +27,7 @@ export const regionSpec = (key='main',population=300):SettlementSpec => ({key,na
 export const DEFAULT_CROP_SURPLUS = 0.2;
 export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig;roads:RoadConfig|null;resolution:number;cropSurplus:number;autoBuildPopulation:number}{
   const o=settings.options, p=settings.region?.placement, local=settings.local.main??{};
+  const manualList = p?.mode === 'list' || !p?.mode && !!p?.list?.length;
   const secondary=Math.max(0,settings.settlementCount-1),village=Math.ceil(secondary*2/3);
   const placement:SettlementConfig={
     mode:settings.settlementCount?'counts':'auto',distribution:'classes',main:regionSpec(),
@@ -50,6 +53,21 @@ export function effectiveRegion(settings:V2Settings):{placement:SettlementConfig
       ...(overrides.siteType?{siteType:overrides.siteType}:{}),
       ...(overrides.sitePrefs?{sitePrefs:{...spec.sitePrefs,...overrides.sitePrefs,weights:{...spec.sitePrefs?.weights,...overrides.sitePrefs.weights}}}:{})};
   });
+  if (manualList) placement.mode = 'list';
+  if (!manualList) {
+    const plan = regionalPopulation(settings);
+    placement.mode = 'list';
+    const first = placement.main;
+    placement.list = plan.places.map(spec => ({ ...spec, ...(spec.key === 'main' ? { name: first.name, siteType: first.siteType, position: first.position, sitePrefs: first.sitePrefs } : {}),
+      ...(settings.local[spec.key]?.center ? { position: settings.local[spec.key].center } : {}),
+      ...(settings.local[spec.key]?.culture ? { culture: settings.local[spec.key].culture! } : {}),
+      ...(settings.local[spec.key]?.siteType ? { siteType: settings.local[spec.key].siteType! } : {}),
+      ...(settings.local[spec.key]?.sitePrefs ? { sitePrefs: settings.local[spec.key].sitePrefs! } : {}) }));
+    placement.main = placement.list[0] ?? regionSpec('main', 1);
+    placement.counts = plan.counts;
+    placement.farmDensity = 0;
+    placement.remotePlaces = plan.isolatedCount ? Math.min(10, plan.isolatedDensity) : 0;
+  }
   const roads=settings.region?.roads===null?null:{level:'rural',surface:'auto',culture:'auto',density:.5,gradeWeight:1,maxGrade:0,crossingCost:1,wobble:1,sharing:.7,exits:o.roads??2,...settings.region?.roads} as RoadConfig;
   return {placement,roads,resolution:settings.region?.resolution??(typeof settings.extent==='number'&&settings.extent>40000?1024:512),cropSurplus:settings.region?.cropSurplus??DEFAULT_CROP_SURPLUS,autoBuildPopulation:settings.region?.autoBuildPopulation??DEFAULT_AUTO_BUILD_POPULATION};
 }
@@ -90,7 +108,16 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
       if (prefs.weights !== undefined) weights(prefs.weights, `${name}.sitePrefs.weights`);
     }
   };
-  const region = object(value, 'regional settings'); fields(region, ['placement', 'roads', 'resolution', 'cropSurplus', 'autoBuildPopulation'], 'region');
+  const region = object(value, 'regional settings'); fields(region, ['demography', 'placement', 'roads', 'resolution', 'cropSurplus', 'autoBuildPopulation'], 'region');
+  if (region.demography !== undefined) {
+    const d = object(region.demography, 'demography'); fields(d, ['density','population','counts','isolatedDensity','isolatedCount','followCulture'], 'demography');
+    if (d.density !== undefined) number(d.density, 'Regional density', 0, 10000);
+    if (d.population !== undefined) number(d.population, 'Regional population', 0, 100000000, true);
+    if (d.isolatedDensity !== undefined) number(d.isolatedDensity, 'Isolated building density', 0, 10);
+    if (d.isolatedCount !== undefined) number(d.isolatedCount, 'Isolated buildings', 0, 1000, true);
+    if (d.followCulture !== undefined && typeof d.followCulture !== 'boolean') throw new Error('Invalid demography.followCulture.');
+    if (d.counts !== undefined) { const counts = object(d.counts, 'demographic counts'); fields(counts, ['city','town','village','hamlet','farmstead'], 'demographic counts'); let total = 0; for (const n of Object.values(counts)) { number(n, 'Settlement count', 0, 1000, true); total += n as number; } if (total > 1000) throw new Error('At most 1000 settlements can be requested.'); }
+  }
   if (region.resolution !== undefined) number(region.resolution, 'Regional raster resolution', 64, 1024, true);
   if (region.autoBuildPopulation !== undefined) number(region.autoBuildPopulation, 'Automatic small-place population', 0, 100000, true);
   if (region.cropSurplus !== undefined) number(region.cropSurplus, 'Crop surplus', 0, 3);

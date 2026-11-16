@@ -125,8 +125,14 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
   const texture = document.createElement('canvas'); texture.width = texture.height = side;
   const ctx = texture.getContext('2d')!, pixels = ctx.createImageData(raster.n, raster.n), paths = new Path2D(), lakePaths = new Path2D();
   if (shown) {
+    const firstWater = world.terrain.coastline.length;
     const value=parseInt(palette.lakeFill.slice(1),16),rgba=ink?[value>>16&255,value>>8&255,value&255,255]:[74,134,179,255];
-    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && !(sea && raster.water[i] === 1) && !(vectorCourses && raster.water[i] === 3) && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
+    // Lakes with smooth shore polygons (the vector shore field, painted below) leave the planning cells: a cell is wet when its
+    // centre is inside the shore, so its square stuck out of the shore by up to half a cell and drew a pixel staircase.
+    const lakeIndex = (raster.geometry?.water.length ?? 0) - 1, generatedLakes = !retainedDecorOf(world.terrain) && world.terrain.lakes.length > 0 && lakeIndex >= firstWater;
+    // Only when no river ribbon shares the even-odd water path: an overlapping ribbon would cut a hole in the lake.
+    const smoothLakes = generatedLakes && vectorCourses;
+    for (let i = 0; i < raster.water.length; i++) if (raster.water[i] > 0 && raster.water[i] < 4 && !(sea && raster.water[i] === 1) && !(vectorCourses && raster.water[i] === 3) && (lakes || raster.water[i] !== 2) && !(frozenLakes && raster.water[i] === 2) && !(smoothLakes && raster.water[i] === 2)) pixels.data.set(rgba, i * 4);
     if (sea) {
       const cells = document.createElement('canvas'); cells.width = cells.height = raster.n; cells.getContext('2d')!.putImageData(pixels, 0, 0);
       ctx.imageSmoothingEnabled = false; ctx.drawImage(cells, 0, 0, side, side); ctx.imageSmoothingEnabled = true;
@@ -136,11 +142,13 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
     }
     const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length, redrawn = active && !ink && regimeDisplay?.riverMode === 'vector' && !!vector?.rivers;
     for (const [index, polygon] of (raster.geometry?.water ?? []).entries()) {
-      const lake = index >= firstLake && index < lastLake;
+      // A generated world lists the sea, then one ribbon per river, then all its lake rings as one last polygon
+      // (rustSettlementRaster); a decor keeps its own order.
+      const lake = generatedLakes ? index === lakeIndex : index >= firstLake && index < lastLake;
       if (lake && !lakes) continue;
       // Material grounds under an active regime keep the river ribbons out of the closed water: each tile redraws the
       // running courses from the 2D vector banks and leaves the dry and frozen ones to their bed and ice.
-      if (index >= lastLake && (redrawn || vectorCourses)) continue;
+      if (!lake && index >= firstLake && (generatedLakes || index >= lastLake) && (redrawn || vectorCourses)) continue;
       // Frozen lakes leave the water cover: their ice is painted on the ground.
       const target = lake && frozenLakes ? lakePaths : paths;
       for (const ring of polygon) { if (ring.length < 3) continue; target.moveTo(ring[0].x, ring[0].y); for (const p of ring.slice(1)) target.lineTo(p.x, p.y); target.closePath(); }
@@ -155,11 +163,13 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
 /** Preserve the native control grid and the applied lake levels; never resample the terrain. */
 export function v2Terrain3dSurface(world: World, settings: V2Settings): City3dSurface {
   const raster = rustSettlementRaster(world), native = renderScene(world, settings).nativeTerrain, field = native?.field, r = v2Resolved3d(settings, world);
+  const lakeField = world.terrain.lakes.length && !retainedDecorOf(world.terrain) ? renderScene(world, settings).terrain.water?.lakeField : undefined;
   const valid = field && Number.isInteger(field.n) && field.n >= 2 && field.data instanceof Float32Array && field.data.length === field.n ** 2;
   let mask = rasterWater.get(raster);
   if (!mask) { mask = Float32Array.from(raster.water, value => value === 2 ? 1 : -1); rasterWater.set(raster, mask); }
   return { height: { x: 0, y: 0, width: raster.width, n: valid ? field.n : raster.n, data: valid ? field.data : raster.height, ...(valid && field.cave ? { cave: field.cave } : {}) },
-    water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel } : undefined, waterVisible: r.ground.layers.water };
+    // The flat water follows the shore field the 2D map and the painted lake polygons use, not the planning cells.
+    water: r.ground.lakes ? { n: raster.n, mask, levels: raster.waterLevel, ...(lakeField ? { field: lakeField, width: raster.width } : {}) } : undefined, waterVisible: r.ground.layers.water };
 }
 export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
   const resolved = v2Resolved3d(settings), city = resolved.city;

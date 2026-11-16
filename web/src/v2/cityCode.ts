@@ -8,12 +8,14 @@ import { effectiveRegion } from './regionSettings';
 import { urbanEffectiveValues } from './urbanControls';
 import { migrateUrbanSeeds } from './urbanSeeds';
 import { readGenerationSeed, writeGenerationSeed } from '../../../rust/bridge/generationSeed';
+import { applySceneClock } from './sceneClock';
 
 export const CITY_CODE_PREFIX = 'MU3.';
-// Frozen MU3 schema. The first three values encode the five essential choices:
+// MU3 recipe snapshot (cityCodeDefaults.json). The first three values encode the five essential choices:
 // seed, biome/culture/relief packed into one integer, and region extent in metres.
 // Optional trailing values are preset deltas, independent draws, and manual edits.
-// Changing the tables or this baseline requires a new prefix.
+// Keep the choice-table order stable. The development baseline is identified alongside
+// the regional population policy; historical reproduction requires its source snapshot.
 const baseline = defaults.settings as V2Settings;
 const schema = ['', 0, baseline.extent, baseline, {}, []];
 type RecordValue = Record<string, any>;
@@ -54,6 +56,7 @@ function compactUrban(settings: V2Settings): void {
   inherited.backend = settings.runtime?.backend ?? 'rust';
   const compact = sparse(urban, inherited, selected) as typeof urban;
   for (const [key, local] of Object.entries(urban.local ?? {})) {
+    delete local.architecture;
     const chosen = selectors(local, urbanEffectiveValues({ ...settings, urban: { ...urban, local: undefined } }, { kind: 'settlement', key }));
     const localSettings = { ...settings, urban: { ...urban, local: { ...urban.local, [key]: chosen } } };
     const values = sparse(local, urbanEffectiveValues(localSettings, { kind: 'settlement', key }), chosen);
@@ -93,12 +96,27 @@ function portableSettings(input: V2Settings): V2Settings {
     settings.terrain = sparse(t, inherited, owned) as typeof t;
   }
   if (settings.region) {
-    const compact = sparse(settings.region, effectiveRegion({ ...settings, region: undefined }));
+    const inherited = effectiveRegion({ ...settings, region: undefined });
+    const manual = settings.region.placement?.mode === 'list' && !equal(settings.region.placement.list, inherited.placement.list);
+    const compact = sparse(settings.region, inherited, manual ? {placement:{mode:'list'}} : {});
     if (Object.keys(compact).length) settings.region = compact;
     else delete settings.region;
   }
   compactUrban(settings);
   for (const [key, options] of Object.entries(settings.local)) if (!Object.values(options).some(v => v !== undefined)) delete settings.local[key];
+  if (settings.naming) {
+    for (const key of ['labels','places','features','local','variations'] as const) if (settings.naming[key] && !Object.keys(settings.naming[key]!).length) delete settings.naming[key];
+    if (!Object.keys(settings.naming).length) delete settings.naming;
+  }
+  if (settings.scene && settings.appearance?.composition) {
+    const projected=structuredClone(settings);applySceneClock(projected,settings.scene);
+    const effects=settings.appearance.composition.effects,derived=projected.appearance!.composition!.effects;
+    if (equal([effects.season,effects.ambience,effects.lighting.azimuth,effects.lighting.elevation,effects.lighting.enabled],
+      [derived.season,derived.ambience,derived.lighting.azimuth,derived.lighting.elevation,derived.lighting.enabled])) {
+      for (const key of ['season','ambience'] as const) delete (effects as Partial<typeof effects>)[key];
+      for (const key of ['azimuth','elevation','enabled'] as const) delete (effects.lighting as Partial<typeof effects.lighting>)[key];
+    }
+  }
   return settings;
 }
 function jsonValue(value: any): any {
@@ -151,6 +169,8 @@ export function decodeCityCode(text: string): DecodedCityCode {
     settings.options.culture = culture;
     if (relief !== settings.options.relief) { settings.terrain ??= {}; settings.terrain.relief = relief as NonNullable<V2Settings['terrain']>['relief']; }
     settings.extent = extent === 0 ? 'auto' : extent;
+    const effects=settings.appearance?.composition?.effects;
+    if(settings.scene&&effects&&(effects.season===undefined||effects.ambience===undefined||effects.lighting?.azimuth===undefined||effects.lighting?.elevation===undefined||effects.lighting?.enabled===undefined))applySceneClock(settings,settings.scene);
     validateSettings(settings); validateModifications(mods);
     return decor ? { settings, mods, decor } : { settings, mods };
   } catch { throw new Error('Code incomplet, corrompu ou trop volumineux.'); }

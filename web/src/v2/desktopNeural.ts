@@ -79,6 +79,8 @@ export function mountDesktopNeural(host: HTMLElement): boolean {
     try {
       const state = await invoke!('desktop_neural_status') as NeuralStatus;
       status.textContent = `${state.profile} · ${describe(state)}`; directory.textContent = state.directory;
+      // The size notice is for a first download only.
+      hint.hidden = state.models.length > 0 && state.models.every(m => m.present);
       button.disabled = pending || state.busy;
       bar.hidden = state.progress.phase !== 'download';
       bar.value = (state.progress.received ?? 0) / (state.progress.total || 1);

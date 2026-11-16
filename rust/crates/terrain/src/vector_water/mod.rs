@@ -83,6 +83,9 @@ pub struct Settings {
     /// shows a valley or a cut channel.
     #[serde(default)]
     pub headwaters: f64,
+    /// Shortest drawn river course in metres; absent or zero retains the 150 m default.
+    #[serde(default)]
+    pub min_river_length: f64,
 }
 /// Share of the river catchment a headwater keeps at `headwaters` 1.
 pub const HEADWATER_SHARE: f64 = 0.1;

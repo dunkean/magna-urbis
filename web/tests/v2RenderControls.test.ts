@@ -22,6 +22,7 @@ describe('V2 retained-map render controls', () => {
       const choices = field.type === 'number' ? [field.min, field.max] : field.type === 'boolean' ? [false, true] : field.options?.map(option => option.value).filter(value => value !== 'custom') ?? [];
       for (const choice of choices) {
         const settings = defaultSettings(), generation = structuredClone(settings), key = terrainCacheKey(settings);
+        delete generation.appearance;
         const value = field.fromInput ? field.fromInput(choice) : choice;
         writeAppearanceControl(settings, field.path, value);
         expect(() => validateSettings(settings), `${field.path} = ${choice}`).not.toThrow();

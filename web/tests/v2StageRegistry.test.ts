@@ -30,8 +30,11 @@ describe('V2 generation stage registry', () => {
     expect(stagesForAction('all')).toEqual([...stagesForAction('terrain'), ...stagesForAction('settlements'), ...stagesForAction('towns')]);
     expect(STAGES.find(stage => stage.id === 'relief-climate')?.optional).toBe(false);
     expect(stagesForControl('terrain.climate')).toEqual(['relief-climate']);
+    expect(stagesForControl('terrain.hydrology.minRiverLength')).toEqual(['water-hydrology']);
     expect(stagesForControl('widget:coasts')).toEqual(['relief-source']);
     expect(stagesForControl('options.biome')).toEqual(['relief-source']);
+    expect(stagesForControl('options.layer')).toEqual([]);
+    expect(STAGES.some(stage => stage.quick.includes('options.layer'))).toBe(false);
     expect(STAGES.filter(stage => stage.family === 'map').map(stage => stage.id)).toEqual(['display-terrain', 'display-relief', 'display-vegetation', 'display-landuse', 'display-water', 'display-roads', 'display-buildings', 'display-ambience', 'display-text', 'display-labels', 'map-naming', 'map-export']);
   });
   it('assigns every existing control to exactly one stage (or the Settings panel)', () => {

@@ -43,6 +43,59 @@ fn ts_vectorizer_and_natural_cover_fixture() {
     assert!((total - num(&f["natural"]["area"])).abs() < 1e-6);
 }
 #[test]
+fn retained_lakes_exclude_smoothed_landuse() {
+    use super::{boolean as bo, geom::*};
+    let mut i = input(&fixture());
+    let before = generate_rural(&i).unwrap();
+    // A sub-cell lake is smaller than the generic vectorizer's hole threshold.
+    // Put it in a real field so an empty result cannot make this guard pass.
+    let point = (0..i.w * i.h)
+        .map(|c| {
+            p(
+                (c % i.w) as f64 * i.cell + 0.5 * i.cell,
+                (c / i.w) as f64 * i.cell + 0.5 * i.cell,
+            )
+        })
+        .find(|&q| {
+            before.layer.areas.iter().any(|a| a.kind == "field" && inside(&a.region(), q))
+        })
+        .expect("fixture must contain a field cell");
+    let lake = rect(point.x, point.y, 12.0, 12.0, 0.0);
+    i.geometry["terrain"]["lakes"] = serde_json::json!([lake]);
+    let c = raster::idx(point, i.w, i.h, i.cell);
+    i.water[c] = 2;
+    i.d_water[c] = 0.0;
+    let lakes = ground::lake_regions(&i);
+    assert_eq!(lakes.len(), 1);
+    let rural = generate_rural(&i).unwrap().layer;
+    let natural = generate_natural_cover(&i).unwrap();
+    for layer in [&rural, &natural] {
+        assert!(!layer.areas.is_empty());
+        for a in &layer.areas {
+            let wet = bo::safe(&[a.region()], &lakes, bo::Op::Intersection);
+            assert!(
+                wet.iter().map(region_area).sum::<f64>() < 0.01,
+                "{} overlaps lake", a.kind
+            );
+            for strip in &a.strips {
+                let wet = bo::safe(&[piece(strip.clone())], &lakes, bo::Op::Intersection);
+                assert!(
+                    wet.iter().map(region_area).sum::<f64>() < 0.01,
+                    "field strip overlaps lake"
+                );
+            }
+        }
+    }
+    // Dry islands remain holes in water for ground clipping and urban placement.
+    let island = rect(point.x, point.y, 4.0, 4.0, 0.0);
+    i.geometry["terrain"]["lakes"] = serde_json::json!([lake, island]);
+    let lakes = ground::lake_regions(&i);
+    assert_eq!(lakes.len(), 1);
+    assert_eq!(lakes[0].holes.len(), 1);
+    assert!(!inside(&lakes[0], point));
+}
+
+#[test]
 fn ts_rural_and_farm_fixture() {
     let f = fixture();
     let result = generate_rural(&input(&f)).unwrap();

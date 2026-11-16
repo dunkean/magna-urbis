@@ -664,7 +664,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       const climate = climateOf(settings);
       const vs = {
         // The tributary density scales the catchment that starts a river; headwaters then follow the valleys upstream.
-        riverArea: riverAreaFor(config, settings.width) / Math.max(.05, config.density) ** 2, headwaters: config.headwaters !== false ? 1 : 0, lakeDepth: config.lakeDepth, lakeArea: config.lakeArea, riverMode: config.riverMode,
+        riverArea: riverAreaFor(config, settings.width) / Math.max(.05, config.density) ** 2, headwaters: config.headwaters !== false ? 1 : 0, minRiverLength: config.minRiverLength, lakeDepth: config.lakeDepth, lakeArea: config.lakeArea, riverMode: config.riverMode,
         flatSlope: config.flatSlope, sinuosity: config.sinuosity, widthScale: config.vectorWidth, balance: config.balance, braiding: config.braiding,
         anabranching: config.anabranching, terrainInfluence: config.terrainInfluence, avulsions: config.avulsions, confluence: config.confluence, deltas: config.deltas,
       };

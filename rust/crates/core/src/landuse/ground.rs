@@ -324,6 +324,49 @@ fn layer(
         Op::Difference,
     )
 }
+/// Retained lake rings use the renderer's even-odd rule, independently of winding.
+/// Group islands with their containing lake instead of filling every ring.
+pub(crate) fn lake_regions(input: &Input) -> Vec<Region> {
+    let mut rings = polygons(&input.geometry["terrain"]["lakes"]);
+    rings.retain(|r| r.len() >= 3);
+    rings.sort_by(|a, b| area(b).abs().total_cmp(&area(a).abs()));
+    let mut placed: Vec<(Polygon, Box2, usize, usize)> = vec![];
+    let mut out: Vec<Region> = vec![];
+    for ring in rings {
+        let parent = placed.iter().rev().find(|(outer, bounds, _, _)| {
+            bounds.contains(ring[0]) && contains(outer, ring[0])
+        });
+        let depth = parent.map_or(0, |(_, _, depth, _)| depth + 1);
+        let owner = if depth % 2 == 0 {
+            out.push(piece(ring.clone()));
+            out.len() - 1
+        } else {
+            let owner = parent.unwrap().3;
+            out[owner].holes.push(ring.clone());
+            owner
+        };
+        let bounds = bbox(&ring);
+        placed.push((ring, bounds, depth, owner));
+    }
+    out
+}
+
+/// Smoothing and area thresholds may close a small wet hole. Restore the retained
+/// lake boundary before partitioning holdings, rather than vectorizing water again.
+pub(crate) fn exclude_lakes(source: Vec<Region>, lakes: &[Region], index: &BoxIndex) -> Vec<Region> {
+    source
+        .into_iter()
+        .flat_map(|r| {
+            let near: Vec<_> = index
+                .query(bbox(&r.outer))
+                .into_iter()
+                .map(|i| lakes[i].clone())
+                .collect();
+            if near.is_empty() { vec![r] } else { bo::safe(&[r], &near, Op::Difference) }
+        })
+        .collect()
+}
+
 pub fn water_ground(input: &Input) -> Result<Vec<Region>, String> {
     if invalid_coordinates(&input.geometry["terrain"]) {
         return Err("Invalid water geometry".into());
@@ -395,7 +438,7 @@ pub fn water_ground(input: &Input) -> Result<Vec<Region>, String> {
             ));
         }
     }
-    out.extend(lakes.into_iter().map(piece));
+    out.extend(lake_regions(input));
     for rv in arr(&t["rivers"]) {
         let path = poly(&rv["path"]);
         if path.len() < 2 {
@@ -702,7 +745,7 @@ fn local_point(p: &Point, x: f64, y: f64) -> Point {
 }
 struct NaturalWater {
     coast: Vec<(Polygon, Vec<Polygon>)>,
-    lakes: Vec<Polygon>,
+    lakes: Vec<Region>,
     rivers: Vec<(Polygon, Vec<f64>)>,
     roads: Vec<super::rural::Road>,
 }
@@ -722,7 +765,7 @@ impl NaturalWater {
                     (sea, holes)
                 })
                 .collect(),
-            lakes: polygons(&t["lakes"]),
+            lakes: lake_regions(input),
             rivers: arr(&t["rivers"])
                 .iter()
                 .map(|rv| {
@@ -805,7 +848,7 @@ fn natural_layer(
         g.mark(sea, 0, true, holes)?;
     }
     for a in &water.lakes {
-        g.mark(a, 0, true, &[])?;
+        g.mark(&a.outer, 0, true, &a.holes)?;
     }
     for (path, widths) in &water.rivers {
         if path.len() != widths.len() {

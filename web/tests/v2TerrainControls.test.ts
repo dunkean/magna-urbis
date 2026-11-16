@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { allTerrainFields, coastDirections, terrainControlMessages, toggleCoastDirection } from '../src/v2/terrainControlSchema';
+import { allTerrainFields, climateZoneBiome, coastDirections, terrainBasicFields, terrainControlMessages, toggleCoastDirection } from '../src/v2/terrainControlSchema';
+import { terrainClimateChoice, setTerrainClimateChoice } from '../src/v2/terrainControls';
+import { defaultSettings } from '../src/v2/settings';
+import { UNDERDARK_CULTURES } from '../src/v2/underdarkCultures';
 import { readSettingPath, writeSettingPath } from '../src/v2/parameterForm';
 import { effectiveTerrainSettings, migrateTerrainClimate, defaultTerrainSettings, DEFAULT_HYDROLOGY, DEFAULT_NEURAL_TUNING, validateTerrainSettings } from '../src/v2/terrainSettings';
 import { DEFAULT_FRACTAL_DETAIL } from '../../rust/bridge/terrainAdjust';
@@ -13,6 +16,42 @@ describe('V2 climate zones', () => {
     const legacy = { climate: 'arid' }; migrateTerrainClimate(legacy); expect(legacy.climate).toBe('desert');
     expect(() => validateTerrainSettings({ climate: 'cold', islandMode: 'peninsula' })).not.toThrow();
     expect(() => validateTerrainSettings({ climate: 'moist' })).toThrow();
+  });
+  it('offers Underdark and retains the advanced custom climate without a World layer field', () => {
+    const choices = terrainBasicFields.find(field => field.path === 'terrain.climate')!.options!;
+    expect(choices.at(-1)).toEqual({ value: 'underdark', label: 'Underdark' });
+    expect(terrainControlMessages.Underdark.fr).toBe('Outreterre');
+    expect(choices.some(option => option.value === 'custom')).toBe(true);
+    expect(allTerrainFields.some(field => field.path === 'options.layer')).toBe(false);
+  });
+  it('selects Underdark without storing a climate sentinel, then returns to the chosen surface climate', () => {
+    const draft = defaultSettings(); draft.options.biome = 'forest';
+    const climate = effectiveTerrainSettings(draft, 6000).climateZone;
+    setTerrainClimateChoice(draft, 'underdark');
+    expect(terrainClimateChoice(draft)).toBe('underdark');
+    expect(draft.options.biome).toBe('underdark'); expect(draft.options.culture).toBe(UNDERDARK_CULTURES[0]);
+    expect(draft.terrain!.climate).toBe(climate);
+    expect(effectiveTerrainSettings(draft, 6000).underdark).toBe(true);
+    setTerrainClimateChoice(draft, 'desert');
+    expect(terrainClimateChoice(draft)).toBe('desert');
+    expect(draft.options.biome).toBe(climateZoneBiome.desert); expect(draft.options.culture).toBe('european-organic');
+    expect(effectiveTerrainSettings(draft, 6000).underdark).toBeUndefined();
+    expect(() => validateTerrainSettings(draft.terrain)).not.toThrow();
+  });
+  it('keeps custom values and matching cultures in Underdark, and leaves custom editing available', () => {
+    const draft = defaultSettings();
+    setTerrainClimateChoice(draft, 'custom'); draft.terrain!.climateValues!.temperature = 17;
+    const values = { ...draft.terrain!.climateValues };
+    draft.options.culture = UNDERDARK_CULTURES[1];
+    setTerrainClimateChoice(draft, 'underdark');
+    expect(terrainClimateChoice(draft)).toBe('underdark');
+    expect(draft.terrain!.climateValues).toEqual(values); expect(draft.options.culture).toBe(UNDERDARK_CULTURES[1]);
+    setTerrainClimateChoice(draft, 'custom');
+    expect(terrainClimateChoice(draft)).toBe('custom'); expect(draft.terrain!.climateValues!.temperature).toBe(17);
+    expect(draft.options.biome).toBe('temperate');
+    draft.options.culture = 'european-organic';
+    setTerrainClimateChoice(draft, 'nordic');
+    expect(draft.terrain!.climateValues).toBeUndefined(); expect(draft.options.culture).toBe('european-organic');
   });
 });
 describe('V2 Terrainbench control parity', () => {
@@ -37,6 +76,19 @@ describe('V2 Terrainbench control parity', () => {
         expect(() => validateTerrainSettings(settings.terrain), `${field.path} = ${bound}`).not.toThrow();
       }
     }
+  });
+  it('defaults minimum river length to 400 m and validates its editable range', () => {
+    const field = allTerrainFields.find(field => field.path === 'terrain.hydrology.minRiverLength')!;
+    expect(field).toMatchObject({ label: 'Minimum river length (m)', type: 'number', min: 0, max: 2000, step: 10 });
+    expect(DEFAULT_HYDROLOGY.minRiverLength).toBe(400);
+    const draft = defaultSettings();
+    expect(effectiveTerrainSettings(draft, 6000).hydrology!.minRiverLength).toBe(400);
+    for (const length of [0, 150, 2000]) {
+      writeSettingPath(draft, field.path, length);
+      expect(() => validateTerrainSettings(draft.terrain)).not.toThrow();
+      expect(effectiveTerrainSettings(draft, 6000).hydrology!.minRiverLength).toBe(length);
+    }
+    for (const length of [-10, 2010, NaN]) expect(() => validateTerrainSettings({ hydrology: { minRiverLength: length } })).toThrow();
   });
   it('keeps all eight coastline directions independent, including diagonals', () => {
     let mask = 0;

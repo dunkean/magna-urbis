@@ -2,7 +2,7 @@
  * Rows come from stageRegistry.ts. Existing live controls are moved into their stage, never rebuilt:
  * the mounted terrain/region/render forms keep their handlers, validation and sync. */
 import { SETTINGS_PANEL_CONTROLS, FAMILIES, STAGES, GENERATION_STAGE_ROWS, stagesOf, stageForControl, stageForProgress, stageAnchor, type StageContext, type StageDef, type StageFamily, type Copy } from './stageRegistry';
-import { terrainProceduralStageFields, terrainBasicFields, climateZoneHelp } from './terrainControlSchema';
+import { allTerrainFields, terrainProceduralStageFields, terrainBasicFields, climateZoneHelp } from './terrainControlSchema';
 import { isTerrainExpertControl } from './terrainControlAccess';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
 import { atlasUrl, bindTree, getLanguage, numberLocale, registerMessages, setDynamicText, setText, translate } from './i18n';
@@ -24,6 +24,7 @@ const T = {
   run: copy('Show this stage’s output', 'Afficher la sortie de cette étape'), required: copy('Required stage', 'Étape obligatoire'),
   enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
   general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
+  waterLandforms: copy('Water and landforms', 'Eau et formes du relief'),
   cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'), running: copy('Running', 'En cours'),
   disabled: copy('Disabled · never run', 'Désactivée · ne jamais lancer'), valid: copy('Calculated · result available', 'Calculée · résultat disponible'),
   pending: copy('To calculate · missing or outdated result', 'À calculer · résultat absent ou périmé'),
@@ -54,13 +55,14 @@ const familyIcon: Record<StageFamily, IconId> = { region: 'family-relief', settl
 const text = (value: Copy) => value.en;
 /** Live controls promoted above the stage boxes, in display order. */
 const GENERAL_CONTROLS: Record<StageFamily, readonly string[]> = {
-  region: ['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'options.layer', 'terrain.climate', 'terrain.relief', 'options.relief', 'terrain.motifSize', 'widget:coasts'],
+  region: ['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'terrain.climate', 'terrain.relief', 'options.relief', 'terrain.hydrology.density', 'terrain.hydrology.minRiverLength', 'terrain.hydrology.lakeAbundance', 'terrain.motifSize', 'widget:coasts'],
   settlements: ['main:town-count', 'main:population', 'main:culture'],
   cities: ['main:sprawl', 'main:walls'],
   map: [],
 };
 const METHOD_CONTROLS = ['terrain.procedural.preset'] as const;
-const SHARED_RELIEF_CONTROLS = new Set(['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'options.layer', 'terrain.climate']);
+const SHARED_RELIEF_CONTROLS = new Set(['widget:seed', 'widget:extent', 'terrain.sampleSpacing', 'options.biome', 'terrain.climate']);
+const COMPACT_REGION_CONTROLS = new Set(['terrain.hydrology.density', 'terrain.hydrology.minRiverLength', 'terrain.hydrology.lakeAbundance', 'terrain.motifSize']);
 
 export interface StageChainBindings {
   root: HTMLElement; staging: HTMLElement; terrain: TerrainControls; regionRoot: HTMLElement; renderRoot: HTMLElement;
@@ -440,6 +442,10 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   }
 
   // General settings use the mounted controls so all handlers and visibility stay in sync.
+  const waterLandforms = document.createElement('section'); waterLandforms.className = 'region-water-landforms';
+  const waterLandformsTitle = document.createElement('h4'); waterLandformsTitle.id = 'region-water-landforms-title'; setText(waterLandformsTitle, T.waterLandforms);
+  waterLandforms.setAttribute('aria-labelledby', waterLandformsTitle.id); waterLandforms.append(waterLandformsTitle);
+  generalPanels.get('region')!.classList.add('region-general');
   for (const f of FAMILIES) for (const id of GENERAL_CONTROLS[f.id]) {
     let control: HTMLElement | null;
     if (id === 'widget:extent') {
@@ -451,8 +457,26 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     if (!control) continue;
     if (id === 'terrain.climate' || id === 'terrain.relief') prepareLandscapeStrip(control, id === 'terrain.climate' ? 'climate' : 'relief');
     control.dataset.stageControl = stageForControl(id) ?? (f.id === 'map' ? 'display-terrain' : 'relief-source');
+    if (f.id === 'region' && COMPACT_REGION_CONTROLS.has(id)) {
+      if (!waterLandforms.parentElement) generalPanels.get('region')!.append(waterLandforms);
+      const field = allTerrainFields.find(field => field.path === id)!;
+      const tooltip = copy(`${field.label}\n${field.help}`, `${translate(field.label, 'fr')}\n${translate(field.help!, 'fr')}`);
+      control.title = tooltip;
+      for (const input of Array.from(control.querySelectorAll('input'))) input.title = tooltip;
+      // The form's aria-describedby still points to its help, visually hidden only in this block.
+      waterLandforms.append(control); continue;
+    }
     (f.id === 'region' && SHARED_RELIEF_CONTROLS.has(id) ? sharedPanel : generalPanels.get(f.id)!).append(control);
   }
+  // Custom climate stays available in Advanced; only the tile is replaced by Underdark.
+  const climateHost = document.createElement('div'); rows.get('relief-climate')!.body.prepend(climateHost);
+  forms.push(mountParameterForm(climateHost, [{ ...terrainBasicFields.find(field => field.path === 'terrain.climate')!, id: 'stage-terrain-climate' }], {
+    getValue: b.terrain.access.get, disabled: b.busy,
+    setValue: (path, value) => {
+      const biome = b.terrain.access.get('options.biome'); b.terrain.access.set(path, value);
+      markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); sync();
+    },
+  }));
   for (const path of METHOD_CONTROLS) {
     const control = root.querySelector<HTMLElement>(`[data-field-path="${path}"]`);
     if (!control) continue;
@@ -537,9 +561,13 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     strip.setAttribute('aria-label', translate(kind === 'climate' ? copy('Climate', 'Climat') : copy('Relief type', 'Type de relief')));
     const buttons: HTMLButtonElement[] = [];
     for (const [index, option] of Array.from(select.options).entries()) {
+      if (kind === 'climate' && option.value === 'custom') continue;
       const button = document.createElement('button'); button.type = 'button'; button.dataset[kind] = option.value; button.setAttribute('role', 'radio');
-      const art = document.createElement('span'); art.className = `landscape-art ${kind}-art`; art.setAttribute('aria-hidden', 'true');
-      art.style.backgroundPosition = `${index % 4 / 3 * 100}% ${Math.floor(index / 4) / 2 * 100}%`; button.append(art);
+      const cave = kind === 'climate' && option.value === 'underdark';
+      const art = document.createElement('span'); art.className = `landscape-art ${cave ? 'relief' : kind}-art`; art.setAttribute('aria-hidden', 'true');
+      // Cavern is cell 10 of the existing relief atlas (four columns by three rows).
+      const artIndex = cave ? 10 : index;
+      art.style.backgroundPosition = `${artIndex % 4 / 3 * 100}% ${Math.floor(artIndex / 4) / 2 * 100}%`; button.append(art);
       const caption = document.createElement('span'); caption.className = 'region-icon-caption';
       const label = terrainBasicFields.find(f => f.path === `terrain.${kind}`)!.options!.find(o => o.value === option.value)!.label;
       setText(caption, label); button.append(caption);
@@ -548,7 +576,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       button.onclick = () => {
         const biome = b.terrain.access.get('options.biome');
         select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true }));
-        markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); if (kind === 'climate' && option.value === 'custom') expand('relief-climate', true); sync();
+        markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); sync();
       };
       button.onkeydown = event => {
         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -649,11 +677,14 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     for (const [path, sources] of Object.entries(SOURCE_FIELDS)) for (const element of Array.from(root.querySelectorAll<HTMLElement>(`[data-field-path="${path}"]`)))
       element.toggleAttribute('data-chain-hidden', !sources.includes(ctx.relief));
     for (const [family, panel] of [...generalPanels, ['region', sharedPanel] as const]) {
-      for (const control of Array.from(panel.children) as HTMLElement[]) {
+      const controls = Array.from(panel.querySelectorAll<HTMLElement>(':scope > [data-stage-control], :scope > .region-water-landforms > [data-stage-control]'));
+      for (const control of controls) {
         const stage = rows.get(control.dataset.stageControl!)?.stage;
         control.toggleAttribute('data-general-hidden', !!stage && !stage.when(ctx) || family === 'region' && ctx.classicTerrain && control.matches('.climate-picker,#terrain-coast-panel'));
       }
-      panel.hidden = !Array.from(panel.children).some(control => !(control as HTMLElement).hidden && !control.hasAttribute('data-general-hidden') && !control.hasAttribute('data-chain-hidden'));
+      const visible = (control: HTMLElement) => !control.hidden && !control.hasAttribute('data-general-hidden') && !control.hasAttribute('data-chain-hidden');
+      if (panel.contains(waterLandforms)) waterLandforms.hidden = !controls.some(control => control.parentElement === waterLandforms && visible(control));
+      panel.hidden = !controls.some(visible);
     }
     // The 8-bit image scale and sea level only apply to an imported grayscale image.
     for (const path of ['options.heightScale', 'options.importSea']) root.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-chain-hidden', !get().options.importedHeight);

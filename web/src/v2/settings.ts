@@ -1,12 +1,14 @@
-import { makeOptions, SIZE_SHORTCUT } from '../gen/options';
+import { makeOptions } from '../gen/options';
 import type { V2Settings } from './contracts';
 import { TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
+import { presetComposition } from '../render/composition';
 
 export function defaultSettings(): V2Settings {
   return { options: makeOptions({ seed: 'magna-urbis', population: 2500, biome: 'temperate', relief: 'hills', coast: 'S' }),
-    extent: 6000, settlementCount: 4, local: {}, generation: 'procedural',
+    extent: 6000, settlementCount: 0, local: {}, generation: 'procedural',
     // Explicit defaults belong to new recipes; absent fields in saved recipes keep their historical defaults.
     terrain: { motifSize: 10000, hydrology: { engine: 'vector' } },
+    appearance: { style: 'parchment', composition: presetComposition('satellite') },
     runtime: { backend: 'rust', compute: 'auto', source: 'procedural' } };
 }
 
@@ -16,8 +18,5 @@ export function adaptedExtent(settings: V2Settings): number {
   if (settings.options.mapSize !== undefined) return Math.round(settings.options.mapSize);
   // Automatic size recommends 40 km; conventional neural generation also accepts explicit extents.
   if (settings.generation === 'neural') return 40000;
-  const population = settings.options.population || SIZE_SHORTCUT[settings.options.size];
-  const main = 1400 + Math.sqrt(population) * 26 * Math.max(.7, settings.options.sprawl ?? 1);
-  const count = settings.settlementCount || 4;
-  return Math.min(TERRAIN_EXTENT_MAX, Math.max(TERRAIN_EXTENT_MIN, 2400, Math.ceil((main + Math.sqrt(count - 1) * 1800) / 200) * 200));
+  return Math.min(TERRAIN_EXTENT_MAX, Math.max(TERRAIN_EXTENT_MIN, 40000));
 }

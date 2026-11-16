@@ -1,10 +1,13 @@
 import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
-import { CULTURE_LABELS, cultureEra } from '../gen/options';
+import { cultureEra } from '../gen/options';
+import { installCultureBrowser } from './cultureBrowser';
 import { advancedPanel } from './advancedPanel';
 import { mountRenderPassControls } from './renderPassControls';
 import { editorButtonIcon } from './editorIcons';
-import { recommendedCounts, recommendedCulture, settlementEnvironment } from './settlementDefaults';
+import { recommendedCulture } from './settlementDefaults';
+import { mountSettlementPopulationPanel } from './settlementPopulationPanel';
+import { cultureEnvironment, plausibleCultures, randomCulture } from './environmentCultures';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { currentComposition, writeAppearanceControl } from './renderControls';
 import './workbenchLayout.css';
@@ -14,6 +17,8 @@ registerMessages({
   'Select on map': { en: 'Select on map', fr: 'Sélection' },
   'Editor': { en: 'Editor', fr: 'Éditeur' }, 'Global density': { en: 'Global density', fr: 'Densité globale' },
   'Follow the environment': { en: 'Follow the environment', fr: 'Suivre le milieu naturel' },
+  'Random culture suited to this environment': { en: 'Random culture suited to this environment', fr: 'Culture aléatoire adaptée à ce milieu' },
+  'Random pre-modern culture': { en: 'Random pre-modern culture', fr: 'Culture pré-moderne aléatoire' },
   'Medieval cultures': { en: 'Medieval cultures', fr: 'Cultures médiévales' },
   'Ancient cultures': { en: 'Ancient cultures', fr: 'Cultures antiques' },
   'Fantasy cultures': { en: 'Fantasy cultures', fr: 'Cultures fantastiques' },
@@ -48,28 +53,32 @@ export function mountWorkbenchLayout(api: {
 }) {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
   const settlements = $('#family-settlements'), cities = $('#family-cities'), editor = $('#family-map');
+  installCultureBrowser(document.body);
   const general = settlements.querySelector<HTMLElement>('.family-general')!;
-  const counts = Array.from(settlements.querySelectorAll<HTMLElement>('[data-field-path^="placement.counts."]'));
-  const countsHost = document.createElement('div'); countsHost.className = 'settlement-counts'; countsHost.append(...counts); general.append(countsHost);
+  settlements.querySelectorAll<HTMLElement>('[data-field-path^="placement.counts."],[data-control="main:population"]').forEach(node=>node.remove());
   const culture = $<HTMLSelectElement>('[data-option="culture"]'); groupCultureSelector(culture);
+  const allCultureOptions = Array.from(culture.options);
+  let cultureChoices = '';
   const cultureHost = culture.closest<HTMLElement>('[data-control]')!; cultureHost.classList.add('culture-picker');
   const automatic = document.createElement('label'); automatic.className = 'checkline';
   const auto = document.createElement('input'); auto.type = 'checkbox'; auto.id = 'culture-environment';
-  const autoText = document.createElement('span'); setText(autoText, 'Follow the environment'); automatic.append(auto, autoText); cultureHost.append(automatic);
-  const densityHost = document.createElement('label'); densityHost.className = 'density-control';
-  const caption = document.createElement('span'); setText(caption, 'Global density');
-  const density = document.createElement('input'); density.id = 'settlement-density'; density.type = 'range'; density.min = '0'; density.max = '3'; density.step = '.05'; density.value = '1';
-  const output = document.createElement('output'); output.htmlFor = density.id; densityHost.append(caption, output, density);const note=document.createElement('p');note.className='hint';setText(note,'In addition to the main settlement');countsHost.before(densityHost,note);
-  const state = new WeakMap<V2Settings, { environment: string; autoCulture: boolean; counts: string; density: number; baseCounts?: Record<string,number>; autoCounts: boolean }>();
-  density.oninput = () => {
+  const autoText = document.createElement('span'); setText(autoText, 'Follow the environment'); automatic.append(auto, autoText);
+  const cultureActions = document.createElement('div'); cultureActions.className = 'culture-actions';
+  const dice = document.createElement('button'); dice.type = 'button'; dice.id = 'culture-random';
+  const diceIcon = document.createElement('i'); diceIcon.className = 'art art-dice'; diceIcon.setAttribute('aria-hidden', 'true'); dice.append(diceIcon);
+  cultureActions.append(automatic, dice); cultureHost.append(cultureActions);
+  general.prepend(cultureHost);
+  const demographics = mountSettlementPopulationPanel(general, api);
+  const state = new WeakMap<V2Settings, { cultureEnvironment: string; autoCulture: boolean }>();
+  // The existing option binding writes the chosen culture before this listener runs.
+  culture.addEventListener('change', () => { const s=api.getSettings(); s.region??={};s.region.demography??={};s.region.demography.followCulture=false;state.get(s)!.autoCulture = false; sync();api.changed(); });
+  auto.onchange = () => { const s=api.getSettings();s.region??={};s.region.demography??={};s.region.demography.followCulture=auto.checked;state.get(s)!.autoCulture = auto.checked; sync(true); api.changed(); api.syncForms(); };
+  function rollCulture(avoidCurrent = false): void {
     const s = api.getSettings(), previous = state.get(s)!;
-    const values = previous.baseCounts ? Object.fromEntries(Object.entries(previous.baseCounts).map(([key,n])=>[key,Math.min(1000,Math.round(n*Number(density.value)))])) : recommendedCounts(s, Number(density.value));
-    s.region ??= {}; s.region.placement = { ...s.region.placement, mode: 'counts', counts: values };
-    previous.density = Number(density.value); previous.counts = JSON.stringify(values);
-    api.changed(); api.syncForms(); sync();
-  };
-  culture.addEventListener('change', () => { auto.checked = false; state.get(api.getSettings())!.autoCulture = false; });
-  auto.onchange = () => { state.get(api.getSettings())!.autoCulture = auto.checked; sync(true); api.changed(); api.syncForms(); };
+    s.options.culture = randomCulture(s, previous.autoCulture, Math.random, avoidCurrent ? s.options.culture : undefined);
+    sync(); api.syncForms(); api.changed();
+  }
+  dice.onclick = () => rollCulture(true);
 
   for (const family of [settlements, cities]) {
     const advanced = advancedPanel(family, 'Advanced');
@@ -104,12 +113,15 @@ export function mountWorkbenchLayout(api: {
   // Editing tools and contextual inspectors share the left column.
   const moveTools=document.createElement('div');moveTools.className='settlement-position-tools';general.append(moveTools);for(const id of ['move-towns','town-positions-apply','town-positions-cancel'])moveTools.append($('#'+id));
   const countLegacy = $('#town-count').closest<HTMLElement>('[data-control]');
-  if (countLegacy) settlements.querySelector('.advanced-grid')!.prepend(countLegacy);
+  countLegacy?.remove();
   const selection = $('.inspector-mode');
   for(const node of Array.from(selection.childNodes))if(node.nodeType===Node.TEXT_NODE)node.textContent='';
   const places = $('#places-panel'); $('.map-area').append(places);
   places.querySelector('header')!.after(selection);
   editor.querySelector('.family-head')!.after($('#header-menu'), $('#editor-dock'));
+  const namesIntro = document.createElement('p'); namesIntro.className = 'hint editor-names-intro';
+  registerMessages({ 'Browse all names to rename them or choose which ones appear on the map.': { en: 'Browse all names to rename them or choose which ones appear on the map.', fr: 'Parcourez tous les toponymes pour les renommer et choisir ceux à afficher sur la carte.' } });
+  setText(namesIntro, 'Browse all names to rename them or choose which ones appear on the map.'); $('#header-menu').after(namesIntro);
   editorButtonIcon($<HTMLButtonElement>('#edit-navigate'), 'display-2d');
   editorButtonIcon($<HTMLButtonElement>('#labels-open'), 'display-labels');
   editorButtonIcon($<HTMLButtonElement>('#edit-done'), 'display-2d', '✓');
@@ -171,28 +183,29 @@ export function mountWorkbenchLayout(api: {
   function sync(force = false): void {
     const s = api.getSettings(); let previous = state.get(s);
     if (!previous) {
-      const fresh = !api.getWorld() && !s.region?.placement?.counts && !s.region?.placement?.list?.length;
-      previous = { environment: '', autoCulture: fresh && s.options.culture === 'european-organic', counts: JSON.stringify(s.region?.placement?.counts??{}), density: 1, baseCounts:s.region?.placement?.counts?{...s.region.placement.counts}:undefined, autoCounts:!s.region?.placement?.counts };  state.set(s, previous);
+      previous = { cultureEnvironment: JSON.stringify(cultureEnvironment(s)), autoCulture: s.region?.demography?.followCulture ?? true }; state.set(s, previous);
     }
-    const stored=s.region?.placement?.counts;
-    if(stored&&JSON.stringify(stored)!==previous.counts){previous.autoCounts=false;previous.baseCounts=Object.fromEntries(Object.entries(stored).map(([key,n])=>[key,n/Math.max(.05,previous.density)]));previous.counts=JSON.stringify(stored);}
-    const environment = settlementEnvironment(s);
-    if (environment !== previous.environment || force) {
-      if (previous.autoCounts && s.region?.placement?.mode !== 'list') {
-        s.region ??= {}; s.region.placement = { ...s.region.placement, mode: 'counts', counts: recommendedCounts(s, previous.density) };
-        previous.counts = JSON.stringify(s.region.placement.counts);
-      }
-      if (previous.autoCulture) {
-        const suggested = recommendedCulture(s);
-        if (suggested && CULTURE_LABELS.some(([id]) => id === suggested)) { s.options.culture = suggested; culture.value = suggested; }
-      }
-      previous.environment = environment; api.syncForms();
+    previous.autoCulture = s.region?.demography?.followCulture ?? previous.autoCulture;
+    const cultureEnvironmentKey = JSON.stringify(cultureEnvironment(s));
+    if (previous.autoCulture && (cultureEnvironmentKey !== previous.cultureEnvironment || force)) {
+      s.options.culture = recommendedCulture(s);
+      api.syncForms();
     }
+    previous.cultureEnvironment = cultureEnvironmentKey;
+    const allowed = previous.autoCulture ? plausibleCultures(s) : allCultureOptions.map(option => option.value);
+    const choicesKey = allowed.join('|');
+    if (choicesKey !== cultureChoices) {
+      culture.replaceChildren(...allCultureOptions.filter(option => allowed.includes(option.value)));
+      groupCultureSelector(culture); bindTree(culture); cultureChoices = choicesKey;
+    }
+    culture.value = s.options.culture;
+    const diceLabel = previous.autoCulture ? 'Random culture suited to this environment' : 'Random pre-modern culture';
+    for (const attr of ['title', 'aria-label']) { dice.setAttribute(`data-i18n-${attr}`, diceLabel); dice.setAttribute(attr, translate(diceLabel)); }
     passes.sync();
-    auto.checked = previous.autoCulture; density.value = String(previous.density); output.value = `${Math.round(previous.density * 100)}%`;
+    auto.checked = previous.autoCulture; demographics.sync();
     display.querySelectorAll<HTMLButtonElement>('button').forEach((button, i) => button.setAttribute('aria-pressed', String(i < 3
       ? currentComposition(s).buildings.look === button.dataset.cityDisplay
       : i === 5 ? !!s.appearance?.textured : !s.appearance?.textured && (i === 3 ? s.appearance?.city?.palette === 'ink' : s.appearance?.city?.palette !== 'ink'))));
   }
-  sync(); return { sync };
+  sync(); return { sync, prepareGeneration: () => { sync(); if (state.get(api.getSettings())!.autoCulture) rollCulture(); } };
 }

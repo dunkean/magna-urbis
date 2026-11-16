@@ -411,6 +411,8 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
         }
     }
     let mut layer = Layer::default();
+    let lakes = ground::lake_regions(input);
+    let lake_index = boolean::cut_index(&lakes);
     let pieces = par::map(&[4_u8, 2, 3, 8, 7], |&k| {
         let mut areas = Vec::new();
         if let Some(win) = raster::class_window(&classes, w, h, k) {
@@ -418,7 +420,8 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
                 .iter()
                 .map(|&c| if c == k { 1.0 } else { 0.0 })
                 .collect();
-            for r in vectorize(&mask, w, h, cell, 1200.0_f64.max(2.2 * cell * cell), win) {
+            let traced = vectorize(&mask, w, h, cell, 1200.0_f64.max(2.2 * cell * cell), win);
+            for r in ground::exclude_lakes(traced, &lakes, &lake_index) {
                 areas.push(Area::new(KINDS[k as usize], r));
             }
         }

@@ -134,7 +134,7 @@ export interface City3dOptions {
 }
 export type City3dGround = CityGroundMode;
 export interface City3dViewSettings { ground: City3dGround; plan: boolean; colors: 'materials' | 'uses'; exaggeration: number; refinement: 'source' | 'noise'; trees3d: boolean; /** Render distance of the modelled trees (m). */ treeDistance: number }
-export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array }; waterVisible?: boolean }
+export interface City3dSurface { height: HeightLayer; water?: { n: number; levels: Float32Array; mask: Float32Array; field?: import('./lakeGeometry').LakeField; width?: number }; waterVisible?: boolean }
 export interface City3dWaterDisplay {
   texture: HTMLCanvasElement; paths?: Path2D; ink?: { fill: string; stroke: string };
   /** River ribbons use nonzero fill: evenodd would punch holes where caps and confluences overlap. */
@@ -238,6 +238,8 @@ export function mountCity3d(options: City3dOptions): City3d {
     <div class="city3d-marker" hidden></div>
     <div class="city3d-info" role="status"></div>`;
   options.host.append(root);
+  // Canvas size cached by the ResizeObserver: reading clientWidth in the camera loop forced a layout every frame.
+  let viewWidth = 1, viewHeight = 1;
   const canvas = root.querySelector('canvas')!, marker = root.querySelector<HTMLElement>('.city3d-marker')!, info = root.querySelector<HTMLElement>('.city3d-info')!;
   const selectionSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   selectionSvg.setAttribute('aria-hidden', 'true'); selectionSvg.dataset.urbanSelection = '';
@@ -361,7 +363,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   /** The 3D camera drives the shared controller: ground footprint around the target. */
   function driveDetails(): void {
     const t = terrain, service = options.details; if (!t || !service || !active) return;
-    const c = t.getCamera(), half = c.distance * Math.tan(TERRAIN_3D_FOV / 2), aspect = Math.max(1, canvas.clientWidth / Math.max(1, canvas.clientHeight));
+    const c = t.getCamera(), half = c.distance * Math.tan(TERRAIN_3D_FOV / 2), aspect = Math.max(1, viewWidth / Math.max(1, viewHeight));
     service.update({ viewport: { minX: c.x - half * aspect, minY: c.y - half, maxX: c.x + half * aspect, maxY: c.y + half },
       metresPerPixel: (2 * half) / Math.max(1, canvas.clientHeight), selectedId: options.getSelected?.(), enabled: true });
   }
@@ -1063,7 +1065,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   if (options.materialGrounds) $<HTMLSelectElement>('[data-refinement]').onchange = event => { refinement = (event.target as HTMLSelectElement).value as City3dViewSettings['refinement']; changedView(); applyGround(); };
   $<HTMLButtonElement>('[data-north]').onclick = () => { terrain?.north(); };
   $<HTMLButtonElement>('[data-detail]').onclick = detailAround;
-  const resize = new ResizeObserver(() => { if (active) terrain?.resize(root.clientWidth, root.clientHeight); });
+  const resize = new ResizeObserver(() => { viewWidth = canvas.clientWidth; viewHeight = canvas.clientHeight; if (active) terrain?.resize(root.clientWidth, root.clientHeight); });
   resize.observe(root);
 
   function sync(): void {

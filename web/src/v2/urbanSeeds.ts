@@ -38,6 +38,12 @@ export function rerollUrbanSeeds(settings: V2Settings, keys: readonly string[], 
   settings.options.seed = rerollSeed(settings.options.seed, keys.map(key => `city/${key}/${stage}`));
 }
 
+/** A new complete variant of one place; regional population and neighbour draws stay fixed. */
+export function rerollSettlement(settings: V2Settings, key: string): void {
+  migrateUrbanSeeds(settings);
+  settings.options.seed = rerollSeed(settings.options.seed, URBAN_SEED_STAGES.map(stage => `city/${key}/${stage}`));
+}
+
 /** The editor shows effective values; sparse overrides remain an implementation detail. */
 export function setUrbanSeed(settings: V2Settings, key: string, stage: UrbanSeedStage, seed: string): void {
   migrateUrbanSeeds(settings);

@@ -1,4 +1,4 @@
-import { loadNeuralManifest, obtainNeuralModel, NEURAL_MODEL_NAMES, NeuralModelError } from '../../../rust/bridge/neuralModels';
+import { loadNeuralManifest, obtainNeuralModel, listStoredNeuralModels, neuralModelUrl, NEURAL_MODEL_NAMES, NeuralModelError } from '../../../rust/bridge/neuralModels';
 import { obtainNeuralRuntime } from '../../../rust/bridge/neuralRuntime';
 import { setText, getLanguage, numberLocale } from './i18n';
 import { desktopReleasesUrl, getLatestDesktopRelease } from './desktopUpdates';
@@ -8,8 +8,9 @@ import { assertNeuralCompute } from './neuralExecution';
 
 export const NEURAL_NOTICE_KEY = 'magna-urbis-browser-neural-consent-v1';
 
-/** Called only from a requested download/generation, including the settings download buttons. */
-export async function confirmNeuralDownload(signal?: AbortSignal): Promise<void> {
+/** Called only from a requested download/generation, including the settings download buttons. `stored`: every model is
+ * already saved (checked after WebGPU, before any notice), so the first-download notice (size, desktop advice) is skipped. */
+export async function confirmNeuralDownload(signal?: AbortSignal, stored?: () => Promise<boolean>): Promise<void> {
   signal?.throwIfAborted();
   let device: GPUDevice | undefined;
   try {
@@ -22,6 +23,7 @@ export async function confirmNeuralDownload(signal?: AbortSignal): Promise<void>
   signal?.throwIfAborted();
   let accepted = false;
   try { accepted = localStorage.getItem(NEURAL_NOTICE_KEY) === 'accepted'; } catch { /* Storage can be disabled. */ }
+  if (!accepted && stored) accepted = await stored().catch(() => false);
   if (!accepted) {
     const dialog = document.createElement('dialog'); dialog.id = 'neural-download-warning';
     dialog.setAttribute('aria-labelledby', 'neural-download-title');
@@ -53,10 +55,16 @@ export async function confirmNeuralDownload(signal?: AbortSignal): Promise<void>
 
 export async function prepareBrowserNeuralDownload(assets: string, signal: AbortSignal, progress: (event: V2Progress) => void, compute: ComputePreference = 'auto'): Promise<void> {
   assertNeuralCompute(true, compute);
-  await confirmNeuralDownload(signal);
+  // The notice only matters when something remains to download.
+  let loaded: Awaited<ReturnType<typeof loadNeuralManifest>> | undefined;
+  await confirmNeuralDownload(signal, async () => {
+    loaded = await loadNeuralManifest(assets, signal);
+    const saved = await listStoredNeuralModels(assets, loaded.manifest);
+    return NEURAL_MODEL_NAMES.every(name => saved.some(r => r.url === neuralModelUrl(assets, loaded!.manifest.models[name])));
+  });
   progress({ stage: 'neural-download', label: 'Verifying neural models…', completed: 0, total: 0 });
   try {
-    const { manifest } = await loadNeuralManifest(assets, signal);
+    const { manifest } = loaded ?? await loadNeuralManifest(assets, signal);
     await obtainNeuralRuntime(assets, manifest, signal);
     const total = NEURAL_MODEL_NAMES.reduce((sum, name) => sum + manifest.models[name].bytes, 0);
     let completed = 0;

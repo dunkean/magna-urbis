@@ -26,7 +26,10 @@ export function organizeUrbanForm(root: HTMLElement): void {
   for (const field of Array.from(root.querySelectorAll<HTMLElement>('[data-field-path=architecture],[data-field-path=through]'))) main.append(field);
   for (const section of sections) {
     for (const field of Array.from(section.querySelectorAll<HTMLElement>('[data-field-path]'))) {
-      if (primary.test(field.dataset.fieldPath!)) main.append(field);
+      if (primary.test(field.dataset.fieldPath!)) {
+        const preview = field.nextElementSibling?.matches('.city-pattern-choices') ? field.nextElementSibling : undefined;
+        main.append(field); if (preview) main.append(preview);
+      }
     }
     section.open = true; advanced.grid.append(section);
   }

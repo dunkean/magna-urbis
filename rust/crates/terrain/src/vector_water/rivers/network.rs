@@ -737,15 +737,21 @@ struct Prepared {
     nodes: usize,
     made: Vec<Option<Run>>,
 }
-/// Shortest river course kept, in metres: from a source down to its first confluence, or to the sea or a lake.
-const MIN_RIVER_LENGTH: f64 = 150.0;
-/// Drops the river courses shorter than `MIN_RIVER_LENGTH`: a source run that joins a larger river as a tributary,
+/// Default shortest river course kept, in metres: to its first confluence, the sea or a lake.
+const DEFAULT_MIN_RIVER_LENGTH: f64 = 150.0;
+/// Drops the river courses shorter than `min_length`: a source run that joins a larger river as a tributary,
 /// or reaches the sea or a lake, that soon is a rill, not a river. At a confluence the donor with the largest
 /// catchment carries on, so a main stem is measured down to its end. Lake outflows and courses entering at the map
 /// border stay.
-fn prune_short_courses(river: &mut [u8], still: &[u8], receiver: &[i32], accumulation: &[f32], n: usize, cell: f64) {
+///
+/// Invariant: a kept course keeps everything below it. A cell is measured on the longest course through it (the
+/// longest river path above it plus its own course below it), so the stretch below a confluence stays whenever any
+/// course feeding it is long enough, even when its lead donor's own course is short; a long tributary never ends
+/// where a dropped stem used to carry it on.
+fn prune_short_courses(river: &mut [u8], still: &[u8], receiver: &[i32], accumulation: &[f32], n: usize, cell: f64, min_length: f64) -> usize {
+    let min_length = if min_length > 0.0 { min_length } else { DEFAULT_MIN_RIVER_LENGTH };
     let total = n * n;
-    let (mut lead, mut lake_fed) = (vec![-1_i32; total], vec![0_u8; total]);
+    let (mut lead, mut lake_fed, mut donors) = (vec![-1_i32; total], vec![0_u8; total], vec![0_u32; total]);
     for c in 0..total {
         let r = receiver[c];
         if r < 0 {
@@ -753,6 +759,7 @@ fn prune_short_courses(river: &mut [u8], still: &[u8], receiver: &[i32], accumul
         }
         let r = r as usize;
         if river[c] != 0 {
+            donors[r] += 1;
             if lead[r] < 0 || accumulation[c] > accumulation[lead[r] as usize] {
                 lead[r] = c as i32
             }
@@ -761,33 +768,50 @@ fn prune_short_courses(river: &mut [u8], still: &[u8], receiver: &[i32], accumul
         }
     }
     let step = |a: usize, b: usize| if a % n != b % n && a / n != b / n { std::f64::consts::SQRT_2 * cell } else { cell };
-    let mut drop = Vec::new();
-    for source in 0..total {
-        let (x, y) = (source % n, source / n);
-        if river[source] == 0 || lead[source] >= 0 || lake_fed[source] != 0 || x == 0 || y == 0 || x == n - 1 || y == n - 1 {
+    // `up`: longest river path above a cell (unbounded from a lake outflow or a border inflow), in donor-first order.
+    let mut up = vec![0.0_f64; total];
+    let mut order: Vec<usize> = (0..total)
+        .filter(|&c| river[c] != 0 && lead[c] < 0)
+        .collect();
+    for &c in &order {
+        let (x, y) = (c % n, c / n);
+        if lake_fed[c] != 0 || x == 0 || y == 0 || x == n - 1 || y == n - 1 {
+            up[c] = f64::INFINITY
+        }
+    }
+    let mut i = 0;
+    while i < order.len() {
+        let c = order[i];
+        i += 1;
+        let r = receiver[c];
+        if r < 0 || river[r as usize] == 0 {
             continue;
         }
-        let (mut course, mut length, mut c) = (vec![source], 0.0, source);
-        loop {
-            let r = receiver[c];
-            if r < 0 {
-                break;
-            }
-            let r = r as usize;
-            length += step(c, r);
-            if length >= MIN_RIVER_LENGTH || river[r] == 0 || lead[r] != c as i32 || course.len() >= total {
-                break;
-            }
-            course.push(r);
-            c = r
-        }
-        if length < MIN_RIVER_LENGTH {
-            drop.extend(course)
+        let r = r as usize;
+        up[r] = up[r].max(up[c] + step(c, r));
+        donors[r] -= 1;
+        if donors[r] == 0 {
+            order.push(r)
         }
     }
-    for c in drop {
-        river[c] = 0
+    // `down`: the cell's own course below it, to its end or to the confluence it joins as a tributary.
+    let mut down = vec![0.0_f64; total];
+    for &c in order.iter().rev() {
+        let r = receiver[c];
+        if r < 0 {
+            continue;
+        }
+        let r = r as usize;
+        down[c] = step(c, r) + if river[r] != 0 && lead[r] == c as i32 { down[r] } else { 0.0 };
     }
+    let mut pruned = 0;
+    for &c in &order {
+        if up[c] + down[c] < min_length {
+            river[c] = 0;
+            pruned += 1
+        }
+    }
+    pruned
 }
 pub(crate) fn vector_rivers(
     h: &Hydrology,
@@ -934,7 +958,7 @@ pub(crate) fn vector_rivers(
             }
         }
     }
-    prune_short_courses(&mut river, &still, &g.receiver, &g.accumulation, n, cell);
+    let pruned_cells = prune_short_courses(&mut river, &still, &g.receiver, &g.accumulation, n, cell, s.min_river_length);
     let mut main = vec![-1; total];
     for c in 0..total {
         let r = g.receiver[c];
@@ -1106,6 +1130,7 @@ pub(crate) fn vector_rivers(
     let mut widest = 0.0_f64;
     let mut network = Network {
         width_scale: s.width_scale,
+        pruned_cells,
         ..Network::default()
     };
     let mut oxbows = Vec::new();
@@ -1124,7 +1149,7 @@ pub(crate) fn vector_rivers(
             cells.push(stream.end as usize)
         }
         cells = ctx.across_beds(cells, parent_chain, &mut bed, false);
-        let shoal = if stream.end >= 0
+        let mut shoal = if stream.end >= 0
             && standing[stream.end as usize] == 0
             && still[stream.end as usize] != 0
         {
@@ -1132,6 +1157,27 @@ pub(crate) fn vector_rivers(
         } else {
             Vec::new()
         };
+        // Invariant: a river ending in a lake ends inside its drawn shore. The shore is placed between cell centres
+        // from the water depth, so it can leave the centre of a shallow lake cell dry: the course then follows the
+        // lake's routing on to the first cell the drawn lake covers, where the line is cut on the shore further on.
+        if stream.end >= 0 && still[stream.end as usize] != 0 {
+            let mut last = *cells.last().unwrap();
+            last = shoal.last().copied().unwrap_or(last);
+            while shoal.len() < n {
+                let (x, y) = ctx.centre(last);
+                let r = g.receiver[last];
+                if ctx.wet(x, y, None)
+                    || r < 0
+                    || still[r as usize] == 0
+                    || cells.contains(&(r as usize))
+                    || shoal.contains(&(r as usize))
+                {
+                    break;
+                }
+                last = r as usize;
+                shoal.push(last)
+            }
+        }
         cells.extend_from_slice(&shoal);
         let (mut xs, mut ys, mut area, mut level, mut local, mut plain, mut braid) = (
             Vec::new(),
@@ -1820,10 +1866,38 @@ mod short_course_tests {
         flow(&[(7, 1), (7, 2), (7, 3), (7, 4), (7, 5)], 5.0, &mut river);
         // Short coastal rill (120 m to the sea).
         flow(&[(1, 8), (2, 8), (3, 8), (3, 9)], 5.0, &mut river);
-        prune_short_courses(&mut river, &still, &receiver, &acc, n, cell);
+        let mut higher_minimum = river.clone();
+        prune_short_courses(&mut higher_minimum, &still, &receiver, &acc, n, cell, 200.0);
+        prune_short_courses(&mut river, &still, &receiver, &acc, n, cell, 150.0);
         assert!((1..=8).all(|x| river[id(x, 5)] != 0), "main stem kept from its source");
         assert!((2..=4).all(|y| river[id(4, y)] == 0), "short tributary dropped");
         assert!((1..=4).all(|y| river[id(7, y)] != 0), "long tributary kept");
+        assert!((1..=4).all(|y| higher_minimum[id(7, y)] == 0), "raising the minimum drops the 160 m tributary");
+        assert!((1..=8).all(|x| higher_minimum[id(x, 5)] != 0), "higher minimum keeps the 320 m main stem");
         assert!([(1, 8), (2, 8), (3, 8)].iter().all(|&(x, y)| river[id(x, y)] == 0), "short rill dropped");
+    }
+
+    #[test]
+    fn a_long_tributary_keeps_the_stem_below_a_short_lead_source() {
+        let (n, cell) = (10_usize, 40.0);
+        let id = |x: usize, y: usize| y * n + x;
+        let total = n * n;
+        let (mut river, mut still, mut receiver, mut acc) = (vec![0_u8; total], vec![0_u8; total], vec![-1_i32; total], vec![0_f32; total]);
+        let mut flow = |path: &[(usize, usize)], base: f32, river: &mut Vec<u8>| {
+            for (k, w) in path.windows(2).enumerate() {
+                let (a, b) = (id(w[0].0, w[0].1), id(w[1].0, w[1].1));
+                receiver[a] = b as i32;
+                acc[a] = acc[a].max(base + 10.0 * k as f32);
+                river[a] = 1;
+            }
+        };
+        still[id(9, 2)] = 1;
+        // A 240 m tributary along row 2 meets, at (7, 2), a wetter source only 120 m from the sea: the source is
+        // the lead donor, but the stretch below the confluence carries the tributary on to the sea.
+        flow(&(1..=7).map(|x| (x, 2)).collect::<Vec<_>>(), 5.0, &mut river);
+        flow(&[(7, 1), (7, 2), (8, 2), (9, 2)], 100.0, &mut river);
+        prune_short_courses(&mut river, &still, &receiver, &acc, n, cell, 0.0);
+        assert!((1..=8).all(|x| river[id(x, 2)] != 0), "tributary kept down to the sea");
+        assert_eq!(river[id(7, 1)], 0, "short lead source dropped");
     }
 }

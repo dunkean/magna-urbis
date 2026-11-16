@@ -52,7 +52,8 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
   const summary = document.createElement('summary'); setText(summary, T.title); section.append(summary);
   const content = document.createElement('div'); content.className = 'neural-model-content'; section.append(content); host.append(section);
   const p = (text: string, parent: HTMLElement = content) => { const node = document.createElement('p'); node.className = 'hint'; setText(node, text); parent.append(node); return node; };
-  p(T.intro);
+  // The size notice is for a first download only.
+  const intro = p(T.intro);
   const address = p(''); address.classList.add('neural-model-address'); address.dataset.l10nKeep = '';
   const totals = p(''); totals.dataset.l10nKeep = '';
   const list = document.createElement('div'); list.className = 'neural-model-list'; content.append(list);
@@ -118,7 +119,8 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
         const remove = makeButton(row, T.remove, () => void run(() => deleteStoredNeuralModel(model.url), T.removed)); remove.disabled = active; row.prepend(label); other.append(row);
       }
     }
-    all.disabled = active || !manifest || NEURAL_MODEL_NAMES.every(name => records.some(r => r.url === neuralModelUrl(assets, manifest!.models[name])));
+    const complete = !!manifest && NEURAL_MODEL_NAMES.every(name => records.some(r => r.url === neuralModelUrl(assets, manifest!.models[name])));
+    all.disabled = active || complete; intro.hidden = complete;
     clear.disabled = active || !records.length; refreshButton.disabled = active;
     cancel.hidden = !controller || !active;
     transfer.hidden = !active || !lastTransfer; section.setAttribute('aria-busy', String(active));

@@ -3,7 +3,7 @@ import { openMethodNote } from '../ui/methodNotes';
 import type { V2Settings } from './contracts';
 import { adaptedExtent } from './settings';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { bindTree, registerMessages, setText } from './i18n';
+import { bindTree, onLanguageChange, registerMessages, setText } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
 import {
   terrainCopy as copy, terrainControlMessages, terrainSourceFields, terrainBasicFields, terrainProceduralFields,
@@ -68,6 +68,30 @@ const seaNames: Record<typeof coastDirections[number], [string, string]> = {
 };
 for (const pair of Object.values(seaNames)) copy(...pair);
 
+/** UI choices: Underdark stays a biome; the stored climate remains a surface zone. */
+export function terrainClimateChoice(settings: V2Settings): string {
+  if (settings.options.biome === 'underdark') return 'underdark';
+  if (settings.terrain?.climateValues) return 'custom';
+  return effectiveTerrainSettings(settings, adaptedExtent(settings)).climateZone!;
+}
+export function setTerrainClimateChoice(settings: V2Settings, value: string): void {
+  const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
+  settings.terrain ??= {};
+  if (value === 'underdark') {
+    // Keep even an inferred climate when its biome becomes Underdark.
+    settings.terrain.climate ??= effective.climateZone;
+    settings.options.biome = 'underdark';
+  } else {
+    if (value === 'custom') settings.terrain.climateValues = { ...effective.climateValues! };
+    else { writeSettingPath(settings, 'terrain.climate', value); delete settings.terrain.climateValues; }
+    settings.options.biome = (climateZoneBiome[value === 'custom' ? effective.climateZone! : value] ?? 'temperate') as typeof settings.options.biome;
+  }
+  // Keep an explicitly chosen culture if it fits the selected environment.
+  const fits = UNDERDARK_CULTURES.includes(String(settings.options.culture));
+  if (value === 'underdark' && !fits) settings.options.culture = UNDERDARK_CULTURES[0];
+  else if (value !== 'underdark' && fits) settings.options.culture = 'european-organic';
+}
+
 /** Structured access to the real Terrainbench recipe; hidden groups retain their settings. */
 export function mountTerrainControls(root: HTMLElement, bindings: TerrainControlBindings): TerrainControls {
   const initial = bindings.getSettings();
@@ -86,11 +110,9 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (path==='terrain.procedural.coastAfter')return settings.terrain?.procedural?.coastAfter??'initialize';
     if (path==='terrain.phasor.quality')return settings.terrain?.phasor?.quality??'balanced';
     if (path==='terrain.phasor.intensity')return settings.terrain?.phasor?.intensity??1;
-    if (path === 'options.layer') return settings.options.biome === 'underdark' ? 'underdark' : 'surface';
+    if (path === 'terrain.climate') return terrainClimateChoice(settings);
     if (path.startsWith('terrain.')) {
-      if (path === 'terrain.climate' && settings.terrain?.climateValues) return 'custom';
       const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
-      if (path === 'terrain.climate') return effective.climateZone;
       return readSettingPath(effective, path.slice(8)) ?? defaultValues?.(effective)[path];
     }
     if (path === 'runtime.source') return settings.runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
@@ -102,24 +124,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const settings = bindings.getSettings();
     if (path === 'terrain.coastMask' && Number(value) !== 0 && settings.terrain?.procedural?.enabled?.coasts === false) settings.terrain.procedural.enabled.coasts = true;
     if (path.startsWith('runtime.') && !settings.runtime) settings.runtime = { backend: 'rust', compute: 'auto', source: 'procedural' };
-    if (path === 'options.layer') {
-      if (value === 'underdark') settings.options.biome = 'underdark';
-      else if (settings.options.biome === 'underdark') settings.options.biome = (climateZoneBiome[effectiveTerrainSettings(settings, adaptedExtent(settings)).climateZone ?? 'temperate'] ?? 'temperate') as typeof settings.options.biome;
-      // The main culture follows the layer unless the user already chose one that fits it (explicit choices win).
-      const culture = String(settings.options.culture), fits = UNDERDARK_CULTURES.includes(culture);
-      if (value === 'underdark' && !fits) settings.options.culture = UNDERDARK_CULTURES[0];
-      else if (value !== 'underdark' && fits) settings.options.culture = 'european-organic';
-      change(); return;
-    }
     if (path === 'terrain.climate') {
-      if (value === 'custom') {
-        settings.terrain ??= {};
-        settings.terrain.climateValues = { ...effectiveTerrainSettings(settings, adaptedExtent(settings)).climateValues! };
-      } else {
-        writeSettingPath(settings, path, value); delete settings.terrain!.climateValues;
-        const biome = climateZoneBiome[String(value)];
-        if (biome && settings.options.biome !== 'underdark') settings.options.biome = biome as typeof settings.options.biome;
-      }
+      setTerrainClimateChoice(settings, String(value));
     } else {
       if (path.startsWith('terrain.climateValues.') && !settings.terrain?.climateValues) {
         settings.terrain ??= {}; settings.terrain.climateValues = { ...effectiveTerrainSettings(settings, adaptedExtent(settings)).climateValues! };
@@ -188,7 +194,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   for (const metres of [2400, 10000, 40000, 100000, 200000]) { const preset = button(presetRow, formatDistance(metres,getDistanceUnit()), () => { bindings.getSettings().extent = metres; change(); }); preset.dataset.extent = String(metres); preset.dataset.l10nKeep = ''; }
   extent.append(presetRow); quick.append(extent);
   const quickFields = document.createElement('div'); quickFields.className = 'terrain-quick-fields'; quick.append(quickFields);
-  form(quickFields, [sourceField, terrainBasicFields.find(field => field.path === 'options.biome')!, terrainBasicFields.find(field => field.path === 'options.layer')!, terrainBasicFields.find(field => field.path === 'terrain.relief')!, terrainClassicFields.find(field => field.path === 'options.relief')!, terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!].map(field => ({ ...field, help: undefined })));
+  form(quickFields, [sourceField, terrainBasicFields.find(field => field.path === 'options.biome')!, terrainBasicFields.find(field => field.path === 'terrain.relief')!, terrainClassicFields.find(field => field.path === 'options.relief')!, terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!].map(field => ({ ...field, help: field.path === 'terrain.motifSize' ? field.help : undefined })));
   const scale = quickFields.querySelector<HTMLInputElement>('#terrain-scale')!;
   scale.setAttribute('title', terrainProceduralFields.find(field => field.path === 'terrain.motifSize')!.help!);
   const onWidth = () => {
@@ -249,10 +255,11 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const waterPanel = document.createElement('div'); waterPanel.id = 'terrain-hydrology-panel'; waterPanel.className = 'terrain-option-panel';
   const waterOption = option(ui.hydrology, 'terrain-hydrology-toggle', waterPanel, 'art-hydrology'); root.append(waterPanel);
   group(ui.hydrology, terrainHydrologyFields, true, waterPanel);
+  const riverLengthInputs = Array.from(waterPanel.querySelectorAll<HTMLInputElement>('[data-setting-path="terrain.hydrology.minRiverLength"], [data-slider-path="terrain.hydrology.minRiverLength"]'));
   const rustWater = group(ui.rustWater, terrainRustHydrologyFields, true, waterPanel);
   const vectorWater = group(ui.vectorWater, terrainVectorHydrologyFields, true, waterPanel);
   group(ui.compute, terrainSourceFields.filter(field => field.path !== 'runtime.source'));
-  const basics = group(ui.basics, terrainBasicFields.filter(field => !['options.biome', 'options.layer', 'terrain.relief'].includes(field.path)));
+  const basics = group(ui.basics, terrainBasicFields.filter(field => !['options.biome', 'terrain.relief'].includes(field.path)));
   const classic = group(ui.classic, terrainClassicFields.filter(field => field.path !== 'options.relief'));
   classic.querySelector('.terrain-group-body')!.prepend(classicNote);
   const inputGroup = group(ui.sourceHelp, []); inputGroup.querySelector('.terrain-group-body')!.append(source);
@@ -279,6 +286,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   bindTree(root);
   function sync(): void {
     for (const mounted of forms) mounted.sync();
+    // The shared physical-unit editor resets steps to `any`; retain this knob's 10 m increment.
+    for (const input of riverLengthInputs) input.step = String(convertUnits(10, 'm', displayUnit('m', getDistanceUnit())));
     sketchControls?.sync();
     const settings = bindings.getSettings();
     // Historical recipes may still recommend an extent. Freeze it when opened in the editor.
@@ -359,11 +368,10 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.climate"]')!.hidden = isClassic;
     root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic;
-    root.querySelector<HTMLElement>('[data-field-path="options.layer"]')!.hidden = isClassic;
     for (const option of Array.from(reliefSelect.options)) option.disabled = isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);
   }
   void loadTerrainControlDefaults().then(reader => { if (disposed) return; defaultValues = reader; sync(); root.dispatchEvent(new Event('terrain-defaults-ready')); }).catch(error => { console.error('Terrain control defaults unavailable', error); });
-  cleanup.push(onUnitsChange(() => {
+  cleanup.push(onLanguageChange(sync), onUnitsChange(() => {
     unit.value = getDistanceUnit() === 'm' ? 'km' : getDistanceUnit();
     width.value = String(adaptedExtent(bindings.getSettings()) / unitFactor(unit.value as PhysicalUnit));
     presetRow.querySelectorAll<HTMLButtonElement>('[data-extent]').forEach(button => button.textContent = formatDistance(Number(button.dataset.extent), getDistanceUnit()));

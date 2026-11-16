@@ -1,0 +1,5 @@
+.city-pattern-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;grid-column:1/-1}
+.city-pattern-choices button{display:flex;align-items:center;flex-direction:column;gap:3px;min-width:0;padding:4px!important;font-size:10px!important;line-height:1.3}
+.city-pattern-choices i{display:block;width:54px;height:64px;background-image:url('./assets/city-patterns-v1.png');background-size:300% 200%;background-repeat:no-repeat;border-radius:5px}
+.city-pattern-choices button[aria-pressed=true]{border-color:var(--gold,#dcb86f);background:#dcb86f22}
+.city-pattern-choices span{overflow-wrap:anywhere}

@@ -7,7 +7,9 @@ import { forCellsNearPolyline } from '../gen/core/field';
 import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
 import { marchingSquares } from '../gen/terrain/contour';
 import { pointInRing } from '../gen/geo/poly';
-import { riverWidths } from '../ui/vectorWaterRender';
+import { lakeShores, riverWidths } from '../ui/vectorWaterRender';
+import { lakeSample } from '../ui/lakeGeometry';
+import { waterRings } from '../../../rust/bridge/urbanGeography';
 import { channelWidth } from '../ui/riverVectors';
 
 export interface V2TerrainLayer extends TerrainLayer {
@@ -82,12 +84,13 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
     const seaMask = vector?.hydro.sea ?? hydro?.seaMask;
     const isSea = seaMask ? !!seaMask[hi] : !cave.length && height.data[i] <= 0;
     if (isSea) { water[i] = 1; sea[i] = 1; seaCells++; }
-    else if (vector ? !!vector.lake[hi] : hydro ? !!hydro.lakeLabels[hi] && hydro.lakeDepth[hi] > 0 : false) { water[i] = 2; lake[i] = 1; }
+    else if (vector ? lakeSample(vector.lakeField, width, wx, wy) >= 0 : hydro ? !!hydro.lakeLabels[hi] && hydro.lakeDepth[hi] > 0 : false) { water[i] = 2; lake[i] = 1; }
     const accum = vector?.hydro.accumulation ?? hydro?.accumulation;
     const receivers = vector?.hydro.receiver ?? hydro?.receivers;
     const levels = vector?.hydro.filled ?? hydro?.filled;
     if (accum) flow.data[i] = accum[hi] / (cell * cell);
     if (levels) filled[i] = levels[hi];
+    if (water[i] === 2 && Number.isFinite(vector?.lakeLevel?.[hi])) filled[i] = vector!.lakeLevel![hi];
     if (receivers) {
       let r = receivers[hi], steps = 0;
       // A coarser world grid can contain several drainage-grid cells. Follow through that same cell.
@@ -156,7 +159,11 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
   }
   const seaRegions = polygons(sea, n, cell);
   let lakes: Polygon[];
-  if (hydro) {
+  if (vector) {
+    // Consume the renderer's retained shoreline, including islands and small lakes.
+    // The land-use vectorizer blurs binary masks and can erase these entirely.
+    lakes = waterRings(`<path d="${lakeShores(vector)}"/>`).flat();
+  } else if (hydro) {
     // Keep native ring coordinates. Their nesting is retained by SVG's even-odd water clip.
     lakes = [];
     for (let ring = 0; ring + 1 < hydro.lakeOffsets.length; ring++) {

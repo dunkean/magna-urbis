@@ -24,7 +24,7 @@ function output(): SettlementOutput {
   return { settlements: [
     { ...regionSpec('main', 80), center: { x: 1000, y: 1000 }, cls: 'hamlet', archetype: 'plain', radius: 100, scores: { manual: true } },
     { ...regionSpec('village:1', 40), center: { x: 1800, y: 1700 }, cls: 'hamlet', archetype: 'plain', radius: 80, scores: { manual: false } },
-  ] as SettlementOutput['settlements'], warnings: ['A source diagnostic'], requested: 2, usableKm2: 5, ms: 4 };
+  ] as SettlementOutput['settlements'], activities: [], warnings: ['A source diagnostic'], requested: 2, usableKm2: 5, ms: 4 };
 }
 function roads(): RoadOutput {
   return { segments: [{ class: 'main', surface: 'paved', profile: 'roman', width: 6, a: 0, b: 1,
@@ -52,7 +52,7 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
     settings.options.seed = rerollSeed(original, ['settle-roads']);
     await planRustRegion(world, settings, undefined, true);
     expect(world.settlements).toBe(placed);
-    expect(bridge.run.mock.calls[1][0].seed).toBe(stepSeed(settings.options.seed, 'settle-roads'));
+    expect(bridge.run.mock.calls[2][0].seed).toBe(stepSeed(settings.options.seed, 'settle-roads'));
     expect(stepSeed(settings.options.seed, 'settle-sites')).toBe(original);
     bridge.run.mockClear();
     const fresh = setup().world; await planRustRegion(fresh, settings);
@@ -67,7 +67,8 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
     expect(bridge.raster).toHaveBeenCalledWith((world.terrain as { v2NativeTerrain?: unknown }).v2NativeTerrain, 64);
     expect(bridge.fallback).not.toHaveBeenCalled();
     expect(bridge.create).toHaveBeenCalledWith({ profile: 'local', server: 'http://127.0.0.1:18791' });
-    expect(bridge.run.mock.calls[0][0]).toMatchObject({ seed: settings.options.seed, place: { density: 1.3, clustering: .7, siteWeights: { plain: 2 } }, roads: { culture: 'roman', maxGrade: .08, crossingCost: 1.7, sharing: .9 } });
+    expect(bridge.run.mock.calls[0][0]).toMatchObject({ seed: settings.options.seed, place: { mode: 'list', density: 1.3, clustering: .7, siteWeights: { plain: 2 } }, roads: null });
+    expect(bridge.run.mock.calls[1][0].roads).toMatchObject({ culture: 'roman', maxGrade: .08, crossingCost: 1.7, sharing: .9 });
     expect(world.settlements?.map(s => s.center)).toEqual([{ x: 1000, y: 1000 }, { x: 1800, y: 1700 }]);
     expect(world.site?.center).toEqual(world.settlements![0].center);
     expect(world.debug?.v2RustRegion).toEqual({ placement: output(), roads: roads() });
@@ -78,7 +79,7 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
     await planRustRegion(world, settings); const sites = world.settlements;
     settings.region!.roads = { density: .8, exits: 4 };
     await planRustRegion(world, settings, undefined, true);
-    const request = bridge.run.mock.calls[1][0];
+    const request = bridge.run.mock.calls[2][0];
     expect(request.place).toBeUndefined(); expect(request.raster).toBeUndefined();
     expect(request.sites).toEqual(sites!.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius })));
     expect(request.roads).toMatchObject({ density: .8, exits: 4 }); expect(world.settlements).toBe(sites);
@@ -89,7 +90,7 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
     const { settings, world } = setup(), { planRustRegion } = await import('../src/v2/region');
     await planRustRegion(world, settings); settings.region!.resolution = 128;
     await planRustRegion(world, settings, undefined, true);
-    expect(bridge.run.mock.calls[1][0].raster.n).toBe(128); expect(bridge.create).toHaveBeenCalledTimes(1);
+    expect(bridge.run.mock.calls[2][0].raster.n).toBe(128); expect(bridge.create).toHaveBeenCalledTimes(1);
     settings.runtime!.backend = 'rust'; await planRustRegion(world, settings, undefined, true);
     expect(bridge.dispose).toHaveBeenCalledTimes(1); expect(bridge.create).toHaveBeenCalledTimes(2);
   });
@@ -111,6 +112,7 @@ describe('V2 regional Rust forwarding and retained sessions', () => {
   });
   it('uses a finer bounded regional planning grid beyond 40 km unless explicitly set', () => {
     const { settings } = setup();
+    delete settings.region!.resolution;
     settings.extent = 200_000;
     expect(effectiveRegion(settings).resolution).toBe(1024);
     settings.region!.resolution = 512;

@@ -133,8 +133,11 @@ fn lakes_network_metrics_and_vertices_match_ts() {
         // and the TS network and metrics no longer apply.
         let want_cells = fixture["riverCells"].as_u64().unwrap();
         assert!(water.river_cells as u64 <= want_cells, "{name}");
-        let ts_routing = ts_lakes && water.river_cells as u64 == want_cells;
         let network = water.rivers.as_ref().unwrap();
+        // Short courses (`MIN_RIVER_LENGTH`) are dropped after the TS chain too: once one is, the line count,
+        // length, ids and line metrics no longer match the TS network.
+        let ts_routing =
+            ts_lakes && water.river_cells as u64 == want_cells && network.pruned_cells == 0;
         if ts_routing {
         let want = &fixture["rivers"];
         assert_eq!(

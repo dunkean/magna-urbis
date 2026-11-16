@@ -86,6 +86,9 @@ pub struct Network {
     pub avulsions: usize,
     pub deltas: usize,
     pub ms: f64,
+    /// River cells dropped as short courses (`MIN_RIVER_LENGTH`); a diagnostic, not sent on the wire.
+    #[serde(skip)]
+    pub pruned_cells: usize,
 }
 pub(super) fn channel_width(area: f64, scale: f64) -> f64 {
     scale * 3.0 * (area / 1e6).powf(0.45)

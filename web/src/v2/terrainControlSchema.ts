@@ -46,6 +46,7 @@ export const climateZoneHelp: Record<string, string> = {
   savanna: copy('Sahel — acacias, tall grass', 'Sahel — acacias, hautes herbes'),
   tropical: copy('Southeast Asia — jungle, rice terraces', 'Asie du Sud-Est — jungle, rizières en terrasses'),
   wetland: copy('Venice, Netherlands, Fens — reeds, canals, peat bogs', 'Venise, Pays-Bas, Fens — roseaux, canaux, tourbières'),
+  underdark: copy('Carves the relief into caves and tunnels. The climate zone still shapes the base relief and the water.', 'Creuse le relief en grottes et tunnels. La zone climatique façonne toujours le relief de base et l’eau.'),
 };
 export { climateZoneBiome } from '../gen/biomes';
 export const terrainBasicFields: ParameterField[] = [
@@ -55,13 +56,11 @@ export const terrainBasicFields: ParameterField[] = [
     ['nordic', 'Nordic', 'Nordique'], ['alpine', 'Alpine', 'Alpin'], ['arctic', 'Arctic', 'Arctique'], ['steppe', 'Steppe', 'Steppe'],
     ['desert', 'Desert', 'Désert'], ['savanna', 'Savanna', 'Savane'], ['tropical', 'Humid tropical', 'Tropical humide'], ['wetland', 'Wetlands', 'Zones humides'],
     ['custom', 'Custom climate', 'Climat personnalisé'],
+    ['underdark', 'Underdark', 'Outreterre'],
   ])),
   { path: 'options.biome', id: 'terrain-biome', type: 'select', label: copy('Region biome', 'Biome de la région'), options: simple([
     ['temperate', 'Temperate countryside', 'Campagne tempérée'], ['forest', 'Woodland', 'Forêt'], ['desert', 'Desert and oases', 'Désert et oasis'], ['steppe', 'Steppe', 'Steppe'], ['tropical', 'Tropical forest', 'Forêt tropicale'], ['tundra', 'Tundra', 'Toundra'], ['underdark', 'Underdark', 'Outreterre'],
   ]) },
-  { path: 'options.layer', id: 'terrain-layer', type: 'select', label: copy('World layer', 'Couche du monde'), options: simple([
-    ['surface', 'Surface', 'Surface'], ['underdark', 'Underdark', 'Outreterre'],
-  ]), help: copy('Carves the relief into caves and tunnels. The climate zone still shapes the base relief and the water.', 'Creuse le relief en grottes et tunnels. La zone climatique façonne toujours le relief de base et l’eau.') },
   select('islandMode', 'Island layout', 'Organisation des îles', simple([
     ['island', 'Single island', 'Île unique'], ['archipelago', 'Archipelago', 'Archipel'], ['peninsula', 'Peninsula', 'Presqu’île'],
   ]), ['Used when all eight sea directions are selected.', 'Utilisé lorsque les huit directions maritimes sont sélectionnées.']),
@@ -168,11 +167,12 @@ export const terrainHydrologyFields: ParameterField[] = [
     ['How a breach meets the relief: gentle valley sides that vary along the course, or a narrow cut with a short talus.', 'Raccord d’une brèche au relief : versants de vallée doux qui varient le long du cours, ou entaille étroite à talus court.']),
   hydroNumber('condLength', 'Conditioning maximum breach length (m)', 'Longueur maximale des brèches de conditionnement (m)', 0, 100000, 100),
   // Shared by both water chains.
-  hydroNumber('density', 'Tributary density', 'Densité des affluents', 0, 2, .05, ['More or fewer rivers: scales the catchment that starts a river. Lakes have their own settings.', 'Plus ou moins de rivières : change le bassin versant qui fait naître une rivière. Les lacs ont leurs propres réglages.']),
+  hydroNumber('density', 'Rivers', 'Rivières', 0, 2, .05, ['More or fewer rivers: scales the catchment that starts a river. Lakes have their own settings.', 'Plus ou moins de rivières : change le bassin versant qui fait naître une rivière. Les lacs ont leurs propres réglages.']),
+  hydroNumber('minRiverLength', 'Minimum river length (m)', 'Longueur minimale des rivières (m)', 0, 2000, 10, ['Courses shorter than this, up to a confluence, the sea or a lake, are not drawn. Raise it to remove short tributaries.', 'Les cours plus courts que cette longueur, jusqu’à une confluence, la mer ou un lac, ne sont pas dessinés. Augmentez-la pour supprimer les affluents courts.']),
   hydroBool('headwaters', 'Rivers reach their valley heads', 'Rivières jusqu’à la tête de leur vallée', ['Vector chain: a river continues up its valley to the head and takes the side valleys it passes.', 'Chaîne vectorielle : une rivière remonte sa vallée jusqu’à sa tête et prend les vallons latéraux qu’elle croise.']),
   hydroSelect('lakes', 'Lake policy', 'Gestion des lacs', [['auto', 'Climate water budget', 'Bilan hydrique du climat'], ['none', 'No lakes', 'Aucun lac'], ['some', 'Carved lakes', 'Lacs creusés']],
     ['No lakes turns off the kept basins and synthetic lakes; carved lakes only apply to the Rust chain.', 'Aucun lac désactive les cuvettes conservées et les lacs synthétiques ; les lacs creusés ne concernent que la chaîne Rust.']),
-  hydroNumber('lakeAbundance', 'Lake abundance', 'Abondance des lacs', 0, 2, .05, ['Share of the natural basins kept as lakes instead of being breached or filled: 0 keeps none, 2 keeps every suitable basin. The number of rivers has its own settings.', 'Part des cuvettes naturelles conservées en lacs au lieu d’être percées ou comblées : 0 n’en garde aucune, 2 garde toutes les cuvettes adaptées. Le nombre de rivières a ses propres réglages.']),
+  hydroNumber('lakeAbundance', 'Lakes', 'Lacs', 0, 2, .05, ['Share of the natural basins kept as lakes instead of being breached or filled: 0 keeps none, 2 keeps every suitable basin. The number of rivers has its own settings.', 'Part des cuvettes naturelles conservées en lacs au lieu d’être percées ou comblées : 0 n’en garde aucune, 2 garde toutes les cuvettes adaptées. Le nombre de rivières a ses propres réglages.']),
   { ...hydroNumber('lakeCoverage', 'Maximum total lake coverage (%)', 'Couverture totale maximale des lacs (%)', 0, 100, .5, ['Kept basins stop once their combined area reaches this share of the map.', 'Les cuvettes conservées s’arrêtent quand leur surface cumulée atteint cette part de la carte.']), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
   { ...hydroNumber('maxLakeArea', 'Maximum individual lake area (%)', 'Surface maximale d’un lac (%)', 0, 100, .5, ['A basin larger than this share of the map is breached or filled, not kept.', 'Une cuvette plus grande que cette part de la carte est percée ou comblée, pas conservée.']), toInput: value => Number(value) * 100, fromInput: value => Number(value) / 100 },
 ];

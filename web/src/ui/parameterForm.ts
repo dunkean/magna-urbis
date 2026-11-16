@@ -1,5 +1,6 @@
 import { bindTree, setText, setDynamicText, translate, onLanguageChange } from '../v2/i18n';
 import { convertUnits, displayUnit, getDistanceUnit, onUnitsChange, unitInputNumber, type PhysicalUnit } from '../v2/units';
+import { mountCityPatternChoices } from '../v2/cityPatternChoices';
 
 export interface ParameterChoice { value: string; label: string }
 export interface ParameterField {
@@ -33,6 +34,8 @@ export interface ParameterFormBindings {
   setValue(path: string, value: unknown): void;
   disabled?: () => boolean;
   isMixed?(path: string): boolean;
+  /** Display the resolved automatic choice while retaining its sentinel in the recipe. */
+  automaticChoice?(path: string, value: unknown): ParameterChoice | undefined;
 }
 export interface ParameterForm { sync(): void; dispose(): void }
 let parameterFormSequence = 0;
@@ -57,7 +60,8 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   root.classList.add('parameter-form');
   const namespace = root.id || `form-${++parameterFormSequence}`;
   const cleanups: (() => void)[] = [];
-  const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement; reset?: HTMLButtonElement }[] = [];
+  const previews: ReturnType<typeof mountCityPatternChoices>[] = [];
+  const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement; reset?: HTMLButtonElement; automatic: HTMLElement }[] = [];
   for (const field of fields) {
     const label = document.createElement('label'); label.className = `parameter-field parameter-${field.type}`;
     if(field.path.includes('.text.levels.'))label.classList.add('name-importance-field');
@@ -118,11 +122,16 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       const onSlide = () => { input.value = slider!.value; onInput(); };
       slider.addEventListener('input', onSlide); cleanups.push(() => slider!.removeEventListener('input', onSlide));
     }
-    controls.push({ field, input, slider, reset }); root.append(label);
+    const automatic = document.createElement('small'); automatic.className = 'parameter-automatic-choice'; automatic.hidden = true; label.append(automatic);
+    controls.push({ field, input, slider, reset, automatic }); root.append(label);
+    if (input instanceof HTMLSelectElement && /(^|\.)tissue$/.test(field.path)) {
+      const preview = mountCityPatternChoices(input); previews.push(preview); cleanups.push(preview.dispose);
+    }
   }
   bindTree(root);
   const sync = () => {
-    for (const { field, input, slider, reset } of controls) {
+    for (const { field, input, slider, reset, automatic } of controls) {
+      automatic.hidden = true; delete input.dataset.resolvedValue;
       input.setAttribute('aria-label', fieldCaption(field));
       const sourceUnit = physicalUnit(field);
       if (sourceUnit) {
@@ -165,7 +174,17 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       if (input === document.activeElement) continue;
       if (field.type === 'boolean' && !field.optional) (input as HTMLInputElement).checked = value === true;
       else {
-        const text = value === undefined || value === null ? '' : String(value);
+        let text = value === undefined || value === null ? '' : String(value);
+        const resolved = input instanceof HTMLSelectElement ? bindings.automaticChoice?.(field.path, raw) : undefined;
+        if (resolved) {
+          automatic.hidden = false; setText(automatic, 'From culture'); input.dataset.resolvedValue = resolved.value;
+          if (Array.from((input as HTMLSelectElement).options).some(o => o.value === resolved.value)) text = resolved.value;
+          else {
+            let option = input.querySelector<HTMLOptionElement>('option[data-culture-resolved]');
+            if (!option) { option = document.createElement('option'); option.value = '__culture_resolved__'; option.disabled = true; option.dataset.cultureResolved = ''; input.append(option); }
+            setText(option, resolved.label); text = option.value;
+          }
+        }
         if (input instanceof HTMLSelectElement && text !== '' && !Array.from(input.options).some(option => option.value === text)) {
           const retained = document.createElement('option'); retained.value = text; retained.textContent = text; retained.dataset.l10nKeep = ''; input.append(retained);
         }
@@ -173,6 +192,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       }
       input.removeAttribute('aria-invalid');
     }
+    previews.forEach(preview => preview.sync());
   };
   cleanups.push(onUnitsChange(sync), onLanguageChange(sync));
   sync(); return { sync, dispose: () => { cleanups.forEach(cleanup => cleanup()); root.replaceChildren(); } };

@@ -129,7 +129,7 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   }
   const square = [{ x: 0, y: 0 }, { x: world.mapSize, y: 0 }, { x: world.mapSize, y: world.mapSize }, { x: 0, y: world.mapSize }];
   const seaWater = terrain.coastline.map(outer => ({ outer, holes: (terrain.islands ?? []).filter(island => island.length && pointInRing(outer, island[0])) }));
-  const water: PolyH[] = [...seaWater, ...terrain.lakes.map(outer => ({ outer, holes: [] }))];
+  const water: PolyH[] = [...seaWater];
   // Native geometry uses closed water domains, including the measured width of each river segment.
   // Raster river widths remain authoritative when a vector ribbon is absent.
   for (const river of terrain.rivers) if (river.path.length > 1) water.push({ outer: ribbon(river.path, river.width), holes: [] });
@@ -139,7 +139,10 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   const raster: SettlementRaster = { width: world.mapSize, n, height, water: waterMask, waterLevel, riverWidth, riverIds,
     ...(rock ? { rock } : {}),
     ...(physical ? { physical } : {}),
-    geometry: { land: land.flatMap(p => [p.outer, ...p.holes]), water: water.map(p => [p.outer, ...p.holes]), springs: springPoints(native?.water, native?.hydrology) } };
+    geometry: { land: land.flatMap(p => [p.outer, ...p.holes]),
+      // Lakes are one even-odd ring group, as drawn; islands stay dry.
+      water: [...water.map(p => [p.outer, ...p.holes]), ...(terrain.lakes.length ? [terrain.lakes] : [])],
+      springs: springPoints(native?.water, native?.hydrology) } };
   physicalRasters.set(grid, { width: world.mapSize, cell, height: grid.data, physical: physical?.height, physicalFloor: physical?.floor, physicalInterpolation: physical?.interpolation, water: terrain.water, filled: terrain.filled, seaLevel: terrain.seaLevel, coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,
     rivers: terrain.rivers.map(river => ({ path: river.path, width: river.width, id: river.id })), raster });
   return raster;
@@ -395,7 +398,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   }
   if (stageIndex >= 3) {
     const { architectureProfile } = await import('../../../rust/bridge/urbanArchitecture');
-    const architecture = cityArchitectureOf(local?.architecture ?? settings.urban?.architecture);
+    const architecture = cityArchitectureOf(settings.urban?.architecture);
     const buildingEdits = Object.fromEntries(Object.entries(settings.urban?.buildings ?? {}).filter(([id]) => id.startsWith(`${key}/`)).map(([id, edit]) => [id.slice(key.length + 1), edit]));
     const profile = architectureProfile(localArchitectureSettings(config.houses, resolved.layout, resolved.parcels, buildingEdits, architecture==='silhouette')), requestKey = fingerprint(buildingSeed === seed ? [programmeKey, profile] : [programmeKey, profile, buildingSeed]);
     const siteBaseKey = fingerprint([programmeKey, buildingSeed]);

@@ -48,6 +48,7 @@ describe('V2 appearance recipes and export snapshots', () => {
   });
   it('preserves absent and original palette-only appearance settings without inserting new defaults', () => {
     const settings = defaultSettings();
+    delete settings.appearance;
     expect(parseProject(serializeProject(settings)).settings.appearance).toBeUndefined();
     settings.appearance = { style: 'atlas', contours: false, textured: false };
     expect(parseProject(serializeProject(settings)).settings.appearance).toEqual(settings.appearance);

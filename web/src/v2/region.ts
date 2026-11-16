@@ -14,6 +14,7 @@ import { sampleGrid } from '../gen/core/grid';
 import { stepSeed } from '../../../rust/bridge/generationSeed';
 import { effectiveTerrainSettings } from './terrainSettings';
 import type { ResourcePayload } from '../../../rust/bridge/resources';
+import { chooseIsolatedSites, regionalPopulation } from './regionalPopulation';
 
 export interface RustRegionSnapshot {placement:SettlementOutput;roads:RoadOutput|null}
 let retainedEngine: { runtimeKey: string; terrainKey: string; engine: SettlementEngine } | undefined;
@@ -76,6 +77,13 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
   pendingSite=undefined;
   const t0=performance.now(),{placement,roads,resolution}=effectiveRegion(settings);
   validateRegionSettings({placement,roads,resolution},world.mapSize);
+  const populationPlan = regionalPopulation(settings);
+  if (!roadsOnly && placement.mode === 'list' && !placement.list.length) {
+    world.settlements=[];world.roads=[];world.bridges=[];
+    world.debug={...world.debug,v2RustRegion:{placement:{settlements:[],activities:[],warnings:[],requested:0,usableKm2:0,ms:0},roads:null} satisfies RustRegionSnapshot};
+    Object.assign(world.stats,{'v2.stage':'region',settlements:0,'settlements.requested':0,'v2.regionPopulation':0,'v2.requestedRegionPopulation':populationPlan.population});
+    return world;
+  }
   const runtime=runtimeOf(settings);
   onProgress?.({stage:'sites',label:roadsOnly?'Routing roads between retained sites…':'Rust · evaluating regional settlement sites…',completed:0,total:3});
   if(roadsOnly&&!world.settlements?.length)throw new Error('Place settlements before routing their roads.');
@@ -87,20 +95,23 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
   // Reroute: the retained settlements, then the retained activity sites' access points.
   const retainedActivities=(world.debug?.v2RustRegion as RustRegionSnapshot|undefined)?.placement.activities??[];
   const retainedSites=():RoadSite[]=>[...world.settlements!.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius})),...roadSitesOf({settlements:[],warnings:[],requested:0,usableKm2:0,ms:0,activities:retainedActivities})];
-  let response=await engine.engine.run({id:1,seed:roadsOnly?roadSeed:placeSeed,...(raster?{raster}:{}),...(roadsOnly?{sites:retainedSites()}:{place:placement}),roads:!roadsOnly&&placeSeed!==roadSeed?null:roads,runtime});
+  let response=await engine.engine.run({id:1,seed:roadsOnly?roadSeed:placeSeed,...(raster?{raster}:{}),...(roadsOnly?{sites:retainedSites()}:{place:placement}),roads:roadsOnly?roads:null,runtime});
   if('error'in response)throw new Error(response.error);
-  if (!roadsOnly && placeSeed !== roadSeed) {
+  if (!roadsOnly) {
     const placed = response.settlements;
     if (!placed) throw new Error('Missing retained settlement placement.');
+    placed.activities = chooseIsolatedSites(placed.activities ?? [], populationPlan.isolatedCount, settings.options.seed);
     const routed = await engine.engine.run({ id: 2, seed: roadSeed,
       sites: roadSitesOf(placed), roads, runtime });
     if ('error' in routed) throw new Error(routed.error);
     response = { ...routed, settlements: placed };
   }
+  if (!roadsOnly && response.settlements) response.settlements.activities = chooseIsolatedSites(response.settlements.activities ?? [], populationPlan.isolatedCount, settings.options.seed);
   engine.terrainKey = terrainKey;
   const previous=world.debug?.v2RustRegion as RustRegionSnapshot|undefined;
   const output=response.settlements??previous?.placement;
   if(!output?.settlements.length)throw new Error('No settlement can be placed with this recipe. Adjust the constraints or use a manual list.');
+  if (response.roads?.nodes) response.roads.nodes = chooseIsolatedSites(response.roads.nodes, Math.max(0,populationPlan.isolatedCount-(output.activities?.length??0)),settings.options.seed);
   if(!roadsOnly){
     const regions=voronoiRegions(output.settlements.map(s=>s.center),world.mapSize);
     world.settlements=output.settlements.map((s,index):Settlement=>({key:s.key,index,main:index===0,cls:s.cls as Settlement['cls'],population:s.population,culture:s.culture,center:s.center,archetype:s.archetype as SiteArchetype,radius:s.radius,extent:clipConvex(circle(s.center,s.radius),regions[index]),region:regions[index],fixed:s.scores.manual,name:s.name||undefined,detail:index===0?'main':s.cls==='farmstead'?'farmstead':'lazy'}));
@@ -120,6 +131,7 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
   world.bridges=(response.roads?.segments??[]).flatMap(s=>s.crossings.filter(c=>c.kind==='bridge').map(c=>({a:c.path[0],b:c.path[c.path.length-1],width:s.width})));
   world.debug={...world.debug,v2RustRegion:{placement:output,roads:response.roads} satisfies RustRegionSnapshot,v2BaseBridges:structuredClone(world.bridges),v2TownBridges:{}};
   const warnings=[...output.warnings,...(response.roads?.warnings??[])];
+  Object.assign(world.stats,{'v2.regionPopulation':world.settlements?.reduce((n,p)=>n+p.population,0)??0,'v2.requestedRegionPopulation':populationPlan.population,'v2.requestedIsolatedSites':populationPlan.isolatedCount});
   Object.assign(world.stats,{'v2.stage':'region','v2.regionBackend':runtime.profile==='local'?'rust-native-cpu':'rust-wasm-cpu','v2.regionalRoads':world.roads.length,'v2.baseBridges':world.bridges.length,'v2.unreachable':response.roads?.unreachable.length??0,settlements:world.settlements!.length,'settlements.requested':output.requested,'settlements.warning':warnings.join(' | '),'ms.region':Math.round(performance.now()-t0)});
   onProgress?.({stage:'network',label:'Regional settlements and roads ready',completed:3,total:3});return world;
 }

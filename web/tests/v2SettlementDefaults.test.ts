@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
-import { recommendedCounts, recommendedCulture } from '../src/v2/settlementDefaults';
-import { CULTURES } from '../src/gen/options';
+import { recommendedCounts, recommendedCulture, settlementEnvironment } from '../src/v2/settlementDefaults';
+import { plausibleCultures } from '../src/v2/environmentCultures';
 
 describe('workbench environmental settlement suggestions', () => {
   it('scales counts with land area and density, and makes hostile terrain less populated', () => {
@@ -15,13 +15,22 @@ describe('workbench environmental settlement suggestions', () => {
     settings.extent = 20000; settings.terrain!.relief = 'high-mountains'; settings.options.biome = 'desert';
     expect(total(recommendedCounts(settings))).toBeLessThan(plain / 5);
   });
-  it('suggests Persian towns for desert mountains and preserves non-medieval scenarios', () => {
+  it('draws among plausible desert mountain cultures when environmental follow is requested', () => {
     const settings = defaultSettings(); settings.terrain!.relief = 'mountains'; settings.options.biome = 'desert';
-    expect(recommendedCulture(settings)).toBe('persian');
-    expect(CULTURES).toContain(recommendedCulture(settings));
-    for (const culture of ['american-grid', 'cyberpunk', 'roman-core', 'dwarven', 'elven']) {
-      settings.options.culture = culture; expect(recommendedCulture(settings)).toBeUndefined();
+    const choices = plausibleCultures(settings);
+    expect(choices).toContain('persian');
+    expect(choices).not.toContain('european-organic');
+    for (let i = 0; i < choices.length; i++) {
+      expect(recommendedCulture(settings, () => (i + .5) / choices.length)).toBe(choices[i]);
     }
+  });
+  it('detects layer and coastline changes even when the stored climate stays the same', () => {
+    const settings = defaultSettings(); settings.terrain!.climate = 'temperate';
+    const surface = settlementEnvironment(settings);
+    settings.options.biome = 'underdark';
+    expect(settlementEnvironment(settings)).not.toBe(surface);
+    settings.options.biome = 'temperate'; settings.terrain!.coastMask = 0;
+    expect(settlementEnvironment(settings)).not.toBe(surface);
   });
   it('returns bounded integer counts without mutating a recipe', () => {
     const settings = defaultSettings(); settings.extent = 200000;

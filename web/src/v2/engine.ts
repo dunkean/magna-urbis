@@ -16,6 +16,7 @@ import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/b
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
 import { effectiveRegion, generationRegion } from './regionSettings';
+import { regionalPopulation } from './regionalPopulation';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
 import { routeNetwork } from '../gen/settlements/network';
@@ -307,17 +308,21 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   const t0 = performance.now(), root = new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'settle-sites'));
   const roadRoot = stepSeed(settings.options.seed, 'settle-roads') === stepSeed(settings.options.seed, 'settle-sites') ? root : new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'settle-roads'));
   const options = effectiveOptions(settings, terrainWorld.mapSize);
-  options.workflow = options.workflow === 'list' ? 'list' : undefined;
-  if (settings.settlementCount > 0 && options.workflow !== 'list') {
-    const secondary = settings.settlementCount - 1;
-    const village = Math.ceil(secondary * 2 / 3);
-    options.settlements = { counts: { city: 0, town: 0, village, hamlet: secondary - village, farmstead: 0 } };
-  }
+  const placement = effectiveRegion(settings).placement;
+  options.workflow = 'list';
+  options.settlements = { list: placement.list.map(spec=>({key:spec.key,population:spec.population,culture:spec.culture,name:spec.name,position:spec.position,siteType:spec.siteType === 'auto' ? undefined : spec.siteType as import('../gen/types').SiteArchetype,options:{sitePrefs:spec.sitePrefs}})) };
   const mainOptions = { ...optionsForMainSettlement(options), ...settings.local.main };
   mainOptions.size = sizeForPop(mainPopulation(mainOptions, root));
   const world: World = { seed: options.seed, options, mapSize: terrainWorld.mapSize,
     terrain: cloneV2TerrainForStage(terrainWorld.terrain), landuse: terrainWorld.landuse,
     stats: { ...terrainWorld.stats, 'v2.stage': 'region' } };
+  if (!placement.list.length) {
+    world.settlements=[];world.roads=[];world.bridges=[];
+    world.names={family:'english',town:settings.naming?.title??'',entries:[]};
+    world.stats['v2.planKey']=regionKey(settings);world.stats['v2.placementKey']=placementKey(settings);
+    Object.assign(world.stats,{settlements:0,'settlements.requested':0,'v2.regionPopulation':0,'v2.requestedRegionPopulation':regionalPopulation(settings).population});
+    return world;
+  }
   if(settings.runtime?.backend&&settings.runtime.backend!=='typescript'){
     await (await import('./region')).planRustRegion(world,settings,onProgress,false,deferSite);
     world.stats['v2.planKey']=regionKey(settings);world.stats['v2.placementKey']=placementKey(settings);nameWorld(world,mainOptions);
@@ -333,7 +338,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   const roads = routeRoads(world.terrain, world.site, mainOptions, world.mapSize, roadRoot);
   world.roads = roads.roads; world.bridges = roads.bridges;
   report(onProgress, 'sites', 'Placing the settlement hierarchy…', 2, 4);
-  if (Object.keys(settings.local).some(key => key !== 'main')) {
+  if (options.workflow !== 'list' && Object.keys(settings.local).some(key => key !== 'main')) {
     // Feed local positioning and site preferences into the real planner before geometry is committed.
     const t = world.terrain, count = t.height.w * t.height.h;
     let usable = 0;
@@ -370,6 +375,8 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   world.stats['v2.planKey'] = regionKey(settings);
   world.stats['settlements'] = world.settlements.length;
   world.stats['settlements.requested'] = plan.requested;
+  world.stats['v2.regionPopulation']=world.settlements.reduce((n,p)=>n+p.population,0);
+  world.stats['v2.requestedRegionPopulation']=regionalPopulation(settings).population;
   if (world.site.warning) plan.warnings.push(world.site.warning);
   if (plan.warnings.length) world.stats['settlements.warning'] = plan.warnings.join(' | ');
   world.stats['ms.region'] = Math.round(performance.now() - t0);
@@ -558,6 +565,7 @@ export async function generateTown(regionWorld: World, settings: V2Settings, key
   return world;
 }
 export async function generateTowns(regionWorld: World, settings: V2Settings, onProgress?: ProgressCallback, keys?: readonly string[], through?: V2TownStage): Promise<World> {
+  if (regionWorld.settlements?.length === 0 && regionWorld.stats['v2.stage'] === 'region') return cloneV2WorldForGeneration(regionWorld);
   validateSettings(settings); assertRegion(regionWorld, settings);
   if (keys) {
     if (!keys.length) throw new Error('Select at least one city in the list on the right.');

@@ -1111,6 +1111,8 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     let road_index = bo::cut_index(&road_cuts);
     let foot_index = bo::cut_index(&cover_foot);
     let ground_index = bo::cut_index(&cover_ground);
+    let lakes = ground::lake_regions(input);
+    let lake_index = bo::cut_index(&lakes);
     let pieces = par::map(&(1..10_u8).collect::<Vec<_>>(), |&k| {
         let Some(win) = windows[k as usize] else {
             return (k, vec![], 0.0, 0.0);
@@ -1182,6 +1184,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             if natural(k) {
                 result = bo::clear_roads(&result, &road_cuts, &road_index, &mut failures);
             }
+            result = ground::exclude_lakes(result, &lakes, &lake_index);
             (result, failures, clip_dropped)
         });
         let (mut rs, mut failures, mut clip_dropped) = (vec![], 0.0, 0.0);

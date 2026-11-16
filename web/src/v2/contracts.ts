@@ -91,7 +91,7 @@ export interface V2Settings {
   scene?: import('./sceneClock').SceneClock;
   options: Options;
   extent: 'auto' | number;
-  /** Total requested places, including the main settlement; 0 lets the core decide. */
+  /** Legacy recipe field. Regional demography now owns population and settlement counts. */
   settlementCount: number;
   /** A stable settlement key, not its display name or array position. */
   local: Record<string, Partial<Options>>;

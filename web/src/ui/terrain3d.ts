@@ -28,6 +28,7 @@ import type { BuildingVector, Building3dVisual, Building3dScene } from '../rende
 import type { BuildingFrame } from './urbanBuilding3d';
 import { occupationMergeSlot, withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
+import { lakeSample, type LakeField } from './lakeGeometry';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, flightDisplacement, navigationFogDistance, WALK_EYE_HEIGHT } from './terrain3dNavigation';
 import { terrain3dPixelRatio, TERRAIN_3D_SETTLE_MS } from './terrain3dResolution';
@@ -47,7 +48,9 @@ export interface Terrain3dCamera {
   heightAboveTargetMetres?: number; altitudeMetres?: number; viewAngleDegrees?: number; azimuthDegrees?: number; verticalFovDegrees?: number;
 }
 
-interface WaterSurface { n: number; levels: Float32Array; mask: Float32Array }
+/** Lake levels on cells (`mask` > 0: lake cell), and the continuous shore field the 2D map draws (`field`, over `width` m from
+ * the origin): when present, the field alone decides where the lake is, so the flat 3D water and the painted lake share one shore. */
+interface WaterSurface { n: number; levels: Float32Array; mask: Float32Array; field?: LakeField; width?: number }
 /** A square material request in the terrain's metre coordinate system. */
 export interface Terrain3dTile { key: string; x: number; y: number; width: number; level: number; pixels: number;
   /** Cheap cached map while navigating; exact requests retain the original capture painter. */
@@ -530,11 +533,12 @@ function splineSum(data: Float32Array, n: number, bx: number, by: number): numbe
   return height;
 }
 function lakeHeight(water: WaterSurface, u: number, v: number): number | undefined {
-  const { n, mask, levels } = water;
+  const { n, mask, levels, field, width } = water;
   const gx = clamp(u, 0, 1) * n - .5, gy = clamp(v, 0, 1) * n - .5;
   const bx = Math.floor(gx), by = Math.floor(gy);
   splineWeights(gx - bx, wx); splineWeights(gy - by, wy);
-  if (splineSum(mask, n, bx, by) <= 0) return undefined;
+  // The spline of the ±1 cell mask rounds the cell staircase only; the shore field is the lake's one definition.
+  if (field && width ? lakeSample(field, width, clamp(u, 0, 1) * width, clamp(v, 0, 1) * width) < 0 : splineSum(mask, n, bx, by) <= 0) return undefined;
   let height = 0, weight = 0;
   // Dry controls need not carry a water elevation. Excluding them keeps the
   // lake horizontal right up to its B-spline shore, including old .decor files.
@@ -645,9 +649,14 @@ function sameSurface(a: TerrainStitchPiece, b: TerrainStitchPiece): boolean {
   const before = a as RenderPiece, after = b as RenderPiece;
   return before.patch === after.patch && before.field === after.field && before.heightOrigin === after.heightOrigin && before.morph === after.morph;
 }
-/** Whether two seam snapshots differ beyond what a mesh could show. */
-function seamDiffers(a: Float32Array, b: Float32Array): boolean {
-  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-7) return true;
+/** Whether two seam snapshots differ beyond what a mesh could show. Only the listed vertices of each (the stitch's
+ * `touched`) can hold a correction; every other value is zero in both, so the comparison reads those alone. */
+function seamDiffers(a: Float32Array, aTouched: readonly number[], b: Float32Array, bTouched: readonly number[] | undefined): boolean {
+  if (!bTouched) { for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-7) return true; return false; }
+  for (const list of [aTouched, bTouched]) for (const vertex of list) {
+    const at = vertex * 3;
+    if (Math.abs(a[at] - b[at]) > 1e-7 || Math.abs(a[at + 1] - b[at + 1]) > 1e-7 || Math.abs(a[at + 2] - b[at + 2]) > 1e-7) return true;
+  }
   return false;
 }
 /** One patch mesh, rebuilt then copied by the upload (10 floats per vertex, skirts included). */
@@ -695,6 +704,8 @@ export interface Patch {
   /** The exact fine and parent fields uploaded to this mesh. */
   field?: Float32Array;
   seamSnapshot?: Float32Array;
+  /** Vertices of the snapshot that may hold a correction (the stitch's `touched`). */
+  seamTouched?: readonly number[];
   /** The last correction compared with the snapshot. */
   seamCompared?: Float32Array;
   parentSeam?: Float32Array;
@@ -772,6 +783,11 @@ export class Terrain3d {
   protected treeCount = 0;
   private treeKey = '';
   private treeReadyKey = '';
+  /** Whether the displayed stream is a finished one: a later stream then replaces it whole, never by partial blocks. */
+  private treeComplete = false;
+  /** Area (eye and radius) of the latest tree stream, and the revision of the water masks that touched it since. */
+  private treeArea?: { x: number; y: number; r: number };
+  private treeWaterRevision = 0;
   /** Near trees on demand (the 3D view's "3D trees" switch). Off, nothing is built or drawn and the painted crowns
    * stay whole; a built stream is kept, so switching back on shows it at once. */
   protected nearTrees = false;
@@ -818,7 +834,6 @@ export class Terrain3d {
   private displayedGrids: TerrainPickGrid[] = [];
   private displayedPieces: TerrainStitchedPiece[] = [];
   private stitchUpdated = 0;
-  private surfaceRevision = 0;
   private protected = new Set<string>();
   private jobs = new Set<object>();
   private epoch = 0;
@@ -1433,7 +1448,7 @@ export class Terrain3d {
         || child.x + child.width > tile.x + tile.width + 1e-5 || child.y + child.width > tile.y + tile.width + 1e-5) continue;
       this.releaseMesh(candidate);
       candidate.vao = undefined; candidate.vertices = undefined; candidate.meshBytes = 0;
-      candidate.field = undefined; candidate.seamSnapshot = undefined; candidate.parentSeam = undefined;
+      candidate.field = undefined; candidate.seamSnapshot = candidate.seamTouched = undefined; candidate.parentSeam = undefined;
     }
     patch.heights = heights; patch.hasHeight = true; patch.pendingHeights = undefined;
     if (patch.pendingTexture) {
@@ -1592,7 +1607,7 @@ export class Terrain3d {
         }
         if(content.water){
           const water=content.water,mask=this.uploadWaterMask(water);
-          this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength,water});
+          this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength,water});this.waterMaskChanged(water.x,water.y,water.width);
           textureBytes+=water.alpha.byteLength;
         }
         if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; patch.pendingTexturePixels=materialSize(source).width-2*gutter; }
@@ -1831,7 +1846,7 @@ export class Terrain3d {
     const raised = this.raisedMaterials.get(texture);
     if (raised) { this.deleteTexture(raised); this.raisedMaterials.delete(texture); }
     const mask=this.waterMasks.get(texture);
-    if(mask){this.deleteTexture(mask.texture);this.waterMasks.delete(texture);}
+    if(mask){this.deleteTexture(mask.texture);this.waterMasks.delete(texture);this.waterMaskChanged(...mask.rect);}
     const semantic=this.semanticTiles.get(texture);
     if(semantic){this.deleteTexture(semantic.texture);this.semanticTiles.delete(texture);}
     this.deleteTexture(texture);
@@ -1942,34 +1957,54 @@ export class Terrain3d {
     const i = Math.min(best.n - 1, Math.floor((x - best.x) / best.width * best.n)), j = Math.min(best.n - 1, Math.floor((y - best.y) / best.width * best.n));
     return best.alpha[j * best.n + i] / 255;
   }
-  /** Rebuilds the near-tree instances once the eye has moved about 40 m or turned, or the inputs changed. */
+  /** A tile water mask came or went: the trees are rebuilt only when it overlaps their area (waterAt reads it there). */
+  private waterMaskChanged(x: number, y: number, width: number): void {
+    const a = this.treeArea; if (!a) return;
+    const dx = Math.max(x - a.x, 0, a.x - x - width), dy = Math.max(y - a.y, 0, a.y - y - width);
+    if (dx * dx + dy * dy <= a.r * a.r) ++this.treeWaterRevision;
+  }
+  /** Rebuilds the near-tree instances once the eye has moved about 40 m or turned, or the inputs changed. The ground
+   * LOD is not an input: tree heights read the canonical surface (heightAt), whose changes clear the patches and key. */
   protected prepareTrees(frame: FrameGeometry): void {
+    this.updateTrees(frame);
+    // Test probe (forest flicker): drawn tree count and stream starts per frame, when a page installs the array.
+    const trace = (globalThis as { magnaTreeTrace?: number[][] }).magnaTreeTrace;
+    trace?.push([performance.now(), this.treesShown() ? this.treeCount : 0, this.treeStreams]);
+  }
+  private treeStreams = 0;
+  private updateTrees(frame: FrameGeometry): void {
     // Hidden trees keep their stream and key: switching them back on reuses it until the eye moves.
     if (!this.nearTrees) return;
     const inputs = this.treeInputs(), c = this.camera;
-    if (!inputs) { this.treeCount = 0; this.treeKey = ''; return; }
+    if (!inputs) { this.treeCount = 0; this.treeKey = ''; this.treeComplete = false; return; }
     const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
     const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
-    const key = lift > treeLimits(this.treeDistance).far ? 'high' : [this.treeDistance, Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.waterMasks.size, this.surfaceRevision, inputs.season, inputs.crownSnow, inputs.seed, inputs.climateZone, JSON.stringify(inputs.calendar ?? {})].join('|');
+    const key = lift > treeLimits(this.treeDistance).far ? 'high' : [this.treeDistance, Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.treeWaterRevision, inputs.season, inputs.crownSnow, inputs.seed, inputs.climateZone, JSON.stringify(inputs.calendar ?? {})].join('|');
     if (key === this.treeKey && (!this.fullQualityCapture || this.treeReadyKey === key)) return;
+    // One live stream at a time: a stream in flight finishes and is shown, then the latest key starts (restarting on
+    // every 40 m or tile change never finished a stream while the camera moved).
+    if (key !== 'high' && !this.fullQualityCapture && this.treeJobs > 0) return;
     this.treeKey = key;
-    if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; return; }
+    if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; this.treeComplete = false; return; }
     const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl, distance: this.treeDistance };
+    // Key cells are 40 m: masks within this radius of the stream's eye can reach a tree of this stream or the next.
+    this.treeArea = { x, y, r: treeLimits(this.treeDistance).far + 60 };
     const install = (values: Float32Array): void => {
-      this.treeCount = values.length / TREE_STRIDE; this.treeReadyKey = key;
+      this.treeCount = values.length / TREE_STRIDE; this.treeReadyKey = key; this.treeComplete = true;
       (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.treeCount;
       if (this.treeCount) this.uploadTrees(values);
     };
     // Capture uses the exact stream immediately, independent of a live queue's progress.
     if (this.fullQualityCapture) { install(buildNearTrees(inputs, view)); return; }
-    const epoch = this.epoch, current = (): boolean => !this.captureMode && !this.disposed && epoch === this.epoch && this.treeKey === key;
-    // Nearest blocks first: each partial stream replaces the previous one, so trees grow outward from the eye.
+    const epoch = this.epoch, current = (): boolean => !this.captureMode && !this.disposed && epoch === this.epoch && this.treeKey !== 'high' && this.treeKey !== '';
+    // Nearest blocks first: while no finished stream is shown, a partial stream replaces a smaller one, so trees grow
+    // outward from the eye. A finished stream stays drawn whole until its replacement is finished (no blocks dropped).
     const partial = (values: Float32Array): void => {
-      if (!current()) return;
+      if (!current() || this.treeComplete || values.length / TREE_STRIDE <= this.treeCount) return;
       this.treeCount = values.length / TREE_STRIDE;
       if (this.treeCount) { this.uploadTrees(values); this.request(); }
     };
-    this.treeJobs++;
+    this.treeJobs++; this.treeStreams++;
     void this.preparation.run(buildNearTreesSteps(inputs, view, partial), current, 1e15)
       .then(values => { install(values); this.request(); })
       .catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain tree preparation:', error); })
@@ -2192,14 +2227,14 @@ export class Terrain3d {
       const previous = this.displayedPieces[i];
       return !previous.releasing && piece.key === previous.source.key && sameSurface(previous.source, piece);
     });
-    if (!unchanged) { this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS }); ++this.surfaceRevision; }
+    if (!unchanged) { this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS }); }
     this.stitchUpdated = this.now;
     this.animating ||= this.displayedPieces.some(piece => piece.releasing);
     for (const stitched of this.displayedPieces) {
       const source = stitched.source as RenderPiece, patch = source.patch;
       if (source.morph === 1 && source.clip === patch.tile) {
         const old = patch.seamSnapshot, next = stitched.correction;
-        if (!old || patch.seamCompared !== next && seamDiffers(next, old)) patch.seamSnapshot = next;
+        if (!old || patch.seamCompared !== next && seamDiffers(next, stitched.touched, old, patch.seamTouched)) { patch.seamSnapshot = next; patch.seamTouched = stitched.touched; }
         patch.seamCompared = next;
       }
       const draw = this.patchDraw(patch, drawn, source.morph, source.clip as Terrain3dTile, stitched);

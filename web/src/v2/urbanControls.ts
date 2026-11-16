@@ -15,6 +15,8 @@ import { mountMixEditor, mountStyleSheetEditor, type UrbanZone } from './styleMi
 import type { StyleFacet, StyleMix } from '../../../rust/bridge/urbanConfig';
 import { CITY_ARCHITECTURES, DEFAULT_CITY_ARCHITECTURE, type CityArchitecture } from '../render/cityContract';
 import { mergeHouseEdits, type HouseEditConfig } from '../../../rust/bridge/urbanHouseEdits';
+import { culturalChoice } from '../../../rust/bridge/culturalChoices';
+import { resetUrbanChildren } from './generationEdits';
 
 const architectureNames: Record<CityArchitecture, string> = { silhouette: 'City volumes', compact: 'Compact plans (houses generator)', detailed: 'Detailed houses (houses generator)' };
 const houseCatalogues = new Map<string, Promise<CatalogueBundle>>();
@@ -132,6 +134,7 @@ function prune(value: Record<string, unknown>): void {
 /** Arrays are native atomic ranges. A single endpoint edit copies its effective other endpoint;
  * it never sends a sparse array or silently changes a cultural range to [0, value]. */
 export function writeUrbanControl(settings: V2Settings, scope: UrbanControlScope, path: string, value: unknown): void {
+  resetUrbanChildren(settings,scope,path);
   const root = urbanScopeValues(settings, scope, true), inherited = urbanInheritedValues(settings, scope);
   const keys = path.split('.'), arrayAt = keys.findIndex(k => /^\d+$/.test(k));
   if (value !== undefined && scope.kind !== 'building' && path.startsWith('houses.house_config.')) {
@@ -225,7 +228,27 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   const own = () => urbanScopeValues(getSettings(), scopes()[0]), inherited = () => urbanInheritedValues(getSettings(), scopes()[0]);
   let effectiveCache: Record<string, unknown>[] = [];
   const values = () => effectiveCache.length ? effectiveCache : scopes().map(s => urbanEffectiveValues(getSettings(), s));
-  const isMixed = (path: string) => { const all = values(), first = JSON.stringify(readSettingPath(all[0], path)); return all.slice(1).some(value => JSON.stringify(readSettingPath(value, path)) !== first); };
+  function resolvedChoice(path: string, raw: unknown, value = values()[0], target = scopes()[0]) {
+    if (raw !== 'culture' && raw !== 'site') return undefined;
+    const settings = getSettings(), defaults = target.kind === 'settlement' ? target.defaults : undefined;
+    const local = target.kind === 'global' ? undefined : settings.local[target.key];
+    const fallback = local?.culture ?? defaults?.culture ?? settings.options.culture;
+    const zone = path.match(/(?:phaseOverrides|zoneOperators)\.([^.]+)/)?.[1];
+    const stage = path.startsWith('parcels.') ? 'parcels' : 'layout';
+    const config = readSettingPath(value, stage) as Record<string, unknown> | undefined ?? value;
+    const phase = zone ? readSettingPath(value, `layout.phaseOverrides.${zone}`) as Record<string, unknown> | undefined : undefined;
+    const chosen = phase?.culture || config.culture;
+    const culture = typeof chosen === 'string' && chosen && chosen !== 'site' ? chosen : fallback;
+    const key = path.includes('.zoneOperators.') ? 'operator' : path.split('.').at(-1)!;
+    const resolved = key === 'culture' ? culture : culturalChoice(culture, key, {
+      population: local?.population ?? defaults?.population ?? settings.options.population,
+      phases: Number(readSettingPath(value, 'layout.phases') ?? 0), zone,
+      recipe: String(phase?.recipe || config.recipe || 'auto'), preset: String(config.preset || 'culture'),
+      params: zone ? undefined : config.params as Record<string, unknown> | undefined,
+    });
+    return resolved ? { value: resolved, label: urbanChoiceNames[resolved]?.[0] ?? urbanCatalogue.presets[resolved]?.label ?? urbanCatalogue.cultures[resolved]?.label ?? resolved } : undefined;
+  }
+  const isMixed = (path: string) => { const all = values(), targets = scopes(); const key = (value: Record<string, unknown>, i: number) => { const raw = readSettingPath(value, path); return JSON.stringify([raw, resolvedChoice(path, raw, value, targets[i])?.value]); }; const first = key(all[0], 0); return all.slice(1).some((value, i) => key(value, i + 1) !== first); };
   const effective = (path: string) => isMixed(path) ? undefined : readSettingPath(values()[0], path);
   const set = (path: string, value: unknown) => {
     for (const target of scopes()) {
@@ -247,7 +270,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   if (global) {
     const stageRoot = document.createElement('div'); root.append(stageRoot);
     forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', type: 'select', options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) },
-      { path: 'architecture', label: 'Architecture', type: 'select', options: CITY_ARCHITECTURES.map(value => ({ value, label: architectureNames[value] })) }], { getValue: effective, isMixed, setValue: set, disabled: parts?.disabled }));
+      ...(scope.kind === 'global' ? [{ path: 'architecture', label: 'Architecture', type: 'select' as const, options: CITY_ARCHITECTURES.map(value => ({ value, label: architectureNames[value] })) }] : [])], { getValue: effective, isMixed, setValue: set, disabled: parts?.disabled }));
   }
   }
   let modelEnabled: HTMLInputElement | undefined, loadedCatalogue: CatalogueBundle | undefined, catalogueValuesKey = '';
@@ -289,7 +312,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
       return next;
     });
     const form = mountParameterForm(body, decorated, {
-      getValue: effective, isMixed, setValue: set,
+      getValue: effective, isMixed, automaticChoice: resolvedChoice, setValue: set,
       disabled: () => !!parts?.disabled?.() || global && (key === 'house' || key === 'workshop') && !modelEnabled?.checked,
     }); forms.push(form);
     if (key === 'programme') message(details, 'Names, roles, resources and lore are identifiers used by the generator; resource lists accept commas or line breaks.');
@@ -305,7 +328,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
       const body = document.createElement('div'); box.append(body);
       const fields = ['culture', 'tissue', 'recipe'].map(key => urbanField(`layout.phaseOverrides.${zone}.${key}`, key === 'tissue' ? 'culture' : '', 'growth'));
       fields.push({ ...urbanField(`parcels.zoneOperators.${zone}`, 'culture', 'parcels'), label: 'Parcel operator', type: 'select', options: urbanControlFields().find(f => f.path === 'parcels.operator')!.options });
-      forms.push(mountParameterForm(body, fields.map(f => ({ ...f, emptyLabel: 'Automatic', id: `urban-${scopeId}-${f.path.replaceAll('.', '-')}` })), { getValue: path => effective(path) ?? effective(path.startsWith('parcels.') ? 'parcels.operator' : `layout.${path.split('.').at(-1)}`), isMixed, setValue: set }));
+      forms.push(mountParameterForm(body, fields.map(f => ({ ...f, emptyLabel: 'Automatic', id: `urban-${scopeId}-${f.path.replaceAll('.', '-')}` })), { getValue: path => effective(path) ?? effective(path.startsWith('parcels.') ? 'parcels.operator' : `layout.${path.split('.').at(-1)}`), isMixed, automaticChoice: resolvedChoice, setValue: set }));
     }
   }
   /** The style sheet of hybrid cities (`layout.styleSheet`), next to the cultural rules by growth zone. */

@@ -151,7 +151,7 @@ function ruralRequest(world: World, root: Rng, mainRoads?: number, stripLod?: { 
     ...(naturalForest ? [['naturalForest', naturalForest] as const] : []), ...(soil ? [['soil', soil.data] as const] : [])]);
 }
 function naturalRequest(t: TerrainLayer, biome: string | undefined, root: Rng, naturalForest?: Float32Array) {
-  return request({ ...base(t, root, biome), operation: 'natural' }, [['height', t.height.data], ['slope', t.slope.data], ['water', t.water],
+  return request({ ...base(t, root, biome), operation: 'natural', geometry: { terrain: { lakes: t.lakes } } }, [['height', t.height.data], ['slope', t.slope.data], ['water', t.water],
     ...(naturalForest ? [['naturalForest', naturalForest] as const] : [])]);
 }
 const capability = new Map<string, Promise<boolean>>();

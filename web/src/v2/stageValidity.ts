@@ -12,8 +12,8 @@ import { seedRoot, stepSeed } from '../../../rust/bridge/generationSeed';
 export function settlementStageValidityKeys(settings: V2Settings, terrainKey?: string): Map<string, string> {
   const o = settings.options;
   const sites = stableKey([terrainKey, stepSeed(o.seed, 'settle-sites'), settings.runtime?.backend, o.population, o.culture, o.siteType, o.sitePrefs, o.center,
-    o.settlements, o.workflow, settings.settlementCount, settings.region?.placement, settings.region?.resolution,
-    Object.entries(settings.local).map(([key, local]) => [key, local.center, local.siteType, local.sitePrefs])]);
+    o.settlements, o.workflow, settings.settlementCount, settings.region?.placement, settings.region?.demography, settings.region?.resolution,
+    Object.entries(settings.local).map(([key, local]) => [key, local.population, local.culture, local.center, local.siteType, local.sitePrefs])]);
   return new Map([['settle-sites', sites], ['settle-hierarchy', sites],
     ['settle-roads', stableKey([sites, stepSeed(o.seed, 'settle-roads'), o.roads, settings.region?.roads, settings.local.main?.roads])]]);
 }

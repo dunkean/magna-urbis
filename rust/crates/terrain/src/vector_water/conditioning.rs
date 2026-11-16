@@ -31,8 +31,10 @@ pub struct Conditioning {
 /// is suitable when it exceeds the smallest lake of the water budget with a margin and is a basin rather than a
 /// drowned channel (mean width of three cells, compactness of 0.12); its chance grows with its area and depth and
 /// with the setting, and its draw only depends on its lowest cell, so raising the setting only adds lakes. A kept
-/// basin deeper than real lakes of its size (relative depth over 10 %: deepest over 0.113 √area) has its floor
-/// raised to that depth: a noise pit becomes a tarn, not a well.
+/// basin deeper than real lakes of its size (relative depth over 10 %: deepest over 0.113 √area) is made shallower
+/// below half that depth by a smooth monotone compression of the depth, so a noise pit becomes a tarn, not a well.
+/// The compression keeps the order of the heights: every water level still meets the ground on a contour of the
+/// relief, never on the edge of a flat floor made of whole cells (the staircase shores of the first version).
 fn kept_lakes(height: &mut [f32], filled: &[f32], n: usize, width: f64, s: &Conditioning) -> Vec<u8> {
     if s.lakes <= 0.0 {
         return Vec::new();
@@ -109,10 +111,7 @@ fn kept_lakes(height: &mut [f32], filled: &[f32], n: usize, width: f64, s: &Cond
     let mut kept: Vec<u8> = label.iter().map(|&id| (id >= 0 && keep[id as usize]) as u8).collect();
     for c in 0..total {
         if kept[c] == 1 {
-            let floor = filled[c] as f64 - basins[label[c] as usize].2;
-            if (height[c] as f64) < floor {
-                height[c] = floor as f32
-            }
+            height[c] = (filled[c] as f64 - compressed_depth(filled[c] as f64 - height[c] as f64, basins[label[c] as usize].2)) as f32
         }
     }
     for c in 0..total {
@@ -130,6 +129,15 @@ fn kept_lakes(height: &mut [f32], filled: &[f32], n: usize, width: f64, s: &Cond
         }
     }
     kept
+}
+/// Depth of a kept basin made shallower than `limit`: unchanged up to half of it, then a tanh knee that is continuous
+/// in value and slope there and tends to `limit`. Strictly increasing, so the contours of the basin are kept.
+fn compressed_depth(depth: f64, limit: f64) -> f64 {
+    let knee = 0.5 * limit;
+    if depth <= knee || limit <= 0.0 {
+        return depth;
+    }
+    knee + (limit - knee) * ((depth - knee) / (limit - knee)).tanh()
 }
 #[derive(Default, Serialize)]
 pub struct Census {
@@ -734,5 +742,42 @@ pub(super) fn condition_options(
         breaches,
         steps,
         hydrology: if drainage { h } else { None },
+    }
+}
+
+#[cfg(test)]
+mod kept_lake_tests {
+    use super::*;
+    /// Invariant: keeping a basin as a lake never flattens its floor. A pit far deeper than a lake of its size is made
+    /// shallower, but the heights keep their order, so the shore at any water level is a contour of the relief.
+    #[test]
+    fn kept_basin_keeps_its_contours() {
+        let (n, width) = (64_usize, 6400.0);
+        let mut height = vec![300.0_f32; n * n];
+        for y in 0..n {
+            for x in 0..n {
+                let r = ((x as f64 - 31.5).powi(2) + (y as f64 - 30.7).powi(2)).sqrt();
+                if r < 4.6 {
+                    height[y * n + x] = (300.0 - 220.0 * (1.0 - r / 4.6)) as f32
+                }
+            }
+        }
+        let original = height.clone();
+        let filled = crate::priority_flood::flood_surface(&height, n, true).filled;
+        let s = Conditioning { lakes: 2.0, ..Default::default() };
+        let kept = kept_lakes(&mut height, &filled, n, width, &s);
+        let wet: Vec<usize> = (0..n * n).filter(|&c| kept.get(c) == Some(&1)).collect();
+        assert!(wet.len() > 20, "the pit is kept as a lake");
+        assert!(wet.iter().any(|&c| height[c] > original[c]), "the too-deep pit is made shallower");
+        let deepest = wet.iter().map(|&c| filled[c] as f64 - height[c] as f64).fold(0.0, f64::max);
+        let area = wet.len() as f64 * (width / n as f64).powi(2);
+        assert!(deepest <= (0.113 * area.sqrt()).max(2.0) + 1e-3, "depth {deepest} within the lake limit");
+        for &a in &wet {
+            for &b in &wet {
+                if original[a] < original[b] {
+                    assert!(height[a] < height[b], "order kept: no flat floor");
+                }
+            }
+        }
     }
 }

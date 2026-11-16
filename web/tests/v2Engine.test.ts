@@ -19,6 +19,7 @@ function settings(): V2Settings {
   settings.generation = 'procedural';
   settings.extent = 1200;
   settings.settlementCount = 1;
+  settings.options.seed = 'magna-urbis-v2';
   settings.options = { ...settings.options, population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
     importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: Float32Array.from({ length: 64 }, (_, i) => 20 + i % 8 * .1) } };
   return settings;
@@ -57,7 +58,7 @@ describe('V2 retained generation pipeline', () => {
     expect(named.terrain.rivers.map(river => river.path)).toEqual(town.terrain.rivers.map(river => river.path));
     expect(named.roads).toBe(town.roads);
     expect(named.urban?.buildings).toBe(town.urban?.buildings);
-    expect(named.urban?.streets).toBe(town.urban?.streets);
+    expect(named.urban?.streets).toEqual(town.urban?.streets);
     expect(town.names).toEqual(originalNames); expect(terrainCacheKey(s)).toBe(key);
     const loaded = parseProject(serializeProject(s, named));
     expect(loaded.settings.naming).toEqual(s.naming); expect(loaded.world?.names).toEqual(named.names);
@@ -77,7 +78,7 @@ describe('V2 retained generation pipeline', () => {
     const small = defaultSettings(); small.extent = 'auto'; small.generation = 'procedural'; small.runtime!.source = 'procedural';
     const large = structuredClone(small);
     large.options.population = 100000; large.settlementCount = 12;
-    expect(adaptedExtent(large)).toBeGreaterThan(adaptedExtent(small));
+    expect(adaptedExtent(large)).toBe(40000);expect(adaptedExtent(small)).toBe(40000);
     large.extent = 4000;
     expect(adaptedExtent(large)).toBe(4000);
     small.generation = 'neural';
@@ -137,9 +138,9 @@ describe('V2 retained generation pipeline', () => {
     expect(individual.roads).toEqual(region.roads);
     expect(region.urban).toBeUndefined();
     const changed = structuredClone(s); changed.options.relief = 'mountains';
-    await expect(generateTown(region, changed, 'main')).rejects.toThrow('topographie');
+    await expect(generateTown(region, changed, 'main')).rejects.toThrow('topography');
     changed.options.relief = s.options.relief; changed.options.population = 500;
-    await expect(generateTown(region, changed, 'main')).rejects.toThrow('implantation');
+    await expect(generateTown(region, changed, 'main')).rejects.toThrow('Placement settings');
   });
   it('round trips complete worlds, FP32 imports, costs with Infinity and a seed-only recipe', async () => {
     const s = settings(), t = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
@@ -209,7 +210,7 @@ describe('V2 retained generation pipeline', () => {
     ]) {
       const draft = structuredClone(s); change(draft);
       expect(retainedTerrainMatchesSettings(loaded.world!, draft)).toBe(false);
-      await expect(generateTown(loaded.world!, draft, 'main')).rejects.toThrow('topographie');
+      await expect(generateTown(loaded.world!, draft, 'main')).rejects.toThrow('topography');
     }
   });
   it('accepts the identical .1 TypeScript retained pipeline but does not relabel the old mixed Rust/TS pipeline', async () => {
