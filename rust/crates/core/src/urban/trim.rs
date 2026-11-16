@@ -1098,19 +1098,31 @@ mod tests {
         } } }
     }
 
-    /// A cyberpunk town of 10 000 is a low town (its height ladder): no home
-    /// above four storeys, no tower or megastructure, and its people housed.
+    /// A cyberpunk town of 6 000 is a low town (its height ladder) with a few
+    /// landmark towers (`townPop`): no home above four storeys, no
+    /// megastructure, its towers holding at most 15 % of the households, and
+    /// its people housed. A village of 300 has at most one tower.
     #[test]
-    fn a_small_modern_town_stays_low_and_houses_its_people() {
-        let (_, part, requests) = town_on("scale-cyberpunk", "cyberpunk", 10_000, false, false, 0.0);
+    fn a_small_modern_town_stays_low_with_a_few_towers() {
+        let tall = |pop: u32| super::super::roles::services("cyberpunk", pop).iter()
+            .filter(|n| ["housing.tower", "commerce.skyscraper", "civic.megastructure", "civic.arcology", "civic.tv-tower"].contains(&n.entry.role.as_str()))
+            .map(|n| n.sites).sum::<usize>();
+        assert!(tall(300) <= 1, "village towers {}", tall(300));
+        assert!((1..=3).contains(&tall(6_000)), "town towers {}", tall(6_000));
+        let (_, part, requests) = town_on("scale-cyberpunk", "cyberpunk", 6_000, false, false, 0.0);
         let pr = part.programme.as_ref().unwrap();
         let top = requests.iter().filter(|r| r["programme"]["role"].as_str().is_some_and(|s| s.starts_with("dwelling")))
             .filter_map(|r| r["programme"]["massing"].as_array()).flat_map(|a| a.iter().filter_map(|p| p["floors"].as_u64())).max().unwrap_or(0);
         assert!((1..=4).contains(&top), "homes of {top} storeys");
-        let tall = pr.allocations.iter().filter(|a| ["housing.tower", "civic.megastructure", "civic.arcology"].iter().any(|r| a.role.starts_with(r))).count();
-        assert_eq!(tall, 0);
-        let housed = pr.allocations.iter().map(|a| a.households).sum::<f64>() * super::super::roles::occupancy("cyberpunk").household_size;
-        assert!(housed >= 9_000.0, "{housed:.0} of 10 000 housed");
+        assert!(!pr.allocations.iter().any(|a| ["civic.megastructure", "civic.arcology"].iter().any(|r| a.role.starts_with(r))));
+        let towers: Vec<_> = pr.allocations.iter().filter(|a| a.role.starts_with("housing.tower")).collect();
+        assert!(!towers.is_empty(), "no tower in a cyberpunk town of 6 000");
+        let households = pr.allocations.iter().map(|a| a.households).sum::<f64>();
+        let in_towers = towers.iter().map(|a| a.households).sum::<f64>();
+        println!("CYBERPUNK 6000: {} tower lots, {in_towers:.0} of {households:.0} households in towers", towers.len());
+        assert!(in_towers <= 0.15 * households, "{in_towers:.0} of {households:.0} households in towers");
+        let asked: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+        assert!(households >= asked.floor(), "{households:.0} households for {asked:.0} asked");
     }
 
     /// Height and density of the modern styles by population (`SCALE_CULTURES`,

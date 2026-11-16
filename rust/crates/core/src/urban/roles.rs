@@ -32,6 +32,12 @@ pub struct ServiceEntry {
     /// Entry dropped above this population (0 = no ceiling): hamlet outbuildings.
     #[serde(default)]
     pub max_pop: f64,
+    /// Below `minPop`, a few landmark buildings from this population on (0 =
+    /// none): one at `townPop`, one more each time the population triples, at
+    /// most `EARLY_SITES` (a cyberpunk town keeps a tower or two, a city its
+    /// skyline). The culture's verticality, as data.
+    #[serde(default)]
+    pub town_pop: f64,
     /// Culture that builds this entry when it is not the place's own (the
     /// `monuments` facet of the style sheet); never read from the catalogue.
     #[serde(default, skip)]
@@ -231,6 +237,17 @@ pub fn occupancy(culture: &str) -> Occupancy {
         })
 }
 
+/// Most landmark buildings an entry keeps below its threshold (`townPop`).
+const EARLY_SITES: f64 = 3.0;
+
+/// Share of a place's households its housing towers and slabs hold together
+/// (`programme::allocate`): 10 % below city size, where most of a tower is
+/// offices, shops and landmark and the town lives in its ordinary homes; 0 in
+/// a city, whose towers stay as they were.
+pub fn tower_home_share(population: u32) -> f64 {
+    if crate::settlements::demographics::below(population, "city") { 0.10 } else { 0.0 }
+}
+
 /// One building role to place: `sites` distinct buildings of `area` useful m² each.
 #[derive(Clone, Debug)]
 pub struct ServiceNeed {
@@ -337,6 +354,7 @@ pub fn services_scaled(
                     district: if open { "market" } else { "religious" }.into(),
                     requires: String::new(),
                     max_pop: 0.0,
+                    town_pop: 0.0,
                     culture: String::new(),
                 }),
             );
@@ -354,11 +372,21 @@ pub fn services_scaled(
             if e.role.starts_with("storage.") { mult = mult.max(1.0 + functions.agricultural); }
             let k = density_scale(&e, density, nucleus_role == Some(&e.role), mult > 1.0)?;
             min_pop /= k.sqrt();
-            if pop < min_pop {
+            // Below its threshold, an entry with a `townPop` keeps a few
+            // landmark buildings (1 to `EARLY_SITES`), rising with population.
+            let town_pop = e.town_pop / k.sqrt();
+            let early = pop < min_pop;
+            if early && (e.town_pop <= 0.0 || pop < town_pop) {
                 return None;
             }
             let mut e = e.into_owned();
-            e.min_pop = min_pop;
+            e.min_pop = if early { town_pop } else { min_pop };
+            if early {
+                let sites = (1.0 + ((pop / town_pop).ln() / 3f64.ln()).floor()).min(EARLY_SITES).min(e.max.max(1) as f64) as usize;
+                let t = ((pop / town_pop).log10() / 2.0).clamp(0.0, 1.0);
+                let area = e.area[0] + (e.area[1] - e.area[0]) * t;
+                return Some(ServiceNeed { entry: e, sites: sites.max(1), area });
+            }
             if e.function == "market" { e.per_capita *= 1.0 + 2.0 * functions.commerce; }
             let base = if e.per > 0.0 {
                 (pop * k / e.per).floor().max(1.0)

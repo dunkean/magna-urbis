@@ -2492,6 +2492,25 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             pr.demands[di].parcel_capacity += held;
         }
     }
+    // Housing towers and slabs (`housing.*` service roles) below city size hold
+    // a few households only: together `roles::tower_home_share` of the
+    // programme, counted against its domestic demand, so the town lives in its
+    // ordinary homes and the tower is mostly offices, shops and landmark.
+    let mut tower_households = vec![0.0; parcels.len()];
+    let towers: Vec<usize> = (0..parcels.len())
+        .filter(|&pi| forced[pi].is_none() && assignments[pi].is_some_and(|di|
+            pr.demands[di].role.starts_with("housing.") && pr.demands[di].unit != "domesticUnits"))
+        .collect();
+    if let Some(&home) = dwelling.iter().find(|&&di| pr.demands[di].function == "domestic")
+        && !towers.is_empty()
+    {
+        let asked: f64 = dwelling.iter().map(|&di| pr.demands[di].requested).sum();
+        let each = (roles::tower_home_share(pr.population) * asked / towers.len() as f64).floor();
+        if each >= 1.0 {
+            for &pi in &towers { tower_households[pi] = each; }
+            pr.demands[home].parcel_capacity += each * towers.len() as f64;
+        }
+    }
     pr.housing_capacity = household_caps.iter().sum();
     lap("capacity");
     // Spread the households over the land actually left: dense where land is
@@ -2887,7 +2906,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             Some(h) => h,
             None if dwelling && extra_households[pi] => 1.0,
             None if dwelling => households[pi].max(1.0),
-            None => 0.0,
+            None => tower_households[pi],
         };
         // An isolated establishment keeps the role of its intent (a lone farm
         // is a farm whatever its lot's draw).
