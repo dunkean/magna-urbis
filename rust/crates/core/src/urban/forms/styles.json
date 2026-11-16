@@ -88,6 +88,8 @@
     "budj-bim": { "traits": { "tradition": { "roof": "cone", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "stone" } } },
     "byzantine-greek": { "traits": { "mediterranean": true } },
     "caucasian-highland": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [2, 3], "cover": "earth", "wall": "stone" } } },
+    "drow-enclave": { "traits": { "form": "mage", "openness": 0.3 } },
+    "duergar-hold": { "traits": { "openness": 0.2 } },
     "dravidian-temple": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 3], "cover": "plaster", "wall": "stone" } } },
     "egyptian-planned": { "traits": { "tradition": { "roof": "flat", "pitch": 0, "storeys": [1, 2], "cover": "earth", "wall": "earth" }, "flavor": "levant" } },
     "elven": { "traits": { "form": "tree", "formShare": 0.85 } },

@@ -134,6 +134,9 @@ const RIBBED_TILES = new Set(['roman-core', 'byzantine-greek', 'venetian-lagoon'
   'indian-temple', 'dravidian-temple', 'rajput-fort', 'khmer', 'swahili-stone-town']);
 /** East Asian glazed tiles: the same ribs, regular, with an even tone. */
 const GLAZED_TILES = new Set(['chinese', 'korean', 'japanese-jokamachi', 'vietnamese-citadel']);
+/** Cultures whose stone roofs, flat terraces included, are laid in dark carved slab courses (drow obsidian) rather
+ * than a paved terrace: the roof keeps a visible directional texture in 2D and 3D. */
+const SLAB_ROOFS = new Set(['drow-enclave']);
 /** Grain family of a roof pan, from its massing cover, whether the pan is flat (no slope: nothing directional) and
  * the culture of its building. Undefined keeps the flat colour: snow huts (blocks below any map scale, white on
  * white), ruins (broken wall tops, not a cover) and unknown covers.
@@ -150,7 +153,7 @@ export function roofGrain(cover: string | undefined, flat: boolean, culture = ''
   switch (cover) {
     case 'tile': return flat ? 'paving' : GLAZED_TILES.has(culture) ? 'glazed' : RIBBED_TILES.has(culture) ? 'pantile' : 'tile';
     case 'slate': return flat ? 'paving' : 'slate';
-    case 'stone': return flat ? 'paving' : 'slab';
+    case 'stone': return flat && !SLAB_ROOFS.has(culture) ? 'paving' : 'slab';
     case 'thatch': return 'thatch'; case 'reed': return 'reed'; case 'palm': return 'palm'; case 'turf': return 'turf';
     case 'shingle': return flat ? 'lime' : 'shingle';
     case 'bark': return flat ? 'lime' : 'bark';

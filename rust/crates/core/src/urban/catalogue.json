@@ -58246,24 +58246,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            9000
+            2400,
+            6500
           ],
           "middle": [
-            7000,
-            22000
+            4500,
+            12000
           ],
           "edge": [
-            9000,
-            26000
+            6000,
+            16000
           ],
           "faubourg": [
-            6000,
-            16000
+            4500,
+            11000
           ],
           "village": [
-            6000,
-            16000
+            4500,
+            11000
           ]
         },
         "minBlock": 900,
@@ -58351,23 +58351,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -58377,51 +58377,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.92,
-          "middle": 0.62,
-          "edge": 0.38,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.95,
+          "middle": 0.8,
+          "edge": 0.6,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.82,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.87
+            0.84,
+            0.9
           ],
           "edge": [
-            0.68,
-            0.8
+            0.76,
+            0.85
           ],
           "faubourg": [
-            0.5,
-            0.65
+            0.62,
+            0.75
           ],
           "village": [
-            0.45,
-            0.62
+            0.55,
+            0.7
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -58433,23 +58433,23 @@
         "fieldRandom": 0.35,
         "shareJitter": 0.22,
         "cornerFill": {
-          "core": 0.6,
-          "middle": 0.35,
-          "edge": 0.2,
-          "faubourg": 0.1,
-          "village": 0
+          "core": 0.75,
+          "middle": 0.55,
+          "edge": 0.35,
+          "faubourg": 0.2,
+          "village": 0.05
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 210,
-          "edge": 160,
-          "faubourg": 85,
-          "village": 70
+          "core": 300,
+          "middle": 250,
+          "edge": 200,
+          "faubourg": 110,
+          "village": 90
         },
         "courtyardShare": [
-          0.2,
-          0.28
+          0.12,
+          0.18
         ]
       }
     },
@@ -58534,24 +58534,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            9000
+            2400,
+            6500
           ],
           "middle": [
-            7000,
-            22000
+            4500,
+            12000
           ],
           "edge": [
-            9000,
-            26000
+            6000,
+            16000
           ],
           "faubourg": [
-            6000,
-            16000
+            4500,
+            11000
           ],
           "village": [
-            6000,
-            16000
+            4500,
+            11000
           ]
         },
         "minBlock": 900,
@@ -58639,23 +58639,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -58665,51 +58665,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.92,
-          "middle": 0.62,
-          "edge": 0.38,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.95,
+          "middle": 0.8,
+          "edge": 0.6,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.82,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.87
+            0.84,
+            0.9
           ],
           "edge": [
-            0.68,
-            0.8
+            0.76,
+            0.85
           ],
           "faubourg": [
-            0.5,
-            0.65
+            0.62,
+            0.75
           ],
           "village": [
-            0.45,
-            0.62
+            0.55,
+            0.7
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -58721,23 +58721,23 @@
         "fieldRandom": 0.35,
         "shareJitter": 0.22,
         "cornerFill": {
-          "core": 0.6,
-          "middle": 0.35,
-          "edge": 0.2,
-          "faubourg": 0.1,
-          "village": 0
+          "core": 0.75,
+          "middle": 0.55,
+          "edge": 0.35,
+          "faubourg": 0.2,
+          "village": 0.05
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 210,
-          "edge": 160,
-          "faubourg": 85,
-          "village": 70
+          "core": 300,
+          "middle": 250,
+          "edge": 200,
+          "faubourg": 110,
+          "village": 90
         },
         "courtyardShare": [
-          0.2,
-          0.28
+          0.12,
+          0.18
         ]
       }
     },
@@ -58822,24 +58822,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            9000
+            2400,
+            6500
           ],
           "middle": [
-            7000,
-            22000
+            4500,
+            12000
           ],
           "edge": [
-            9000,
-            26000
+            6000,
+            16000
           ],
           "faubourg": [
-            6000,
-            16000
+            4500,
+            11000
           ],
           "village": [
-            6000,
-            16000
+            4500,
+            11000
           ]
         },
         "minBlock": 900,
@@ -58927,23 +58927,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -58953,51 +58953,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.92,
-          "middle": 0.62,
-          "edge": 0.38,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.95,
+          "middle": 0.8,
+          "edge": 0.6,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.82,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.87
+            0.84,
+            0.9
           ],
           "edge": [
-            0.68,
-            0.8
+            0.76,
+            0.85
           ],
           "faubourg": [
-            0.5,
-            0.65
+            0.62,
+            0.75
           ],
           "village": [
-            0.45,
-            0.62
+            0.55,
+            0.7
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -59009,23 +59009,23 @@
         "fieldRandom": 0.35,
         "shareJitter": 0.22,
         "cornerFill": {
-          "core": 0.6,
-          "middle": 0.35,
-          "edge": 0.2,
-          "faubourg": 0.1,
-          "village": 0
+          "core": 0.75,
+          "middle": 0.55,
+          "edge": 0.35,
+          "faubourg": 0.2,
+          "village": 0.05
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 210,
-          "edge": 160,
-          "faubourg": 85,
-          "village": 70
+          "core": 300,
+          "middle": 250,
+          "edge": 200,
+          "faubourg": 110,
+          "village": 90
         },
         "courtyardShare": [
-          0.2,
-          0.28
+          0.12,
+          0.18
         ]
       }
     },
@@ -59110,24 +59110,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            9000
+            2400,
+            6500
           ],
           "middle": [
-            7000,
-            22000
+            4500,
+            12000
           ],
           "edge": [
-            9000,
-            26000
+            6000,
+            16000
           ],
           "faubourg": [
-            6000,
-            16000
+            4500,
+            11000
           ],
           "village": [
-            6000,
-            16000
+            4500,
+            11000
           ]
         },
         "minBlock": 900,
@@ -59215,23 +59215,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -59241,51 +59241,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.92,
-          "middle": 0.62,
-          "edge": 0.38,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.95,
+          "middle": 0.8,
+          "edge": 0.6,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.82,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.87
+            0.84,
+            0.9
           ],
           "edge": [
-            0.68,
-            0.8
+            0.76,
+            0.85
           ],
           "faubourg": [
-            0.5,
-            0.65
+            0.62,
+            0.75
           ],
           "village": [
-            0.45,
-            0.62
+            0.55,
+            0.7
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -59297,23 +59297,23 @@
         "fieldRandom": 0.35,
         "shareJitter": 0.22,
         "cornerFill": {
-          "core": 0.6,
-          "middle": 0.35,
-          "edge": 0.2,
-          "faubourg": 0.1,
-          "village": 0
+          "core": 0.75,
+          "middle": 0.55,
+          "edge": 0.35,
+          "faubourg": 0.2,
+          "village": 0.05
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 210,
-          "edge": 160,
-          "faubourg": 85,
-          "village": 70
+          "core": 300,
+          "middle": 250,
+          "edge": 200,
+          "faubourg": 110,
+          "village": 90
         },
         "courtyardShare": [
-          0.2,
-          0.28
+          0.12,
+          0.18
         ]
       }
     },
@@ -59398,24 +59398,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            9000
+            2400,
+            6500
           ],
           "middle": [
-            7000,
-            22000
+            4500,
+            12000
           ],
           "edge": [
-            9000,
-            26000
+            6000,
+            16000
           ],
           "faubourg": [
-            6000,
-            16000
+            4500,
+            11000
           ],
           "village": [
-            6000,
-            16000
+            4500,
+            11000
           ]
         },
         "minBlock": 900,
@@ -59503,23 +59503,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -59529,51 +59529,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.92,
-          "middle": 0.62,
-          "edge": 0.38,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.95,
+          "middle": 0.8,
+          "edge": 0.6,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.82,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.87
+            0.84,
+            0.9
           ],
           "edge": [
-            0.68,
-            0.8
+            0.76,
+            0.85
           ],
           "faubourg": [
-            0.5,
-            0.65
+            0.62,
+            0.75
           ],
           "village": [
-            0.45,
-            0.62
+            0.55,
+            0.7
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.05,
         "footprintConformity": {
           "core": 0.97,
           "middle": 0.95,
@@ -59585,23 +59585,23 @@
         "fieldRandom": 0.35,
         "shareJitter": 0.22,
         "cornerFill": {
-          "core": 0.6,
-          "middle": 0.35,
-          "edge": 0.2,
-          "faubourg": 0.1,
-          "village": 0
+          "core": 0.75,
+          "middle": 0.55,
+          "edge": 0.35,
+          "faubourg": 0.2,
+          "village": 0.05
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 210,
-          "edge": 160,
-          "faubourg": 85,
-          "village": 70
+          "core": 300,
+          "middle": 250,
+          "edge": 200,
+          "faubourg": 110,
+          "village": 90
         },
         "courtyardShare": [
-          0.2,
-          0.28
+          0.12,
+          0.18
         ]
       }
     },
@@ -59685,24 +59685,24 @@
         "gridSkew": 0.015,
         "blockSize": {
           "core": [
-            1600,
-            3400
+            1300,
+            2800
           ],
           "middle": [
+            1500,
+            3200
+          ],
+          "edge": [
             1800,
             3800
           ],
-          "edge": [
-            2200,
-            4500
-          ],
           "faubourg": [
-            3000,
-            7000
+            2400,
+            5500
           ],
           "village": [
-            2500,
-            5500
+            2000,
+            4500
           ]
         },
         "minBlock": 400,
@@ -59790,23 +59790,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -59816,51 +59816,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.72,
-          "middle": 0.6,
-          "edge": 0.45,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.9,
+          "middle": 0.8,
+          "edge": 0.65,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.8,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.88
+            0.84,
+            0.92
           ],
           "edge": [
-            0.72,
-            0.84
+            0.8,
+            0.88
           ],
           "faubourg": [
-            0.6,
-            0.72
+            0.68,
+            0.8
           ],
           "village": [
-            0.55,
-            0.68
+            0.62,
+            0.75
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.04,
         "footprintConformity": {
           "core": 0,
           "middle": 0,
@@ -59880,11 +59880,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 220,
-          "middle": 205,
-          "edge": 180,
-          "faubourg": 100,
-          "village": 85
+          "core": 260,
+          "middle": 240,
+          "edge": 210,
+          "faubourg": 120,
+          "village": 100
         },
         "contourFollow": 0.25,
         "gatesOnly": true
@@ -59970,24 +59970,24 @@
         "gridSkew": 0.015,
         "blockSize": {
           "core": [
-            1600,
-            3400
+            1300,
+            2800
           ],
           "middle": [
+            1500,
+            3200
+          ],
+          "edge": [
             1800,
             3800
           ],
-          "edge": [
-            2200,
-            4500
-          ],
           "faubourg": [
-            3000,
-            7000
+            2400,
+            5500
           ],
           "village": [
-            2500,
-            5500
+            2000,
+            4500
           ]
         },
         "minBlock": 400,
@@ -60075,23 +60075,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -60101,51 +60101,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.72,
-          "middle": 0.6,
-          "edge": 0.45,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.9,
+          "middle": 0.8,
+          "edge": 0.65,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.8,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.88
+            0.84,
+            0.92
           ],
           "edge": [
-            0.72,
-            0.84
+            0.8,
+            0.88
           ],
           "faubourg": [
-            0.6,
-            0.72
+            0.68,
+            0.8
           ],
           "village": [
-            0.55,
-            0.68
+            0.62,
+            0.75
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.04,
         "footprintConformity": {
           "core": 0,
           "middle": 0,
@@ -60165,11 +60165,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 220,
-          "middle": 205,
-          "edge": 180,
-          "faubourg": 100,
-          "village": 85
+          "core": 260,
+          "middle": 240,
+          "edge": 210,
+          "faubourg": 120,
+          "village": 100
         },
         "contourFollow": 0.25,
         "gatesOnly": true
@@ -60255,24 +60255,24 @@
         "gridSkew": 0.015,
         "blockSize": {
           "core": [
-            1600,
-            3400
+            1300,
+            2800
           ],
           "middle": [
+            1500,
+            3200
+          ],
+          "edge": [
             1800,
             3800
           ],
-          "edge": [
-            2200,
-            4500
-          ],
           "faubourg": [
-            3000,
-            7000
+            2400,
+            5500
           ],
           "village": [
-            2500,
-            5500
+            2000,
+            4500
           ]
         },
         "minBlock": 400,
@@ -60360,23 +60360,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -60386,51 +60386,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.72,
-          "middle": 0.6,
-          "edge": 0.45,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.9,
+          "middle": 0.8,
+          "edge": 0.65,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.8,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.88
+            0.84,
+            0.92
           ],
           "edge": [
-            0.72,
-            0.84
+            0.8,
+            0.88
           ],
           "faubourg": [
-            0.6,
-            0.72
+            0.68,
+            0.8
           ],
           "village": [
-            0.55,
-            0.68
+            0.62,
+            0.75
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.04,
         "footprintConformity": {
           "core": 0,
           "middle": 0,
@@ -60450,11 +60450,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 220,
-          "middle": 205,
-          "edge": 180,
-          "faubourg": 100,
-          "village": 85
+          "core": 260,
+          "middle": 240,
+          "edge": 210,
+          "faubourg": 120,
+          "village": 100
         },
         "contourFollow": 0.25,
         "gatesOnly": true
@@ -60540,24 +60540,24 @@
         "gridSkew": 0.015,
         "blockSize": {
           "core": [
-            1600,
-            3400
+            1300,
+            2800
           ],
           "middle": [
+            1500,
+            3200
+          ],
+          "edge": [
             1800,
             3800
           ],
-          "edge": [
-            2200,
-            4500
-          ],
           "faubourg": [
-            3000,
-            7000
+            2400,
+            5500
           ],
           "village": [
-            2500,
-            5500
+            2000,
+            4500
           ]
         },
         "minBlock": 400,
@@ -60645,23 +60645,23 @@
         "setback": {
           "core": [
             0,
-            0.3
+            0.2
           ],
           "middle": [
             0,
-            0.8
+            0.4
           ],
           "edge": [
-            0.5,
-            3
+            0,
+            1.2
           ],
           "faubourg": [
-            0.5,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            10
+            1.5,
+            5
           ]
         },
         "sideGap": {
@@ -60671,51 +60671,51 @@
           ],
           "middle": [
             0,
-            1.2
+            0.4
           ],
           "edge": [
-            0.5,
-            2.5
+            0,
+            1
           ],
           "faubourg": [
-            0.8,
-            3
+            0.3,
+            1.5
           ],
           "village": [
-            3,
-            8
+            1.5,
+            4
           ]
         },
         "infill": {
-          "core": 0.72,
-          "middle": 0.6,
-          "edge": 0.45,
-          "faubourg": 0.3,
-          "village": 0.12
+          "core": 0.9,
+          "middle": 0.8,
+          "edge": 0.65,
+          "faubourg": 0.45,
+          "village": 0.25
         },
         "coverage": {
           "core": [
-            0.8,
-            0.9
+            0.86,
+            0.93
           ],
           "middle": [
-            0.78,
-            0.88
+            0.84,
+            0.92
           ],
           "edge": [
-            0.72,
-            0.84
+            0.8,
+            0.88
           ],
           "faubourg": [
-            0.6,
-            0.72
+            0.68,
+            0.8
           ],
           "village": [
-            0.55,
-            0.68
+            0.62,
+            0.75
           ]
         },
-        "bigCourtChance": 0.12,
+        "bigCourtChance": 0.04,
         "footprintConformity": {
           "core": 0,
           "middle": 0,
@@ -60735,11 +60735,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 220,
-          "middle": 205,
-          "edge": 180,
-          "faubourg": 100,
-          "village": 85
+          "core": 260,
+          "middle": 240,
+          "edge": 210,
+          "faubourg": 120,
+          "village": 100
         },
         "contourFollow": 0.25,
         "gatesOnly": true
@@ -134549,7 +134549,56 @@
         "towerShape": "square",
         "compoundWalls": true
       },
-      "growth": null
+      "growth": {
+        "minPop": 8000,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "organic",
+          "fortification": "wall",
+          "gates": "roads",
+          "orientation": "road",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "wall",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "wall",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            4000,
+            2
+          ],
+          [
+            16000,
+            3
+          ]
+        ],
+        "faubShare": [
+          0.06,
+          0.08
+        ]
+      }
     },
     "duergar-hold": {
       "label": "Duergar industrial hold",

@@ -21,8 +21,10 @@ const FAMILIES: Record<string, Swatch> = {
   highland: ['b5aa94', '9b8a6d', 'b0a895', '996951'],
   elven: ['d3d6bd', '7e9b8c', 'bec9b8', 'a7b4a4'],
   dwarven: ['a09684', '6d7779', 'a69b87', 'a17d4e'],
-  drow: ['827d91', '56596b', '92909f', '9b829d'],
-  duergar: ['898584', '5a6062', '99938a', '9a7560'],
+  // Underdark: drow obsidian and black-violet stone with a cold faerie-fire magenta accent; duergar dark iron
+  // and basalt with an ember-rust accent. Both read dark and grim against the lit cavern floor.
+  drow: ['5c5a65', '3c1a20', '635f6d', 'b04fd6'],
+  duergar: ['4a4846', '353739', '57534e', 'b35a2a'],
   necropolis: ['b1b1a4', '747c78', 'b5b5a9', '89978f'],
   wizard: ['b9b0c7', '72758d', 'b7b0bd', 'a693b8'],
   gnomish: ['c8b78e', '93756a', 'bdb39a', '70968b'],
@@ -84,6 +86,13 @@ const SWATCHES: Partial<Record<string, { wall: string[]; roof: string[] }>> = {
   japanese: { wall: ['695540', '483e33'], roof: ['51575a', '666b6c', '454b4f'] },
   whitewash: { wall: ['e6dfcc', 'd7c8aa', 'd2b69b', 'eae3d3'], roof: ['b77b60', 'a6664c', '905b46', 'bd8967'] },
   aegean: { wall: ['ece7d8', 'ded8c5', 'e5dfd1'], roof: ['a8785e', '936953', 'b78b70', '7c7770'] },
+  // Drow: one harmonised two-colour scheme. Walls of cool grey stone with a violet undertone, a step lighter than the
+  // roofs; roofs of dark, deep desaturated oxblood carved slabs (never a mid red: the cave lights them only by lanterns),
+  // leaning cool so the warm lantern light keeps them oxblood, one wine-violet roof that ties them to the grey.
+  // Tight swatches: the town reads as one style.
+  drow: { wall: ['5c5a65', '545260', '635f6d', '585564', '5f596e', '5c5a65'], roof: ['3c1a20', '35171c', '432024', '311519', '3e1c24', '35192c'] },
+  // Duergar: basalt and blackened iron, soot-stained and a little rust; roofs of iron plate with rare forge-rust sheets.
+  duergar: { wall: ['4a4846', '3e3d3c', '55524e', '403a36', '4d4540', '4a4846'], roof: ['353739', '2c2e30', '3c3a38', '46403a', '2f3133', '5a3a2a'] },
 };
 const rgb = (hex: string): PaletteRgb => [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255) as PaletteRgb;
 const mix = (a: PaletteRgb, b: PaletteRgb, t: number): PaletteRgb => a.map((v, i) => v + (b[i] - v) * t) as PaletteRgb;
