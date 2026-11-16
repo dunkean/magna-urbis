@@ -29,17 +29,13 @@ float baseOcclusion(vec3 normal,vec3 p){
 uniform int uNight;
 ${MOONLIGHT_GLSL}
 ${ROOF_PLANE_LIGHT_GLSL}
-vec3 buildingNight(vec3 color,vec3 p,vec3 normal){
+// Night: moonlight on every face; the mesh's own lit windows (LIT_CLASS faces, p on the facade in metres) glow,
+// fading out once a window is no longer resolved (from .45 to 1.2 m per pixel).
+vec3 buildingNight(vec3 color,vec3 p,bool lit){
   if(uNight==0)return color;
-  vec3 N=normalize(normal);color=moonlight(color);
-  if(abs(N.y)>.3 || p.y<1.3)return color;
-  vec2 tangent=normalize(vec2(-N.z,N.x));
-  vec2 q=vec2(dot(p.xz,tangent)/2.8,p.y/3.1),cell=floor(q),f=fract(q);
-  float facade=floor(dot(p.xz,N.xz)*.5),random=fract(sin(dot(cell,vec2(127.1,311.7))+facade*74.7)*43758.5453);
-  vec2 aa=max(fwidth(q),vec2(.001));
-  float window=(smoothstep(.31-aa.x,.31+aa.x,f.x)-smoothstep(.58-aa.x,.58+aa.x,f.x))*(smoothstep(.43-aa.y,.43+aa.y,f.y)-smoothstep(.74-aa.y,.74+aa.y,f.y));
-  window*=step(.66,random)*(1.-smoothstep(.16,.42,max(aa.x,aa.y)));
-  return mix(color,vec3(1.,.61,.22),window*.93);
+  color=moonlight(color);
+  if(!lit)return color;
+  return mix(color,vec3(1.,.61,.22),.93*(1.-smoothstep(.45,1.2,length(fwidth(p)))));
 }
 `;
 /** Procedural grain of roof covers and wall materials for the flat-colour program: only the material's own units
@@ -164,7 +160,10 @@ out vec4 color;
 ${nightWindows}
 ${materialGrain}
 ${coverLight}
-void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));float light=coverLight(buildingLight(N,N),materialClass,N);color=vec4(buildingNight(materialGrain(base,materialClass,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);}`;
+void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
+  // Class 32 marks a lit window (no grain of its own).
+  bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
+  float light=coverLight(buildingLight(N,N),cls,N);color=vec4(buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -179,11 +178,11 @@ uniform vec3 offset;
 uniform float exaggeration;
 uniform vec2 sectorOrigin;
 layout(location=4) in float groundIn;
-out vec3 n; out vec3 wp; out vec2 uv; flat out float layer; out vec3 facadePosition;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);}`;
+out vec3 n; out vec3 wp; out vec2 uv; flat out float layer; out vec3 facadePosition; flat out float litWindow;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));litWindow=length(normal)>1.5?1.:0.;vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);}`;
 const texFragment = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 wp; in vec2 uv; flat in float layer; in vec3 facadePosition;
+in vec3 n; in vec3 wp; in vec2 uv; flat in float layer; in vec3 facadePosition; flat in float litWindow;
 uniform vec3 material;
 uniform vec3 tint;
 uniform int recolored;
@@ -218,7 +217,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=buildingLight(N,normalize(n));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,n),1.);
+  float light=buildingLight(N,normalize(n));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));
@@ -280,6 +279,9 @@ const WALL_CLASS: Record<string, number> = { plaster: 19, timber: 20, wood: 21, 
   ashlar: 29, concrete: 30, glass: 31, steel: 16 };
 /** Class of a roof face under snow: the mantle is uneven, thinner in places (materialGrain). */
 const SNOW_CLASS = 28;
+/** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
+ * grain classes, it only tells the shaders which faces glow (buildingNight). */
+const LIT_CLASS = 32;
 /** Grain class of a face from its display material id `city3d:<cover|wall>:<key>`; 0 (no grain) for openings, roads,
  * trees, snow huts, ruins and native materials. */
 function materialClass(id: string | undefined, normal: readonly number[], culture: string): number {
@@ -417,7 +419,7 @@ export class UrbanBuildingPass {
         // Flat-colour program only: the material class rides on the normal's length (see materialGrain); a snowed face
         // takes the snow class in place of its cover's.
         const cls = !textured && face.surface !== 'yard' && this.appearance.style === 'cartographic' && this.appearance.diagnostic === 'none' ? snow >= .4 ? SNOW_CLASS : materialClass(id, face.normal, culture) : 0;
-        const unit = (1 + cls / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
+        const unit = (1 + (id === 'city3d:wall:lit' ? LIT_CLASS : cls) / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
         const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : `vertex-colour|${!!snow}`, mean = MATERIALS.layers[layer]?.mean_rgb;
         const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
           : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;

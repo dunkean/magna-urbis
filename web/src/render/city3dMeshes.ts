@@ -70,6 +70,7 @@ const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', b
 CITY3D_MATERIALS.push(...Object.entries(COVERS).map(([k, pattern]) => ({ id: `city3d:cover:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
   ...Object.entries(WALLS).map(([k, pattern]) => ({ id: `city3d:wall:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
   { id: 'city3d:wall:opening', label: 'opening', roles: [], pattern: 'wood', origin: 'city3d', source_ref: null } as HouseMaterial,
+  { id: 'city3d:wall:lit', label: 'lit window', roles: [], pattern: 'wood', origin: 'city3d', source_ref: null } as HouseMaterial,
   ...Object.entries(MESH_ROAD_PATTERNS).map(([k, pattern]) => ({ id: `city3d:road:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)));
 function hash(text: string): number { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; }
 
@@ -224,6 +225,8 @@ function paletteSlots(plain: MaterialSlots, culture: string, wall: string, cover
   return { ...plain, frame: w, infill: w, coating: w, base: w, cladding: tinted(plain.cladding, hex6(p.roof)) };
 }
 const OPENING = 'city3d:wall:opening@393126';
+/** A window that shows a light at night (UrbanBuildingPass); by day it is an opening like the others. */
+const LIT_WINDOW = 'city3d:wall:lit@393126';
 const ringCentre = (ring: readonly Point[]): Point => ({ x: ring.reduce((s, p) => s + p.x, 0) / ring.length, y: ring.reduce((s, p) => s + p.y, 0) / ring.length });
 
 /** Extend the eave outside the supporting wall without moving the roof's
@@ -462,7 +465,9 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
       if (z0 + wh > wall - 0.25 || (medina && (h >>> (c + f)) % 3 === 0)) continue;
       if (f === 0 && open < 1 && ((h >>> (c + 7 * k)) % 100) / 100 >= open * open) continue;
       if (f === 0 && !raised && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3) continue;
-      facadeQuad(roof, e.a, e.b, out, s, s + ww, foot + z0, foot + z0 + wh, 0.04, OPENING, batter); windows++;
+      // One window in three is lit at night, the same ones at every redraw.
+      const lit = (Math.imul(h ^ (c * 73 + f * 151 + k * 283 + 1), 2654435761) >>> 0) % 3 === 0;
+      facadeQuad(roof, e.a, e.b, out, s, s + ww, foot + z0, foot + z0 + wh, 0.04, lit ? LIT_WINDOW : OPENING, batter); windows++;
     }
   });
 }
