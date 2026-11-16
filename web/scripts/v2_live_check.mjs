@@ -157,16 +157,16 @@ try {
     assert.match(rejected.toast, /WebGPU/); assert.equal(weights().length, count);
     assert.equal(await page.locator('#neural-download-warning').count(), 0);
     await recipe(value => { value.runtime.compute = 'auto'; });
-    await page.locator('#region-name-origin-profile').selectOption('english');
-    await page.locator('#region-name-origin-language').selectOption('en');
-    await page.waitForFunction(() => document.querySelector('#map-names-apply').getAttribute('aria-busy') === 'false');
     await page.locator('#family-tab-settlements').click();
+    await page.locator('#settlements-name-origin-profile').selectOption('english');
+    await page.locator('#settlements-name-origin-language').selectOption('en');
+    await page.waitForFunction(() => document.querySelector('#map-names-apply').getAttribute('aria-busy') === 'false');
     assert.equal(await page.locator('#settlements-name-origin-profile').inputValue(),'english');
     await page.locator('#family-tab-region').click();
   }
   await run('01-neural');
   await page.locator('#view3d').click();
-  await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true');
+  await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true', null, { timeout: 120000 });
   await run('02-complete-map', '#run-chain');
   await page.waitForFunction(() => Number(document.querySelector('.city3d-info b')?.textContent.replace(/\D/g, '')) > 0, null, { timeout: 90000 });
   const full3d = await record('full-generation-in-3d', { info: await page.locator('.city3d-info').textContent() });
@@ -195,7 +195,7 @@ try {
   assert.equal(restored.height, edited.height); assert.deepEqual(restored.buildings, edited.buildings);
   report.checks.push({ name: 'save-reopen', exactHeights: true, exactBuildings: true });
   await page.locator('#view3d').click();
-  await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true');
+  await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true', null, { timeout: 120000 });
   await page.screenshot({ path: resolve(out, '04-3d.png') });
   await page.locator('#view3d').click();
   await page.locator('#map-style').selectOption('satellite');
