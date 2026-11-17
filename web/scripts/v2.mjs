@@ -47,21 +47,26 @@ async function prepare() {
   const wasmPack = existsSync(join(cargoDir, windows ? 'wasm-pack.exe' : 'wasm-pack')) ? join(cargoDir, windows ? 'wasm-pack.exe' : 'wasm-pack') : 'wasm-pack';
   try { await start(wasmPack, ['--version'], rust, true).done; }
   catch { throw new Error('wasm-pack est requis. Installez Rust/rustup puis exécutez cargo install wasm-pack --locked; la toolchain et la cible wasm32 sont définies dans rust/rust-toolchain.toml.'); }
-  for (const [crate, output] of [['wasm', 'wasm'], ['houses-wasm', 'houses']]) {
-    console.log(`Préparation V2 · Rust ${crate} → WASM release (${output})…`);
-    await run(wasmPack, ['build', `crates/${crate}`, '--target', 'web', '--out-dir', `../../pkg/${output}`, '--release', '--no-opt'], rust);
-  }
+  // The single-thread packages (rust/target) and the threads package (its own target dir, std
+  // rebuilt) share no build directory: they compile at the same time, with the same commands and
+  // outputs as one after the other. Their final fat-LTO links are single-threaded each.
+  const singleThread = (async () => {
+    for (const [crate, output] of [['wasm', 'wasm'], ['houses-wasm', 'houses']]) {
+      console.log(`Préparation V2 · Rust ${crate} → WASM release (${output})…`);
+      await run(wasmPack, ['build', `crates/${crate}`, '--target', 'web', '--out-dir', `../../pkg/${output}`, '--release', '--no-opt'], rust);
+    }
+  })();
   // Browsers prefer the shared-memory package (pkg/wasm-threads) when the page is cross-origin
   // isolated (COOP/COEP or coi-serviceworker.js) and fall back to pkg/wasm otherwise. Always rebuilt,
   // so a fresh checkout (web deploy) ships it and workers never run an older Rust schema.
   // --no-threads skips it (the desktop app generates with the native engine and is not isolated)
   // and removes any stale package so the bundle cannot pick it up.
-  if (flags.includes('--no-threads')) {
-    await rm(join(rust, 'pkg/wasm-threads'), { recursive: true, force: true });
-  } else {
-    console.log('V2 preparation · Rust wasm → WASM threads (shared memory, rayon pool)…');
-    await buildWasmVariant('threads');
-  }
+  const threads = flags.includes('--no-threads')
+    ? rm(join(rust, 'pkg/wasm-threads'), { recursive: true, force: true })
+    : (console.log('V2 preparation · Rust wasm → WASM threads (shared memory, rayon pool)…'), buildWasmVariant('threads'));
+  // Wait for both before failing, so a failed side never leaves the other compiling unattended.
+  const results = await Promise.allSettled([singleThread, threads]);
+  for (const result of results) if (result.status === 'rejected') throw result.reason;
   requireWasm();
   if (flags.includes('--neural')) {
     const earth = resolve(root, '../infinite_map');
