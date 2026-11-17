@@ -1,5 +1,5 @@
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
-import { CityGround } from './cityGround';
+import { cityGroundFor } from './cityGround';
 import { rasterHeight, type City3dHeight } from './city3dMeshes';
 
 /** Placement and roads use a coarse planning raster. Display structures must
@@ -13,7 +13,7 @@ export function city3dSurfaceSamplers(
   raster: Pick<SettlementRaster, 'height' | 'water' | 'n' | 'width' | 'geometry'>,
   surface: (x: number, y: number) => number | undefined,
 ): { heightAt: City3dHeight; waterAt: City3dHeight } {
-  const fallback = rasterHeight(raster.height, raster.n, raster.width), ground = new CityGround(raster);
+  const fallback = rasterHeight(raster.height, raster.n, raster.width), ground = cityGroundFor(raster);
   const heightAt: City3dHeight = (x, y) => surface(x, y) ?? fallback(x, y);
   return { heightAt, waterAt: (x, y) => ground.waterAt({ x, y }) ? heightAt(x, y) : NaN };
 }

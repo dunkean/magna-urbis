@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
+import { clipCityGroundPacked, loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 import type { Layout, Partition, Shape, Street } from '../../rust/bridge/urban';
-import { CityGround } from '../src/render/cityGround';
-import { buildCityScene, buildCityBuildings } from '../src/render/cityCanvas';
+import { CityGround, cityGroundFor } from '../src/render/cityGround';
+import { ringContains } from '../src/render/ringRows';
+import { polygonContains } from '../src/gen/core/geom';
+import { buildCityScene, buildCityBuildings, cityGroundSubjects } from '../src/render/cityCanvas';
 import { cityGlPlanMesh } from '../src/render/cityGl';
 import { meshFeatureAt, buildStreetStrokes, STROKE_STRIDE } from '../src/render/cityGlBuild';
 import { streetPaint, buildingColors, DEFAULT_LAYERS } from '../src/render/cityGlStyle';
@@ -65,6 +67,73 @@ describe('physical city ground', () => {
     const dry = ground.clip(rect(0,0,40));
     expect(dry).toHaveLength(2);
     expect(dry.flatMap(s=>s.outer).filter(p=>p.x>0 && p.x<40).every(p=>p.x===19 || p.x===21)).toBe(true);
+  });
+});
+
+describe('shared display ground', () => {
+  it('tests long rings by rows with the booleans of polygonContains', () => {
+    let seed = 12345; const random = (): number => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+    for (const points of [48, 257, 3000]) {
+      // A wiggly star ring, with a few vertical and horizontal runs and repeated ordinates.
+      const ring = Array.from({ length: points }, (_, i) => { const a = i / points * Math.PI * 2, r = 400 + 150 * Math.sin(a * 7) + 40 * random();
+        return { x: 1000 + Math.round(r * Math.cos(a)), y: 1000 + (i % 9 ? r * Math.sin(a) : Math.round(r * Math.sin(a))) }; });
+      const probes = [...ring.slice(0, 60).map(p => ({ x: p.x - 3, y: p.y })), ...ring.slice(0, 60).map(p => ({ x: p.x + .5, y: p.y })),
+        ...Array.from({ length: 4000 }, () => ({ x: 300 + 1400 * random(), y: 300 + 1400 * random() })),
+        { x: 1000, y: NaN }, { x: NaN, y: 1000 }, { x: 1000, y: -1e9 }, { x: 1000, y: 1e9 }, { x: 1000, y: Math.min(...ring.map(p => p.y)) }, { x: 1000, y: Math.max(...ring.map(p => p.y)) }];
+      let inside = 0;
+      for (const p of probes) { const expected = polygonContains(ring, p); expect(ringContains(ring, p.x, p.y)).toBe(expected); if (expected) inside++; }
+      expect(inside).toBeGreaterThan(500);
+    }
+  });
+  it('answers waterAt on a long river ring as the edge-by-edge test does', () => {
+    const river = Array.from({ length: 400 }, (_, i) => ({ x: i * 2, y: 100 + 30 * Math.sin(i / 20) })).concat(Array.from({ length: 400 }, (_, i) => ({ x: (399 - i) * 2, y: 112 + 30 * Math.sin((399 - i) / 20) })));
+    const ground = new CityGround({ n: 2, width: 800, water: new Uint8Array(4), geometry: { water: [[river]] } });
+    for (let x = 1; x < 800; x += 7.3) for (let y = 60; y < 150; y += 1.7) expect(ground.waterAt({ x, y })).toBe(polygonContains(river, { x, y }));
+  });
+  it('clips ahead in shares with the results of the direct clip, and a plan then only reads them', async () => {
+    const water = Uint8Array.from({ length: 64 }, (_, i) => i % 8 >= 6 ? 1 : 0), geometry = { water: [[rect(31, 0, 2, 80).outer]] };
+    const shapes = Array.from({ length: 23 }, (_, i) => rect(i * 3.3, (i * 7) % 60, 9, 11));
+    const direct = new CityGround({ n: 8, width: 80, water, geometry }).clipMany(shapes);
+    const ahead = new CityGround({ n: 8, width: 80, water, geometry });
+    let tasks = 0;
+    const clipped = await ahead.clipAhead(shapes, 4, async list => { tasks = list.length; return list.map(task => clipCityGroundPacked(task, task.canals, task.subjects)); });
+    expect(clipped).toBe(23); expect(tasks).toBe(4); expect(ahead.unclipped(shapes)).toBe(0);
+    const read = ahead.clipMany(shapes);
+    expect(read).toEqual(direct);
+    // A shape the water does not touch stays itself, as in the direct clip.
+    read.forEach((pieces, i) => expect(pieces[0] === shapes[i]).toBe(direct[i][0] === shapes[i]));
+    expect(read.some((pieces, i) => pieces[0] === shapes[i])).toBe(true); expect(read.some((pieces, i) => pieces[0] !== shapes[i])).toBe(true);
+    // A failed run clips nothing ahead: the direct clip then does the work.
+    const failed = new CityGround({ n: 8, width: 80, water, geometry });
+    await expect(failed.clipAhead(shapes, 2, async () => { throw new Error('no worker'); })).rejects.toThrow('no worker');
+    expect(failed.unclipped(shapes)).toBe(23); expect(failed.clipMany(shapes)).toEqual(direct);
+  });
+  it('lists for a clip ahead the very shapes a plan clips', () => {
+    const shapes = [rect(0, 0, 10), rect(20, 0, 10), rect(10, 10, 20)];
+    const layout = { key: 'shore', culture: 'arbitrary', center: { x: 20, y: 20 }, quarters: [{ shape: rect(0, 0, 40), phase: 0, zone: 'core' }], streets: [],
+      blocks: shapes.map((shape, i) => ({ shape, kind: i === 2 ? 'reserve' : 'block', quarter: 0, zone: 'core', axis: { x: 1, y: 0 } })), warnings: [] } as unknown as Layout;
+    const partition = { key: 'shore', parcels: shapes.map((shape, i) => ({ id: `p${i}`, shape, block: i, use: i === 1 ? 'reserve' : 'plot', axis: { x: 1, y: 0 }, rank: 1 })), warnings: [] } as unknown as Partition;
+    const ground = { n: 4, width: 40, water: Uint8Array.from({ length: 16 }, (_, i) => i % 4 >= 2 ? 1 : 0) };
+    const subjects = cityGroundSubjects([layout], [partition]);
+    expect(subjects).toHaveLength(7);
+    cityGroundFor(ground).clipMany(subjects);
+    const scene = buildCityScene([layout], [partition], ground);
+    expect(scene.ground).toBe(cityGroundFor(ground)); expect(scene.ground!.unclipped(subjects)).toBe(0);
+    expect(scene.blocks.map(b => b.ground)).toEqual(subjects.slice(0, 3).map(s => scene.ground!.clip(s)));
+    expect(scene.parcels.map(p => p.ground)).toEqual(subjects.slice(4).map(s => scene.ground!.clip(s)));
+  });
+  it('shares one clipper between the plans of the same ground, by identity or by content', () => {
+    const water = Uint8Array.from({ length: 16 }, (_, i) => i % 4 >= 2 ? 1 : 0), vector = (): { water: Shape['outer'][][] } => ({ water: [[rect(5, 0, 2, 40).outer]] });
+    const a = { n: 4, width: 40, water, geometry: vector() }, b = { n: 4, width: 40, water: water.slice(), geometry: vector() };
+    const ground = cityGroundFor(a), shape = rect(0, 0, 40);
+    expect(cityGroundFor(a)).toBe(ground); expect(cityGroundFor(b)).toBe(ground);
+    expect(cityGroundFor(b).clip(shape)).toBe(ground.clip(shape));
+    expect(cityGroundFor({ ...a, geometry: { water: [[rect(6, 0, 2, 40).outer]] } })).not.toBe(ground);
+    expect(cityGroundFor({ ...a, width: 80 })).not.toBe(ground);
+    // A raster edited in place gets a new clipper, and the content-equal raster no longer shares the old one's source.
+    b.water[0] = 1;
+    expect(cityGroundFor(b)).not.toBe(ground); expect(cityGroundFor(b).clip(shape)).not.toEqual(ground.clip(shape));
+    expect(cityGroundFor(a)).toBe(ground);
   });
 });
 

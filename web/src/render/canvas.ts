@@ -973,7 +973,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       const rs = gpu.lastStats(); noteLiveCount('n:draws', rs.drawCalls); noteLiveCount('n:clips', rs.clips ?? 0); noteLiveCount('n:ops', rs.ops ?? 0); noteLiveCount('n:ktri', Math.round(rs.triangles / 1000));
     }
     catch (error) { noteGpuFailure(error); retained = undefined; return undefined; }
-    if (r.firstMs !== undefined) { noteGpuTile(r.firstMs, now() - t1); r.firstMs = undefined; }
+    if (r.firstMs !== undefined) { noteGpuTile(r.firstMs, now() - t1, gpu.lastStats().synced); r.firstMs = undefined; }
     const overlay = drawVector(view, canvas, 'overlays');
     stats = { ...overlay, ms: now() - start, band: selectLod(view.scale).band, scale: view.scale, pathsBuilt: 0, pathCache: cache.size,
       rasterHits: 1, rasterBuilt: 0, rasterPending: retainedJob !== undefined || retainedPending ? 1 : 0, rasterBytes: gpu.bytes() };
@@ -1020,7 +1020,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
           else if (list && st && gpu) {
             try {
               const bitmap = gpu.rasterize(list);
-              noteGpuTile(t1 - t0, now() - t1);
+              noteGpuTile(t1 - t0, now() - t1, gpu.lastStats().synced);
               pathsBuilt += st.pathsBuilt; mapStats = st;
               resource = bitmap; release = () => bitmap.close();
             } catch (error) { noteGpuFailure(error); }
@@ -1247,7 +1247,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
               tx.setTransform(1, 0, 0, 1, 0, 0); tx.globalAlpha = 1; tx.globalCompositeOperation = 'source-over';
               tx.clearRect(0, 0, target.width, target.height); tx.drawImage(bitmap, 0, 0);
             } finally { bitmap.close(); }
-            noteGpuTile(t1 - t0, now() - t1);
+            noteGpuTile(t1 - t0, now() - t1, gpu.lastStats().synced);
             return drawn(fs);
           }
         }

@@ -26,7 +26,7 @@ import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pav
 import { harbourPaint, harbourShown } from './harbourStyle';
 import { layoutStreetPavements } from './roadPavement';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, groundWash, naturalGroundWash, isBlended, softStreet, type WashKind } from './groundBlend';
-import { CityGround, boardwalkWidth, isBoardwalk, type CityGroundRaster } from './cityGround';
+import { cityGroundFor, boardwalkWidth, isBoardwalk, type CityGround, type CityGroundRaster } from './cityGround';
 import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3, type ResolvedVolume } from './cityMassing';
 import { drawGardenDetails } from './readableGardens';
 import { softenRuralGround } from './countryside';
@@ -216,8 +216,20 @@ function wallPieces(points: Point[], gates: Point[]): { pieces: Point[][]; gateT
   return { pieces, gateTowers };
 }
 
+/** The shapes `buildCityScene` clips against the water for these layouts and partitions (blocks, lots, allocated
+ * ground), the very objects it will ask for: a clip ahead (CityGround.clipAhead) then answers them from its cache.
+ * A shape missing here is simply clipped by the scene itself. */
+export function cityGroundSubjects(layouts: readonly Layout[], partitions: readonly Partition[] = []): Shape[] {
+  const shapes: Shape[] = [];
+  for (const layout of layouts) {
+    for (const block of layout.blocks) shapes.push(block.kind === 'reserve' ? softenRuralGround(block.shape) : block.shape);
+    for (const shape of layout.structure?.allocated?.length ? layout.structure.allocated : layout.quarters.map(q => q.shape)) shapes.push(shape);
+    for (const parcel of partitions.find(p => p.key === layout.key)?.parcels ?? []) shapes.push(parcel.use === 'reserve' ? softenRuralGround(parcel.shape) : parcel.shape);
+  }
+  return shapes;
+}
 export function buildCityScene(layouts: readonly Layout[], partitions: readonly Partition[] = [], terrain?: CityGroundRaster): CityScene {
-  const ground = terrain && new CityGround(terrain);
+  const ground = terrain && cityGroundFor(terrain);
   const blocks: CityBlock[] = [], parcels: CityParcel[] = [], streets: CityStreet[] = [], walls: CityWall[] = [], districts: CityDistrict[] = [];
   const landmarks: CityLandmark[] = [], footprint: Shape[] = [], parcelById = new Map<string, number>();
   const extent = { ...EMPTY }, quays: Quay[] = [];

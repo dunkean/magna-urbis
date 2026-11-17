@@ -72,7 +72,16 @@ export interface GroundRaster { n: number; width: number; water: Uint8Array }
 /** Each subject minus the wet cells and the canals; the subject object itself when no water touches it. */
 export function clipCityGround(raster: GroundRaster, canals: readonly Shape[], subjects: readonly Shape[]): Shape[][] {
   if (!subjects.length) return [];
-  const data = core().render_city_ground_clip(raster.n, raster.width, raster.water, writeShapes(canals.map(shapeRings)), writeShapes(subjects.map(shapeRings)));
+  return unpackClippedGround(clipCityGroundPacked(raster, packClipShapes(canals), packClipShapes(subjects)), subjects);
+}
+/** The three steps of `clipCityGround`, for a clip run in another realm: shapes packed as one transferable list, the
+ * kernel on packed lists (each subject is clipped on its own: a share of the subjects gives its share of the result),
+ * and the result read back against the subjects it was computed from. */
+export const packClipShapes = (shapes: readonly Shape[]): Float64Array => writeShapes(shapes.map(shapeRings));
+export function clipCityGroundPacked(raster: GroundRaster, canals: Float64Array, subjects: Float64Array): Float64Array {
+  return core().render_city_ground_clip(raster.n, raster.width, raster.water, canals, subjects);
+}
+export function unpackClippedGround(data: Float64Array, subjects: readonly Shape[]): Shape[][] {
   const out: Shape[][] = [];
   let at = 0;
   for (const subject of subjects) {

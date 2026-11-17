@@ -7,6 +7,8 @@ import { DISC_STRIDE, JOIN_STRIDE, SEGMENT_STRIDE, fillFans, strokeSegments, typ
 
 const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|basic render|microsoft warp|software/i;
 const BUDGET = 256 * 1024 * 1024;
+/** Replays of a context that read the GL error flags at once, and the longest time between two reads afterwards (ms). */
+const ERROR_READ_FIRST = 2, ERROR_READ_MS = 2000;
 /** Textures (patterns, sprite atlases, cut masks) beyond this are dropped least recently used first, never during the render that uses them. */
 const TEXTURE_BUDGET = 256 * 1024 * 1024;
 const SPRITE_BUDGET = 128 * 1024 * 1024;
@@ -389,7 +391,9 @@ class Rasterizer implements GpuRasterizer {
   private height = 1;
   private currentClip: ClipNode | null | undefined;
   private post: Mat = IDENTITY;
-  private stats = { drawCalls: 0, triangles: 0, ms: 0, clips: 0, ops: 0 };
+  private stats = { drawCalls: 0, triangles: 0, ms: 0, clips: 0, ops: 0, synced: false };
+  private replays = 0;
+  private errorRead = 0;
   private onLost = (event: Event): void => { event.preventDefault(); this.contextLost = true; };
   constructor(private canvas: Surface, private gl: WebGL2RenderingContext) {
     const info = gl.getExtension('WEBGL_debug_renderer_info');
@@ -411,7 +415,7 @@ class Rasterizer implements GpuRasterizer {
   bytes(): number {
     return this.arena.capacity + this.spriteCapacity + this.streamBytes + this.textureBytes;
   }
-  lastStats(): { drawCalls: number; triangles: number; ms: number; clips: number; ops: number } { return { ...this.stats }; }
+  lastStats(): { drawCalls: number; triangles: number; ms: number; clips: number; ops: number; synced: boolean } { return { ...this.stats }; }
   invalidateImage(source: ImageSource): void {
     const t = this.textures.get(source);
     if (t) { this.gl.deleteTexture(t.texture); this.textures.delete(source); this.textureBytes -= t.bytes; }
@@ -829,7 +833,7 @@ class Rasterizer implements GpuRasterizer {
   private renderParts(parts: readonly RasterPart[], [width, height]: readonly [number, number]): void {
     if (this.lost) throw new GpuRasterError('Vector WebGL2 context lost or disposed', true);
     const gl = this.gl, start = performance.now();
-    this.stats = { drawCalls: 0, triangles: 0, ms: 0, clips: 0, ops: 0 };
+    this.stats = { drawCalls: 0, triangles: 0, ms: 0, clips: 0, ops: 0, synced: false };
     try {
       if (!(width > 0 && height > 0)) throw new GpuRasterError('Vector target must have positive dimensions');
       if (this.canvas.width !== width) this.canvas.width = width;
@@ -864,8 +868,15 @@ class Rasterizer implements GpuRasterizer {
         }
       }
       if (this.lost) throw new GpuRasterError('Vector WebGL2 context lost during replay', true);
-      const error = gl.getError();
-      if (error !== gl.NO_ERROR) throw new GpuRasterError(`Vector WebGL2 error 0x${error.toString(16)}`, this.lost);
+      // Reading the error flags is a synchronous round trip: the page waits until the graphics process has run
+      // everything queued, this replay and any other canvas's work. The flags are sticky, so they are read for the
+      // first replays of a context (a broken program or state shows at once) and then at most once per interval:
+      // an error still reaches the caller, one interval late at most.
+      if (this.replays++ < ERROR_READ_FIRST || start - this.errorRead >= ERROR_READ_MS) {
+        this.errorRead = start; this.stats.synced = true;
+        const error = gl.getError();
+        if (error !== gl.NO_ERROR) throw new GpuRasterError(`Vector WebGL2 error 0x${error.toString(16)}`, this.lost);
+      }
     } catch (error) {
       if (error instanceof GpuRasterError) throw error;
       throw new GpuRasterError(`Vector replay: ${String(error)}`, this.lost);

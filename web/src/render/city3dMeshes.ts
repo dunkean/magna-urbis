@@ -1079,7 +1079,17 @@ CITY3D_MATERIALS.push({ id: 'city3d:yard:hedge', label: 'hedge', roles: [], patt
  * timber line (on an earth bank for `gord`); hedges stay on the plan. */
 export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w', culture = '', waterColor?: string): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
-  const g = (p: Point): number => (heightAt ? heightAt(p.x, p.y) : 0) || 0;
+  // The ground under a point is read once per call: the water sheet of a moat and the prisms of a curtain ask for the
+  // same corners again and again (each triangle its three, each piece its neighbour's).
+  const seated = new Map<number, Map<number, number>>();
+  const g = (p: Point): number => {
+    if (!heightAt) return 0;
+    let row = seated.get(p.y);
+    if (!row) seated.set(p.y, row = new Map());
+    let h = row.get(p.x);
+    if (h === undefined) row.set(p.x, h = heightAt(p.x, p.y) || 0);
+    return h;
+  };
   const push = (b: PlacedBuilding | undefined): void => {
     if (!b) return;
     const paint = (id: string): string => {

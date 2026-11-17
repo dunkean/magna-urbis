@@ -162,7 +162,8 @@ export interface GpuRasterizer {
   /** GPU bytes owned (geometry, textures). */
   bytes(): number;
   /** Last rasterize: draw calls, triangles, GPU-side ms when measurable (else CPU submit ms). */
-  lastStats(): { drawCalls: number; triangles: number; ms: number; clips?: number; ops?: number };
+  /** `synced`: the replay waited for the graphics process (it read the error flags), so its time includes the GPU's. */
+  lastStats(): { drawCalls: number; triangles: number; ms: number; clips?: number; ops?: number; synced?: boolean };
   dispose(): void;
 }
 

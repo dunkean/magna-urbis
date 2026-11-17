@@ -7,6 +7,7 @@
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { Surface } from '../../../rust/bridge/housesContract';
 import type { Shape } from '../../../rust/bridge/urban';
+import type { CityGround, GroundClipTask } from './cityGround';
 import { buildCityBuildings, cityBuildingBins, cityBuildingCulture, cityBuildingLink, citySnowAltitudes, type CityBuilding, type CityBuildings, type CityRoofs, type CityScene } from './cityCanvas';
 import { decodeCitySiteVisuals, decodeCitySiteVisualsAt, siteVisualsPackOf } from './cityDisplayBuffers';
 import { siteVisualScene, siteVisualSceneSource } from '../ui/urbanSilhouettes';
@@ -100,6 +101,36 @@ function takeWorkers(n: number): Worker[] {
   if (!warm.length) clearTimeout(warmTimer);
   while (pool.length < n) pool.push(spawn());
   return pool;
+}
+/** Below this many shapes the page clips a plan's ground itself (about 20 µs a shape; a worker round trip costs more). */
+const CLIP_AHEAD_MIN_SHAPES = 4000;
+/** A clip ahead that does not answer in time is dropped and the page clips as it always did: a few times what the
+ * page itself would take (starved workers, on a saturated machine, were seen ten times slower than the page). */
+const CLIP_AHEAD_MS_PER_SHAPE = 0.1, CLIP_AHEAD_MIN_MS = 1500, CLIP_AHEAD_MAX_MS = 15000;
+/** Clips the ground of plans about to be built (`cityGroundSubjects`) on the warm build workers, in shares: the page
+ * no longer runs the water boolean of a region's towns on its own thread. Only with workers already started
+ * (`prewarmCityBuildingWorkers`): they are idle until the buildings are built, right after the plans. Any failure
+ * leaves the shapes to the plans' own clip, with the same result. */
+export async function clipCityGroundAhead(ground: CityGround, shapes: readonly Shape[]): Promise<void> {
+  const count = typeof Worker === 'undefined' || warm.length < 2 ? 0 : ground.unclipped(shapes);
+  if (count < CLIP_AHEAD_MIN_SHAPES) return;
+  const patience = Math.max(CLIP_AHEAD_MIN_MS, Math.min(CLIP_AHEAD_MAX_MS, count * CLIP_AHEAD_MS_PER_SHAPE));
+  // The workers leave the warm list while they clip: a second caller cannot reuse them, a release cannot end them.
+  const pool = warm.splice(0, warm.length), start = performance.now();
+  let lost = false;
+  try {
+    await ground.clipAhead(shapes, pool.length, tasks => Promise.all(tasks.map((task, k) => new Promise<Float64Array>((resolve, reject) => {
+      const w = pool[k], timer = setTimeout(() => reject(new Error('city ground clip timed out')), patience);
+      w.onmessage = ({ data }: MessageEvent<{ clipped?: Float64Array; error?: string }>) => { clearTimeout(timer); if (data.clipped) resolve(data.clipped); else reject(new Error(data.error ?? 'city ground clip failed')); };
+      w.onerror = e => { clearTimeout(timer); reject(new Error(e.message || 'city ground clip failed')); };
+      w.postMessage({ clip: task }, [task.subjects.buffer]);
+    }))));
+  } catch (error) { lost = true; console.warn('Parallel city ground clip failed, clipping on the page:', error); }
+  if (lost) { for (const w of pool) w.terminate(); return; }
+  for (const w of pool) { w.onmessage = null; w.onerror = null; }
+  performance.measure('displayprep:ground-clip:workers', { start });
+  warm.unshift(...pool);
+  clearTimeout(warmTimer); warmTimer = setTimeout(releaseCityBuildingWorkers, WARM_MS);
 }
 /** Per worker, the indices of the sites its buildings (`worker`, `worker + workers`…) come from: the scene keeps the
  * sites' order and skips some (open spaces, empty surfaces), so each building is the next site with its id. Undefined

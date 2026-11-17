@@ -295,10 +295,24 @@ const SNOW_CLASS = 28;
 /** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
  * grain classes, it only tells the shaders which faces glow (buildingNight). */
 const LIT_CLASS = 32;
+/** The matches of the two material id patterns read for every triangle, kept per id (a scene has a few dozen ids). */
+const displayMaterials = new Map<string, RegExpExecArray | null>(), materialTints = new Map<string, RegExpExecArray | null>();
+function displayMaterial(id: string): RegExpExecArray | null {
+  let m = displayMaterials.get(id);
+  if (m === undefined) { if (displayMaterials.size > 4096) displayMaterials.clear(); displayMaterials.set(id, m = /^city3d:(cover|wall):([a-z]+)$/.exec(id)); }
+  return m;
+}
+/** The `@rrggbb` / `@rgb` tint suffix of a material id. */
+function materialTint(raw: string | undefined): RegExpExecArray | null {
+  const key = raw ?? '';
+  let m = materialTints.get(key);
+  if (m === undefined) { if (materialTints.size > 4096) materialTints.clear(); materialTints.set(key, m = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(key)); }
+  return m;
+}
 /** Grain class of a face from its display material id `city3d:<cover|wall>:<key>`; 0 (no grain) for openings, roads,
  * trees, snow huts, ruins and native materials. */
 function materialClass(id: string | undefined, normal: readonly number[], culture: string): number {
-  const m = /^city3d:(cover|wall):([a-z]+)$/.exec(id ?? '');
+  const m = displayMaterial(id ?? '');
   if (!m) return 0;
   if (m[1] === 'wall') return WALL_CLASS[m[2]] ?? 0;
   const grain = roofGrain(m[2], Math.abs(normal[2]) > .995 * (Math.hypot(normal[0], normal[1], normal[2]) || 1), culture);
@@ -394,9 +408,13 @@ export class UrbanBuildingPass {
   }
   private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod, yardLevel?: number): void {
     this.release(sector);
-    const groups = new Map<string, Batch>(), textured = !!this.appearance.textured;
+    // Vertices go straight into one growing Float32Array per batch: the values the number list held, rounded to
+    // single precision as its conversion did. `seen` holds the colour objects already checked against the palette
+    // (a building's faces share a few of them), so the palette is scanned once per colour, not once per triangle.
+    const groups = new Map<string, { batch: Batch; data: Float32Array; length: number; seen: Set<Vec3> }>(), textured = !!this.appearance.textured;
+    const catalogue = { materials: this.source?.materials ?? [] };
     for (const { building } of sector.entries) {
-      const colors = new Map<string, Vec3>(), culture = building.culture?.culture ?? '';
+      const colors = new Map<string, Map<string, Vec3>>(), culture = building.culture?.culture ?? '';
       let h = 2166136261; for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
       const tone = Math.round((h >>> 0) / 0xffffffff * 15) / 15;
       const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
@@ -404,17 +422,19 @@ export class UrbanBuildingPass {
       // Terrain structures follow the relief whole; a building keeps its real height above its ground.
       const ground = /^city3d-(wall|bridge|quay|harbour)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
       const paintFace = (face: BuildingTriangle, snow = 0): void => {
-        const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(raw ?? '');
+        const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = materialTint(raw);
         const id = tm ? raw.slice(0, tm.index) : raw;
-        const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, {materials: this.source?.materials ?? []});
         // Thin enclosures already carry their final yard colours. A roof/wall
         // atlas and its normal-map highlights turn subpixel copings into white
         // parcel outlines; retain the same matte material at every yard LOD.
         const layer = textured && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
-        const base = face.surface === 'roof' ? paint.roof : paint.wall, key = `${raw}|${face.surface}`;
-        let c = colors.get(key);
+        let surfaceColors = colors.get(face.surface);
+        if (!surfaceColors) colors.set(face.surface, surfaceColors = new Map());
+        let c = surfaceColors.get(String(raw));
         if (!c) {
-          c = rgb(base);
+          // The paint is read for the first face of each material and surface only.
+          const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, catalogue);
+          c = rgb(face.surface === 'roof' ? paint.roof : paint.wall);
           if (this.appearance.diagnostic === 'none' || face.surface === 'yard') {
             if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
             else if (tm) c = c.map((v, i) => Math.min(1, v * parseInt(tm[1][i], 16) / 8)) as Vec3;
@@ -429,7 +449,7 @@ export class UrbanBuildingPass {
           const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? '');   // switch treeHouseGreens: forest greens, whatever the colour mode
           if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36');   // a canopy layer may carry its own green
           if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
-          colors.set(key, c);
+          surfaceColors.set(String(raw), c);
         }
         if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * .4);
         const recolored = this.appearance.diagnostic === 'none' && (!!this.appearance.colors?.building && face.surface === 'roof' || tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
@@ -437,16 +457,28 @@ export class UrbanBuildingPass {
         // takes the snow class in place of its cover's.
         const cls = !textured && face.surface !== 'yard' && this.appearance.style === 'cartographic' && this.appearance.diagnostic === 'none' ? snow >= .4 ? SNOW_CLASS : materialClass(id, face.normal, culture) : 0;
         const unit = (1 + (id === 'city3d:wall:lit' ? LIT_CLASS : cls) / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
-        const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : `vertex-colour|${!!snow}`, mean = MATERIALS.layers[layer]?.mean_rgb;
-        const tint = mean && recolored ? c.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
-          : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
-        let batch = groups.get(color); if (!batch) { batch = { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }; groups.set(color, batch); }
-        if (batch.palette && !batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
-        for (const [i, p] of face.points.entries()) {
-          batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0] * unit, face.normal[2] * unit, face.normal[1] * unit);
-          if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); } else batch.values.push(c[0], c[1], c[2]);
-          batch.values.push(face.ground?.[i] ?? Math.min(p[2], ground));
+        const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
+        let group = groups.get(color);
+        if (!group) {
+          const mean = MATERIALS.layers[layer]?.mean_rgb, shade = c;
+          const tint = mean && recolored ? shade.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
+            : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
+          group = { batch: { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }, data: new Float32Array(4096), length: 0, seen: new Set() };
+          groups.set(color, group);
         }
+        const batch = group.batch, points = face.points;
+        // A snowed face has a colour of its own (never seen before): it is compared by value, as every colour was.
+        if (batch.palette && (snow || !group.seen.has(c))) { if (!snow) group.seen.add(c); if (!batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c); }
+        if (group.length + points.length * 10 > group.data.length) { const grown = new Float32Array(Math.max(group.data.length * 2, group.length + points.length * 10)); grown.set(group.data.subarray(0, group.length)); group.data = grown; }
+        const data = group.data; let at = group.length;
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          data[at++] = p[0] - sector.origin[0]; data[at++] = p[2]; data[at++] = p[1] - sector.origin[1];
+          data[at++] = face.normal[0] * unit; data[at++] = face.normal[2] * unit; data[at++] = face.normal[1] * unit;
+          if (textured) { const [u, v] = faceUv(p, face.normal, layer); data[at++] = u; data[at++] = v; data[at++] = layer; } else { data[at++] = c[0]; data[at++] = c[1]; data[at++] = c[2]; }
+          data[at++] = face.ground?.[i] ?? Math.min(p[2], ground);
+        }
+        group.length = at;
       };
       const snow = this.appearance.style !== 'silhouette' && this.appearance.diagnostic === 'none' ? mapGroundSnow(this.snowAltitudes.get(building.id) ?? building.ground_z_m, this.appearance.roofSnow) : 0;
       const heat = snow ? buildingHeat(building.function) : 0;
@@ -463,10 +495,10 @@ export class UrbanBuildingPass {
       }, overview, featureLod, yardLevel);
     }
     const batches: Batch[] = [];
-    for (const batch of groups.values()) {
-      if (!batch.values.length) continue;
-      this.upload(batch, new Float32Array(batch.values));
-      batch.count = batch.values.length / batch.stride; batch.values = []; batches.push(batch);
+    for (const { batch, data, length } of groups.values()) {
+      if (!length) continue;
+      this.upload(batch, data.slice(0, length));
+      batch.count = length / batch.stride; batches.push(batch);
     }
     batches.sort((a, b) => Number(a.snow) - Number(b.snow));
     sector.cached = { overview, featureLod, yardLevel, batches, used: this.tick };

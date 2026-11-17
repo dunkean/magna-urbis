@@ -8,7 +8,7 @@ import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
-import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
+import { buildCityBuildings, buildCityScene, cityGroundSubjects, drawCity, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
 import { CityGlComposite, cityGlDrawOptions, mergeCityBuildings, mergeCityPlans } from '../render/cityGlView';
 import type { CityGlFrame } from '../render/cityGl';
@@ -23,7 +23,8 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCitiesOf } from './nativeProducts';
 import { cityGroundOf } from './rustUrban';
-import { buildCityBuildingsParallel, releaseCityBuildingWorkers } from '../render/cityBuildingsParallel';
+import { buildCityBuildingsParallel, clipCityGroundAhead, releaseCityBuildingWorkers } from '../render/cityBuildingsParallel';
+import { cityGroundFor } from '../render/cityGround';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 
 export interface NativeCityMapStats {
@@ -159,7 +160,11 @@ function cityPlans(world: World): CityScene[] {
 }
 /** `createNativeCityMap` with the city volumes of the unedited native towns built over workers (same result). */
 export async function createNativeCityMapAsync(world: World, onInvalidate: () => void): Promise<NativeCityMap> {
-  const cities = nativeCitiesOf(world), plans = cityPlans(world);
+  const cities = nativeCitiesOf(world);
+  // The water clip of every town's lots and blocks runs on the warm build workers first; the plans then read it.
+  if (cities.length)
+    await clipCityGroundAhead(cityGroundFor(cityGroundOf(world)), cities.flatMap(city => cityGroundSubjects(city.layouts, city.partitions ?? [])));
+  const plans = cityPlans(world);
   const buildings = await Promise.all(cities.map((city, i) => usesNativeHouseRenderer(city.scene) ? undefined
     : buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !largeTown(city) })));
   releaseCityBuildingWorkers();
