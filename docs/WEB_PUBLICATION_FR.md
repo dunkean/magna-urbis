@@ -35,6 +35,11 @@ supprime le worktree et reconstruit tout, pour une vérification complète
 occasionnelle. L’installeur de bureau reste publié séparément, par tag, via
 GitHub Actions (`DESKTOP_RELEASE.md`).
 
+Une page ouverte avant une publication charge encore à la demande les fichiers
+de son propre build. Les fichiers hachés de `assets/` qui ne font plus partie du
+build restent donc publiés 3 jours après leur retrait (`ASSET_RETENTION_DAYS`) ;
+`assets-retained.json`, sur `gh-pages`, note la date de retrait de chacun.
+
 Les interfaces actuelles demandent Rust, la cible WASM et `wasm-pack` :
 `prepare:v2` compile les moteurs procéduraux et les maisons avant le build.
 Il compile aussi toujours le paquet multithread `rust/pkg/wasm-threads`

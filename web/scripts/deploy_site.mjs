@@ -1,6 +1,6 @@
 /** Publish a committed source snapshot to one of the two custom domains. */
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,8 @@ const targets = {
   v2: { repository: 'https://github.com/dunkean/magna-urbis.git', domain: 'magna-urbis.org', output: 'dist-v2' },
 };
 const target = targets[version];
+/** Days a hashed asset of an earlier build stays published, for pages opened before a publication. */
+const ASSET_RETENTION_DAYS = 3;
 function run(command, args, cwd = root, capture = false) {
   const result = spawnSync(command, args, {
     cwd, windowsHide: true, encoding: 'utf8',
@@ -77,6 +79,21 @@ try {
   if (!existsSync(join(artifact, 'index.html'))) throw new Error('Missing index.html in build output');
 
   run('git', ['clone', '--depth', '1', '--branch', 'gh-pages', target.repository, site]);
+  // A page opened before this publication still lazily loads chunks of its own build: hashed
+  // assets that leave the build stay published for ASSET_RETENTION_DAYS, counted from the first
+  // publication without them (assets-retained.json on gh-pages records that date per file).
+  const retentionFile = join(site, 'assets-retained.json'), retainedDir = join(temporary, 'retained');
+  const leftSince = existsSync(retentionFile) ? JSON.parse(readFileSync(retentionFile, 'utf8')) : {};
+  const builtAssets = new Set(readdirSync(join(artifact, 'assets')));
+  const now = Date.now(), retained = {};
+  mkdirSync(retainedDir, { recursive: true });
+  for (const name of existsSync(join(site, 'assets')) ? readdirSync(join(site, 'assets')) : []) {
+    if (builtAssets.has(name)) continue;
+    const since = Number.isFinite(leftSince[name]) ? leftSince[name] : now;
+    if (now - since > ASSET_RETENTION_DAYS * 86400000) continue;
+    retained[name] = since;
+    renameSync(join(site, 'assets', name), join(retainedDir, name));
+  }
   // Preserve the separately published gallery and documentation.
   for (const entry of readdirSync(site)) {
     if (['.git', 'gallery', 'scientific'].includes(entry)) continue;
@@ -85,6 +102,9 @@ try {
     rmSync(path, { recursive: true, force: true });
   }
   cpSync(artifact, site, { recursive: true });
+  cpSync(retainedDir, join(site, 'assets'), { recursive: true });
+  writeFileSync(retentionFile, `${JSON.stringify(retained, null, 1)}\n`);
+  console.log(`Kept ${Object.keys(retained).length} assets of earlier builds (${ASSET_RETENTION_DAYS} days after they leave the build).`);
   for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     if (existsSync(join(source, name))) cpSync(join(source, name), join(site, name));
   }
