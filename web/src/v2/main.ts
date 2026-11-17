@@ -99,8 +99,19 @@ import { mountV2TestHook } from './testHook';
 import { armAutosave, takeAutosave, scheduleAutosave, saveAutosaveNow, mountNewButton } from './autosave';
 import { resetSettings, markAllStagesStale, RESET_LABEL, RESET_TITLE, RESET_CONFIRM, RESET_DONE } from './settingsReset';
 showBrowserAdvice();
+// A redeploy replaces the hashed chunks: a page opened before it fails to load a lazy module ("Failed to fetch
+// dynamically imported module"). Reload once to pick up the new build instead of breaking the view.
+window.addEventListener('vite:preloadError', event => {
+  let reloaded = false;
+  try { reloaded = sessionStorage.getItem('magna-chunk-reload') === '1'; sessionStorage.setItem('magna-chunk-reload', '1'); } catch { /* storage blocked */ }
+  if (reloaded) return;
+  event.preventDefault();
+  location.reload();
+});
+// Forget the guard once the fresh page has run a while, so a later redeploy is handled again (never a reload loop).
+window.addEventListener('load', () => setTimeout(() => { try { sessionStorage.removeItem('magna-chunk-reload'); } catch { /* storage blocked */ } }, 60_000));
 
-const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
+const $ =<T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]!));
 for(const cls of DEMOGRAPHIC_CLASSES)registerMessages({[cls.id]:{en:cls.label,fr:cls.labelFr}});
 registerMessages({'Modifier villes, quartiers et bâtiments':{en:'Edit towns, districts & buildings',fr:'Modifier villes, quartiers et bâtiments'}});
