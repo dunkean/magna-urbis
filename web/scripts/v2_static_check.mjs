@@ -45,8 +45,9 @@ try {
   assert.equal(await page.locator('#progress-card').isVisible(),false);
   const reveal=async selector=>page.locator(selector).evaluate(node=>{for(let parent=node.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;});
   await page.locator('#hardware-open').click();
-  await page.locator('#exec-engine').selectOption('rust');
-  await page.locator('#exec-compute').selectOption('cpu');
+  // The web edition offers Automatic / WebGPU / CPU only (Rust in the browser); pick the CPU path.
+  await page.locator('#exec-engine').selectOption('cpu');
+  if (await page.locator('#exec-compute').count()) await page.locator('#exec-compute').selectOption('cpu');
   await page.locator('#hardware-dialog [data-close]').first().click();
   // This gate qualifies CPU/WASM and static assets; material rendering is covered by the real-GPU live check.
   await page.locator('#map-style').selectOption('parchment');
