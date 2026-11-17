@@ -55,9 +55,11 @@ jobs:
           git -C ../infinite_map sparse-checkout set native/neural-earth tools/wasm
           git -C ../infinite_map fetch --depth 1 --filter=blob:none origin "$revision"
           git -C ../infinite_map checkout --detach FETCH_HEAD
+      # The desktop app generates with the native Rust engine and its WebView is not cross-origin
+      # isolated, so the WASM threads package (web deploy only) would never load there.
       - name: Prepare WASM
         working-directory: web
-        run: npm run prepare:v2
+        run: npm run prepare:v2 -- --no-threads
       - name: Build desktop installers and both native engines
         working-directory: web
         run: npm run app:v2:build -- --bundles=${{ matrix.bundles }}

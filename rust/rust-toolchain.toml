@@ -1,5 +1,6 @@
 [toolchain]
 channel = "1.98.0"
 profile = "minimal"
-components = ["rustfmt", "clippy", "rust-analyzer"]
+# rust-src: `-Z build-std` for the WASM threads package (rust/scripts/wasmVariants.mjs).
+components = ["rustfmt", "clippy", "rust-analyzer", "rust-src"]
 targets = ["wasm32-unknown-unknown"]

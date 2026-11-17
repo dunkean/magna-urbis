@@ -51,10 +51,15 @@ async function prepare() {
     console.log(`Préparation V2 · Rust ${crate} → WASM release (${output})…`);
     await run(wasmPack, ['build', `crates/${crate}`, '--target', 'web', '--out-dir', `../../pkg/${output}`, '--release', '--no-opt'], rust);
   }
-  // Auto mode prefers the optional threaded package. Refresh it too rather than
-  // leaving workers on an older Rust schema after updating the single package.
-  if (existsSync(join(rust, 'pkg/wasm-threads/magna_urbis_wasm.js'))) {
-    console.log('Préparation V2 · mise à jour du moteur WASM multithread existant…');
+  // Browsers prefer the shared-memory package (pkg/wasm-threads) when the page is cross-origin
+  // isolated (COOP/COEP or coi-serviceworker.js) and fall back to pkg/wasm otherwise. Always rebuilt,
+  // so a fresh checkout (web deploy) ships it and workers never run an older Rust schema.
+  // --no-threads skips it (the desktop app generates with the native engine and is not isolated)
+  // and removes any stale package so the bundle cannot pick it up.
+  if (flags.includes('--no-threads')) {
+    await rm(join(rust, 'pkg/wasm-threads'), { recursive: true, force: true });
+  } else {
+    console.log('V2 preparation · Rust wasm → WASM threads (shared memory, rayon pool)…');
     await buildWasmVariant('threads');
   }
   requireWasm();
@@ -195,7 +200,7 @@ async function resources() {
 
 try {
   if (flags.includes('--help') || action === 'help') {
-    console.log('Magna Urbis V2 : node scripts/v2.mjs prepare|dev|build|local|desktop-resources|desktop-dev|desktop-build\nprepare : compile terrain + maisons en WASM release; --neural ajoute le runtime et les modèles depuis ../infinite_map.\ndev/build : application Web autonome; local : Web + Rust natif + Python/CUDA optionnel.\ndesktop-resources : prépare le moteur Rust, uv et les scripts sans construire l’interface.\ndesktop-dev/build : application et installateur Tauri séparés de la V1.\nOptions : --no-build (binaire Rust existant), --no-neural (lanceur local sans Python).\nPrérequis et déploiement : rust/desktop-v2/README.md');
+    console.log('Magna Urbis V2 : node scripts/v2.mjs prepare|dev|build|local|desktop-resources|desktop-dev|desktop-build\nprepare : compile terrain + maisons en WASM release; --neural ajoute le runtime et les modèles depuis ../infinite_map.\ndev/build : application Web autonome; local : Web + Rust natif + Python/CUDA optionnel.\ndesktop-resources : prépare le moteur Rust, uv et les scripts sans construire l’interface.\ndesktop-dev/build : application et installateur Tauri séparés de la V1.\nOptions : --no-build (binaire Rust existant), --no-neural (lanceur local sans Python), --no-threads (prepare: skip the WASM threads package).\nPrérequis et déploiement : rust/desktop-v2/README.md');
   } else if (action === 'prepare') await prepare();
   else if (action === 'build') await buildWeb();
   else if (action === 'desktop-resources') { await requireConditioning(); await resources(); }

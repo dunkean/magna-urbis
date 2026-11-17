@@ -46,6 +46,10 @@ try {
     await stageNeuralPublication(join(root, 'rust/pkg/neural-web'), join(source, 'rust/pkg/neural-web'));
     run('npm', ['run', 'build:v2'], web);
     run('npm', ['run', 'test:v2:static'], web);
+    // prepare:v2 builds both core packages; the site must ship the threads one (cross-origin
+    // isolated browsers) beside the single-thread fallback.
+    const coreWasm = readdirSync(join(web, target.output, 'assets')).filter(name => /^magna_urbis_wasm_bg-.+\.wasm$/.test(name));
+    if (coreWasm.length < 2) throw new Error(`Expected the single and threads core WASM assets, found: ${coreWasm.join(', ') || 'none'}`);
   } else run('npm', ['run', 'build'], web);
   const artifact = join(web, target.output);
   if (!existsSync(join(artifact, 'index.html'))) throw new Error('Missing index.html in build output');

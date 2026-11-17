@@ -26,6 +26,12 @@ utilisées pour la construction.
 
 Les interfaces actuelles demandent Rust, la cible WASM et `wasm-pack` :
 `prepare:v2` compile les moteurs procéduraux et les maisons avant le build.
+Il compile aussi toujours le paquet multithread `rust/pkg/wasm-threads`
+(mémoire partagée, pool rayon ; composant `rust-src` de la toolchain épinglée,
+`-Z build-std`). Le site publie les deux moteurs : le navigateur charge le
+multithread quand la page est isolée (`coi-serviceworker.js` sur GitHub Pages),
+sinon le paquet monothread. Le déploiement échoue si le paquet multithread
+manque dans `dist-v2/assets`. `--no-threads` (CI bureau) l'omet.
 Pour la V2, le contrôle navigateur
 `test:v2:static` doit passer avant la publication ; Microsoft Edge est utilisé
 par défaut, ou le canal Playwright indiqué par `MAGNA_BROWSER_CHANNEL`.
