@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
 import { regionalPopulation } from '../src/v2/regionalPopulation';
-import { editRegionalPopulation } from '../src/v2/regionalPopulationEdits';
+import { clearRegionalPopulation, editRegionalPopulation, followEnvironmentPopulation } from '../src/v2/regionalPopulationEdits';
 import { encodeCityCode, decodeCityCode } from '../src/v2/cityCode';
 
 describe('regional population controls', () => {
@@ -58,5 +58,19 @@ describe('regional population controls', () => {
     editRegionalPopulation(s,'isolatedDensity',0);
     expect(s.region.demography?.isolatedCount).toBeUndefined();
     expect(regionalPopulation(s).isolatedCount).toBe(0);
+  });
+  it('"None" empties the region and "Follow the environment" restores the automatic list', () => {
+    const s=defaultSettings();s.extent=10000;
+    const automatic=regionalPopulation(s);
+    s.region={demography:{density:5,counts:{town:3},followCulture:false},placement:{mode:'list',counts:{village:2},list:[{key:'main',name:'Pinned',population:100,culture:'elven',siteType:'auto',sitePrefs:{}}]}};
+    clearRegionalPopulation(s);
+    const none=regionalPopulation(s);
+    expect(none.places).toEqual([]);expect(none.population).toBe(0);expect(none.isolatedCount).toBe(0);
+    expect(Object.values(none.counts).every(n=>n===0)).toBe(true);
+    editRegionalPopulation(s,'village',1);
+    expect(regionalPopulation(s).places).toHaveLength(1);
+    followEnvironmentPopulation(s);
+    expect(s.region.demography).toEqual({followCulture:false});expect(s.region.placement).toEqual({mode:'auto'});
+    expect(regionalPopulation(s)).toEqual(automatic);
   });
 });

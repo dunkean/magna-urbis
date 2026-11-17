@@ -84,7 +84,10 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
   settlementNames(namingView, root);
   for(const place of settlements ?? []) {
     if(place.main || !place.urban)continue;
+    // Only the town's own names are kept below: its view carries no lake, forest or farm, whose label anchors
+    // (pole of inaccessibility of every polygon) were otherwise recomputed once per built place.
     const localView:World={...namingView,site:{...namingView.site!,center:place.center},urban:place.urban,
+      terrain:{...namingView.terrain,lakes:[]},landuse:undefined,
       settlements:[{...place,main:true}],options:{...namingView.options,...place.options,culture:place.culture,workflow:'list',settlements:{list:[{key:place.key,population:place.population,name:manual.get(place.key)}]}}};
     const names=generateNames(localView,root.fork(place.key),presentation);
     for(const entry of names.entries.filter(e=>['street','quarter','castle','church','gate','square'].includes(e.kind))) {

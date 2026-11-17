@@ -23,3 +23,6 @@
 /* Match Region’s compact choice art in the Settlements tab and its advanced panel. */
 #family-settlements .choice .art,#family-settlements .landscape-art{width:30px;height:30px}
 #family-settlements .choice{min-height:33px;padding:2px 4px;gap:3px;font-size:9px}
+
+/* "None" / "Follow the environment": whole-list shortcuts under the counts. */
+.regional-list-actions{display:flex;flex-wrap:wrap;gap:6px}

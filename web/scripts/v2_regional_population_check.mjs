@@ -36,7 +36,7 @@ try{
     const population=Number(await page.locator('#region-population').inputValue());
     assert(population>populationBefore,'adding a town adds its inhabitants');populationBefore=population;
   }
-  await page.getByRole('button',{name:'Restore automatic distribution',exact:true}).click();
+  await page.locator('[data-regional-list=environment]').click();
   // Places first, then a typed population that resizes them without changing their number.
   await page.locator('#region-town').fill('2');await page.locator('#region-town').dispatchEvent('change');
   await page.locator('#region-population').fill('10000');await page.locator('#region-population').dispatchEvent('change');
@@ -45,7 +45,7 @@ try{
   const manual=await recipe();assert.equal(manual.region.demography.population,10000);assert.equal(manual.region.demography.counts.town,2);assert.equal(manual.region.demography.isolatedDensity,.5);
   const changed=structuredClone(manual);changed.terrain.relief='mountains';await apply(changed);
   assert.equal(await page.locator('#region-population').inputValue(),'10000');assert.equal(await page.locator('#region-town').inputValue(),'2');
-  await page.getByRole('button',{name:'Restore automatic distribution',exact:true}).click();assert.notEqual(await page.locator('#region-population').inputValue(),'10000');
+  await page.locator('[data-regional-list=environment]').click();assert.notEqual(await page.locator('#region-population').inputValue(),'10000');
   const scenarios=[];
   for(const [culture,climate,relief] of [['european-organic','temperate','flat'],['american-grid','temperate','flat'],['inuit-camp','arctic','high-mountains']]){
     const settings=structuredClone(initial);settings.extent=40000;settings.options.seed='42';settings.options.culture=culture;settings.terrain.climate=climate;settings.terrain.relief=relief;settings.region={demography:{followCulture:false},autoBuildPopulation:0};

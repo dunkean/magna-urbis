@@ -34,3 +34,20 @@ export function editRegionalPopulation(settings: V2Settings, key: RegionalPopula
   const field = key as 'population' | 'density' | 'isolatedCount' | 'isolatedDensity';
   if (value === undefined) delete d[field]; else d[field] = value;
 }
+
+/** Drops every chosen count, population and density (and a manual list): the automatic list from the map
+ * size, biome and culture applies again, with its floor. The culture-follow choice is kept. */
+export function followEnvironmentPopulation(settings: V2Settings): void {
+  const region = settings.region ??= {}, followCulture = region.demography?.followCulture;
+  region.demography = followCulture === undefined ? {} : { followCulture };
+  if (region.placement) { delete region.placement.counts; delete region.placement.list; region.placement.mode = 'auto'; }
+}
+
+/** No settlement at all: every class count and the regional population are 0. Adding a place afterwards
+ * adds its inhabitants to that population, as for any typed population. */
+export function clearRegionalPopulation(settings: V2Settings): void {
+  followEnvironmentPopulation(settings);
+  const d = settings.region!.demography!;
+  d.counts = Object.fromEntries(POPULATION_CLASSES.map(id => [id, 0]));
+  d.population = 0;
+}

@@ -46,6 +46,7 @@ import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/se
 import { v1LandCanvas } from '../render/v1Landscape';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { createTerrainRenderer, terrainRendererCanvas, terrainRendererBackend, type TerrainRenderer } from '../ui/terrainRenderer';
+import { riverCapsules, riverSegmentsInBox } from '../render/riverCapsules';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
 import type { HydrologyOverlay } from '../../../rust/bridge/hydrology';
@@ -133,22 +134,6 @@ const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index
 
 /** Street roles that cross water above it (bridges, fords, causeways, piers, boardwalks). */
 const CROSSING_ROLES = new Set(['bridge', 'ford', 'causeway', 'pier', 'boardwalk', 'walkway']);
-/** The union of the river capsules (`riverSegments` layout, 9 floats a segment, full widths) as one non-zero path. */
-function riverCapsules(rivers: Float32Array): Path2D {
-  const path = new Path2D();
-  for (let i = 0; i + 9 <= rivers.length; i += 9) {
-    const x0 = rivers[i], y0 = rivers[i + 1], x1 = rivers[i + 2], y1 = rivers[i + 3], r0 = rivers[i + 4] / 2, r1 = rivers[i + 5] / 2;
-    const l = Math.hypot(x1 - x0, y1 - y0);
-    if (l > 1e-6) {
-      // The same winding as the end discs: the union keeps every overlap filled.
-      const nx = -(y1 - y0) / l, ny = (x1 - x0) / l;
-      path.moveTo(x0 - nx * r0, y0 - ny * r0); path.lineTo(x1 - nx * r1, y1 - ny * r1); path.lineTo(x1 + nx * r1, y1 + ny * r1); path.lineTo(x0 + nx * r0, y0 + ny * r0); path.closePath();
-    }
-    if (r0 > 0) { path.moveTo(x0 + r0, y0); path.arc(x0, y0, r0, 0, Math.PI * 2); }
-    if (r1 > 0) { path.moveTo(x1 + r1, y1); path.arc(x1, y1, r1, 0, Math.PI * 2); }
-  }
-  return path;
-}
 
 export class BenchRenderer {
   private retained = new RetainedBudget();
@@ -783,7 +768,7 @@ export class BenchRenderer {
   /** How the ground under the town was laid in the frame being drawn, when it is in the same canvas (exports and captures);
    * absent in the live view, where the GPU ground is its own layer under the overlay. */
   private groundRedraw?: (ctx: CanvasRenderingContext2D) => void;
-  private cityWaterPath?: { source: Float32Array; path: Path2D };
+  private cityWaterPath?: { source: Float32Array; paths: Map<string, Path2D> };
   private crossingHolesOf?: { world: World; scenes: readonly CityScene[]; path: Path2D };
   /** The whole map with a hole per bridge, ford or causeway deck (regional bridges and the towns' crossings), for an
    * even-odd clip. */
@@ -811,8 +796,13 @@ export class BenchRenderer {
   private waterAbove(ctx: CanvasRenderingContext2D, box: { minX: number; minY: number; maxX: number; maxY: number }, over?: () => void): void {
     const rivers = this.cityWater;
     if (!rivers || typeof Path2D === 'undefined') return;
-    if (this.cityWaterPath?.source !== rivers) this.cityWaterPath = { source: rivers, path: riverCapsules(rivers) };
-    const path = this.cityWaterPath.path;
+    // Only the rivers around this town: the whole network as one clip path per town and frame froze the map for
+    // tens of seconds on 40 km maps. The box is snapped outwards so small view changes reuse the path.
+    if (this.cityWaterPath?.source !== rivers || this.cityWaterPath.paths.size > 64) this.cityWaterPath = { source: rivers, paths: new Map() };
+    const snap = 256, near = { minX: Math.floor(box.minX / snap) * snap, minY: Math.floor(box.minY / snap) * snap, maxX: Math.ceil(box.maxX / snap) * snap, maxY: Math.ceil(box.maxY / snap) * snap };
+    const key = `${near.minX},${near.minY},${near.maxX},${near.maxY}`;
+    let path = this.cityWaterPath.paths.get(key);
+    if (!path) this.cityWaterPath.paths.set(key, path = riverCapsules(riverSegmentsInBox(rivers, near)));
     ctx.save();
     // Only around the town being drawn.
     ctx.beginPath(); ctx.rect(box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY); ctx.clip();

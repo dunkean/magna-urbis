@@ -5,6 +5,7 @@ import { defaultSettings } from '../../src/v2/settings';
 import { applySceneClock, DEFAULT_SCENE } from '../../src/v2/sceneClock';
 import { getLanguage } from '../../src/v2/i18n';
 import { markAllStagesStale, resetSettings } from '../../src/v2/settingsReset';
+import { regionalPopulation } from '../../src/v2/regionalPopulation';
 
 const fresh = (): V2Settings => { const s = defaultSettings(); applySceneClock(s, DEFAULT_SCENE); return s; };
 
@@ -31,6 +32,18 @@ describe('settings reset', () => {
     expect(next).toEqual(expected);
     expect(next.runtime).not.toBe(edited.runtime);
     expect(getLanguage()).toBe(language);
+  });
+
+  it('drops the chosen settlement counts, population and density: the automatic list applies again', () => {
+    const edited = fresh();
+    edited.local = { main: { population: 4000 } };
+    edited.region = { demography: { population: 0, density: 3, counts: { city: 0, town: 5, village: 0, hamlet: 0, farmstead: 0 }, isolatedCount: 9, followCulture: false },
+      placement: { mode: 'counts', counts: { village: 4 } } } as V2Settings['region'];
+    const next = resetSettings(edited);
+    expect(next.region?.demography).toBeUndefined();
+    expect(next.region?.placement).toBeUndefined();
+    expect(next.local).toEqual({});
+    expect(regionalPopulation(next)).toEqual(regionalPopulation(fresh()));
   });
 
   it('marks every built stage stale', () => {

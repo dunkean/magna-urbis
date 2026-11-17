@@ -75,9 +75,9 @@ describe('unified names and durable edits',()=>{
     s.naming={};s.options.language='german';
     expect(renameMap(w,s).names!.profile).toBe('german');
   });
-  it('makes european-organic independent of seed and recognizes native aliases',()=>{
-    for(const seed of ['a','b','c'])expect(resolveToponymProfile('european-organic',undefined,seed).id).toBe('french');
-    expect(resolveToponymProfile('west').id).toBe('french');expect(resolveToponymProfile('mongol').id).toBe('mongolian');
+  it('makes european-organic independent of seed and recognizes native aliases',()=>{ // European organic names are English by design (2026-11-17); bastide stays French.
+    for(const seed of ['a','b','c'])expect(resolveToponymProfile('european-organic',undefined,seed).id).toBe('english');
+    expect(resolveToponymProfile('west').id).toBe('english');expect(resolveToponymProfile('mongol').id).toBe('mongolian');
     expect(resolveToponymProfile('unknown').id).toBe('english');expect(resolveToponymProfile('unknown').diagnostic).toContain('Unknown culture');
   });
   it('supports invented/geographic sources with an explicit unavailable-source diagnostic',()=>{

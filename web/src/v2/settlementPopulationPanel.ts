@@ -4,14 +4,16 @@ import { POPULATION_CLASSES, regionalPopulation, automaticSettlementLimits, auto
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './settlementPopulationPanel.css';
 import { activitySitesOf } from './activitySites';
-import { editRegionalPopulation, type RegionalPopulationField } from './regionalPopulationEdits';
+import { clearRegionalPopulation, editRegionalPopulation, followEnvironmentPopulation, type RegionalPopulationField } from './regionalPopulationEdits';
 
 registerMessages(Object.fromEntries(Object.entries({
   'Region population': 'Population régionale', 'Global density': 'Densité globale',
   'People / km²': 'Habitants / km²', 'Isolated buildings density': 'Densité des bâtiments isolés',
   'Cities': 'Villes', 'Towns': 'Bourgs', 'Villages': 'Villages', 'Hamlets': 'Hameaux', 'Farmsteads': 'Fermes habitées', 'Isolated buildings': 'Bâtiments isolés',
   'Automatic from the region': 'Automatique selon la région', 'Automatic': 'Automatique', 'Manual': 'Manuel',
-  'Restore automatic distribution': 'Rétablir la répartition automatique',
+  'Follow the environment': 'Suivre le milieu naturel',
+  'Clear the chosen counts, population and density: the places follow the map size, biome and culture again.': 'Effacer les effectifs, la population et la densité choisis : les lieux suivent de nouveau la taille de la carte, le biome et la culture.',
+  'Remove every settlement: all place counts and the region population become 0.': 'Supprimer tous les lieux habités : tous les effectifs et la population régionale passent à 0.',
   'Density follows climate, relief and culture. Edit any value to override it; ↶ restores automatic calculation.': 'La densité suit le climat, le relief et la culture. Modifiez une valeur pour l’imposer ; ↶ rétablit le calcul automatique.',
   'The places make the population: adding or removing a place changes it. Changing population or density resizes the places without changing their number. Editing a count fixes only that class; ↶ restores its automatic count. Even harsh regions keep a few places.': 'Les lieux font la population : ajouter ou retirer un lieu la modifie. Changer la population ou la densité redimensionne les lieux sans changer leur nombre. Modifier un effectif impose seulement cette catégorie ; ↶ rétablit son calcul automatique. Même les régions rudes gardent quelques lieux.',
   '{area} km² · largest settlement: {population} inhabitants': '{area} km² · plus grand lieu : {population} habitants',
@@ -21,6 +23,8 @@ registerMessages(Object.fromEntries(Object.entries({
   'Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites': 'Implantés : {places} lieux · {population} habitants · {isolated} sites isolés',
   'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. More inhabitants enlarge towns and cities. Exact counts override these limits.': 'Plafonds automatiques de cette carte : {villages} villages, {hamlets} hameaux, {farms} fermes habitées, {isolated} sites isolés. Davantage d’habitants agrandissent les bourgs et les villes. Des effectifs imposés remplacent ces plafonds.',
 }).map(([en,fr]) => [en,{en,fr}])));
+// The button reads "None"; its own key keeps the French form for places.
+registerMessages({ 'No settlements': { en: 'None', fr: 'Aucun' } });
 
 export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSettings(): V2Settings; getWorld(): World | undefined; changed(): void; syncForms(): void }) {
   const root = document.createElement('section'); root.className = 'regional-population'; host.append(root);
@@ -66,12 +70,22 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
   field('Isolated buildings density','isolatedDensity',10,'.05');
   const isolatedHint = document.createElement('p'); isolatedHint.className = 'hint'; setText(isolatedHint,'Non-residential sites: mills, workshops, shrines… Inhabited farms are counted above. Placement depends on suitable terrain and resources.');
   const summary = document.createElement('p'), placed = document.createElement('p'); summary.className = placed.className = 'hint'; summary.setAttribute('aria-live','polite');
-  const resetAll = document.createElement('button'); resetAll.type = 'button'; resetAll.className = 'quiet small'; setText(resetAll,'Restore automatic distribution');
-  resetAll.onclick = () => { const s = api.getSettings(); const followCulture = s.region?.demography?.followCulture; s.region ??= {}; s.region.demography = followCulture === undefined ? {} : {followCulture}; if (s.region.placement) { delete s.region.placement.counts; s.region.placement.mode = 'auto'; } api.changed(); api.syncForms(); sync(); };
+  // Whole-list shortcuts: no settlement at all, or the automatic list (map size, biome, culture, floor).
+  const listActions = document.createElement('div'); listActions.className = 'regional-list-actions';
+  const listAction = (label: string, title: string, apply: (s: V2Settings) => void) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'quiet small'; setText(button,label);
+    button.setAttribute('data-i18n-title',title); button.title = translate(title);
+    button.onclick = () => { apply(api.getSettings()); api.changed(); api.syncForms(); sync(); };
+    listActions.append(button); return button;
+  };
+  const clearAll = listAction('No settlements','Remove every settlement: all place counts and the region population become 0.',clearRegionalPopulation);
+  clearAll.dataset.regionalList = 'none';
+  const resetAll = listAction('Follow the environment','Clear the chosen counts, population and density: the places follow the map size, biome and culture again.',followEnvironmentPopulation);
+  resetAll.dataset.regionalList = 'environment';
   const help = document.createElement('details'); help.className = 'regional-population-help';
   const limitsHint = document.createElement('p'); limitsHint.className = 'hint';
   const helpTitle = document.createElement('summary'); setText(helpTitle,'Automatic from the region'); help.append(helpTitle,hint,isolatedHint,limitsHint);
-  root.append(summary,placed,resetAll,help);
+  root.append(summary,placed,listActions,help);
   function sync(): void {
     const s = api.getSettings(), plan = regionalPopulation(s), d = s.region?.demography ?? {};
     const limits = automaticSettlementLimits(plan.areaKm2, plan.population);

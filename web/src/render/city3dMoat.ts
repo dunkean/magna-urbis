@@ -44,9 +44,22 @@ export function moatFaces(ditch: { kind: string; shape: Shape; height_m: number 
   for (const t of tris) face(t.map(p => ({ x: p.x, y: p.y, z: g(p) - level })), sheet);
 }
 
-const inRing = (r: readonly Point[], p: Point): boolean => {
+/** The edges of a ring (x, y of both ends) that can decide whether a point within `reach` of `c` is inside it: an edge off
+ * the y band of those points, or wholly on their left, never toggles the crossing parity. A moat ring runs round the whole
+ * town and a gate probes thousands of points next to itself: the test then reads a few edges instead of the ring. */
+const nearEdges = (r: readonly Point[], c: Point, reach: number): number[] => {
+  const out: number[] = [];
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const a = r[i], q = r[j];
+    if (Math.min(a.y, q.y) > c.y + reach || Math.max(a.y, q.y) < c.y - reach || Math.max(a.x, q.x) < c.x - reach) continue;
+    out.push(a.x, a.y, q.x, q.y);
+  }
+  return out;
+};
+/** Even-odd test over the kept edges: the predicate and arithmetic of the whole-ring test. */
+const inEdges = (e: readonly number[], p: Point): boolean => {
   let c = false;
-  for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i].y > p.y) !== (r[j].y > p.y) && p.x < (r[j].x - r[i].x) * (p.y - r[i].y) / (r[j].y - r[i].y) + r[i].x) c = !c;
+  for (let k = 0; k < e.length; k += 4) if ((e[k + 1] > p.y) !== (e[k + 3] > p.y) && p.x < (e[k + 2] - e[k]) * (p.y - e[k + 1]) / (e[k + 3] - e[k + 1]) + e[k]) c = !c;
   return c;
 };
 
@@ -56,14 +69,21 @@ type Ditch = { kind: string; shape: Shape; height_m: number };
 /** Where a land gate's street crosses the moat: from the middle `b` of the gate passage, along the causeway axis `s` (`n` across),
  * the moat lies between `first` and `last` (m along `s`), over the causeway half width `half`; `depth` of the piece met. */
 export interface MoatSpan { b: Point; s: Point; n: Point; first: number; last: number; half: number; depth: number; wet: boolean }
+/** The 2D walls, the 3D ground cuts and the 3D bridges all ask for the spans of the same circuit: computed once per ditch list. */
+const spanCache = new WeakMap<readonly Ditch[], { gatehouses: readonly Gatehouse[]; spans: MoatSpan[] }>();
 export function moatSpans(gatehouses: readonly Gatehouse[], ditch: readonly Ditch[]): MoatSpan[] {
+  const cached = spanCache.get(ditch);
+  if (cached?.gatehouses === gatehouses) return cached.spans;
   const pieces = ditch.filter(d => (d.shape?.outer?.length ?? 0) >= 3), out: MoatSpan[] = [];
+  spanCache.set(ditch, { gatehouses, spans: out });
   if (!pieces.length) return out;
-  const pieceAt = (p: Point): Ditch | undefined => pieces.find(d => inRing(d.shape.outer, p) && !(d.shape.holes ?? []).some(h => inRing(h, p)));
   for (const gh of gatehouses) {
     if (['water', 'shore', 'ravelin'].includes(gh.kind) || gh.passage?.length !== 2) continue;
     const [a, p] = gh.passage, l = Math.hypot(p.x - a.x, p.y - a.y); if (l < 0.5) continue;
     const passage = Math.max(2, gh.passage_width_m / 2), b = { x: (a.x + p.x) / 2, y: (a.y + p.y) / 2 }, axis = { x: (p.x - a.x) / l, y: (p.y - a.y) / l };
+    // Every point probed below lies within 60 m along and passage + 10 m across of the gate.
+    const reach = 72 + passage, near = pieces.map(d => ({ d, outer: nearEdges(d.shape.outer, b, reach), holes: (d.shape.holes ?? []).map(h => nearEdges(h, b, reach)) }));
+    const pieceAt = (p: Point): Ditch | undefined => near.find(piece => inEdges(piece.outer, p) && !piece.holes.some(h => inEdges(h, p)))?.d;
     // The causeway's own direction: the gatehouse may stand square to the curtain while its street crosses the moat obliquely.
     // Among directions within 70° of the passage, the one along which the moat lies on both sides of the street and not under it.
     // Of the directions scoring at least 60 % of the best, the one closest to the passage (a long gap elsewhere in the moat

@@ -398,6 +398,9 @@ const rows2: readonly (readonly [string, string, string, string, string, string,
   ["Ferry landing", "Embarcadero de transbordador", "Embarcadouro de balsa", "渡口", "مرسى العبّارة", "Паромная пристань", "渡し場"],
   ["Beach landing", "Varadero en la playa", "Varadouro de praia", "滩头登岸处", "مرسى على الشاطئ", "Пляжная стоянка", "浜の船揚げ場"],
   ["Stepped landing", "Embarcadero escalonado", "Cais em degraus", "阶梯式码头", "مرسى مدرّج", "Ступенчатая пристань", "階段状の船着き場"],
+  ["Follow the environment", "Seguir el entorno", "Seguir o ambiente", "跟随环境", "اتباع البيئة", "Следовать среде", "環境に従う"],
+  ["Clear the chosen counts, population and density: the places follow the map size, biome and culture again.", "Borra los recuentos, la población y la densidad elegidos: los lugares vuelven a seguir el tamaño del mapa, el bioma y la cultura.", "Apaga as contagens, a população e a densidade escolhidas: os lugares voltam a seguir o tamanho do mapa, o bioma e a cultura.", "清除所选的数量、人口和密度：地点重新按地图大小、生物群系和文化确定。", "مسح الأعداد والسكان والكثافة المختارة: تتبع الأماكن مجددًا حجم الخريطة والمنطقة الحيوية والثقافة.", "Сбросить выбранные количества, население и плотность: места снова следуют размеру карты, биому и культуре.", "選んだ数・人口・密度を消去します。集落は再び地図の大きさ、バイオーム、文化に従います。"],
+  ["Remove every settlement: all place counts and the region population become 0.", "Elimina todos los asentamientos: todos los recuentos de lugares y la población regional pasan a 0.", "Remove todos os povoados: todas as contagens de lugares e a população regional passam a 0.", "移除所有聚落：所有地点数量和区域人口变为 0。", "إزالة كل المستوطنات: تصبح أعداد الأماكن كلها وسكان المنطقة 0.", "Убрать все поселения: все количества мест и население региона становятся равными 0.", "すべての集落を削除します。各種の集落数と地域人口が 0 になります。"],
 ];
 
 const LANGUAGE_ORDER = ["es", "pt", "zh", "ar", "ru", "ja"] as const;

@@ -88,21 +88,29 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
   const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));
   const n = Math.min(1536, Math.ceil(side / cell) + RANGE * 2), x = Math.floor(x0 / cell) * cell - RANGE * cell, y = Math.floor(y0 / cell) * cell - RANGE * cell;
   const cls = new Uint8Array(n * n), dOpen = new Float32Array(n * n).fill(-RANGE), dForest = new Float32Array(n * n).fill(-RANGE);
-  if (source) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const gx = (x + (i + .5) * cell - source.x) / source.width * source.n, gy = (y + (j + .5) * cell - source.y) / source.width * source.n;
-    const sx = Math.floor(gx), sy = Math.floor(gy);
-    if (sx < 0 || sy < 0 || sx >= source.n || sy >= source.n) continue;
-    const at = (sy * source.n + sx) * 4, index = j * n + i;
-    cls[index] = source.rgba[at + 2];
+  if (source) {
     // Reproject distances bilinearly, in metres. Thresholding them and running another cell distance transform
     // destroyed the polygon edge whenever accepted buildings caused the occupation grid to be resized.
-    const bx = Math.floor(gx - .5), by = Math.floor(gy - .5), fx = gx - .5 - bx, fy = gy - .5 - by;
-    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
-      const k = (Math.max(0, Math.min(source.n - 1, by + dy)) * source.n + Math.max(0, Math.min(source.n - 1, bx + dx))) * 4;
-      const weight = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * source.width / source.n / cell;
-      if (!dx && !dy) { dOpen[index] = 0; dForest[index] = 0; }
-      dOpen[index] += (source.rgba[k] - 128) / 16 * weight;
-      dForest[index] += (source.rgba[k + 1] - 128) / 16 * weight;
+    // The four taps are unrolled with the row terms hoisted (2.4 M texels per merge); each sum is rounded to
+    // single precision as the accumulation in the Float32Array was, so the bytes are the same.
+    const sn = source.n, last = sn - 1, data = source.rgba, f = Math.fround;
+    for (let j = 0; j < n; j++) {
+      const gy = (y + (j + .5) * cell - source.y) / source.width * sn, sy = Math.floor(gy);
+      if (sy < 0 || sy >= sn) continue;
+      const by = Math.floor(gy - .5), fy = gy - .5 - by;
+      const r0 = Math.max(0, Math.min(last, by)) * sn, r1 = Math.max(0, Math.min(last, by + 1)) * sn;
+      for (let i = 0; i < n; i++) {
+        const gx = (x + (i + .5) * cell - source.x) / source.width * sn, sx = Math.floor(gx);
+        if (sx < 0 || sx >= sn) continue;
+        const index = j * n + i;
+        cls[index] = data[(sy * sn + sx) * 4 + 2];
+        const bx = Math.floor(gx - .5), fx = gx - .5 - bx, c0 = Math.max(0, Math.min(last, bx)), c1 = Math.max(0, Math.min(last, bx + 1));
+        const k00 = (r0 + c0) * 4, k01 = (r0 + c1) * 4, k10 = (r1 + c0) * 4, k11 = (r1 + c1) * 4;
+        const w00 = (1 - fx) * (1 - fy) * source.width / sn / cell, w01 = fx * (1 - fy) * source.width / sn / cell;
+        const w10 = (1 - fx) * fy * source.width / sn / cell, w11 = fx * fy * source.width / sn / cell;
+        dOpen[index] = f(f(f(f((data[k00] - 128) / 16 * w00) + (data[k01] - 128) / 16 * w01) + (data[k10] - 128) / 16 * w10) + (data[k11] - 128) / 16 * w11);
+        dForest[index] = f(f(f(f((data[k00 + 1] - 128) / 16 * w00) + (data[k01 + 1] - 128) / 16 * w01) + (data[k10 + 1] - 128) / 16 * w10) + (data[k11 + 1] - 128) / 16 * w11);
+      }
     }
   }
   const occupied = (from: number, to: number): void => { cls.fill(OCCUPIED, from, to); };
@@ -253,7 +261,11 @@ function corridorDistance(corridors: readonly ForestCorridor[], x0: number, y0: 
       const py = y0 + (j + .5) * cell - a.y;
       for (let i = i0; i <= i1; i++) {
         const px = x0 + (i + .5) * cell - a.x, t = l2 > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / l2)) : 0;
-        const d = (ha + (hb - ha) * t - Math.hypot(px - t * dx, py - t * dy)) / cell, at = j * n + i;
+        // Most texels of a segment's box already hold a nearer capsule: compare squared lengths first, so the
+        // square root is taken only where this segment wins (this loop is the cost of the occupation raster).
+        const ex = px - t * dx, ey = py - t * dy, at = j * n + i, room = ha + (hb - ha) * t - out[at] * cell;
+        if (room <= 0 || ex * ex + ey * ey >= room * room) continue;
+        const d = (ha + (hb - ha) * t - Math.sqrt(ex * ex + ey * ey)) / cell;
         if (d > out[at]) out[at] = d;
       }
     }

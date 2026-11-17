@@ -14,9 +14,11 @@
 - Save and open binary `.muproj` projects, with a higher project size limit.
 - The web edition generates on WebGPU or the CPU. The local profile picks native, then Python, then browser neural relief automatically and falls back to the browser when the native engine is unreachable; model setup opens from the source selection. Results are recomputed when the engine changes, a restarted engine gets its terrain back transparently, and a Reset button restores every setting.
 
-Source validation: TODO
+- Performance: no more freeze while drawing large maps with rivers (a 32 s main-thread task on a 40 km map is gone); faster naming, occupation and 3D opening; the local engine is deployed as a release build again.
 
-Package validation: TODO
+Source validation: Rust tests passed for settlements (52), land use (18), terrain (71), the local engine (12) and urban (744 of 746; the two known failures are a 1–2 m street-village lane tolerance and a single-quarter redraw locality case that predates this release). TypeScript type-check and the targeted frontend suites for every change passed; a full frontend run was interrupted and two heavy town-quality suites remain to be reviewed. A local Windows build produced the NSIS installer.
+
+Package validation: pending on the published assets (download, model download, native neural inference, save/reopen and offline reuse).
 
 macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
 

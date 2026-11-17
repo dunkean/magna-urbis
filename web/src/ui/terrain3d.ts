@@ -1285,7 +1285,10 @@ export class Terrain3d {
    * sampling heightAt instead would feed each footing back into the next rebuild and sink the town step by step. */
   groundAt(x: number, y: number): number | undefined {
     if (!this.layer) return undefined;
-    return this.surface(x, y, 0, true, false);
+    // Seats are read once per structure vertex (millions for a region): at a 2 m footprint the centimetre ground
+    // residual is filtered to exactly 0, as on the mesh a town is seen on, and its five extra relief probes and
+    // noise field per sample are skipped. The relief itself is the same.
+    return this.surface(x, y, 2, true, false);
   }
   /** Select the nearest actual building face using its physical native geometry. */
   pickBuilding(x: number, y: number): string | undefined {
