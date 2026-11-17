@@ -1,3 +1,16 @@
+## Alpha 0.3.6
+
+- A spinner beside the view selector turns until the view is fully drawn (style, shaders, textures, tiles, 3D opening), so a view still loading its textures is not mistaken for a broken one.
+- The measure button shows its ruler icon only.
+- Web edition: Automatic, WebGPU and CPU are all selectable (WebGPU greyed only without an adapter); an explicit CPU choice is kept, so neural relief is refused before any download with a WebGPU message.
+- The web page gains search metadata in eight languages, link preview cards, a web app manifest and icons.
+
+Source validation: TypeScript type-check and the targeted frontend suites passed (runtime choices 62, view loading, localisation, city parity). The public web build passed the static check and the full live check on a real GPU (neural download and WebGPU generation, complete map with towns, 3D, house roof edit, save/reopen, styles and language, GPU cancel, offline model cache).
+
+Package validation: pending on the published assets.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.5
 
 - Place settlements from probability layers: walked distance to water (cliffs count), access from the map edges, culture-weighted attraction to water (dwarves and duergar keep off the shore), room for the population and repulsion by size. The main town always stands on the largest land mass, towns of 1,000 inhabitants or more never stand on a disconnected island, and a place too large for the room left is lowered one class, with a notice.
