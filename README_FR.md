@@ -34,6 +34,19 @@
 
 C'est une alpha. Les résultats, les réglages et les projets enregistrés peuvent encore changer d'une version à l'autre. Si quelque chose casse, un signalement avec le code de partage aide beaucoup.
 
+### Ce que contient l'alpha V2
+
+- **Une seule chaîne, du relief au toit :** relief procédural, neuronal ou importé, rivières et lacs, climat et occupation du sol, établissements, routes, villes et bâtiments, en 2D et en 3D.
+- **Des régions crédibles :** établissements placés selon l'accès à l'eau, la place disponible et la culture ; une population régionale qui garde habitées même les cartes alpines, arctiques, désertiques et de l'Underdark ; des villages avec environ un logement par foyer ; des ports avec quais, pontons et grues ; des champs qui suivent les fermes, les rivières et les routes.
+- **Des villes posées sur leur terrain :** sol, bâtiments, routes, ponts, quais, remparts et douves reposent sur le relief dessiné en 3D, avec un même trait de côte pour la carte 2D et la vue 3D.
+- **115 cultures**, villages et campements, de l'Europe médiévale aux forteresses naines, aux enclaves drows et aux villes myconides de l'Underdark, à mélanger dans des feuilles de style hybrides.
+- **Édition à tous les niveaux :** ville, quartier, îlot, parcelle et bâtiment, avec un outil de fusion de parcelles, des toponymes modifiables et le renommage des établissements.
+- **Styles de carte** (parchemin, atlas, topographique, cadastre, satellite, satellite peint, minimal), de jour et de nuit, au fil des saisons, avec neige et banquise en hiver.
+- **Relief neuronal** dans le navigateur sur WebGPU et en natif dans l'application de bureau, avec des téléchargements de modèles vérifiés et réutilisés hors ligne.
+- **Projets et exports :** projets binaires `.muproj`, codes de partage, recettes, PNG, SVG et cartes d'élévation.
+
+Les changements de chaque version desktop sont listés dans les [notes de version](docs/DESKTOP_RELEASE_NOTES.md) (en anglais).
+
 ## Ce que Magna Urbis génère
 
 Une seule chaîne, du sol vers le haut. Chaque étape peut être relancée, réglée ou modifiée séparément.

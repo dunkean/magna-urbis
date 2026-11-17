@@ -108,8 +108,8 @@ Rare single places whose situation is the point: a temple on a summit, a monaste
 | `cliff-stair` | `fall` | Steps cut straight down the fall line, up to `grade` 1.2, at most `reach` metres |
 | `rock-steps` | `fall` | The same on gentler rock (`grade` 0.7): the steps traverse where the fall line is too steep |
 | `tunnel` | `bore` | A gallery through the rock from the place to the first easy ground below |
-| `causeway` | `span` | A line across the water to the nearest other shore, within `reach` |
-| `rope-bridge` | `span` | The same over a shorter gap |
+| `causeway` | `span` | A line across the sea (a lake too for a culture that builds lake causeways) within `reach`, only from land that water cuts off (an islet) to the land of the parent place; a place that can be walked to gets none |
+| `rope-bridge` | `span` | A shorter line over running water only (a river, a gorge stream), towards the parent place; never over the sea or a lake |
 
 A `fall` line starts at the front of the yard and takes, step by step, the steepest way down a stair may take (the fall line, else a traverse beside it), until the slope eases under `path_grade` or it meets water; it may exceed any road grade but never its own `grade`. The line is one open installation of the site (`cliff_stair`, `rock_steps`, `rock_tunnel`, `tidal_causeway`, `rope_bridge`; ground kinds `engineered_path`, `underground_work`, `crossing`), and `access` is its far end: the ordinary trail of the site is routed to that point only. The site also carries `situation` and `approach` (the access kind), and `kind: "remote"`.
 

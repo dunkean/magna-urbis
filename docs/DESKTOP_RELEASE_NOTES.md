@@ -1,3 +1,25 @@
+## Alpha 0.3.5
+
+- Place settlements from probability layers: walked distance to water (cliffs count), access from the map edges, culture-weighted attraction to water (dwarves and duergar keep off the shore), room for the population and repulsion by size. The main town always stands on the largest land mass, towns of 1,000 inhabitants or more never stand on a disconnected island, and a place too large for the room left is lowered one class, with a notice.
+- Keep harsh maps (alpine, arctic, desert, Underdark) inhabited with a minimum regional population per map size. The list of places now drives the population: adding a town adds its inhabitants. Population edits are recalculated and rural density is bounded.
+- Build credible villages: about one dwelling per household, with communal houses capped (plank houses hold 2 households, longhouses up to 20 people). A village that cannot house its households is laid out again with more room. Labels, camera and picking follow the built core. Add street villages, whose lanes end at their last plot with square ends.
+- Rebuild harbours as a simple quay band hugging the water, 1 m above it and drawn above streets, with pontoons, boats and cranes, closed Hanseatic basins and cliff-foot landings. The chance of a coastal port depends on the culture and the room available. The engine, 2D and 3D share one shoreline, so no buildings stand in the water in 3D.
+- Roads never cross the sea or lakes; bridge spans are limited by road rank and bridges continue the road (no aqueducts). Remove dead ends without a destination and request regional map exits per road class. Satellite and Rendered roads blend into the ground, tropical earth tracks most discreetly.
+- Cut fields by the drawn rivers, lakes and roads (no fields on rivers, no staircase along the water). Cultivated land follows the farming households and their reach; fields without a farm revert to pasture.
+- Lay town ground, buildings, roads, bridges, quays and moats on the drawn terrain in 3D (no floating towns).
+- Fortifications: fewer gates, budgeted by population, no ungated openings, dead gates closed without cutting suburb access, continuous moats, dug moats in 3D, and new Moat and Fortification style options.
+- Editor: per-level fields (quarter: culture, urban plan, growth zone and phase, density with a real effect up to ×10; block: culture, density, parcelling; parcel: content with every building type, fence; house: type, roof, storeys) plus an Advanced section, a parcel merge tool and a sticky map selection. Edit toponyms (name, visibility, reset to the culture's name) and rename settlements.
+- Underdark: natural and dug tunnels, a cavern look in 3D, mushrooms of many shapes (myconid towns with amanita caps), drow and duergar looks with webs and forges, rock-walled towns and no fields. Modern towns get a few towers.
+- Smooth rivers at the source scale (no grid staircase), with meanders sized in metres and display by discharge. The lakes slider goes up to 4. In winter, snow covers town ground and fields; arctic summers keep pack ice, adjustable per season.
+- Save and open binary `.muproj` projects, with a higher project size limit.
+- The web edition generates on WebGPU or the CPU. The local profile picks native, then Python, then browser neural relief automatically and falls back to the browser when the native engine is unreachable; model setup opens from the source selection. Results are recomputed when the engine changes, a restarted engine gets its terrain back transparently, and a Reset button restores every setting.
+
+Source validation: TODO
+
+Package validation: TODO
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.4
 
 - Edit the full hierarchy: city, quarter, block, parcel and building. Regeneration applies the current seed; the dice chooses a new local seed. Parent edits systematically replace descendant overrides within the selected area.

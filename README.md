@@ -34,6 +34,19 @@
 
 This is an alpha. Results, settings and saved projects may still change between versions. If something breaks, a report with the share code helps a lot.
 
+### What's in the V2 alpha
+
+- **One chain from relief to roof:** procedural, neural or imported relief, rivers and lakes, climate and land cover, settlements, roads, towns and buildings, in 2D and 3D.
+- **Credible regions:** settlements placed by access to water, room and culture; a regional population that keeps even alpine, arctic, desert and Underdark maps inhabited; villages with about one dwelling per household; harbours with quays, pontoons and cranes; fields that follow the farms, rivers and roads.
+- **Towns on their terrain:** ground, buildings, roads, bridges, quays, walls and moats sit on the drawn relief in 3D, with one shoreline shared by the 2D map and the 3D view.
+- **115 cultures**, villages and camps, from medieval Europe to dwarven holds, drow enclaves and myconid towns in the Underdark, mixable in hybrid style sheets.
+- **Edit at every level:** city, quarter, block, parcel and building, with a parcel merge tool, editable place names and settlement renaming.
+- **Map styles** (parchment, atlas, topographic, cadastre, satellite, painted satellite, minimal), day and night, through the seasons, with snow and pack ice in winter.
+- **Neural relief** in the browser on WebGPU and natively in the desktop app, with verified model downloads reused offline.
+- **Projects and exports:** binary `.muproj` projects, share codes, recipes, PNG, SVG and heightmaps.
+
+What changed in each desktop version is listed in the [release notes](docs/DESKTOP_RELEASE_NOTES.md).
+
 ## What it generates
 
 One chain, from the ground up. Every stage can be rerun, tuned or edited on its own.

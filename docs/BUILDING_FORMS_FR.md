@@ -108,8 +108,8 @@ Des lieux uniques et rares dont la situation fait tout l'intérêt : un temple s
 | `cliff-stair` | `fall` | Des marches taillées droit dans la ligne de plus grande pente, jusqu'à une pente (`grade`) de 1,2, sur `reach` mètres au plus |
 | `rock-steps` | `fall` | La même chose sur un rocher moins raide (`grade` 0,7) : les marches partent en traversée là où la ligne de pente est trop raide |
 | `tunnel` | `bore` | Une galerie dans le rocher, du lieu au premier sol facile en contrebas |
-| `causeway` | `span` | Une ligne à travers l'eau jusqu'à l'autre rive la plus proche, à moins de `reach` |
-| `rope-bridge` | `span` | La même chose au-dessus d'un vide plus court |
+| `causeway` | `span` | Une ligne à travers la mer (un lac aussi pour une culture qui construit des chaussées lacustres), à moins de `reach`, uniquement depuis une terre que cette eau isole (un îlot) vers la terre du lieu parent ; un lieu accessible à pied n'en reçoit pas |
+| `rope-bridge` | `span` | Une ligne plus courte au-dessus d'une eau courante uniquement (une rivière, un torrent de gorge), vers le lieu parent ; jamais au-dessus de la mer ou d'un lac |
 
 Une ligne `fall` part du devant de la cour et prend, pas à pas, la descente la plus raide qu'un escalier peut suivre (la ligne de pente, sinon une traversée à côté), jusqu'à ce que la pente passe sous `path_grade` ou qu'elle rencontre l'eau ; elle peut dépasser toute pente de route mais jamais son propre `grade`. La ligne est une installation ouverte du site (`cliff_stair`, `rock_steps`, `rock_tunnel`, `tidal_causeway`, `rope_bridge` ; types de sol `engineered_path`, `underground_work`, `crossing`), et `access` en est l'autre bout : le sentier ordinaire du site n'est tracé que jusqu'à ce point. Le site porte aussi `situation` et `approach` (le type d'accès), et `kind: "remote"`.
 
