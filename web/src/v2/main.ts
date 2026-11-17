@@ -1190,7 +1190,8 @@ async function loadProject(project: { settings: V2Settings; mods: unknown[]; wor
   if(world)applyLabelEdits(world,settings.naming?.labels);
   touchRecipe();await syncControls();
   if(world){await client.show(world);canvas.hidden=false;$('#empty-map').hidden=true;updateWorld();const notice=world.stats['v2.compositionNotice'];if(notice)toast(String(notice));}
-  else {await client.clear();city3d?.dispose();city3d=undefined;setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;canvas.hidden=true;$('#empty-map').hidden=false;setHTML($('#settlement-list'), '<p class="hint">Create the region to restore this recipe’s settlements.</p>');$('#inspector').hidden=true;toast('Recipe loaded. Create the region to rebuild it.');}
+  // The disposed 3D view must also release the 2D viewer (paused) and the bench (suspended), or the next map stays blank.
+  else {await client.clear();city3d?.dispose();city3d=undefined;open3dToken=0;viewLoading.end('3d-open');client.set3dActive(false);setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;canvas.hidden=true;$('#empty-map').hidden=false;setHTML($('#settlement-list'), '<p class="hint">Create the region to restore this recipe’s settlements.</p>');$('#inspector').hidden=true;toast('Recipe loaded. Create the region to rebuild it.');}
 }
 const cityCodeSharing = mountCityCodeSharing({
   getRecipe: () => ({ settings, mods }), busy: () => busy,
