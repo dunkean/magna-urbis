@@ -441,6 +441,34 @@ fn clear_oxbows(
         {
             continue;
         }
+        // Kept as a lake: a share of the loops (`Settings::oxbows`), by a stable draw at the place of the loop.
+        let (kx, ky) = ((p[2 * first] / ctx.cell) as i32, (p[2 * first + 1] / ctx.cell) as i32);
+        let draw = |salt: u32| 0.5 + 0.5 * lattice_hash(kx, ky, salt);
+        if draw(0x0B0) >= s.oxbows.min(1.0) {
+            continue;
+        }
+        // Detached: both ends stand two channel widths off every course, so dry ground shows between the lake and
+        // the river. An end left at the bank read as a stub of river stuck to its side.
+        while first < last && traced.nearest(p[2 * first], p[2 * first + 1], 2.0 * width).is_some() {
+            first += 1
+        }
+        while last > first && traced.nearest(p[2 * last], p[2 * last + 1], 2.0 * width).is_some() {
+            last -= 1
+        }
+        if last < first + 3 {
+            continue;
+        }
+        // Partly silted: 55 to 100 % of the loop is left, from one end or the other, so no two lakes have one shape.
+        let kept = ((0.55 + 0.45 * draw(0x51D)) * (last - first + 1) as f64).ceil() as usize;
+        let kept = kept.clamp(1, last - first + 1);
+        if draw(0xE2D) < 0.5 {
+            last = first + kept - 1
+        } else {
+            first = last + 1 - kept
+        }
+        if last < first + 3 {
+            continue;
+        }
         clear.push(Line {
             points: p[2 * first..2 * last + 2].to_vec(),
             area: oxbow.area[first..last + 1].to_vec(),
@@ -489,7 +517,13 @@ fn trace_run(
 ) -> Option<Run> {
     let (ia, ib) = (node_of[a], node_of[b]);
     let cell = ctx.cell;
-    let width = channel_width(area[b], s.width_scale).max(0.5 * cell);
+    // The bends scale with the river, not with the drawn channel: `width_scale` (3 in the V2) widens the drawn line
+    // for legibility, and bends of that width made loops kilometres across with straight legs on a 40 km map
+    // (sinuosity 1.01 over 400 m, 1.44 over 5 km). The simulation takes the geometric mean of the two widths, so
+    // the loops of a drawn channel still clear each other.
+    // Twelve metres is the minimum bend scale, independent of the raster. A 0.75-cell floor inflated small
+    // channels to 29 m on 40 km maps, and rejected every reach shorter than 440 m. Sampling has its own floor.
+    let width = channel_width(area[b], s.width_scale.max(1.0).sqrt()).max(12.0);
     let chord = (px[ib] - px[ia]).hypot(py[ib] - py[ia]);
     if chord < (6.0 * cell).max(15.0 * width) || b - a < 4 {
         return None;
@@ -497,7 +531,10 @@ fn trace_run(
     let level_at = |u| lerp(level, u);
     let bottom = level_at(du[ib]);
     let valley = valley_grid(px, py, du, ia, ib, &level_at, cell, ctx.h.n, bottom);
-    let depth = 0.5 + 0.02 * channel_width(area[b], 1.0);
+    // Ground a course may take: up to `MEANDER_RISE` over the water, beside the depth of its bed. The beds are cut
+    // along the final courses afterwards (`incision`), so a meander is confined by the sides of its valley, not by
+    // the notch its thalweg runs in.
+    let depth = bed_depth(channel_width(area[b], s.width_scale)) + MEANDER_RISE;
     let allowed = |x: f64, y: f64, water: f64| {
         let Some(c) = ctx.at(x, y) else { return false };
         if ctx.still[c] != 0 || (owner[c] != id as i32 && owner[c] != parent) {
@@ -736,6 +773,97 @@ struct Prepared {
     count: usize,
     nodes: usize,
     made: Vec<Option<Run>>,
+}
+/// Height over the water of the ground a meander may take, beside its bed depth (m): low terraces, not valley sides.
+/// The incision pass cuts the bed there (its `EXTRA_CUT` covers it).
+const MEANDER_RISE: f64 = super::super::incision::EXTRA_CUT;
+/// Share of the sinuosity setting a course takes at `gradient`: all of it up to the flat slope, then less with the
+/// logarithm of the slope, none from ten times the flat slope on. Continuous: no reach turns straight at a threshold.
+fn sinuosity_share(gradient: f64, flat_gradient: f64) -> f64 {
+    if gradient < flat_gradient {
+        1.0
+    } else {
+        (1.0 - (gradient / flat_gradient).ln() / 10.0_f64.ln()).max(0.0)
+    }
+}
+/// River density under 1: whole rivers are dropped, the smallest first, and the others keep their full course.
+/// A course stays when its catchment where it ends (the confluence with a larger stream, a lake, the sea or the map
+/// edge) reaches `low + threshold * (1 / density² - 1)`: `low` is the smallest catchment a course can end with
+/// (the headwater share of `threshold`), so density 1 keeps every course and the count falls continuously below.
+/// A lake keeps its outlet course (`lake_fed`), and a kept course keeps the course it joins, down to the sea.
+/// The selection comes after the tracing: a kept course has the very polyline it has at density 1 (confluences
+/// are drawn on the tributary, so a dropped one leaves no stub on the stem), and its areas, hence its width, still
+/// count the whole catchment. Returns the courses kept; the others are removed from `lines`.
+fn select_rivers(lines: &mut [Option<Line>], lake_fed: &[bool], threshold: f64, low: f64, density: f64) -> Vec<bool> {
+    let mut keep = vec![true; lines.len()];
+    if !(density > 0.0 && density < 1.0) {
+        return keep;
+    }
+    let select = low + threshold * (1.0 / (density * density).max(0.0025) - 1.0);
+    for (id, line) in lines.iter().enumerate() {
+        if let Some(line) = line {
+            keep[id] = lake_fed.get(id).copied().unwrap_or(false) || line.area.last().copied().unwrap_or(0.0) >= select;
+        }
+    }
+    for id in 0..lines.len() {
+        if !keep[id] {
+            continue;
+        }
+        let mut at = lines[id].as_ref().and_then(|line| line.joins).unwrap_or(-1);
+        let mut steps = 0;
+        while at >= 0 && (at as usize) < lines.len() && steps < lines.len() {
+            let j = at as usize;
+            keep[j] = true;
+            at = lines[j].as_ref().and_then(|line| line.joins).unwrap_or(-1);
+            steps += 1;
+        }
+    }
+    for id in 0..lines.len() {
+        if !keep[id] {
+            lines[id] = None;
+        }
+    }
+    keep
+}
+/// Invariant: every course drawn is at least `min_length` long (`DEFAULT_MIN_RIVER_LENGTH` when 0) or carries a
+/// longer course that joins it. `prune_short_courses` measures the cell chains before tracing; a traced tributary is
+/// then cut where it first meets an already traced line (it ran beside its stem) and keeps only its junction curve,
+/// a stub of a few tens of metres with no source. Such short courses that no other course joins are dropped, then
+/// the courses they leave short and unjoined, and so on. A lake outflow (`lake_fed`) stays. Returns the courses
+/// dropped.
+fn drop_short_leaves(lines: &mut [Option<Line>], lake_fed: &[bool], min_length: f64) -> usize {
+    let min_length = if min_length > 0.0 { min_length } else { DEFAULT_MIN_RIVER_LENGTH };
+    let length = |line: &Line| {
+        let p = &line.points;
+        (1..p.len() / 2).map(|k| (p[2 * k] - p[2 * k - 2]).hypot(p[2 * k + 1] - p[2 * k - 1])).sum::<f64>()
+    };
+    let mut joined = vec![0_u32; lines.len()];
+    for line in lines.iter().flatten() {
+        if let Some(j) = line.joins.filter(|&j| j >= 0 && (j as usize) < joined.len()) {
+            joined[j as usize] += 1
+        }
+    }
+    let mut dropped = 0;
+    let mut stack: Vec<usize> = (0..lines.len()).collect();
+    while let Some(id) = stack.pop() {
+        let short = match &lines[id] {
+            Some(line) => joined[id] == 0 && !lake_fed.get(id).copied().unwrap_or(false) && length(line) < min_length,
+            None => false,
+        };
+        if !short {
+            continue;
+        }
+        let into = lines[id].as_ref().and_then(|line| line.joins).unwrap_or(-1);
+        lines[id] = None;
+        dropped += 1;
+        if into >= 0 && (into as usize) < joined.len() {
+            joined[into as usize] -= 1;
+            if joined[into as usize] == 0 {
+                stack.push(into as usize)
+            }
+        }
+    }
+    dropped
 }
 /// Default shortest river course kept, in metres: to its first confluence, the sea or a lake.
 const DEFAULT_MIN_RIVER_LENGTH: f64 = 150.0;
@@ -1063,11 +1191,7 @@ pub(crate) fn vector_rivers(
                 / cell.max(arc[j1] - arc[j0]);
             let filled_depression = g.filled[c] as f64 - height[c] as f64 > 0.01;
             flat[c] = u8::from(filled_depression || gradient < flat_gradient);
-            let share = if flat[c] != 0 {
-                1.0
-            } else {
-                0.35 * (1.0 - (gradient / flat_gradient).ln() / 10.0_f64.ln()).max(0.0)
-            };
+            let share = if flat[c] != 0 { 1.0 } else { sinuosity_share(gradient, flat_gradient) };
             let size = (0.4 + 0.15 * (g.accumulation[c] as f64 / threshold).log2()).clamp(0.4, 1.0);
             sinuosity[c] = (1.0 + (s.sinuosity - 1.0) * share * size) as f32;
             if s.braiding > 0.0 && !filled_depression && g.accumulation[c] as f64 >= 4.0 * threshold
@@ -1134,6 +1258,8 @@ pub(crate) fn vector_rivers(
         ..Network::default()
     };
     let mut oxbows = Vec::new();
+    // The course each oxbow was cut from.
+    let mut oxbow_owner: Vec<usize> = Vec::new();
     let mut braids = Vec::new();
     // Independent dry routes cannot enter across_beds' parent-dependent searches.
     // Prepare their terrain tracing and meanders together, then merge in the original
@@ -1238,11 +1364,7 @@ pub(crate) fn vector_rivers(
             let (j0, j1) = (i.saturating_sub(4), (i + 4).min(cells.len() - 1));
             let gradient =
                 (level[j0] - level[j1]).abs() / cell.max((xs[j1] - xs[j0]).hypot(ys[j1] - ys[j0]));
-            let share = if gradient < flat_gradient {
-                1.0
-            } else {
-                0.35 * (1.0 - (gradient / flat_gradient).ln() / 10.0_f64.ln()).max(0.0)
-            };
+            let share = sinuosity_share(gradient, flat_gradient);
             let size = (0.4 + 0.15 * (g.accumulation[cells[j1]] as f64 / threshold).log2())
                 .clamp(0.4, 1.0);
             local[i] = 1.0 + (s.sinuosity - 1.0) * share * size;
@@ -1314,23 +1436,7 @@ pub(crate) fn vector_rivers(
             return (cells, None);
         }
         let level_at = |u| lerp(&level, u);
-        let (mut px, mut py, mut du, mut node_of) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        for i in 0..count - 1 {
-            let m = ((xs[i + 1] - xs[i]).hypot(ys[i + 1] - ys[i]) / (cell / 3.0))
-                .ceil()
-                .max(1.0) as usize;
-            node_of.push(px.len());
-            for j in 0..m {
-                px.push(xs[i] + (xs[i + 1] - xs[i]) * j as f64 / m as f64);
-                py.push(ys[i] + (ys[i + 1] - ys[i]) * j as f64 / m as f64);
-                du.push(i as f64 + j as f64 / m as f64)
-            }
-        }
-        node_of.push(px.len());
-        px.push(xs[count - 1]);
-        py.push(ys[count - 1]);
-        du.push((count - 1) as f64);
+        let (mut px, mut py, du, node_of) = source_curve(&xs, &ys, cell / 3.0);
         let nodes = px.len();
         let limit: Vec<f64> = (0..nodes)
             .map(|k| (level_at(du[k]) + 0.3).max(ctx.terrain(px[k], py[k])))
@@ -1471,6 +1577,7 @@ pub(crate) fn vector_rivers(
             kind.extend(run.kind);
             lv.extend(run.level);
             oxbows.extend(run.oxbows);
+            oxbow_owner.resize(oxbows.len(), id);
             braids.extend(run.braids);
             network.avulsions += run.avulsions;
             network.meander_km += run.length / 1000.0;
@@ -1736,6 +1843,28 @@ pub(crate) fn vector_rivers(
             outlet: cells.last().copied(),
         });
     }
+    // River density under 1: whole rivers go, the smallest first (`select_rivers`), with their oxbows and braids.
+    let low_area = if s.headwaters > 0.0 {
+        threshold * (1.0 - (1.0 - HEADWATER_SHARE) * s.headwaters.min(1.0))
+    } else {
+        threshold
+    };
+    let lake_fed: Vec<bool> = streams.iter().map(|stream| lake_donor[stream.cells[0]] >= 0).collect();
+    drop_short_leaves(&mut lines, &lake_fed, s.min_river_length);
+    let mut keep = select_rivers(&mut lines, &lake_fed, threshold, low_area, s.density);
+    // A course without a line (dropped, or absorbed by the course beside it) leaves no oxbow nor braid behind.
+    for (id, line) in lines.iter().enumerate() {
+        if line.is_none() {
+            keep[id] = false
+        }
+    }
+    let oxbows: Vec<Line> = oxbows
+        .into_iter()
+        .zip(&oxbow_owner)
+        .filter(|(_, owner)| keep[**owner])
+        .map(|(line, _)| line)
+        .collect();
+    braids.retain(|line| line.id.map_or(true, |id| keep[id]));
     if s.deltas {
         deltas(&ctx, s, &order, &streams, &lines, &rng, &mut network)
     }
@@ -1810,7 +1939,8 @@ pub(crate) fn vector_rivers(
         link.joins = Some(target_line.and_then(|t| t.id).map_or(-1, |i| i as i32));
         network.lake_links.push(link)
     }
-    network.oxbows = clear_oxbows(&ctx, s, &traced, oxbows);
+    // No oxbow unless asked: a cut-off removes the loop and leaves dry ground.
+    network.oxbows = if s.oxbows > 0.0 { clear_oxbows(&ctx, s, &traced, oxbows) } else { Vec::new() };
     network.braids = braids
         .into_iter()
         .filter(|line| {
@@ -1839,7 +1969,21 @@ pub(crate) fn vector_rivers(
 
 #[cfg(test)]
 mod short_course_tests {
-    use super::prune_short_courses;
+    use super::{Line, drop_short_leaves, prune_short_courses};
+
+    /// Invariant: every traced course left is at least the minimum long or carries a longer course; a lake outflow
+    /// stays whatever its length. A 600 m stem (0) takes a 50 m stub (1) and a 300 m course (2), which takes a
+    /// 500 m tributary (3); a 200 m stem (4) takes only a 60 m stub (5); a 100 m lake outflow (6) joins the stem.
+    #[test]
+    fn short_traced_courses_without_tributaries_are_dropped() {
+        let course = |length: f64, joins: i32| Some(Line { points: vec![0.0, 0.0, length, 0.0], joins: Some(joins), ..Line::default() });
+        let mut lines = vec![course(600.0, -1), course(50.0, 0), course(300.0, 0), course(500.0, 2), course(200.0, -1), course(60.0, 4), course(100.0, 0)];
+        let lake_fed = [false, false, false, false, false, false, true];
+        let dropped = drop_short_leaves(&mut lines, &lake_fed, 400.0);
+        let kept: Vec<bool> = lines.iter().map(Option::is_some).collect();
+        assert_eq!(kept, [true, false, true, true, false, false, true], "stub, short stem and its stub dropped");
+        assert_eq!(dropped, 3);
+    }
 
     #[test]
     fn short_courses_are_dropped_main_stems_kept() {

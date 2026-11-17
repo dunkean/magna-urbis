@@ -12,7 +12,9 @@ pub struct Conditioning {
     #[serde(default)]
     pub banks: String,
     /// Share of the closed depressions kept as lakes instead of being breached or filled, 0 (none) to 2 (every
-    /// suitable one): larger and deeper basins first, then a stable draw per basin.
+    /// suitable one): larger and deeper basins first, then a stable draw per basin. From 2 to 4, more lakes: the
+    /// suitable basins get smaller and shallower, the caps on their area wider, and bowls are dug where there are
+    /// none (`undulation::lake_hollows`).
     #[serde(default)]
     pub lakes: f64,
     /// Smallest lake of the water budget downstream (ha and m; 0: 10 ha and 1 m): a kept basin exceeds them.
@@ -25,6 +27,10 @@ pub struct Conditioning {
     pub lake_coverage: f64,
     #[serde(default)]
     pub max_lake_area: f64,
+    /// Strength of the hollows the water chain digs in the ground before the conditioning (`undulation.rs`), for the
+    /// ponds of a marsh: 0 or absent, none (the default; the wetland zone sends 2).
+    #[serde(default)]
+    pub undulation: f64,
 }
 /// Cells of the closed depressions kept as lakes (1) and of their rim, two cells around (2), or nothing when none
 /// is kept. `filled`: the flood of `height` (the first breaching pass has it: no flood of its own). A depression
@@ -40,8 +46,14 @@ fn kept_lakes(height: &mut [f32], filled: &[f32], n: usize, width: f64, s: &Cond
         return Vec::new();
     }
     let or = |v: f64, fallback: f64| if v > 0.0 { v } else { fallback };
-    let (min_area, min_depth) = (1.5 * or(s.lake_area, 10.0) * 1e4, or(s.lake_depth, 1.0) + 1.0);
-    let (coverage, largest) = (or(s.lake_coverage, 0.05), or(s.max_lake_area, 0.02));
+    // Margins over the smallest lake of the water budget, both in proportion: half as large again, twice as deep
+    // (2 m for the default 1 m, as before). A fixed metre of margin kept no pond of a marsh, whose hollows are
+    // decimetres deep, whatever the share asked. A setting of 0 means the default (10 ha, 1 m).
+    // Above 2 (`extra` from 0 to 1 at 4): basins half as large and half as deep qualify, the lakes may cover three
+    // times the share of the map, and the largest one twice.
+    let extra = ((s.lakes - 2.0) / 2.0).clamp(0.0, 1.0);
+    let (min_area, min_depth) = (1.5 * or(s.lake_area, 10.0) * 1e4 * (1.0 - 0.5 * extra), 2.0 * or(s.lake_depth, 1.0) * (1.0 - 0.5 * extra));
+    let (coverage, largest) = (or(s.lake_coverage, 0.05) * (1.0 + 2.0 * extra), or(s.max_lake_area, 0.02) * (1.0 + extra));
     let (total, cell_area) = (n * n, (width / n as f64).powi(2));
     let mut label = vec![-1_i32; total];
     // Per depression: draw over chance (lower is kept first), area (m2) and deepest water allowed (m).
@@ -304,10 +316,18 @@ fn banks(height: &mut [f32], n: usize, cell: f64, chain: &[usize], levels: &[f64
         };
         ((along(0.4) + 1.3 + turn).sin() + (1.31 * along(2.5) + 4.1).sin() + (0.77 * along(4.6) + 2.2 + turn).sin()) / 3.0
     };
+    // Widest reach of a bank (cells): the valley a course of this catchment wants (two channel widths of floor and
+    // its valley depth at the mean valley side slope, as `incision`), in metres, with one cell as the floor of the
+    // resolution and `BANK_REACH` cells at most. A brook of a 40 km map gets no groove hundreds of metres wide.
+    let cap = |k: usize| {
+        let a = upstream[k];
+        ((2.0 * super::rivers::channel_width(a, 3.0) + super::incision::valley_depth(a) / 0.12) / cell).clamp(2.0, BANK_REACH)
+    };
     // Per chain cell and side: slope of the bank and its reach beyond the bed (cells).
     let raw: Vec<[(f64, f64); 2]> = (0..m)
         .map(|k| {
             let w = 3.min(k).min(m - 1 - k);
+            let most = cap(k);
             // Up to 20 % gentler from 0.3 to 30 km² of upstream area.
             let flow = 1.0 + 0.2 * ((upstream[k].max(1.0).log10() - 5.5) / 2.0).clamp(0.0, 1.0);
             std::array::from_fn(|side| {
@@ -320,20 +340,20 @@ fn banks(height: &mut [f32], n: usize, cell: f64, chain: &[usize], levels: &[f64
                 // Where the sloped bank meets the relief, along the normal: the reach leaves it room before fading.
                 let sign = if side == 1 { 1.0 } else { -1.0 };
                 let (nx, ny) = (normal[k].0 * sign, normal[k].1 * sign);
-                let meets = (2..=(2.0 * BANK_REACH) as usize).map(|i| i as f64 * 0.5).find(|&x| {
+                let meets = (2..=(2.0 * most) as usize).map(|i| i as f64 * 0.5).find(|&x| {
                     ground_at(xs[k] + nx * (0.75 + x), ys[k] + ny * (0.75 + x)) <= levels[k] + slope * cell * bank_rise(x) + 1.0
                 });
-                let limit = 0.85 * BANK_REACH;
+                let limit = 0.85 * most;
                 match meets {
-                    Some(x) if x <= limit => (slope, (x / BANK_SLOPED).min(BANK_REACH)),
+                    Some(x) if x <= limit => (slope, (x / BANK_SLOPED).min(most)),
                     // A deep cut or a gorge: at the limit of the reach the bank steepens to meet the relief there.
                     _ if normal[k] != (0.0, 0.0) => {
                         let far = ground_at(xs[k] + nx * (0.75 + limit), ys[k] + ny * (0.75 + limit)) - levels[k];
-                        (slope.max(far / (cell * bank_rise(limit))), BANK_REACH)
+                        (slope.max(far / (cell * bank_rise(limit))), most)
                     }
                     _ => {
                         let rise = mean(&rise);
-                        (slope.max(rise / (limit * cell)), (rise / (slope * cell) / BANK_SLOPED).min(BANK_REACH))
+                        (slope.max(rise / (limit * cell)), (rise / (slope * cell) / BANK_SLOPED).min(most))
                     }
                 }
             })
@@ -392,6 +412,72 @@ fn banks(height: &mut [f32], n: usize, cell: f64, chain: &[usize], levels: &[f64
         }
     }
 }
+/// Half window of the running mean that smooths a breach chain (cells).
+const BREACH_SMOOTH: usize = 5;
+/// Wavelengths and largest lateral offset in physical channel widths, independent of the source raster.
+const BREACH_WAVES: [f64; 2] = [32.0, 14.0];
+const BREACH_SWING: f64 = 4.0;
+/// Invariant: a breach is not a ruled line. Its chain follows the grid (least-cost steps between drowned floors,
+/// then the receivers of the flood), straight along one of the eight directions for kilometres on even ground; the
+/// smoothed centreline (`xs`, `ys`, in cells) is moved sideways by two seeded waves of some tens of channel widths,
+/// up to `BREACH_SWING` widths, tapered to nothing at both ends. The trench is cut along that centreline with the
+/// levels of the chain, which descend along it, so it drains as the chain did; the pockets it leaves beside it are
+/// silted (`silt`). `seed`: the first cell of the chain.
+fn wind(xs: &mut [f64], ys: &mut [f64], seed: usize, cell: f64, channel: f64) {
+    let m = xs.len();
+    if m < 4 {
+        return;
+    }
+    let mut arc = vec![0.0; m];
+    for k in 1..m {
+        arc[k] = arc[k - 1] + cell * (xs[k] - xs[k - 1]).hypot(ys[k] - ys[k - 1])
+    }
+    let total = arc[m - 1];
+    let mut hash = (seed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mut draw = || {
+        hash ^= hash >> 29;
+        hash = hash.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        (hash >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let phases = [draw() * std::f64::consts::TAU, draw() * std::f64::consts::TAU];
+    let (ox, oy) = (xs.to_vec(), ys.to_vec());
+    for k in 1..m - 1 {
+        let (a, b) = (k.saturating_sub(2), (k + 2).min(m - 1));
+        let (tx, ty) = (ox[b] - ox[a], oy[b] - oy[a]);
+        let l = tx.hypot(ty);
+        if l < 1e-9 {
+            continue;
+        }
+        let taper = {
+            let t = (arc[k].min(total - arc[k]) / (0.5 * BREACH_WAVES[0] * channel)).min(1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let s = arc[k] * std::f64::consts::TAU;
+        let offset = BREACH_SWING * channel / cell * taper
+            * (0.7 * (s / (BREACH_WAVES[0] * channel) + phases[0]).sin()
+                + 0.3 * (s / (BREACH_WAVES[1] * channel) + phases[1]).sin());
+        xs[k] = ox[k] - ty / l * offset;
+        ys[k] = oy[k] + tx / l * offset
+    }
+}
+#[cfg(test)]
+#[test]
+fn breach_winding_has_the_same_physical_scale_on_fine_and_coarse_grids() {
+    let run = |cell: f64| {
+        let count = (4000.0 / cell) as usize;
+        let mut xs: Vec<f64> = (0..=count).map(|k| 100.0 / cell + k as f64).collect();
+        let mut ys = vec![1000.0 / cell; count + 1];
+        wind(&mut xs, &mut ys, 123, cell, 12.0);
+        xs.into_iter().zip(ys).map(|(x, y)| (x * cell, y * cell)).collect::<Vec<_>>()
+    };
+    let (fine, coarse) = (run(20.0), run(40.0));
+    assert_eq!(coarse[0], (100.0, 1000.0));
+    assert_eq!(*coarse.last().unwrap(), (4100.0, 1000.0));
+    assert!(coarse.iter().any(|p| (p.1 - 1000.0).abs() > 25.0));
+    for (k, &(x, y)) in coarse.iter().enumerate() {
+        assert!((x - fine[2 * k].0).abs() < 1e-8 && (y - fine[2 * k].1).abs() < 1e-8);
+    }
+}
 /// `original`: the relief before this breaching pass, for valley banks (empty: the short talus only); `area`: its
 /// upstream areas (m²); `kept`: the lakes kept and their rim, which no cut touches.
 #[allow(clippy::too_many_arguments)]
@@ -412,7 +498,7 @@ fn carve(
     let mut xs = vec![0.0; m];
     let mut ys = xs.clone();
     for k in 0..m {
-        let w = 3.min(k).min(m - 1 - k);
+        let w = BREACH_SMOOTH.min(k).min(m - 1 - k);
         let (mut sx, mut sy) = (0.0, 0.0);
         for j in k - w..=k + w {
             sx += (chain[j] % n) as f64;
@@ -421,6 +507,8 @@ fn carve(
         xs[k] = sx / (2 * w + 1) as f64 + 0.5;
         ys[k] = sy / (2 * w + 1) as f64 + 0.5
     }
+    let channel = super::rivers::channel_width(area[chain[m / 2]] as f64, 1.0).max(12.0);
+    wind(&mut xs, &mut ys, chain[0], cell, channel);
     for k in 0..m {
         let last = k == m - 1;
         let samples = if last {
@@ -557,65 +645,82 @@ fn breach(height: &mut [f32], n: usize, width: f64, s: &Conditioning, pass: usiz
     }
     breaches
 }
-fn settle(height: &mut [f32], filled: &[f32], original: &[f32], n: usize, width: f64, slope: f64, kept: &[u8]) {
+/// Rise of a silted basin floor from its outlet, as a slope (rise over run): 5 cm per km. The silt of a wide plain
+/// rises over tens of kilometres and may raise the outlet of a kept lake below it: at 0.2 m/km the kept lakes of a
+/// flat 40 km map stood several metres higher.
+const SILT_SLOPE: f64 = 5e-5;
+/// Variation of that rise from cell to cell (share), over a few hundred metres: a silted floor is not a plane, whose
+/// steepest descent, straight to the outlet, would rule the courses across it.
+const SILT_ROUGHNESS: f64 = 0.9;
+/// Ordered key of the silting flood: lowest height first, then lowest cell (deterministic ties).
+#[derive(PartialEq)]
+struct Lowest(f64, usize);
+impl Eq for Lowest {}
+impl PartialOrd for Lowest {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Lowest {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.0.total_cmp(&self.0).then(other.1.cmp(&self.1))
+    }
+}
+/// Invariant: after the conditioning, no closed depression is left but the lakes kept (`kept`: lake 1, rim 2, both
+/// left as they are; silting the rim raised the outlets of the marsh ponds, 3.7 m deep at the median instead of 1 m).
+/// What the breaches did not drain is silted up: filled to its spill with a floor that rises from the outlet by
+/// `SILT_SLOPE` (priority flood with a slope; Barnes et al. 2014, with a FIFO for the raised cells), so it drains and
+/// holds no standing water. The old pass (`settle`) raised a basin towards its spill with a floor sloping down to its
+/// middle: a closed bowl that the water budget filled again (18–20 % of a flat 40 km map under water).
+/// Outlets: the map border and the ground at or under the sea level. Returns the number of cells raised.
+fn silt(height: &mut [f32], n: usize, width: f64, kept: &[u8]) -> usize {
     let cell = width / n as f64;
-    let diagonal = cell * std::f64::consts::SQRT_2;
-    let mut d: Vec<f32> = (0..n * n)
-        .map(|c| {
-            if filled[c] > height[c] {
-                f32::INFINITY
+    let total = n * n;
+    let mut done = vec![false; total];
+    let mut open = std::collections::BinaryHeap::new();
+    let mut pit = std::collections::VecDeque::new();
+    for c in 0..total {
+        let (x, y) = (c % n, c / n);
+        if x == 0 || y == 0 || x == n - 1 || y == n - 1 || height[c] <= 0.0 {
+            done[c] = true;
+            open.push(Lowest(height[c] as f64, c));
+        }
+    }
+    let noise = crate::noise::Noise::new(crate::rng::Rng::new("silt"));
+    let scale = 1.0 / (8.0 * cell).max(250.0);
+    let mut raised = 0;
+    loop {
+        let c = match pit.pop_front() {
+            Some(c) => c,
+            None => match open.pop() {
+                Some(Lowest(_, c)) => c,
+                None => break,
+            },
+        };
+        let z = height[c];
+        for (nb, d) in neighbours(c, n) {
+            if done[nb] {
+                continue;
+            }
+            done[nb] = true;
+            if height[nb] <= z && kept.get(nb).is_none_or(|&k| k == 0) {
+                let (x, y) = (((nb % n) as f64 + 0.5) * cell * scale, ((nb / n) as f64 + 0.5) * cell * scale);
+                let rough = 1.0 + SILT_ROUGHNESS * noise.noise(x, y).clamp(-1.0, 1.0);
+                let mut up = (z as f64 + SILT_SLOPE * rough * d * cell) as f32;
+                if up <= z {
+                    // Under a metre-scale slope a raised cell is at least one step above its outlet (z > 0 here:
+                    // ground at or under the sea is an outlet itself).
+                    up = f32::from_bits(z.to_bits() + 1);
+                }
+                height[nb] = up;
+                raised += 1;
+                pit.push_back(nb);
             } else {
-                0.0
-            }
-        })
-        .collect();
-    for y in 0..n {
-        for x in 0..n {
-            let c = y * n + x;
-            if d[c] == 0.0 {
-                continue;
-            }
-            let mut v = d[c] as f64;
-            if x > 0 {
-                v = v.min(d[c - 1] as f64 + cell)
-            }
-            if y > 0 {
-                v = v.min(d[c - n] as f64 + cell);
-                if x > 0 {
-                    v = v.min(d[c - n - 1] as f64 + diagonal)
-                }
-                if x < n - 1 {
-                    v = v.min(d[c - n + 1] as f64 + diagonal)
-                }
-            }
-            d[c] = v as f32
-        }
-    }
-    for y in (0..n).rev() {
-        for x in (0..n).rev() {
-            let c = y * n + x;
-            if d[c] == 0.0 {
-                continue;
-            }
-            let mut v = d[c] as f64;
-            if x < n - 1 {
-                v = v.min(d[c + 1] as f64 + cell)
-            }
-            if y < n - 1 {
-                v = v.min(d[c + n] as f64 + cell);
-                if x < n - 1 {
-                    v = v.min(d[c + n + 1] as f64 + diagonal)
-                }
-                if x > 0 {
-                    v = v.min(d[c + n - 1] as f64 + diagonal)
-                }
-            }
-            d[c] = v as f32;
-            if original[c] > 0.0 && kept.get(c).is_none_or(|&k| k != 1) {
-                height[c] = (height[c] as f64).max(filled[c] as f64 - slope * v) as f32
+                open.push(Lowest(height[nb] as f64, nb));
             }
         }
     }
+    raised
 }
 pub fn condition_relief(
     height: &[f32],
@@ -696,8 +801,11 @@ pub(super) fn condition_options(
             result[c] = (height[c] as f64).min(0.1) as f32
         }
     }
-    let settles = both && steps > 0;
-    let mut h = (stats || settles || drainage).then(|| {
+    // What the breaches left closed and no kept lake holds is silted up before the drainage is computed.
+    if s.mode == "breach" || both {
+        silt(&mut result, n, width, &kept);
+    }
+    let mut h = (stats || drainage).then(|| {
         if drainage && accumulate {
             hydrology(&result, n, width)
         } else {
@@ -708,19 +816,6 @@ pub(super) fn condition_options(
             }}
         }
     });
-    if settles {
-        settle(
-            &mut result,
-            &h.as_ref().unwrap().grids.filled,
-            height,
-            n,
-            width,
-            0.048 / steps as f64,
-            &kept,
-        )
-    }
-    // Drainage was computed before settling, exactly as TS; its height points
-    // at the now-settled physical floor while filled/routing stay unchanged.
     if let Some(ref mut hydro) = h {
         hydro.height = result.clone()
     }

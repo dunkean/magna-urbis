@@ -1,10 +1,13 @@
 //! Detailed coasts, broad mainland sectors, branched islands and offshore rocks.
-//! Signed distance is positive inland; GPU and CPU share this FP32 capsule plan.
+//! Signed distance is positive inland; GPU and CPU share this FP32 coast plan.
 use crate::{Noise, Rng, smooth};
 use std::f64::consts::TAU;
 
-/// Header floats before the capsules: profile, per-direction reach, character, bumps,
-/// then the relief fit (shore shift, relief median, inverse spread, drowning, band, shelf).
+/// Header floats: profile (slot 0: direction mask or TRACED), per-direction reach,
+/// character, bumps, then the relief fit
+/// (slots 56..61: shift, median, inverse spread, drowning, band, shelf), sea count (62)
+/// and field size (63). After the 64-float header: 8 floats per sea capsule, then the
+/// optional row-major n*n sea field padded to 4 floats, then 12 floats per land capsule.
 const HEADER: usize = 64;
 const BUMPS: usize = 32;
 const MAX_BUMPS: usize = 6;
@@ -15,9 +18,12 @@ const RELIEF_INVERSE: usize = 58;
 const DROWNING: usize = 59;
 const DROWNING_BAND: usize = 60;
 const SHELF: usize = 61;
-/// Sea capsules (8 floats each) follow the header, before the land capsules.
+/// Sea capsules (8 floats each) follow the header, before the field and land capsules.
 const SEA_COUNT: usize = 62;
+const FIELD_N: usize = 63;
 const SEA_STRIDE: usize = 8;
+/// Active mainland marker, outside the eight direction bits and distinct from islands.
+const TRACED: f32 = 256.0;
 /// Upper bound of |simplex noise|, hence of any fractal sum of it: three corners of
 /// at most 75 * max((0.5 - r²)⁴ r) = 75 * 0.0092 each.
 const NOISE_BOUND: f64 = 2.1;
@@ -52,10 +58,11 @@ impl Coast {
     }
 
     pub fn configure(&mut self, mask: u32, mode: &str) -> Result<(), String> {
-        if mask > 255 {
+        let traced = mode.starts_with("traced:");
+        if mask > 255 && !traced {
             return Err("Les côtes doivent être un masque de huit directions (0 à 255).".into());
         }
-        if !matches!(mode, "island" | "archipelago" | "random" | "peninsula") {
+        if !traced && !matches!(mode, "island" | "archipelago" | "random" | "peninsula") {
             return Err("Choisissez île, archipel, presqu’île ou aléatoire.".into());
         }
         self.parameters.truncate(8);
@@ -103,6 +110,31 @@ impl Coast {
         self.islets_from = HEADER;
         self.archipelago = false;
         if mask == 0 {
+            return Ok(());
+        }
+        if traced {
+            self.parameters[0] = 0.0;
+            let field = traced_field(mode)?;
+            if (1..=254).contains(&mask) {
+                self.edge_seas(mask);
+                self.parameters[0] = mask as f32;
+            }
+            if let Some((n, field)) = field {
+                self.parameters[0] = TRACED;
+                self.parameters[FIELD_N] = n as f32;
+                self.parameters.extend(field);
+                self.parameters.resize(self.land_start(), 0.0);
+            }
+            if !self.active() {
+                return Ok(());
+            }
+            // The same softening as the other mainland layouts.
+            self.parameters[24] *= 0.5;
+            self.parameters[26] *= 0.6;
+            let mut rng = self.rng.fork("shape-v2");
+            self.shore_features(&mut rng, false);
+            self.islets_from = self.parameters.len();
+            self.place_islets(&|_, _| 0.0);
             return Ok(());
         }
         if mask != 255 {
@@ -210,14 +242,21 @@ impl Coast {
         let mask = self.parameters[0] as u32;
         if mask != 255 {
             // The seeded plan sets the intended sea share; the relief only redistributes
-            // it. A lone cardinal cove stays small; corners and runs follow their plan.
-            let lone_cove = mask.count_ones() == 1 && mask.trailing_zeros() % 2 == 0;
+            // it. Traces retain their planned share without the direction-mask limits.
+            // A lone cardinal cove stays small; corners and runs follow their plan.
+            let lone_cove = !self.traced() && mask.count_ones() == 1 && mask.trailing_zeros() % 2 == 0;
             let cell = 1.0 / n as f64;
             let geometry: Vec<f64> = (0..n * n)
                 .map(|i| self.geometry((i % n) as f64 * cell + cell * 0.5, (i / n) as f64 * cell + cell * 0.5, cell).0)
                 .collect();
             let planned = geometry.iter().filter(|&&g| g <= 0.0).count() as f64 / geometry.len() as f64;
-            let target = if lone_cove { planned.clamp(0.08, 0.22) } else { planned.clamp(0.03, 0.72) };
+            let target = if self.traced() {
+                planned
+            } else if lone_cove {
+                planned.clamp(0.08, 0.22)
+            } else {
+                planned.clamp(0.03, 0.72)
+            };
             let sea = |coast: &Self, shift: f64| {
                 geometry.iter().zip(&relief)
                     .filter(|&(&g, &h)| g + shift + coast.relief_term(h, g + shift) <= 0.0)
@@ -305,9 +344,30 @@ impl Coast {
         }
     }
 
-    /// First land capsule, after the sea capsules.
+    fn traced(&self) -> bool {
+        self.parameters[0] == TRACED
+    }
+
+    /// First land capsule, after the sea capsules and the padded sampled sea field.
     fn land_start(&self) -> usize {
-        HEADER + self.parameters[SEA_COUNT] as usize * SEA_STRIDE
+        let n = self.parameters[FIELD_N] as usize;
+        HEADER + self.parameters[SEA_COUNT] as usize * SEA_STRIDE + (n * n).div_ceil(4) * 4
+    }
+
+    /// Cell-centred bilinear sea distance, with constant extension beyond the grid.
+    /// Mirrored by `coastSeaField` in `terrainCoast.wgsl`.
+    fn sea_field(&self, x: f64, y: f64) -> f64 {
+        let n = self.parameters[FIELD_N] as usize;
+        let fx = (x * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+        let fy = (y * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+        let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
+        let (x1, y1) = ((x0 + 1).min(n - 1), (y0 + 1).min(n - 1));
+        let (tx, ty) = (fx - x0 as f64, fy - y0 as f64);
+        let start = HEADER + self.parameters[SEA_COUNT] as usize * SEA_STRIDE;
+        let at = |x, y| self.parameters[start + y * n + x] as f64;
+        let north = at(x0, y0) * (1.0 - tx) + at(x1, y0) * tx;
+        let south = at(x0, y1) * (1.0 - tx) + at(x1, y1) * tx;
+        north * (1.0 - ty) + south * ty
     }
 
     fn sea_capsule(&mut self, a: (f64, f64), b: (f64, f64), ra: f64, rb: f64) {
@@ -641,6 +701,10 @@ impl Coast {
         self.parameters[3] as f64
     }
 
+    pub fn set_marine_datum(&mut self, datum: f64) {
+        self.parameters[7] = datum as f32;
+    }
+
     /// Drowning of the relief near the shore: low ground (valleys, river mouths,
     /// lowlands) lets the sea in as bays, rias and estuaries; high ground holds out as
     /// headlands and, offshore, as islets. Bounded by the drowning, fading beyond its band.
@@ -685,8 +749,11 @@ impl Coast {
                         .noise
                         .fbm_filtered(x / ws - 7.7, y / ws + 9.1, 3, 0.5, footprint / ws),
             );
-            // The edge seas (`edge_seas`): the union of their capsules, sea inside.
+            // Union of the traced field and edge-sea capsules, positive in the sea.
             let mut sea = -10.0_f64;
+            if at(FIELD_N) > 0.0 {
+                sea = self.sea_field(wx, wy);
+            }
             for k in 0..at(SEA_COUNT) as usize {
                 let j = HEADER + k * SEA_STRIDE;
                 let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
@@ -807,10 +874,15 @@ impl Coast {
         raised += at(SHIFT).max(0.0);
         let mask = at(0) as u32;
         if mask != 255 {
-            // The warp moves the sample by at most `reach`; a tapered capsule changes
-            // by at most (1 + its radius slope) per unit of displacement.
+            // The warp moves the sample by at most `reach`; bound the field and
+            // capsule variation over that displacement before adding the shore band.
             let reach = at(24).abs() * NOISE_BOUND * std::f64::consts::SQRT_2;
             let mut sea = -10.0_f64;
+            if at(FIELD_N) > 0.0 {
+                // Each grid-axis slope is at most one; bilinear interpolation is
+                // sqrt(2)-Lipschitz, including the clamped extension outside the map.
+                sea = self.sea_field(x, y) - std::f64::consts::SQRT_2 * reach;
+            }
             for k in 0..at(SEA_COUNT) as usize {
                 let j = HEADER + k * SEA_STRIDE;
                 let (ax, ay, bx, by) = (at(j), at(j + 1), at(j + 2), at(j + 3));
@@ -905,6 +977,92 @@ impl Coast {
     }
 }
 
+/// Decode the web mask and retain the centre of an edge-replicated, padded exact EDT.
+/// An all-land mask has no coast; an all-sea mask cannot define a landmass.
+fn traced_field(mode: &str) -> Result<Option<(usize, Vec<f32>)>, String> {
+    let invalid = || "Invalid traced coast: expected traced:<16..128>:<lowercase hex mask>".to_string();
+    let (size, hex) = mode.strip_prefix("traced:").and_then(|s| s.split_once(':')).ok_or_else(invalid)?;
+    if size.is_empty() || !size.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(invalid());
+    }
+    let n: usize = size.parse().map_err(|_| invalid())?;
+    if !(16..=128).contains(&n) || hex.len() != (n * n).div_ceil(8) * 2 {
+        return Err(invalid());
+    }
+    let digit = |b| match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        _ => Err(invalid()),
+    };
+    let bytes: Vec<u8> = hex.as_bytes().chunks_exact(2)
+        .map(|pair| Ok((digit(pair[0])? << 4) | digit(pair[1])?))
+        .collect::<Result<_, String>>()?;
+    let sea: Vec<bool> = (0..n * n).map(|i| (bytes[i >> 3] >> (i & 7)) & 1 != 0).collect();
+    let sea_count = sea.iter().filter(|&&s| s).count();
+    if sea_count == n * n {
+        return Err("A traced coast must contain at least one land cell".into());
+    }
+    if sea_count == 0 {
+        return Ok(None);
+    }
+    let pad = n / 2;
+    let padded_n = n + 2 * pad;
+    let padded: Vec<bool> = (0..padded_n * padded_n).map(|i| {
+        let x = (i % padded_n).saturating_sub(pad).min(n - 1);
+        let y = (i / padded_n).saturating_sub(pad).min(n - 1);
+        sea[y * n + x]
+    }).collect();
+    let to_land = squared_distances(&padded, padded_n, false);
+    let to_sea = squared_distances(&padded, padded_n, true);
+    let field = (0..n * n).map(|i| {
+        let j = (i / n + pad) * padded_n + i % n + pad;
+        let distance = if sea[i] { to_land[j].sqrt() - 0.5 } else { 0.5 - to_sea[j].sqrt() };
+        (distance / n as f64).clamp(-2.0, 2.0) as f32
+    }).collect();
+    Ok(Some((n, field)))
+}
+
+/// Exact squared Euclidean distances in O(n*n), by separable lower envelopes of
+/// parabolas. A finite sentinel keeps empty rows well-defined during the first pass.
+fn squared_distances(sea: &[bool], n: usize, target_sea: bool) -> Vec<f64> {
+    let mut distances: Vec<f64> = sea.iter().map(|&s| if s == target_sea { 0.0 } else { 1e12 }).collect();
+    let mut input = vec![0.0; n];
+    let mut sites = vec![0; n];
+    let mut boundaries = vec![0.0; n + 1];
+    for axis in 0..2 {
+        for line in 0..n {
+            let (start, stride) = if axis == 0 { (line * n, 1) } else { (line, n) };
+            for q in 0..n { input[q] = distances[start + q * stride]; }
+            let mut k = 0;
+            sites[0] = 0;
+            boundaries[0] = f64::NEG_INFINITY;
+            boundaries[1] = f64::INFINITY;
+            for q in 1..n {
+                let intersection = |v: usize| {
+                    (input[q] + (q * q) as f64 - input[v] - (v * v) as f64)
+                        / (2.0 * (q - v) as f64)
+                };
+                let mut split = intersection(sites[k]);
+                while split <= boundaries[k] {
+                    k -= 1;
+                    split = intersection(sites[k]);
+                }
+                k += 1;
+                sites[k] = q;
+                boundaries[k] = split;
+                boundaries[k + 1] = f64::INFINITY;
+            }
+            k = 0;
+            for q in 0..n {
+                while boundaries[k + 1] < q as f64 { k += 1; }
+                let delta = q as f64 - sites[k] as f64;
+                distances[start + q * stride] = delta * delta + input[sites[k]];
+            }
+        }
+    }
+    distances
+}
+
 /// Point of the map boundary at perimeter `p`, clockwise from the top-left corner,
 /// one unit per side (y grows southwards).
 fn perimeter(p: f64) -> (f64, f64) {
@@ -922,10 +1080,27 @@ fn perimeter(p: f64) -> (f64, f64) {
 mod open_sea_tests {
     use super::*;
 
+    /// Pack cell-centred sea samples in the web contract's least-significant-bit order.
+    fn traced_mode(n: usize, sea: impl Fn(f64, f64) -> bool) -> String {
+        let mut bytes = vec![0u8; (n * n).div_ceil(8)];
+        for y in 0..n {
+            for x in 0..n {
+                if sea((x as f64 + 0.5) / n as f64, (y as f64 + 0.5) / n as f64) {
+                    let i = y * n + x;
+                    bytes[i >> 3] |= 1 << (i & 7);
+                }
+            }
+        }
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        format!("traced:{n}:{hex}")
+    }
+
     #[test]
     fn open_sea_is_exactly_what_the_shore_returns() {
         let width = 25000.0;
-        for (mask, mode, fitted) in [(255, "island", false), (255, "archipelago", false), (255, "peninsula", true), (3, "island", false), (136, "island", true), (1, "island", true), (56, "island", true)] {
+        let west = traced_mode(48, |x, _| x < 0.35);
+        let island = traced_mode(48, |x, y| (x - 0.5).hypot(y - 0.5) >= 0.3);
+        for (mask, mode, fitted) in [(255, "island", false), (255, "archipelago", false), (255, "peninsula", true), (3, "island", false), (136, "island", true), (1, "island", true), (56, "island", true), (255, west.as_str(), true), (64, island.as_str(), true), (255, island.as_str(), true)] {
             let mut coast = Coast::new(Rng::new("open-sea").fork("coast"), width, 10000.0, 1000.0, 0.0);
             coast.configure(mask, mode).unwrap();
             if fitted {
@@ -944,6 +1119,118 @@ mod open_sea_tests {
             }
             println!("{mask} {mode}: open sea {:.1}%", open as f64 / 256.0);
         }
+    }
+
+    #[test]
+    fn a_traced_coast_follows_its_mask() {
+        let width = 25000.0;
+        let n = 64;
+        let relief = hills(n);
+        // Signed analytic sea distances for a west sea and a circular island.
+        let shapes: [fn(f64, f64) -> f64; 2] = [
+            |x, _| 0.35 - x,
+            |x, y| (x - 0.5).hypot(y - 0.5) - 0.3,
+        ];
+        for (shape, distance) in shapes.into_iter().enumerate() {
+            let mode = traced_mode(n, |x, y| distance(x, y) > 0.0);
+            for seed in 0..3 {
+                let mut coast = Coast::new(Rng::new(&format!("traced-coast-{seed}")).fork("coast"), width, 10000.0, 1000.0, 0.0);
+                coast.configure(255, &mode).unwrap();
+                coast.fit(&hills(48), 48).unwrap();
+                let (mut far, mut agree, mut planned_sea, mut actual_sea) = (0, 0, 0, 0);
+                for y in 0..n {
+                    for x in 0..n {
+                        let (px, py) = ((x as f64 + 0.5) / n as f64, (y as f64 + 0.5) / n as f64);
+                        let d = distance(px, py);
+                        let sea = coast.apply(px * width, py * width, width, relief[y * n + x] as f64, width / n as f64) <= 0.0;
+                        planned_sea += usize::from(d > 0.0);
+                        actual_sea += usize::from(sea);
+                        if d.abs() > 0.12 {
+                            far += 1;
+                            agree += usize::from(sea == (d > 0.0));
+                        }
+                    }
+                }
+                assert!(far > 0 && agree * 100 >= far * 97, "shape {shape}, seed {seed}: {agree}/{far} far cells agree");
+                let error = (actual_sea as f64 - planned_sea as f64).abs() / (n * n) as f64;
+                assert!(error <= 0.08, "shape {shape}, seed {seed}: sea share error {error}");
+            }
+        }
+    }
+
+    #[test]
+    fn west_edge_sea_and_traced_east_bay_are_united() {
+        let width = 25000.0;
+        let mode = traced_mode(64, |x, y| x > 0.65 && (y - 0.5).abs() < 0.25);
+        let mut coast = Coast::new(Rng::new("combined-seas"), width, 10000.0, 1000.0, 0.0);
+        coast.configure(1 << 6, &mode).unwrap();
+        assert!(coast.parameters[SEA_COUNT] > 0.0);
+        assert_eq!(coast.parameters[FIELD_N], 64.0);
+        coast.fit(&vec![100.0; 64 * 64], 64).unwrap();
+        let sea_at = |x, y| coast.apply(x * width, y * width, width, 100.0, width / 64.0) < 0.0;
+        assert!((8..56).any(|y| sea_at(0.01, y as f64 / 64.0)));
+        assert!(sea_at(0.95, 0.5));
+        assert!(!sea_at(0.5, 0.15));
+    }
+
+    #[test]
+    fn traced_modes_validate_only_when_active() {
+        let mut coast = Coast::new(Rng::new("traced-validation"), 25000.0, 10000.0, 1000.0, 0.0);
+        let hex = "00".repeat(32);
+        let malformed = [
+            "traced:".to_string(), "traced:16".to_string(),
+            format!("traced:15:{hex}"), format!("traced:129:{hex}"),
+            format!("traced:+16:{hex}"), format!("traced:16:{hex}:extra"),
+            "traced:16:00".to_string(), format!("traced:16:{}", "gg".repeat(32)),
+            format!("traced:16:{}", "AA".repeat(32)),
+            traced_mode(16, |_, _| true),
+        ];
+        for mode in &malformed {
+            assert!(coast.configure(255, mode).is_err(), "{mode}");
+            coast.configure(0, mode).unwrap();
+            assert!(!coast.active());
+            assert_eq!(coast.parameters[FIELD_N], 0.0);
+        }
+        coast.configure(255, &traced_mode(16, |_, _| false)).unwrap();
+        assert!(!coast.active());
+        // Every non-zero mask activates a traced plan, even outside direction bits.
+        for mask in [1, 255, 256, u32::MAX] {
+            coast.configure(mask, &traced_mode(17, |x, _| x < 0.5)).unwrap();
+            assert!(coast.traced());
+            assert!(!coast.archipelago);
+            let seas = coast.parameters[SEA_COUNT] as usize;
+            assert_eq!(seas > 0, mask == 1);
+            assert_eq!(coast.parameters[FIELD_N], 17.0);
+            let field_start = HEADER + seas * SEA_STRIDE;
+            assert_eq!(coast.land_start(), field_start + 292);
+            assert_eq!(&coast.parameters[field_start + 289..field_start + 292], &[0.0; 3]);
+            coast.configure(0, "traced:...").unwrap();
+            assert!(!coast.active());
+        }
+    }
+
+    #[test]
+    fn traced_field_preserves_distances_and_extends_map_edges() {
+        let n = 17;
+        let mode = traced_mode(n, |x, _| x < 0.5);
+        let (_, field) = traced_field(&mode).unwrap().unwrap();
+        for y in 0..n {
+            for x in 0..n {
+                let expected = (7.5 - x as f64) / n as f64;
+                assert!((field[y * n + x] as f64 - expected).abs() < 1e-7);
+            }
+        }
+        let mut coast = Coast::new(Rng::new("traced-field"), 25000.0, 10000.0, 1000.0, 0.0);
+        coast.configure(255, &mode).unwrap();
+        assert!((coast.sea_field(0.25, 0.5) - (8.0 / n as f64 - 0.25)).abs() < 1e-7);
+        assert_eq!(coast.sea_field(-1.0, -1.0), field[0] as f64);
+        assert_eq!(coast.sea_field(2.0, 2.0), field[n * n - 1] as f64);
+        // An isolated land cell exercises true Euclidean, rather than grid-path, distance.
+        let (_, disc) = traced_field(&traced_mode(n, |x, y| {
+            (x - 0.5).abs() > 0.01 || (y - 0.5).abs() > 0.01
+        })).unwrap().unwrap();
+        assert!((disc[0] as f64 - ((128.0_f64).sqrt() - 0.5) / n as f64).abs() < 1e-7);
+        assert_eq!(disc[8 * n + 8], -0.5 / n as f32);
     }
 
     /// Rolling relief with valleys of several sizes, in metres, on an `n`² grid.

@@ -42,11 +42,14 @@ pub struct TerrainGenerator {
     cave_raster: Vec<u8>,
     /// Underdark wall distance on the source grid (cells, > 0 in rock): smooth walls when sampled.
     cave_sdf: Vec<f32>,
+    /// Natural Underdark tunnels in wire form (`underdark::tunnels_wire`), empty when none were carved.
+    cave_tunnels: Vec<f32>,
     coast: crate::coast::Coast,
     coastal_surface: Surface,
     edited_surface: Surface,
-    sea_zones: Option<crate::TerrainZones>,
-    /// Externally prepared signed surface (neural relief): never cut or eroded again.
+    /// Captured before the first coast operation, including any neural zone sea.
+    bare_prepared_surface: Option<Vec<f32>>,
+    /// Externally prepared signed surface, with no procedural relief added.
     prepared: bool,
 }
 
@@ -392,6 +395,7 @@ impl TerrainGenerator {
             cave,
             cave_raster: Vec::new(),
             cave_sdf: Vec::new(),
+            cave_tunnels: Vec::new(),
             coast: crate::coast::Coast::new(
                 root.fork("coast"),
                 map_width,
@@ -405,7 +409,7 @@ impl TerrainGenerator {
             ),
             coastal_surface: Surface::new(Vec::new()),
             edited_surface: Surface::new(Vec::new()),
-            sea_zones: None,
+            bare_prepared_surface: None,
             prepared: false,
         };
         Ok(result)
@@ -413,7 +417,7 @@ impl TerrainGenerator {
 
     /// Retains an externally prepared square signed surface in metres over the
     /// map, row-major from the north-west corner, sea level at zero. Sampling
-    /// reads it as is; no procedural relief, coast cut or erosion is applied.
+    /// reads it as is until an explicit coast operation is requested.
     pub fn with_surface(seed: &str, map_width: f64, heights: &[f32]) -> Result<Self, String> {
         Self::with_surface_owned(seed, map_width, heights.to_vec())
     }
@@ -438,7 +442,7 @@ impl TerrainGenerator {
             source_n,
         )?;
         let max = heights.iter().copied().fold(f32::MIN, f32::max) as f64;
-        generator.max_height = max.max(1.0);
+        generator.max_height = max;
         generator.coastal_surface = Surface::new(heights);
         generator.prepared = true;
         Ok(generator)
@@ -523,6 +527,7 @@ impl TerrainGenerator {
         environment: Option<&str>, zones: &crate::TerrainZones, source_n: usize,
     ) -> Result<Self, String> {
         zones.validate()?;
+        let zones = &zones.naturalized(seed, width, motif);
         let mut base = Self::new_mixed_with_noise_at_resolution(seed,width,relief,erosion,motif,mix,None,environment,source_n)?;
         if base.relief == Relief::Cavern {
             return Err("Les zones de relief ne s’appliquent pas aux cavernes.".into());
@@ -554,11 +559,9 @@ impl TerrainGenerator {
                     (base.height_at(px, py, cell) * weights[0] + field[i] as f64 * coverage) as f32;
             }
         }
-        base.cut_zone_sea(&mut field, zones, motif);
         crate::erosion::erode_surface(&mut field, n, cell, erosion, 0.85, motif, false);
         base.max_height = field.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
         base.edited_surface = Surface::new(field);
-        base.sea_zones = Some(zones.clone());
         Ok(base)
     }
 
@@ -635,14 +638,21 @@ impl TerrainGenerator {
     /// Underdark: carve the current physical relief into caves and tunnels (`crate::underdark`),
     /// then retain the carved surface and its rock mask. Coasts and erosion stay as they were.
     pub fn carve_underdark(&mut self, seed: &str) -> Result<(), String> {
+        self.carve_underdark_with(seed, &crate::underdark::UnderdarkOptions::default())
+    }
+    /// `carve_underdark` with explicit options (natural tunnels amount).
+    pub fn carve_underdark_with(&mut self, seed: &str, options: &crate::underdark::UnderdarkOptions) -> Result<(), String> {
         let field = self.physical_height_field();
-        let carved = crate::underdark::carve(seed, self.map_width, &field)?;
+        let carved = crate::underdark::carve_with(seed, self.map_width, &field, options)?;
         let mut next = Self::with_surface_owned(seed, self.map_width, carved.height)?;
         next.cave_raster = carved.rock;
         next.cave_sdf = carved.sdf;
+        next.cave_tunnels = crate::underdark::tunnels_wire(&carved.tunnels);
         *self = next;
         Ok(())
     }
+    /// Natural Underdark tunnels, flattened `[kind, half_width, count, x0, y0, …]` in metres.
+    pub fn underdark_tunnels(&self) -> Vec<f32> { self.cave_tunnels.clone() }
     pub fn is_underdark(&self) -> bool { !self.cave_raster.is_empty() }
     pub fn physical_cave_field(&self) -> Vec<u8> {
         // Soft mask: 128 on the wall, saturated within a cell; bilinear sampling draws curved walls.
@@ -755,20 +765,30 @@ impl TerrainGenerator {
     /// Optional surface sea. Caverns intentionally retain their underground floor.
     pub fn set_coast(&mut self, mask: u32, mode: &str) -> Result<(), String> {
         self.configure_coast(mask, mode)?;
-        if mask == 0 {
+        if !self.coast.active() {
             return Ok(());
         }
         let n = self.source_n;
         let cell = self.map_width / n as f64;
-        let mut field = self.physical_height_field();
-        if let Some(zones) = &self.sea_zones {
-            self.cut_zone_sea(&mut field, zones, self.motif);
-        }
+        let mut field = if let Some(bare) = &self.bare_prepared_surface {
+            // Use exact source samples, avoiding a second reconstruction filter.
+            let mut field = bare.clone();
+            crate::terrain_par::rows(&mut field, n, |y, row| {
+                for (x, h) in row.iter_mut().enumerate() {
+                    let cut = self.coast.apply((x as f64 + 0.5) * cell,
+                        (y as f64 + 0.5) * cell, self.map_width, *h as f64, cell) as f32;
+                    *h = if *h <= 0.0 { (*h).min(cut) } else { cut };
+                }
+            });
+            field
+        } else {
+            self.physical_height_field()
+        };
         crate::erosion::erode_surface(
             &mut field,
             n,
             cell,
-            self.erosion,
+            self.coast_erosion_strength(),
             self.coast_talus(),
             self.motif,
             true,
@@ -778,19 +798,22 @@ impl TerrainGenerator {
 
     /// Shape only, for GPU assembly followed by physical surface erosion.
     pub fn configure_coast(&mut self, mask: u32, mode: &str) -> Result<(), String> {
-        if self.prepared {
-            // Its shorelines are part of the prepared surface.
-            return if mask == 0 {
-                Ok(())
-            } else {
-                Err("Les côtes d’une surface préparée sont déjà fixées.".into())
-            };
-        }
         if self.relief == Relief::Cavern && mask != 0 {
             return Err("Les côtes ne s’appliquent pas aux cavernes.".into());
         }
+        // Avoid duplicating an untouched prepared surface when no coast is requested.
+        if self.prepared && mask == 0 && self.bare_prepared_surface.is_none() {
+            return self.coast.configure(0, mode);
+        }
         // The coast is fitted to the bare relief: sample it with the coast off.
-        self.coastal_surface = Surface::new(Vec::new());
+        if self.prepared {
+            let bare = self.bare_prepared_surface.get_or_insert_with(||
+                self.coastal_surface.levels[0].clone());
+            self.max_height = bare.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
+            self.coastal_surface = Surface::new(bare.clone());
+        } else {
+            self.coastal_surface = Surface::new(Vec::new());
+        }
         self.coast.configure(0, mode)?;
         if mask == 0 {
             return Ok(());
@@ -803,6 +826,21 @@ impl TerrainGenerator {
                 *h = self.height_at((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell, cell) as f32;
             }
         });
+        if let Some(bare) = &self.bare_prepared_surface {
+            // A high inland pedestal must not dictate the coastal ramp. Keep zero
+            // as the datum whenever the input already reaches sea level. Otherwise
+            // the datum is the lowest ground of the input: the marine relief maps
+            // all ground below its datum onto a flat at 0.3 m, and a low quantile
+            // (5 %) left the lowest twentieth of a neural map as a dead flat apron,
+            // not sea, where the courses stopped. At the minimum, the marine relief
+            // keeps at least half of every gradient.
+            let datum = if bare.iter().any(|&h| h <= 5.0) {
+                0.0
+            } else {
+                bare.iter().copied().fold(f32::INFINITY, f32::min) as f64
+            };
+            self.coast.set_marine_datum(datum);
+        }
         self.coast.configure(mask, mode)?;
         self.coast.fit(&relief, FIT)
     }
@@ -813,17 +851,23 @@ impl TerrainGenerator {
             .clamp(0.2, 0.85)
     }
 
+    fn coast_erosion_strength(&self) -> f64 {
+        // Prepared inputs skip regional erosion, but still need the standard
+        // coastal finishing pass. Surface tuning controls its dose separately.
+        if self.prepared { 1.0 } else { self.erosion }
+    }
+
     pub fn coast_erosion_parameters(&self) -> Vec<f32> {
         crate::erosion::surface_parameters(
             self.map_width,
             self.motif,
-            self.erosion,
+            self.coast_erosion_strength(),
             self.coast_talus(),
         )
         .to_vec()
     }
 
-    /// Prepared signed heights; sea level must not be renormalized or cut again.
+    /// Retain an already cut surface, including GPU output and checkpoints.
     pub fn set_coast_surface(&mut self, heights: &[f32]) -> Result<(), String> {
         if !self.coast.active()
             || heights.len() != self.source_n * self.source_n
@@ -831,7 +875,15 @@ impl TerrainGenerator {
         {
             return Err("Surface littorale préparée invalide.".into());
         }
-        self.coastal_surface = Surface::new(heights.to_vec());
+        let mut field = heights.to_vec();
+        if let Some(bare) = &self.bare_prepared_surface {
+            // Neither coastal erosion nor a restored checkpoint may raise old sea.
+            for (h, &original) in field.iter_mut().zip(bare) {
+                if original <= 0.0 { *h = (*h).min(original); }
+            }
+            self.max_height = field.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
+        }
+        self.coastal_surface = Surface::new(field);
         Ok(())
     }
 
@@ -1279,6 +1331,70 @@ mod physical_resolution_tests {
         assert_eq!(&terrain.sampling_field()[..n*n], height.as_slice());
         assert_eq!(terrain.physical_height_field().len(), n*n);
         assert!((terrain.width() / terrain.source_resolution() as f64 - 500.0 / 17.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prepared_coasts_recut_from_bare_surface_and_restore_exact_samples() {
+        let n = 64;
+        let bare: Vec<f32> = (0..n*n).map(|i| 1200.0 + (i % n) as f32 * 3.0).collect();
+        let mut terrain = TerrainGenerator::with_surface("prepared-coasts", 12000.0, &bare).unwrap();
+        terrain.set_coast(64, "island").unwrap();
+        assert!(terrain.min_height() < 0.0);
+        assert!(terrain.coast_parameters()[7] > 1000.0);
+        assert!(terrain.max_height() < 500.0);
+        terrain.set_coast(4, "island").unwrap();
+        let mut fresh = TerrainGenerator::with_surface("prepared-coasts", 12000.0, &bare).unwrap();
+        fresh.set_coast(4, "island").unwrap();
+        assert_eq!(terrain.sampling_base_field(), fresh.sampling_base_field());
+        let cut = terrain.sampling_base_field();
+        assert_eq!(terrain.max_height(), cut.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64);
+        terrain.set_coast(0, "island").unwrap();
+        assert_eq!(terrain.sampling_base_field(), bare);
+        assert_eq!(terrain.min_height(), 1200.0);
+        assert_eq!(terrain.max_height(), 1389.0);
+        // A checkpoint is retained as a finished cut, while mask zero still restores bare.
+        terrain.configure_coast(4, "island").unwrap();
+        terrain.set_coast_surface(&cut).unwrap();
+        assert_eq!(terrain.sampling_base_field(), cut);
+        terrain.set_coast(0, "island").unwrap();
+        assert_eq!(terrain.sampling_base_field(), bare);
+    }
+
+    /// Invariant: a coast on a prepared surface leaves no flat apron of land. The lowest ground once fell under the
+    /// 5th-percentile marine datum and collapsed to an even 0.3 m floor, not sea, where rivers stopped (6 % of a neural
+    /// map). Here a plane rising 3 m a row towards the southern sea and 1 m a column: its lowest ground lies in the
+    /// north, away from the coast (a low strip by the sea is drowned into a ria, which is sea, not a floor).
+    #[test]
+    fn prepared_coast_keeps_the_gradient_of_the_lowest_land() {
+        let n = 64;
+        let bare: Vec<f32> = (0..n * n).map(|i| 40.0 + 3.0 * (i / n) as f32 + (i % n) as f32).collect();
+        let mut terrain = TerrainGenerator::with_surface("low-plain", 12000.0, &bare).unwrap();
+        terrain.set_coast(16, "island").unwrap();
+        // The datum is the lowest ground: the marine relief keeps at least half of every gradient above it.
+        assert_eq!(terrain.coast_parameters()[7], 40.0);
+        let cut = terrain.sampling_base_field();
+        let land: Vec<f32> = cut.iter().copied().filter(|&h| h > 0.0).collect();
+        let lowest = land.iter().copied().fold(f32::INFINITY, f32::min);
+        let flat = land.iter().filter(|&&h| h < lowest + 0.5).count();
+        assert!(flat * 100 < land.len(), "{flat} of {} land cells within 0.5 m of the land minimum {lowest}", land.len());
+        // The lowest land keeps its slope: 20 m of the input along a northern row is still more than 5 m.
+        assert!(cut[2 * n + 20] - cut[2 * n] > 5.0, "row 2 rises {} m over 20 columns", cut[2 * n + 20] - cut[2 * n]);
+    }
+
+    #[test]
+    fn prepared_coasts_preserve_existing_sea_and_zero_datum() {
+        let n = 64;
+        let bare: Vec<f32> = (0..n*n).map(|i| if i % n >= 48 { -400.0 } else { 900.0 }).collect();
+        let mut terrain = TerrainGenerator::with_surface("existing-sea", 12000.0, &bare).unwrap();
+        terrain.set_coast(64, "island").unwrap();
+        assert_eq!(terrain.coast_parameters()[7], 0.0);
+        let cut = terrain.sampling_base_field();
+        assert!(bare.iter().zip(&cut).all(|(&old, &new)| old > 0.0 || new <= old));
+        // Even an externally supplied coast checkpoint cannot raise existing sea.
+        terrain.set_coast_surface(&vec![100.0; n*n]).unwrap();
+        assert_eq!(terrain.sampling_base_field()[32*n+56], -400.0);
+        terrain.set_coast(0, "island").unwrap();
+        assert_eq!(terrain.sampling_base_field(), bare);
     }
 
     #[test]

@@ -407,6 +407,13 @@ pub(super) fn side_channels(
     }
     result
 }
+/// Side threads of a braided reach `k0..=k1` of a course. Invariant: a thread is an island channel, not a bump on the
+/// bank. It parts from the course and rejoins it at least `BRAID_MIN_SPAN` channel widths further on, it stands at
+/// least one width away from it at its peak, and its offset grows by at most `BRAID_FLARE` per metre of course, so
+/// the island is at least `2 / BRAID_FLARE` times as long as it is wide. The sign of the offset follows a noise of
+/// 20 to 40 widths: one lobe per 10 to 20 widths. (With a noise of 5 to 10 widths, half a width of rise per metre and
+/// no length bound, a braid run was chopped into lobes of about five widths, all of the same triangular shape: the "U"
+/// pieces protruding from hill streams.)
 pub(super) fn braid_threads(
     ctx: &Context,
     out: &[f64],
@@ -429,7 +436,7 @@ pub(super) fn braid_threads(
     }
     let width = channel_width(area[(k0 + k1) / 2], s.width_scale).max(0.5 * ctx.cell);
     let length = arc[m - 1];
-    if length < 15.0 * width {
+    if length < 2.0 * BRAID_MIN_SPAN * width {
         return None;
     }
     let normal = |k: usize| {
@@ -486,7 +493,7 @@ pub(super) fn braid_threads(
     let seed = r.int(0, 1 << 30);
     let mut threads = Vec::new();
     for q in 0..count {
-        let wavelength = r.range(5.0, 10.0) * width;
+        let wavelength = r.range(20.0, 40.0) * width;
         let shift = r.range(0.0, 100.0);
         let mut offsets = vec![0.0; m];
         for j in 0..m {
@@ -515,7 +522,7 @@ pub(super) fn braid_threads(
                     offsets[p].abs()
                 } else {
                     0.0
-                } + 0.5 * (arc[j] - arc[p]).abs();
+                } + BRAID_FLARE * (arc[j] - arc[p]).abs();
                 if offsets[j].abs() > reach {
                     offsets[j] = sign(offsets[j]) * reach
                 }
@@ -537,7 +544,7 @@ pub(super) fn braid_threads(
             }
             let a = j.saturating_sub(1);
             let b = (e + 1).min(m - 1);
-            if peak >= 0.4 * width && b - a >= 3 {
+            if peak >= width && arc[b] - arc[a] >= BRAID_MIN_SPAN * width {
                 let (mut points, mut levels, mut areas) = (Vec::new(), Vec::new(), Vec::new());
                 for t in a..=b {
                     let k = k0 + t;
@@ -562,6 +569,10 @@ pub(super) fn braid_threads(
     }
     (!threads.is_empty()).then_some((threads, count + 1, length))
 }
+/// Shortest braid thread, in channel widths of its course.
+const BRAID_MIN_SPAN: f64 = 12.0;
+/// Steepest flare of a braid thread away from its course (offset per metre of course).
+const BRAID_FLARE: f64 = 0.25;
 pub(super) fn sign(x: f64) -> f64 {
     if x == 0.0 { 0.0 } else { x.signum() }
 }

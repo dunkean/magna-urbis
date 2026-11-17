@@ -337,3 +337,101 @@ fn rivers_beside_a_lake_drain_into_it() {
         }
     }
 }
+
+/// A desert slope (20 mm of rain, 25 °C) falling 2 m a cell to the sea south of row 56 on a 64 x 64 grid of 100 m
+/// cells, gently funnelled to x = 32, with a bowl of radius 5 cells at (32, 28) dug `dig` metres at its centre: its
+/// floor lies `dig` - 10 m under its southern sill. The water budget leaves it dry: its lowest cell evaporates all it
+/// receives.
+fn desert_bowl(dig: f64) -> (Vec<f32>, Water) {
+    let n = 64_usize;
+    let mut height = vec![0.0_f32; n * n];
+    for y in 0..n {
+        for x in 0..n {
+            let r = (x as f64 - 32.0).hypot(y as f64 - 28.0);
+            height[y * n + x] = if y >= 56 {
+                -10.0
+            } else {
+                (20.0 + 2.0 * (56 - y) as f64 + 0.3 * (x as f64 - 32.0).abs()
+                    - if r < 5.0 { dig * (1.0 - r / 5.0) } else { 0.0 }) as f32
+            };
+        }
+    }
+    let mut settings: Settings = serde_json::from_value(expected("dry")["settings"].clone()).unwrap();
+    (settings.balance, settings.river_mode, settings.river_area) = (true, "vector".into(), 0.2);
+    (settings.lake_depth, settings.lake_area) = (1.0, 3.0);
+    let climate = Climate { temperature: 25.0, precipitation: 20.0 };
+    let water = compute_water(&height, n, 6400.0, &settings, climate, "dry-bowl", None);
+    (height, water)
+}
+
+/// Invariant: a course never ends on nothing. A desert river reaches a dry closed bowl 2.8 km from the sea whose sill
+/// stands 3 m above its floor, within what a bed cut can lower: the bowl is no sink, the course crosses it and goes
+/// on, dry, to the sea. Every course ends at a confluence, a lake, the sea or the map edge.
+#[test]
+fn a_river_crosses_a_dry_closed_basin_to_the_sea() {
+    let (n, width) = (64_usize, 6400.0);
+    let cell = width / n as f64;
+    let (height, water) = desert_bowl(13.0);
+    let g = &water.hydro.grids;
+    let bottom = 28 * n + 32;
+    assert!(water.lake.iter().all(|&v| v == 0), "the desert bowl holds no drawn water");
+    // The bowl drains: its lowest cell routes, without a cycle, to the sea.
+    let (mut c, mut steps) = (bottom as i32, 0);
+    while g.receiver[c as usize] >= 0 {
+        c = g.receiver[c as usize];
+        steps += 1;
+        assert!(steps <= n * n, "cycle below the bowl");
+    }
+    assert_eq!(g.sea[c as usize], 1, "the bowl's water route ends at the sea, not in the bowl");
+    let network = water.rivers.as_ref().unwrap();
+    let wet_near = |x: f64, y: f64| {
+        let (cx, cy) = ((x / cell) as isize, (y / cell) as isize);
+        (-1..=1_isize).any(|dy| {
+            (-1..=1_isize).any(|dx| {
+                let (xx, yy) = (cx + dx, cy + dy);
+                xx >= 0 && yy >= 0 && xx < n as isize && yy < n as isize && {
+                    let q = yy as usize * n + xx as usize;
+                    water.lake[q] != 0 || g.sea[q] != 0 || height[q] <= 0.0
+                }
+            })
+        })
+    };
+    let edge = |x: f64, y: f64| x <= cell || y <= cell || x >= width - cell || y >= width - cell;
+    let mut through_bowl = false;
+    for line in &network.rivers {
+        let m = line.points.len() / 2;
+        let (ex, ey) = (line.points[2 * m - 2], line.points[2 * m - 1]);
+        assert!(
+            line.joins.unwrap_or(-1) >= 0 || wet_near(ex, ey) || edge(ex, ey),
+            "river {:?} ends on nothing at ({ex:.0}, {ey:.0})",
+            line.id
+        );
+        through_bowl |= (0..m).any(|k| (line.points[2 * k] - 3250.0).hypot(line.points[2 * k + 1] - 2850.0) < 250.0)
+            && (wet_near(ex, ey) || line.joins.unwrap_or(-1) >= 0);
+    }
+    assert!(through_bowl, "a course crosses the bowl and goes on");
+}
+
+/// Invariant: a river that cannot cross a dry closed basin (its sill 9.5 m above the floor, more than a bed cut can
+/// lower) ends in it, and the basin shows a pan: a closed lake (kind 2), never a course ending on nothing.
+#[test]
+fn a_river_ends_in_the_pan_of_a_deep_dry_basin() {
+    let n = 64_usize;
+    let (height, water) = desert_bowl(20.0);
+    let bottom = 28 * n + 32;
+    assert_eq!(water.hydro.grids.receiver[bottom], -1, "the deep bowl is a terminal sink");
+    assert_eq!(water.lake[bottom], 1, "its floor is drawn as a pan");
+    assert_eq!(water.lake_kind.as_ref().unwrap()[bottom], 2, "a closed lake");
+    let level = water.lake_level.as_ref().unwrap()[bottom] as f64;
+    assert!((level - height[bottom] as f64 - PAN_DEPTH).abs() < 1e-3, "pan level {level}");
+    let pan: Vec<usize> = (0..n * n).filter(|&c| water.lake[c] != 0).collect();
+    assert!(pan.iter().all(|&c| (height[c] as f64) < level), "the pan covers only ground under its level");
+    // The course that feeds it ends at its shore.
+    let network = water.rivers.as_ref().unwrap();
+    let cell = 6400.0 / n as f64;
+    assert!(network.rivers.iter().any(|line| {
+        let m = line.points.len() / 2;
+        let (ex, ey) = (line.points[2 * m - 2], line.points[2 * m - 1]);
+        pan.iter().any(|&c| (((c % n) as f64 + 0.5) * cell - ex).hypot(((c / n) as f64 + 0.5) * cell - ey) <= 1.5 * cell)
+    }), "a river ends in the pan");
+}

@@ -4,6 +4,8 @@
 use crate::{noise::Noise, smooth};
 use std::f64::consts::{FRAC_PI_4, SQRT_2};
 mod pipeline;
+#[cfg(test)]
+mod sill_tests;
 pub use pipeline::TerrainPipeline;
 pub use pipeline::cut_coast_field;
 
@@ -523,11 +525,55 @@ fn resolve_pits(h: &mut [f32], fl: &Flood, grid: &Grid, frac: f64, basins: &mut 
     resolved
 }
 
+/// Reproducible outlet phase, shared with WGSL. Only the phase depends on the grid; wavelengths are metres.
+fn sill_phase(pour: u32) -> f32 {
+    let hash = pour.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
+    ((hash ^ (hash >> 16)) & 65_535) as f32 * (std::f32::consts::TAU / 65_536.0)
+}
+
+/// On gentle ground, D-infinity's constant fractional bearing still carves a ruled valley. Bend that bearing
+/// over 1,000 / 430 metres (at most 36 degrees), choosing only already drained neighbours. Flat basin routing
+/// and slopes >= 1 % keep their original pair. A rejected turn also keeps the pair: never climb a valley side
+/// or introduce a routing cycle. Keep `sillFlow` in terrainErosion.wgsl identical.
+fn sill_flow(c: usize, fl: &Flood, grid: &Grid, cell: f32, f: FlowCell, arc: f32, phase: f32) -> FlowCell {
+    if f.first == NONE { return f; }
+    let neighbors = grid.neighbors(c);
+    let d = neighbors.iter().position(|&q| q == f.first as usize).unwrap();
+    let slope = (fl.filled[c] - fl.filled[f.first as usize]) / (cell * DIST[d] as f32);
+    if slope <= 0.0 || slope >= 0.01 { return f; }
+    let wave = 0.7 * (std::f32::consts::TAU * arc / 1000.0 + phase).sin()
+        + 0.3 * (std::f32::consts::TAU * arc / 430.0 + 2.0 * phase).sin();
+    let bearing = (d as f32 + if f.second == NONE { 0.0 } else { f.fraction }
+        + 0.8 * (1.0 - slope / 0.01) * wave).rem_euclid(8.0).min(7.999_999);
+    let a = bearing.floor() as usize;
+    let b = (a + 1) & 7;
+    let mask = (1_u32 << a) | (1_u32 << b);
+    if fl.lower[c] as u32 & mask != mask { return f; }
+    let fraction = bearing - a as f32;
+    FlowCell {
+        first: neighbors[a] as u32, second: neighbors[b] as u32, fraction,
+        distance: (1.0 - fraction) * DIST[a] as f32 + fraction * DIST[b] as f32,
+    }
+}
+
 // Sill carving (Lindsay 2016, bounded): each depression's outlet sill and the
 // reach below it are lowered towards a level `carve` of the way from the spill
 // to the depression floor. The lake floor itself is never trenched; repeated
 // over the evolution, incision, relaxation and diffusion widen the cut into a
 // valley. Mirrors the GPU `breach` kernel.
+// The reach descends at 1 % from that level but never under the depression's own
+// floor (nor under 0.5 m): draining a basin needs no ground lower than its bed. A
+// profile that kept descending cut, below every sill of a plain flatter than 1 %,
+// a one-cell notch down to the sea, deepened at each iteration.
+// Below the sill the reach follows the D-infinity pair with gentle winding (`sill_flow`):
+// the second receiver's share accumulates and takes the step when it reaches a half.
+// Without `flow`, or where a cell has no pair, the D8 receiver.
+// The reach is three cells wide: the eight neighbours of each reach cell are lowered
+// by its cut, down to its level at most. The erosion grid is resampled to the finer source grid afterwards; a cut
+// one cell wide (with sides rising half a cell per cell) is filtered shallower than
+// its sill there, and the basin closes again (hills 40 km: 0.05 % of the map under
+// more than 1 m on the erosion grid, 4.95 % once resampled; 0.05 % for a cut three
+// cells wide). The cut stays bounded by the depth of its basin.
 fn carve_sills(
     h: &mut [f32],
     fl: &Flood,
@@ -535,6 +581,7 @@ fn carve_sills(
     cell: f64,
     carve: f64,
     basins: &mut Basins,
+    flow: Option<&[FlowCell]>,
 ) -> usize {
     if carve <= 0.0 {
         return 0;
@@ -556,20 +603,54 @@ fn carve_sills(
             continue;
         }
         let spill = fl.filled[pour] as f64;
+        let floor = bottom.max(0.5);
         let mut level = (h[pour] as f64).min(spill - carve * (spill - bottom));
-        target[pour] = target[pour].min((h[pour] as f64 + carve * (level - h[pour] as f64)) as f32);
+        // The outlet and the reach are cut to the profile itself: the spill then falls by `carve` of the basin
+        // depth at each pass and the basin drains within the run. (A share of the gap to a profile that is itself a
+        // share of the depth left the basins closed: about 1 % a pass.)
+        target[pour] = target[pour].min(level as f32);
         let mut r = fl.receiver[pour];
+        let mut turn = 0.0_f32;
+        let mut arc = 0.0_f32;
+        let phase = sill_phase(pour as u32);
         for _ in 0..400 {
             if r == NONE {
                 break;
             }
-            level = (level - 0.01 * cell).max(0.5);
+            level = (level - 0.01 * cell).max(floor);
             let old = h[r as usize] as f64;
             if old <= level {
                 break;
             }
-            target[r as usize] = target[r as usize].min((old + carve * (level - old)) as f32);
-            r = fl.receiver[r as usize];
+            target[r as usize] = target[r as usize].min(level as f32);
+            // Three cells wide: each of the eight neighbours is lowered by the cut of the reach cell, never under
+            // its level, so no cell is cut deeper than the basin is deep and a hillside beside it keeps its shape.
+            for &q in grid.neighbors(r as usize).iter() {
+                if q != usize::MAX {
+                    let side = (level.max(h[q] as f64 - (old - level))) as f32;
+                    if side < target[q] {
+                        target[q] = side;
+                    }
+                }
+            }
+            let from = r as usize;
+            let pair = flow.map(|flow| sill_flow(from, fl, grid, cell as f32, flow[from], arc, phase));
+            r = match pair {
+                Some(f) if f.second != NONE => {
+                    turn += f.fraction;
+                    if turn >= 0.5 {
+                        turn -= 1.0;
+                        f.second
+                    } else {
+                        f.first
+                    }
+                }
+                _ => fl.receiver[r as usize],
+            };
+            if r != NONE {
+                let diagonal = from % grid.n != r as usize % grid.n && from / grid.n != r as usize / grid.n;
+                arc += cell as f32 * if diagonal { std::f32::consts::SQRT_2 } else { 1.0 };
+            }
         }
         carved += 1;
     }
@@ -940,6 +1021,157 @@ pub(crate) struct MountainCfg<'a> {
     pub erosion: f64,
 }
 
+/// Zone-derived parameters at one position of the zoned generator.
+#[derive(Clone, Copy)]
+struct ZoneLocal {
+    amplitude: f64,
+    mix: f64,
+    crest: f64,
+    detail: f64,
+    /// Painted (non-automatic) share.
+    painted: f64,
+    /// Local relief scale over the motif, in (0, 1]: below 1 near narrow massifs.
+    kratio: f64,
+    /// Amplitude factor of the painted massif shares (local size and dome).
+    massif_form: f64,
+    /// Amplitude factor of the hill share (core size of the neighbouring massif).
+    hill_form: f64,
+    /// Weight of the narrow-massif rules, 0 when the local scale is at least
+    /// `NARROW_FROM` of the motif (wide massifs and plain relief keep their rules).
+    narrow: f64,
+}
+
+/// Local scale ratio under which a painted massif counts as narrow.
+const NARROW_FROM: f64 = 0.45;
+/// Final-units flank bound of narrow painted massifs (tan 38 degrees): the raw talus
+/// acts before the zone scaling, so it cannot bound the final flank of a narrow band.
+const NARROW_TALUS: f64 = 0.78;
+const NARROW_PASSES: usize = 64;
+
+/// Mass-conserving talus relaxation in final metres, weighted per cell (0 = untouched).
+pub(crate) fn limit_slopes(h: &mut [f32], n: usize, cell: f64, weight: &[f32]) {
+    if n < 3 || weight.iter().all(|&w| w <= 0.0) {
+        return;
+    }
+    // Only the broad flank is bounded: spurs and ravines (the detail under a
+    // two-pass box blur of radius 3 cells) ride on it unchanged.
+    let low = box_blur(&box_blur(h, n, 3), n, 3);
+    let mut relaxed = low.clone();
+    relax_slopes(&mut relaxed, n, cell, weight);
+    for ((value, &before), &after) in h.iter_mut().zip(&low).zip(&relaxed) {
+        *value = (*value as f64 + after as f64 - before as f64) as f32;
+    }
+}
+
+/// Separable box blur with clamped edges.
+fn box_blur(h: &[f32], n: usize, radius: usize) -> Vec<f32> {
+    let r = radius as isize;
+    let last = n as isize - 1;
+    let mut rows = vec![0.0_f32; n * n];
+    for y in 0..n {
+        for x in 0..n {
+            let sum: f64 = (-r..=r)
+                .map(|d| h[y * n + (x as isize + d).clamp(0, last) as usize] as f64)
+                .sum();
+            rows[y * n + x] = (sum / (2 * r + 1) as f64) as f32;
+        }
+    }
+    let mut out = vec![0.0_f32; n * n];
+    for y in 0..n {
+        for x in 0..n {
+            let sum: f64 = (-r..=r)
+                .map(|d| rows[(y as isize + d).clamp(0, last) as usize * n + x] as f64)
+                .sum();
+            out[y * n + x] = (sum / (2 * r + 1) as f64) as f32;
+        }
+    }
+    out
+}
+
+/// Weighted talus relaxation of `h` in final metres (mass-conserving).
+fn relax_slopes(h: &mut [f32], n: usize, cell: f64, weight: &[f32]) {
+    const STEPS: [(isize, isize, f64); 8] = [
+        (-1, -1, SQRT_2),
+        (0, -1, 1.0),
+        (1, -1, SQRT_2),
+        (-1, 0, 1.0),
+        (1, 0, 1.0),
+        (-1, 1, SQRT_2),
+        (0, 1, 1.0),
+        (1, 1, SQRT_2),
+    ];
+    let mut delta = vec![0.0_f64; n * n];
+    for _ in 0..NARROW_PASSES {
+        delta.iter_mut().for_each(|d| *d = 0.0);
+        let mut moved_any = false;
+        for y in 1..n - 1 {
+            for x in 1..n - 1 {
+                let i = y * n + x;
+                let w = weight[i] as f64;
+                if w <= 0.0 {
+                    continue;
+                }
+                let mut excess = [0.0_f64; 8];
+                let (mut total, mut maximum) = (0.0_f64, 0.0_f64);
+                for (d, &(dx, dy, dist)) in STEPS.iter().enumerate() {
+                    let j = (y as isize + dy) as usize * n + (x as isize + dx) as usize;
+                    let e = (h[i] as f64 - h[j] as f64 - NARROW_TALUS * cell * dist).max(0.0);
+                    excess[d] = e;
+                    total += e;
+                    maximum = maximum.max(e);
+                }
+                if total <= 0.0 {
+                    continue;
+                }
+                // Eight donors can meet at one cell: an eighth of the largest excess.
+                let moved = w * 0.125 * maximum;
+                delta[i] -= moved;
+                for (d, &(dx, dy, _)) in STEPS.iter().enumerate() {
+                    if excess[d] > 0.0 {
+                        let j = (y as isize + dy) as usize * n + (x as isize + dx) as usize;
+                        delta[j] += moved * excess[d] / total;
+                    }
+                }
+                moved_any = true;
+            }
+        }
+        if !moved_any {
+            break;
+        }
+        for (value, change) in h.iter_mut().zip(&delta) {
+            *value = (*value as f64 + change) as f32;
+        }
+    }
+}
+
+impl ZoneLocal {
+    /// Amplitude factor of zone channel `k` (partition index, 0 = automatic).
+    fn form(&self, k: usize) -> f64 {
+        match k {
+            3 => self.hill_form,
+            4 | 5 => self.massif_form,
+            _ => 1.0,
+        }
+    }
+}
+
+/// Noise at `wavelength * ratio` without the stretching of `noise(p / wavelength(p))`:
+/// the two octave-spaced wavelengths that bracket it are blended. `ratio >= 1` is the
+/// plain evaluation, so unscaled relief is unchanged.
+fn octave_blend(ratio: f64, wavelength: f64, eval: impl Fn(f64) -> f64) -> f64 {
+    if ratio >= 0.999 {
+        return eval(wavelength);
+    }
+    let j = -ratio.max(1e-3).log2();
+    let j0 = j.floor();
+    let t = j - j0;
+    let a = eval(wavelength * 0.5_f64.powf(j0));
+    if t < 1e-3 {
+        return a;
+    }
+    a * (1.0 - t) + eval(wavelength * 0.5_f64.powf(j0 + 1.0)) * t
+}
+
 pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
     let profiles = cfg.zoning.map(|(_, fallback)| {
         [
@@ -964,21 +1196,6 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             )
         })
     });
-    let local = |x: f64, y: f64| -> (f64, f64, f64, f64) {
-        if let (Some((zones, _)), Some(profiles)) = (cfg.zoning, &profiles) {
-            let weights = zones.sample(x / cfg.width, y / cfg.width);
-            let mut out = (0.0, 0.0, 0.0, 0.0);
-            for (i, w) in weights.into_iter().enumerate() {
-                out.0 += w * profiles[i].0;
-                out.1 += w * profiles[i].1;
-                out.2 += w * profiles[i].2;
-                out.3 += w * profiles[i].3;
-            }
-            out
-        } else {
-            (1.0, cfg.mountain_mix, cfg.crest, cfg.detail)
-        }
-    };
     let n = cfg.n;
     let nc = cfg.coarse;
     let count = nc * nc;
@@ -987,13 +1204,87 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
     let cc = extent / nc as f64;
     let cell = cfg.width / n as f64;
     let x0 = -cfg.width * 0.22;
+    let motif = cfg.k * 2400.0;
+    // Painted massifs get a relief sized to what was painted: a dome across their
+    // width (highest inside, draining outward) and, when narrow, a smaller local
+    // scale (amplitude, ridge and valley spacing, incision). The finest scale keeps
+    // the initial relief wavelength (415 m per 2400 m of motif) above four cells.
+    let shape = cfg.zoning.map(|(zones, _)| {
+        crate::terrain_zones::ReliefShape::new(zones, cfg.width, motif, cc * 4.0 * 2400.0 / 415.0)
+    });
+    // `(dx, dy)` shifts the dome sampling only (a wandering crest); the zone shares
+    // and scales stay where they were painted.
+    let local_shifted = |x: f64, y: f64, dx: f64, dy: f64| -> ZoneLocal {
+        if let (Some((zones, _)), Some(profiles), Some(shape)) = (cfg.zoning, &profiles, &shape) {
+            let weights = zones.sample(x / cfg.width, y / cfg.width);
+            let kratio = (shape.at(x, y).2 / motif).clamp(1e-3, 1.0);
+            let core = (shape.core_scale(x, y) / motif).clamp(1e-3, 1.0);
+            // Narrow is a property of the whole massif, not of the local width at its tips.
+            let whole = (shape.wide_scale(x, y) / motif).clamp(1e-3, 1.0);
+            let narrow = smooth((NARROW_FROM - whole) / 0.25);
+            // Amplitude falls slower than the wavelength (square root of the scale
+            // ratio): a narrow painted band stays a mountain. On narrow massifs the
+            // exponent rises to 0.65 so that its flanks stay mountain flanks.
+            let mut out = ZoneLocal {
+                amplitude: 0.0,
+                mix: 0.0,
+                crest: 0.0,
+                detail: 0.0,
+                painted: 1.0 - weights[0],
+                kratio,
+                massif_form: kratio.powf(0.5 + 0.15 * narrow) * shape.dome(x + dx, y + dy),
+                hill_form: core.sqrt(),
+                narrow,
+            };
+            for (i, w) in weights.into_iter().enumerate() {
+                let form = out.form(i);
+                out.amplitude += w * profiles[i].0 * form;
+                out.mix += w * profiles[i].1;
+                out.crest += w * profiles[i].2;
+                out.detail += w * profiles[i].3;
+            }
+            out
+        } else {
+            ZoneLocal {
+                amplitude: 1.0,
+                mix: cfg.mountain_mix,
+                crest: cfg.crest,
+                detail: cfg.detail,
+                painted: 0.0,
+                kratio: 1.0,
+                massif_form: 1.0,
+                hill_form: 1.0,
+                narrow: 0.0,
+            }
+        }
+    };
+    let local = |x: f64, y: f64| local_shifted(x, y, 0.0, 0.0);
+    // Incision scale per coarse cell: 1 / kratio on wide massifs (the motif law),
+    // 1 / sqrt(kratio) on narrow ones (a full 1 / kratio cut one parallel ravine per cell).
+    let mut incision_ratio = vec![1.0_f32; count];
     let mut uplift = vec![0.0_f32; count];
     let mut h = vec![0.0_f32; count];
     for y in 0..nc {
         for x in 0..nc {
             let px = x0 + (x as f64 + 0.5) * cc;
             let py = x0 + (y as f64 + 0.5) * cc;
-            let (amplitude, mix, crest, _) = local(px, py);
+            let first = local(px, py);
+            // A narrow massif's crest wanders (about +-90 m on an 800 m band) inside the
+            // painted band: only its dome is shifted, at the feature's own scale.
+            let zone = if first.narrow > 0.0 {
+                let reach = 0.15 * first.narrow * first.kratio * motif;
+                let base = 0.8 * motif;
+                let dx = reach
+                    * octave_blend(first.kratio, base, |w| cfg.noise.fbm(px / w + 13.1, py / w - 7.7, 2));
+                let dy = reach
+                    * octave_blend(first.kratio, base, |w| cfg.noise.fbm(px / w - 2.3, py / w + 9.4, 2));
+                local_shifted(px, py, dx, dy)
+            } else {
+                first
+            };
+            let (amplitude, mix, crest, painted) = (zone.amplitude, zone.mix, zone.crest, zone.painted);
+            let narrow = zone.narrow;
+            incision_ratio[y * nc + x] = zone.kratio.powf(1.0 - 0.5 * narrow) as f32;
             let env_wavelength = (1900.0 * cfg.k).max(cc * 4.0);
             let initial_wavelength = (415.0 * cfg.k).max(cc * 4.0);
             let coarse_noise = cfg.generation_noise.filter(|v| !v.coarse.is_empty());
@@ -1015,13 +1306,22 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                 },
                 |v| v.coarse[(y * nc + x) * 4 + 1] as f64,
             );
+            // Map- and motif-scale terms (regional distribution, envelope, tilt) fade
+            // out on narrow massifs: their cross-profile is the symmetric dome only.
             let mountains = smooth((distribution + (mix - 0.5) * 1.4 + 0.28) / 0.56);
-            let regional_amp = 0.20 + 0.80 * mountains;
+            let mountains = mountains + (1.0 - mountains) * narrow;
+            // A painted zone asks for its relief everywhere it was painted: regional
+            // noise only modulates it, it must not sink part of a range to a plain.
+            let regional_amp =
+                (0.20 + 0.80 * mountains) * (1.0 - painted) + (0.72 + 0.28 * mountains) * painted;
             let ridge = if crest > 0.0 {
                 coarse_noise.map_or_else(
                     || {
-                        cfg.noise2
-                            .ridged(px / env_wavelength + 5.7, py / env_wavelength - 3.2, 3)
+                        octave_blend(
+                            (env_wavelength * zone.kratio).max(cc * 4.0) / env_wavelength,
+                            env_wavelength,
+                            |w| cfg.noise2.ridged(px / w + 5.7, py / w - 3.2, 3),
+                        )
                     },
                     |v| v.coarse[(y * nc + x) * 4 + 3] as f64,
                 )
@@ -1031,7 +1331,19 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             // Ridge skeleton belongs to the main uplift, not a texture painted
             // after erosion. Hills and canyon uplands keep their smoother forms.
             let skeleton = 1.0 + crest * mountains * ((0.24 + 1.8 * ridge * ridge) - 1.0);
-            let u = (0.7 + 0.5 * env - 0.25 * q).max(0.12) * regional_amp * skeleton * amplitude;
+            let base_uplift = if narrow > 0.0 {
+                (0.7 + (0.5 * env - 0.25 * q) * (1.0 - narrow)).max(0.12)
+            } else {
+                // Unchanged expression: wide massifs and unpainted relief stay bit-identical.
+                (0.7 + 0.5 * env - 0.25 * q).max(0.12)
+            };
+            let u = base_uplift
+                * regional_amp
+                * skeleton
+                * amplitude;
+            // Stronger initial relief on narrow massifs: spurs and side valleys a few
+            // hundred metres apart organise the drainage instead of parallel gullies.
+            let spurs = 1.0 + narrow * ((1.0 / zone.kratio.sqrt()).min(2.0) - 1.0);
             let mut corridor = 1.0;
             if let Some((width, offset, noise_offset)) = cfg.valley.filter(|_| cfg.zoning.is_none())
             {
@@ -1057,10 +1369,15 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                 * (2.5 * u
                     + 0.6
                         * amplitude
+                        * spurs
                         * coarse_noise.map_or_else(
                             || {
-                                cfg.noise2
-                                    .fbm(px / initial_wavelength, py / initial_wavelength, 3)
+                                octave_blend(
+                                    (initial_wavelength * zone.kratio).max(cc * 4.0)
+                                        / initial_wavelength,
+                                    initial_wavelength,
+                                    |w| cfg.noise2.fbm(px / w, py / w, 3),
+                                )
                             },
                             |v| v.coarse[(y * nc + x) * 4 + 2] as f64,
                         ))) as f32;
@@ -1095,9 +1412,10 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
         if cfg.erosion > 0.0 {
             work.flood.compute(&h, &grid, Some(&mut work.flow));
             resolve_pits(&mut h, &work.flood, &grid, fill, &mut work.basins);
-            carve_sills(&mut h, &work.flood, &grid, cc, carve, &mut work.basins);
+            carve_sills(&mut h, &work.flood, &grid, cc, carve, &mut work.basins, Some(work.flow.as_slice()));
             accumulate_f64(&mut acc, &work.flood.order, &work.flow);
             let acc = &acc;
+            let incision_ratio = &incision_ratio;
             incise(
                 &mut h,
                 &work.flood.order,
@@ -1109,7 +1427,11 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                     // A flood potential routes water across sinks; it must not cut a
                     // physical channel across a flat or uphill saddle in that potential.
                     let response = slope * slope / (slope * slope + threshold);
-                    (incision * (acc[c] as f64).sqrt().min(catchment_cap) * response / distance)
+                    // Incision and catchment cap follow the local relief scale, as they
+                    // follow the motif (both are 1 outside painted massifs).
+                    let r = incision_ratio[c] as f64;
+                    (incision / r * (acc[c] as f64).sqrt().min(catchment_cap * r) * response
+                        / distance)
                         .min(6.0)
                 },
             );
@@ -1159,7 +1481,8 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             &mut work.relax,
         );
         for _ in 0..2 {
-            work.flood.compute(&h, &grid, None);
+            // With the split drainage: the sill reach follows it (`carve_sills`).
+            work.flood.compute(&h, &grid, Some(&mut work.flow));
             if resolve_pits(&mut h, &work.flood, &grid, final_fill, &mut work.basins) == 0 {
                 break;
             }
@@ -1170,6 +1493,7 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                 cc,
                 final_carve,
                 &mut work.basins,
+                Some(work.flow.as_slice()),
             );
         }
         diffuse(&mut h, nc, &channels, strength * 0.5, &mut work.relax);
@@ -1182,7 +1506,10 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             let px = (x as f64 + 0.5) * cell;
             let py = (y as f64 + 0.5) * cell;
             let drainage = sample(&acc, nc, (px - x0) / cc - 0.5, (py - x0) / cc - 0.5, false);
-            let warp = tuning(WARP) * (16.0 * cfg.k).min(cc * 0.9);
+            let local_ratio = shape
+                .as_ref()
+                .map_or(1.0, |s| (s.at(px, py).2 / motif).clamp(1e-3, 1.0));
+            let warp = tuning(WARP) * (16.0 * cfg.k * local_ratio).min(cc * 0.9);
             let warp_wavelength = (110.0 * cfg.k).max(cc * 4.0);
             let wx = px
                 + warp
@@ -1231,7 +1558,7 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                         (i % n) as f64 * cell + cell * 0.5,
                         (i / n) as f64 * cell + cell * 0.5,
                     )
-                    .0,
+                    .amplitude,
                 )
             })
             .collect();
@@ -1251,12 +1578,56 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
     // Keep a legible relief at the endpoint instead of erasing it with runaway incision.
     let worn_amplitude = cfg.amp * occupied_amplitude * (1.0 - 0.2 * strength);
     let scale = worn_amplitude / p99;
+    // Each painted zone reaches its own relief family's amplitude: erosion saturates
+    // strong uplift (talus), so one global scale left hills and plains far too low or
+    // too rough next to a painted massif. The scale varies with the smooth zone
+    // shares, so it adds no step at a border.
+    // The target is the zone's own expected amplitude: its family scaled by its own
+    // form (painted size, dome), never the neighbouring shares mixed into the cell.
+    let zone_scale: Option<[f64; 6]> = cfg.zoning.zip(profiles.as_ref()).map(|((zones, _), profiles)| {
+        let mut buckets: [Vec<f32>; 6] = Default::default();
+        let mut expected: [Vec<f64>; 6] = Default::default();
+        for (i, &h) in output.iter().enumerate().filter(|(i, _)| (i % n + i / n * 7) & 7 == 0) {
+            let (px, py) = (((i % n) as f64 + 0.5) * cell, ((i / n) as f64 + 0.5) * cell);
+            let w = zones.sample(px / cfg.width, py / cfg.width);
+            let zone = local(px, py);
+            for k in 0..6 {
+                if w[k] >= 0.6 {
+                    buckets[k].push(h);
+                    expected[k].push(profiles[k].0 * zone.form(k));
+                }
+            }
+        }
+        let wear = 1.0 - 0.2 * strength;
+        std::array::from_fn(|k| {
+            let b = &mut buckets[k];
+            if b.len() < 24 {
+                return scale;
+            }
+            b.sort_unstable_by(f32::total_cmp);
+            expected[k].sort_unstable_by(f64::total_cmp);
+            let p = b[((b.len() - 1) as f64 * 0.99) as usize].max(0.0001) as f64;
+            let target = expected[k][((expected[k].len() - 1) as f64 * 0.99) as usize];
+            (cfg.amp * target * wear / p).clamp(scale * 0.2, scale * 4.0)
+        })
+    });
+    let scale_at = |x: usize, y: usize| -> f64 {
+        match (zone_scale, cfg.zoning) {
+            (Some(z), Some((zones, _))) => {
+                let w = zones.sample((x as f64 + 0.5) / n as f64, (y as f64 + 0.5) / n as f64);
+                (0..6).map(|k| w[k] * z[k]).sum()
+            }
+            _ => scale,
+        }
+    };
     let slopes = output.clone();
+    let mut narrow_weight = vec![0.0_f32; n * n];
     let wavelength = (cell * 6.0).max(260.0 * cfg.k);
     let octaves = (wavelength / (cell * 4.0)).log2().round().clamp(1.0, 6.0) as usize;
     for y in 0..n {
         for x in 0..n {
             let i = y * n + x;
+            let scale = scale_at(x, y);
             let gx = slopes[y * n + (x + 1).min(n - 1)] as f64
                 - slopes[y * n + x.saturating_sub(1)] as f64;
             let gy = slopes[(y + 1).min(n - 1) * n + x] as f64
@@ -1265,19 +1636,29 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             let factor = smooth((slope - 0.015) / 0.3) * drainage_weight[i];
             let px = (x as f64 + 0.5) * cell;
             let py = (y as f64 + 0.5) * cell;
-            let detail = (cfg.generation_noise.map_or_else(
-                || cfg.noise2.ridged(px / wavelength, py / wavelength, octaves),
-                |v| v.fine[i * 4 + 2] as f64,
-            ) - 0.5)
-                * {
-                    let (amplitude, _, _, detail_strength) = local(px, py);
-                    detail_strength * amplitude
-                }
+            let zone = local(px, py);
+            let detail = cfg.generation_noise.map_or_else(
+                || {
+                    let ratio = (260.0 * cfg.k * zone.kratio).max(cell * 6.0) / wavelength;
+                    octave_blend(ratio, wavelength, |w| {
+                        let octaves = if ratio >= 0.999 {
+                            octaves
+                        } else {
+                            (w / (cell * 4.0)).log2().round().clamp(1.0, 6.0) as usize
+                        };
+                        cfg.noise2.ridged(px / w, py / w, octaves) - 0.5
+                    })
+                },
+                |v| v.fine[i * 4 + 2] as f64 - 0.5,
+            ) * zone.detail
+                * zone.amplitude
                 * worn_amplitude
                 * factor;
             output[i] = (output[i] as f64 * scale + detail).max(0.3) as f32;
+            narrow_weight[i] = zone.narrow as f32;
         }
     }
+    limit_slopes(&mut output, n, cell, &narrow_weight);
     output
 }
 
@@ -1623,7 +2004,7 @@ fn erode_shape_coarse(
         // Routed: water crosses depressions to their spill, whose sill is carved.
         if shape.routed {
             fl.compute(h, &grid, Some(&mut work.flow));
-            carve_sills(h, fl, &grid, cell, carve, &mut work.basins);
+            carve_sills(h, fl, &grid, cell, carve, &mut work.basins, Some(work.flow.as_slice()));
         } else {
             sort_by_height(h, &only, &mut fl.order, &mut keys, &mut spare);
             fl.filled.clear();

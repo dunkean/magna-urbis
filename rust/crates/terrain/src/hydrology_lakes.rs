@@ -34,9 +34,11 @@ pub(super) fn select(
             .total_cmp(&score(&candidates[a]))
             .then_with(|| candidates[a].cells[0].cmp(&candidates[b].cells[0]))
     });
-    let mut count = (ranked.len() as f32 * cfg.lake_abundance * 0.5).ceil() as usize;
+    // Above 2 the same as 2 (the vector chain alone digs more lakes).
+    let abundance = cfg.lake_abundance.min(2.0);
+    let mut count = (ranked.len() as f32 * abundance * 0.5).ceil() as usize;
     if cfg.lakes == "some" {
-        count = count.min((6.0 * cfg.lake_abundance).ceil() as usize);
+        count = count.min((6.0 * abundance).ceil() as usize);
     }
     let mut retained = Vec::with_capacity(count);
     let mut area = 0.0_f64;

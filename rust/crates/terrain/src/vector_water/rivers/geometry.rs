@@ -52,12 +52,36 @@ pub(super) fn smooth_chain(xs: &[f64], ys: &[f64], sigma: f64) -> (Vec<f64>, Vec
     (ox, oy)
 }
 pub(super) fn spline(xs: &[f64], ys: &[f64], step: f64) -> (Vec<f64>, Vec<f64>) {
+    spline_samples(xs, ys, step, None)
+}
+/// Smooth at the source-cell scale, before subdivision. Smoothing the subdivided D8 chain only rounds its
+/// corners and preserves the staircase. Keep endpoints and source parameters for junctions and water profiles.
+pub(super) fn source_curve(xs: &[f64], ys: &[f64], step: f64) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>) {
+    let (mut sx, mut sy) = smooth_chain(xs, ys, 1.0);
+    // Stay inside the source bed corridor even at a sharp turn in a narrow valley. `step` is a third of the
+    // source cell at the caller; this bounds the smoothing displacement, rather than imposing a bend wavelength.
+    for k in 1..xs.len().saturating_sub(1) {
+        let (dx, dy) = (sx[k] - xs[k], sy[k] - ys[k]);
+        let scale = (step / dx.hypot(dy).max(1e-9)).min(1.0);
+        sx[k] = xs[k] + scale * dx;
+        sy[k] = ys[k] + scale * dy;
+    }
+    let (mut parameter, mut nodes) = (Vec::new(), Vec::new());
+    let (px, py) = spline_samples(&sx, &sy, step, Some((&mut parameter, &mut nodes)));
+    (px, py, parameter, nodes)
+}
+fn spline_samples(
+    xs: &[f64], ys: &[f64], step: f64,
+    mut source: Option<(&mut Vec<f64>, &mut Vec<usize>)>,
+) -> (Vec<f64>, Vec<f64>) {
     let n = xs.len();
     if n == 0 {
         return (Vec::new(), Vec::new());
     }
     let (mut ox, mut oy) = (vec![xs[0]], vec![ys[0]]);
+    if let Some((parameter, _)) = source.as_mut() { parameter.push(0.0); }
     for i in 0..n - 1 {
+        if let Some((_, nodes)) = source.as_mut() { nodes.push(ox.len() - 1); }
         let i0 = i.saturating_sub(1);
         let i3 = (i + 2).min(n - 1);
         let (x0, y0) = if i0 < i {
@@ -75,7 +99,7 @@ pub(super) fn spline(xs: &[f64], ys: &[f64], step: f64) -> (Vec<f64>, Vec<f64>) 
         let t1 = nz((x1 - x0).hypot(y1 - y0).sqrt());
         let t2 = t1 + nz((x2 - x1).hypot(y2 - y1).sqrt());
         let t3 = t2 + nz((x3 - x2).hypot(y3 - y2).sqrt());
-        let m = ((x2 - x1).hypot(y2 - y1) / step).ceil() as usize;
+        let m = ((x2 - x1).hypot(y2 - y1) / step).ceil().max(1.0) as usize;
         for j in 1..m {
             let t = t1 + (t2 - t1) * j as f64 / m as f64;
             let (ax1, ay1) = (((t1 - t) * x0 + t * x1) / t1, ((t1 - t) * y0 + t * y1) / t1);
@@ -96,11 +120,14 @@ pub(super) fn spline(xs: &[f64], ys: &[f64], step: f64) -> (Vec<f64>, Vec<f64>) 
                 ((t3 - t) * ay2 + (t - t1) * ay3) / (t3 - t1),
             );
             ox.push(((t2 - t) * bx1 + (t - t1) * bx2) / (t2 - t1));
-            oy.push(((t2 - t) * by1 + (t - t1) * by2) / (t2 - t1))
+            oy.push(((t2 - t) * by1 + (t - t1) * by2) / (t2 - t1));
+            if let Some((parameter, _)) = source.as_mut() { parameter.push(i as f64 + j as f64 / m as f64); }
         }
         ox.push(x2);
-        oy.push(y2)
+        oy.push(y2);
+        if let Some((parameter, _)) = source.as_mut() { parameter.push((i + 1) as f64); }
     }
+    if let Some((_, nodes)) = source.as_mut() { nodes.push(ox.len() - 1); }
     (ox, oy)
 }
 pub(super) fn hermite(
@@ -627,4 +654,30 @@ pub(super) fn nearest_on_line(p: &[f64], x: f64, y: f64) -> (f64, f64) {
 }
 pub(super) fn interleave(xs: &[f64], ys: &[f64]) -> Vec<f64> {
     xs.iter().zip(ys).flat_map(|(&x, &y)| [x, y]).collect()
+}
+
+#[cfg(test)]
+mod source_curve_tests {
+    use super::*;
+
+    #[test]
+    fn unsimulated_d8_stairs_are_smoothed_before_subdivision() {
+        for cell in [6000.0 / 256.0, 10000.0 / 512.0, 40000.0 / 1024.0] {
+            let xs: Vec<f64> = (0..40).map(|k| k as f64 * cell).collect();
+            let ys: Vec<f64> = (0..40).map(|k| (k / 2) as f64 * cell).collect();
+            let (px, py, parameter, nodes) = source_curve(&xs, &ys, cell / 3.0);
+            assert_eq!(nodes.len(), xs.len());
+            assert_eq!(parameter.len(), px.len());
+            assert_eq!((px[0], py[0]), (xs[0], ys[0]));
+            assert_eq!((*px.last().unwrap(), *py.last().unwrap()), (*xs.last().unwrap(), *ys.last().unwrap()));
+            for (k, &node) in nodes.iter().enumerate() { assert_eq!(parameter[node], k as f64); }
+            assert!(parameter.windows(2).all(|p| p[1] > p[0]));
+            // A raw D8 step turns 45 degrees at every other source cell. Subdivision alone cannot remove it.
+            for k in 1..px.len() - 1 {
+                let a = (py[k] - py[k - 1]).atan2(px[k] - px[k - 1]);
+                let b = (py[k + 1] - py[k]).atan2(px[k + 1] - px[k]);
+                assert!((b - a).abs() < 0.35, "grid turn of {} radians on {cell} m cells", b - a);
+            }
+        }
+    }
 }

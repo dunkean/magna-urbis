@@ -6,6 +6,10 @@ pub(super) struct Balance {
     pub level: Vec<f32>,
     pub closed: Vec<u8>,
     pub loss: Vec<f32>,
+    /// Depression of each cell on the routing surface (its whole flooded extent, -1 outside), the id `lake_of` uses.
+    pub depression: Vec<i32>,
+    /// Spill level of each depression (m, on the routing surface).
+    pub spill: Vec<f64>,
     pub lakes: usize,
     pub closed_lakes: usize,
     pub lake_area: f64,
@@ -210,6 +214,8 @@ pub(super) fn water_balance(
         level,
         closed,
         loss,
+        depression,
+        spill,
         lakes: count,
         closed_lakes: pass.iter().filter(|&&p| p == 0.0).count(),
         lake_area,

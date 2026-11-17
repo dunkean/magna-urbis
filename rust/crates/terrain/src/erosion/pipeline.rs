@@ -58,6 +58,8 @@ struct Checkpoint {
     h: Vec<f32>, uplift: Vec<f32>, acc: Vec<f32>, channels: Vec<bool>,
     raw: Vec<f32>, output: Vec<f32>, drainage: Vec<f64>, scale: f64,
 }
+/// Fill-then-carve passes of the final stage (`finish`), the GPU path included (`terrainErosion.ts`).
+const FINISH_PASSES: usize = 6;
 impl TerrainPipeline {
     pub fn new(
         seed: &str,
@@ -297,7 +299,7 @@ impl TerrainPipeline {
                 work.flood.compute(&self.h, &self.grid, Some(&mut work.flow));
                 let fl = &work.flood;
                 resolve_pits(&mut self.h, fl, &self.grid, (p[33] * p[18] * 0.6).min(0.6), &mut work.basins);
-                carve_sills(&mut self.h, fl, &self.grid, p[4], p[34], &mut work.basins);
+                carve_sills(&mut self.h, fl, &self.grid, p[4], p[34], &mut work.basins, Some(work.flow.as_slice()));
                 accumulate_f64(&mut self.acc, &fl.order, &work.flow);
                 let acc = &self.acc;
                 incise(&mut self.h, &fl.order, &work.flow, &mut work.baseline, None, p[4], |c, slope, distance| {
@@ -347,12 +349,15 @@ impl TerrainPipeline {
                 &mut work.relax,
             );
         }
-        for _ in 0..2 {
-            work.flood.compute(&self.h, &self.grid, None);
+        // A pass drains a basin into the next closed one below it: a chain needs several (hills 40 km: 11.1, 5.6,
+        // 2.3, 0.4, 0.03 % of the map under more than 1 m after each). Mirrors `FINISH_PASSES` of the GPU path.
+        for _ in 0..FINISH_PASSES {
+            // With the split drainage: the sill reach follows it (`carve_sills`).
+            work.flood.compute(&self.h, &self.grid, Some(&mut work.flow));
             if resolve_pits(&mut self.h, &work.flood, &self.grid, p[33] * p[18] * 0.5, &mut work.basins) == 0 {
                 break;
             }
-            carve_sills(&mut self.h, &work.flood, &self.grid, p[4], p[35], &mut work.basins);
+            carve_sills(&mut self.h, &work.flood, &self.grid, p[4], p[35], &mut work.basins, Some(work.flow.as_slice()));
         }
         if self.flags[8] == 1 {
             diffuse(&mut self.h, self.grid.n, &self.channels, p[18] * 0.5, &mut work.relax);

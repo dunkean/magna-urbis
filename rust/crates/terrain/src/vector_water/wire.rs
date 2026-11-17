@@ -286,27 +286,25 @@ pub fn request_with_clock(body: &[u8], now: &dyn Fn() -> f64) -> Result<Vec<u8>,
             let chain = input.operation == "chain";
             let drainage = chain || input.drainage.unwrap_or(stats);
             let accumulate = !chain || !input.settings.as_ref().is_some_and(|s| s.balance);
-            let result = conditioning::condition_options(&height, n, input.width, s, stats, drainage, accumulate);
-            out.f32("height", &result.height);
-            out.f32("delta", &result.delta);
-            out.meta["conditioning"] = json!({"before":result.before,"after":result.after,"breaches":result.breaches,"steps":result.steps,"ms":now()-conditioning_started});
             if input.operation == "chain" {
-                let s = input.settings.as_ref().ok_or("Missing water settings")?;
+                // The V2 chain: undulations, conditioning, water, then the beds of the final courses.
+                let settings = input.settings.as_ref().ok_or("Missing water settings")?;
                 let climate = input.climate.ok_or("Missing climate")?;
-                validate_settings(s, climate)?;
-                let water = compute_water_timed(
-                    &result.height,
-                    n,
-                    input.width,
-                    s,
-                    climate,
-                    input.seed.as_deref().unwrap_or(""),
-                    result.hydrology,
-                    now,
-                );
-                write_water(&mut out, &water, s)
-            } else if let Some(h) = result.hydrology {
-                out.hydro(&h, true, false)
+                validate_settings(settings, climate)?;
+                let (result, water, ms) =
+                    condition_and_water_timed(&height, n, input.width, s, settings, climate, input.seed.as_deref().unwrap_or(""), stats, now);
+                out.meta["conditioning"] = json!({"before":result.before,"after":result.after,"breaches":result.breaches,"steps":result.steps,"ms":ms});
+                out.f32("height", &result.height);
+                out.f32("delta", &result.delta);
+                write_water(&mut out, &water, settings)
+            } else {
+                let result = conditioning::condition_options(&height, n, input.width, s, stats, drainage, accumulate);
+                out.meta["conditioning"] = json!({"before":result.before,"after":result.after,"breaches":result.breaches,"steps":result.steps,"ms":now()-conditioning_started});
+                out.f32("height", &result.height);
+                out.f32("delta", &result.delta);
+                if let Some(h) = result.hydrology {
+                    out.hydro(&h, true, false)
+                }
             }
         }
         "water" => {
@@ -480,7 +478,7 @@ pub fn request_with_clock(body: &[u8], now: &dyn Fn() -> f64) -> Result<Vec<u8>,
     out.finish()
 }
 fn validate_conditioning(s: &Conditioning) -> Result<(), String> {
-    if ![s.strength, s.max_depth, s.max_length, s.lakes, s.lake_area, s.lake_depth, s.lake_coverage, s.max_lake_area]
+    if ![s.strength, s.max_depth, s.max_length, s.lakes, s.lake_area, s.lake_depth, s.lake_coverage, s.max_lake_area, s.undulation]
         .iter()
         .all(|v| v.is_finite())
         || !["none", "erosion", "breach", "both"].contains(&s.mode.as_str())

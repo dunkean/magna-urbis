@@ -2,14 +2,19 @@
 //! Separate from the procedural engine's hydrology.
 mod balance;
 mod conditioning;
+mod incision;
 mod lake;
 mod metrics;
+#[cfg(test)]
+mod planform_tests;
 mod rivers;
 #[cfg(test)]
 mod tests;
+mod undulation;
 mod wire;
 use crate::priority_flood::{FloodGrids, flood_grids};
 pub use conditioning::{Conditioning, ConditioningResult, condition_relief};
+pub use incision::{bed_depth, incise_rivers};
 pub use lake::{LakeField, lake_field};
 use serde::{Deserialize, Serialize};
 pub use wire::{request, request_with_clock};
@@ -86,7 +91,24 @@ pub struct Settings {
     /// Shortest drawn river course in metres; absent or zero retains the 150 m default.
     #[serde(default)]
     pub min_river_length: f64,
+    /// River density under 1 (the V2 `Rivers` setting; absent, 0 or 1 and more: every river): whole rivers are
+    /// dropped, the smallest catchments first. Where a stream begins does not depend on it: that is `river_area`,
+    /// `headwaters` and `min_river_length`. See `rivers::network::select_rivers`.
+    #[serde(default)]
+    pub density: f64,
+    /// Share of the cut-off loops of the meanders kept as oxbow lakes, 0 (none: the default, also when absent) to 1.
+    /// A cut-off otherwise leaves dry ground: the course simply loses its loop. A kept loop is a lake of its own,
+    /// detached from the course and partly silted (`rivers::network::clear_oxbows`).
+    #[serde(default)]
+    pub oxbows: f64,
 }
+/// Least water depth (m) of the terminal lake drawn in a closed basin a river reaches; a shallower closed basin is
+/// crossed by its course (`compute_water`).
+const TERMINAL_DEPTH: f64 = 0.1;
+/// Water depth (m) of the pan drawn in a dry terminal sink a river reaches: the ground of its basin less than this
+/// above its lowest cell, the extent of an ephemeral flood. A closed lake (kind 2): an arid display shows its
+/// draw-down shore, pale.
+const PAN_DEPTH: f64 = 0.5;
 /// Share of the river catchment a headwater keeps at `headwaters` 1.
 pub const HEADWATER_SHARE: f64 = 0.1;
 /// A talweg cell: across its flow direction the ground rises on both sides within two cells, by 3 % at least (a
@@ -185,7 +207,7 @@ fn compute_water_timed(
     let (mut lake_level, mut lake_kind) = (None, None);
     if s.balance {
         let balance_started = now();
-        let b = balance::water_balance(
+        let mut b = balance::water_balance(
             height,
             n,
             width,
@@ -196,9 +218,22 @@ fn compute_water_timed(
             Some(&h),
         );
         balance_ms = now() - balance_started;
+        // The drawn lakes do not depend on the drainage below: known first, they decide which closed bodies are sinks.
+        (lake, lakes, closed_lakes, lake_area_km2) =
+            balance::balanced_bodies(&b, height, n, (width / n as f64).powi(2), s.lake_depth, s.lake_area);
         let mut components = vec![-1_i32; total];
         let mut sinks = Vec::new();
         let mut outlet = vec![0; total];
+        // Invariant: a course ends only at a confluence, a drawn lake, the sea or the map edge. A closed body that
+        // holds no drawn water (no lake cell, and too shallow for a terminal lake: a desert basin whose lowest cell
+        // evaporates all it receives) is no sink: the flood crosses it to its spill, and all the water that enters
+        // its depression is lost there. Its course goes on, dry, to what lies below.
+        let mut through = vec![false; b.lakes];
+        // A course crosses a dry basin only where its bed can be cut through the sill (the deepest cut below a bed,
+        // `incision::EXTRA_CUT`, under the shallowest bed); behind a higher sill the basin is a real terminal sink.
+        let crossable = incision::EXTRA_CUT + bed_depth(0.0);
+        // Per component: the depression of a dry terminal sink (a pan when a river reaches it), else -1.
+        let mut pan_body: Vec<i32> = Vec::new();
         for c in 0..total {
             if b.closed[c] == 0 || components[c] >= 0 {
                 continue;
@@ -208,6 +243,7 @@ fn compute_water_timed(
             let mut queue = vec![c];
             components[c] = id;
             let mut bottom = c;
+            let mut wet = false;
             let mut head = 0;
             while head < queue.len() {
                 let at = queue[head];
@@ -215,6 +251,7 @@ fn compute_water_timed(
                 if height[at] < height[bottom] {
                     bottom = at
                 }
+                wet |= lake[at] != 0;
                 // Includes the centre in TS; it is already labelled.
                 for (nb, _) in neighbours(at, n) {
                     if components[nb] < 0 && b.closed[nb] != 0 && b.lake_of[nb] == body {
@@ -224,7 +261,21 @@ fn compute_water_timed(
                 }
             }
             sinks.push(bottom);
-            outlet[bottom] = 1;
+            let dry = !wet && b.level[bottom] as f64 - height[bottom] as f64 <= TERMINAL_DEPTH;
+            if dry && b.spill[body as usize] - height[bottom] as f64 <= crossable {
+                through[body as usize] = true
+            } else {
+                outlet[bottom] = 1
+            }
+            pan_body.push(if dry && !through[body as usize] { body } else { -1 });
+        }
+        if through.contains(&true) {
+            for c in 0..total {
+                let d = b.depression[c];
+                if d >= 0 && through[d as usize] {
+                    b.loss[c] = f32::INFINITY
+                }
+            }
         }
         h = hydro_options(
             &b.routing_height,
@@ -236,12 +287,11 @@ fn compute_water_timed(
         );
         h.height = height.to_vec();
         for c in 0..total {
-            if b.closed[c] != 0 {
+            // A crossed basin keeps the flood's level: the course runs at its spill, not on a dry floor below.
+            if b.closed[c] != 0 && !through[b.lake_of[c] as usize] {
                 h.grids.filled[c] = b.level[c]
             }
         }
-        (lake, lakes, closed_lakes, lake_area_km2) =
-            balance::balanced_bodies(&b, height, n, h.cell_area(), s.lake_depth, s.lake_area);
         let mut upstream = vec![0; total];
         let mut drawn = vec![0; sinks.len()];
         let mut terminal = vec![0; sinks.len()];
@@ -258,18 +308,38 @@ fn compute_water_timed(
                 drawn[components[c] as usize] = 1
             }
         }
+        // A river never ends on nothing: a dry terminal sink it reaches (sill too high to cut through) shows a pan.
+        let mut pan_level = vec![f64::NAN; b.lakes];
         for (id, &c) in sinks.iter().enumerate() {
-            if drawn[id] == 0 && upstream[c] != 0 && b.level[c] as f64 - height[c] as f64 > 0.1 {
+            if drawn[id] == 0 && upstream[c] != 0 && b.level[c] as f64 - height[c] as f64 > TERMINAL_DEPTH {
                 terminal[id] = 1;
                 lakes += 1;
                 closed_lakes += 1
+            } else if drawn[id] == 0 && upstream[c] != 0 && pan_body[id] >= 0 {
+                pan_level[pan_body[id] as usize] = height[c] as f64 + PAN_DEPTH;
+                lakes += 1;
+                closed_lakes += 1
+            }
+        }
+        if pan_level.iter().any(|v| !v.is_nan()) {
+            for c in 0..total {
+                let d = b.depression[c];
+                if d < 0 || pan_level[d as usize].is_nan() || height[c] as f64 >= pan_level[d as usize] {
+                    continue;
+                }
+                let level = pan_level[d as usize] as f32;
+                (b.level[c], b.closed[c], b.lake_of[c], h.grids.filled[c]) = (level, 1, d, level);
+                if lake[c] == 0 {
+                    lake[c] = 1;
+                    lake_area_km2 += h.cell_area() / 1e6
+                }
             }
         }
         for c in 0..total {
             let id = components[c];
             if id >= 0
                 && terminal[id as usize] != 0
-                && b.level[c] as f64 - height[c] as f64 > 0.1
+                && b.level[c] as f64 - height[c] as f64 > TERMINAL_DEPTH
                 && lake[c] == 0
             {
                 lake[c] = 1;
@@ -345,6 +415,59 @@ fn compute_water_timed(
         hydrology_ms,
         balance_ms,
     }
+}
+/// The V2 water chain on a relief: hollows of a marsh, conditioning, water, then the beds and valleys of the final
+/// courses. `delta` of the result is the whole change of the relief (hollows, conditioning, beds and valleys), and
+/// `height` the relief with it.
+#[allow(clippy::too_many_arguments)]
+pub fn condition_and_water(
+    height: &[f32],
+    n: usize,
+    width: f64,
+    conditioning: &Conditioning,
+    s: &Settings,
+    climate: Climate,
+    seed: &str,
+    stats: bool,
+) -> (ConditioningResult, Water) {
+    let (result, water, _) = condition_and_water_timed(height, n, width, conditioning, s, climate, seed, stats, &|| 0.0);
+    (result, water)
+}
+/// `condition_and_water` with a clock (ms): also returns the time of the undulations and of the conditioning.
+#[allow(clippy::too_many_arguments)]
+pub fn condition_and_water_timed(
+    height: &[f32],
+    n: usize,
+    width: f64,
+    conditioning: &Conditioning,
+    s: &Settings,
+    climate: Climate,
+    seed: &str,
+    stats: bool,
+    now: &dyn Fn() -> f64,
+) -> (ConditioningResult, Water, f64) {
+    let started = now();
+    // The hollows of a marsh belong to the conditioning: without it the relief is taken as it is. Other ground gets
+    // none (an undulated plain showed as rippled farmland): its courses wind by their meander seeds.
+    let mut source = if conditioning.mode != "none" && conditioning.undulation > 0.0 {
+        undulation::undulate(height, n, width, seed, conditioning.undulation)
+    } else {
+        height.to_vec()
+    };
+    // Lakes above 2 (every suitable basin already kept): bowls the conditioning keeps as lakes.
+    if conditioning.mode != "none" && conditioning.lakes > 2.0 {
+        source = undulation::lake_hollows(&source, n, width, seed, (conditioning.lakes - 2.0) / 2.0);
+    }
+    let mut result = conditioning::condition_options(&source, n, width, conditioning, stats, true, !s.balance);
+    let conditioning_ms = now() - started;
+    let mut water = compute_water_timed(&result.height, n, width, s, climate, seed, result.hydrology.take(), now);
+    // The beds of the final courses belong to the conditioned relief and to its delta: the displayed ground is cut
+    // along the meandered planform, not along the grid thalweg it started from.
+    incision::incise_rivers(&mut result.height, n, width, &mut water, s);
+    for c in 0..n * n {
+        result.delta[c] = (result.height[c] as f64 - height[c] as f64) as f32
+    }
+    (result, water, conditioning_ms)
 }
 /// Invariant: a river that reaches a lake shore drains into the lake. D8 on
 /// the filled surface may let a river skirt a lake, along its shallow margin

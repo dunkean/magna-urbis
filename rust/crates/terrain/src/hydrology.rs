@@ -147,7 +147,8 @@ impl HydrologyConfig {
             (self.min_lake_depth, 0.0, 100.0),
             (self.temperature, -30.0, 40.0),
             (self.precipitation, 0.0, 10_000.0),
-            (self.lake_abundance, 0.0, 2.0),
+            // Up to 4 for the vector chain; this engine keeps every suitable basin from 2 on (`hydrology_lakes`).
+            (self.lake_abundance, 0.0, 4.0),
             (self.lake_coverage, 0.0, 1.0),
             (self.max_lake_area, 0.0, 1.0),
             (self.max_breach_depth, 0.0, 200.0),

@@ -5,6 +5,11 @@ pub(super) struct MeanderResult {
     pub oxbows: Vec<(Vec<f64>, Vec<f64>)>,
     pub meandered: bool,
     pub avulsions: usize,
+    /// Diagnostics of the simulation: what ended it and after how many passes.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub stop: &'static str,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub passes: usize,
 }
 fn span(
     ax: f64,
@@ -34,7 +39,9 @@ pub(super) fn meander(
     avulsion: bool,
     resistance: Option<&dyn Fn(f64, f64, f64) -> f64>,
 ) -> MeanderResult {
-    let ds = 0.75 * width;
+    // Resolution limits numerical work, not the physical bend width. This retains the old minimum point
+    // spacing (0.5625 cell at the caller) without inflating bend wavelengths and the reach eligibility test.
+    let ds = (0.75 * width).max(1.125 * resolution);
     let (rx, ry) = resample(axis_x, axis_y, ds);
     let real = rx.len();
     let (bx, by) = (rx[real - 1], ry[real - 1]);
@@ -104,18 +111,22 @@ pub(super) fn meander(
     let mut inflow_phase = rng.range(0.0, std::f64::consts::TAU);
     {
         let mut waves = Vec::new();
+        // Long waves stay low (half a width to one): seeded at two to five widths, they grew into loops kilometres
+        // across with straight legs between them (a 40 km plain: sinuosity 1.8 per course, 1.1 per 400 m reach).
         for _ in 0..2 {
             waves.push((
                 std::f64::consts::TAU / (width * rng.range(40.0, 90.0)),
                 rng.range(0.0, std::f64::consts::TAU),
-                width * rng.range(2.0, 5.0),
+                width * rng.range(0.5, 1.0),
             ))
         }
+        // Bends at the meander wavelength (about ten widths) and a width high: a straight axis (a Hermite axis over
+        // a flat reach, a course down a silted floor) gives the simulation no curvature to grow otherwise.
         for _ in 0..4 {
             waves.push((
-                std::f64::consts::TAU / (width * rng.range(8.0, 16.0)),
+                std::f64::consts::TAU / (width * rng.range(8.0, 14.0)),
                 rng.range(0.0, std::f64::consts::TAU),
-                width * rng.range(0.4, 0.9),
+                width * rng.range(0.7, 1.3),
             ))
         }
         let length = (real - 1) as f64 * ds;
@@ -161,8 +172,11 @@ pub(super) fn meander(
     let (mut field, mut saturation) = (Vec::new(), Vec::new());
     let (mut stalled, mut avulsions) = (0.0, 0);
     let (mut nx, mut ny, mut arc_scratch) = (Vec::new(), Vec::new(), Vec::new());
-    for iterations in 0..800 {
+    let (mut stop, mut passes) = ("the pass limit", 0);
+    for iterations in 0..600 {
+        passes = iterations;
         if n < 5 {
+            stop = "a reach too short";
             break;
         }
         if iterations % 8 == 0 {
@@ -171,10 +185,16 @@ pub(super) fn meander(
                 k += 1
             }
             if k as f64 * ds >= target * axis_length {
+                stop = "the target sinuosity";
                 break;
             }
             if iterations % 32 == 0 {
-                if iterations != 0 && (k as f64) * ds < stalled * 1.005 {
+                // Under 1 % of growth in 32 passes: the reach is confined, more passes would not show. Not before it
+                // has gone half way to its target or 128 passes: bends grow from small seeds, and the first passes
+                // add far less than 1 % of length (an open plain stopped at a sinuosity of 1.16 to 1.33).
+                let early = (k as f64) * ds < (1.0 + 0.5 * (target - 1.0)) * axis_length || iterations < 192;
+                if iterations != 0 && !early && (k as f64) * ds < stalled * 1.01 {
+                    stop = "a stall";
                     break;
                 }
                 stalled = k as f64 * ds
@@ -231,7 +251,9 @@ pub(super) fn meander(
             if rate == 0.0 {
                 continue;
             }
-            let mut step = (rate * 0.25 * width * field[i]).clamp(-max_step, max_step);
+            // Growth per pass (widths per unit rate): wide courses of a 40 km map stopped at the pass limit at 1.27
+            // against a target of 1.68 with 0.25.
+            let mut step = (rate * 0.4 * width * field[i]).clamp(-max_step, max_step);
             let (tx, ty) = (xs[i + 1] - xs[i - 1], ys[i + 1] - ys[i - 1]);
             let tl = nonzero((tx * tx + ty * ty).sqrt());
             if let Some(resistance) = resistance {
@@ -262,6 +284,7 @@ pub(super) fn meander(
             }
         }
         if moved == 0 {
+            stop = "no vertex free to move";
             break;
         }
         resample_into(&nx, &ny, ds, &mut xs, &mut ys, &mut arc_scratch);
@@ -533,6 +556,8 @@ pub(super) fn meander(
             oxbows: Vec::new(),
             meandered: false,
             avulsions: 0,
+            stop,
+            passes,
         };
     };
     let meandered = rejoined.map_or(true, |j| {
@@ -544,5 +569,71 @@ pub(super) fn meander(
         oxbows,
         meandered,
         avulsions,
+        stop,
+        passes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Longest run of `xs, ys` whose vertices stay within `tolerance` of its chord, and the length over the chord.
+    fn planform(xs: &[f64], ys: &[f64], tolerance: f64) -> (f64, f64) {
+        let m = xs.len();
+        let length: f64 = (1..m).map(|k| (xs[k] - xs[k - 1]).hypot(ys[k] - ys[k - 1])).sum();
+        let chord = (xs[m - 1] - xs[0]).hypot(ys[m - 1] - ys[0]);
+        let (mut longest, mut i) = (0.0_f64, 0);
+        while i + 1 < m {
+            let mut j = i + 1;
+            while j + 1 < m {
+                let (ax, ay, bx, by) = (xs[i], ys[i], xs[j + 1], ys[j + 1]);
+                let l = (bx - ax).hypot(by - ay).max(1e-9);
+                if !(i + 1..=j).all(|k| (((xs[k] - ax) * (by - ay) - (ys[k] - ay) * (bx - ax)) / l).abs() <= tolerance) {
+                    break;
+                }
+                j += 1
+            }
+            longest = longest.max((xs[j] - xs[i]).hypot(ys[j] - ys[i]));
+            i = j
+        }
+        (longest, length / chord)
+    }
+
+    /// Invariant: a course laid straight down an open, nearly level plain winds. Its axis is a straight line (as a
+    /// Hermite axis over a flat reach, or a thalweg down a silted floor), the plain confines nothing, and the target
+    /// sinuosity is the V2 one of a mid-sized river (1.5): the result keeps no straight run longer than 300 m (six
+    /// times its width) and reaches a sinuosity of 1.2 at least.
+    #[test]
+    fn a_straight_course_on_an_open_plain_winds() {
+        let width = 50.0;
+        let (xs, ys): (Vec<f64>, Vec<f64>) = (0..=160).map(|k| (100.0 + 25.0 * k as f64, 2000.0 + 0.3 * k as f64)).unzip();
+        let valley = |x: f64, _y: f64| 30.0 - 0.0002 * x;
+        let allowed = |x: f64, y: f64, _z: f64| x > 0.0 && y > 0.0 && x < 6000.0 && y < 4000.0;
+        let target = |_x: f64, _y: f64| 1.5;
+        let mut worst = (0.0_f64, f64::INFINITY);
+        for seed in ["a", "b", "c", "d"] {
+            let result = meander(&xs, &ys, width, Rng::new(seed), &valley, &allowed, &target, 10.0, false, None);
+            let (longest, sinuosity) = planform(&result.xs, &result.ys, 0.15 * width);
+            eprintln!("plain meander {seed}: sinuosity {sinuosity:.3}, longest straight {longest:.0} m, stopped by {} after {} passes", result.stop, result.passes);
+            worst = (worst.0.max(longest), worst.1.min(sinuosity));
+        }
+        assert!(worst.0 <= 450.0, "a straight run of {:.0} m", worst.0);
+        assert!(worst.1 >= 1.3, "sinuosity {:.3}", worst.1);
+    }
+
+    #[test]
+    fn a_subcell_channel_winds_on_a_coarse_grid() {
+        let (xs, ys) = (vec![100.0, 4100.0], vec![2000.0, 2000.0]);
+        let valley = |x: f64, _y: f64| 30.0 - 0.0002 * x;
+        let allowed = |x: f64, y: f64, _z: f64| x > 0.0 && x < 6000.0 && y > 0.0 && y < 4000.0;
+        for resolution in [10000.0 / 512.0 / 2.0, 40000.0 / 1024.0 / 2.0] {
+            let result = meander(&xs, &ys, 12.0, Rng::new("coarse"), &valley, &allowed,
+                &|_, _| 1.5, resolution, false, None);
+            let (longest, sinuosity) = planform(&result.xs, &result.ys, 1.8);
+            assert!(sinuosity >= 1.15, "sinuosity {sinuosity:.3} at resolution {resolution}: {}", result.stop);
+            assert!(longest <= 450.0, "straight run of {longest:.0} m at resolution {resolution}");
+            assert!(profile(&result.xs, &result.ys, &valley).windows(2).all(|z| z[1] <= z[0]));
+        }
     }
 }
