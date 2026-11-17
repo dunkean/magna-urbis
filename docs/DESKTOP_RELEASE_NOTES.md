@@ -1,3 +1,15 @@
+## Alpha 0.3.9
+
+- Open a city from another generator: the import dialog ("Open a code or link") accepts a watabou city or village generator link, or an Azgaar Fantasy Map Generator burg (a row of the burgs-overview CSV, header optional, or the JSON of the new Azgaar export script, copied from the dialog). The town keeps its name, population, walls, citadel, temple, port, river and coast; Azgaar burgs also bring relief, biome, climate and culture. The FMG culture name base and type choose a fitting Magna Urbis culture, drawn per town, and the toponym language. See `docs/AZGAAR_IMPORT.md`.
+- An imported town is a single place on a map sized for it (about 3 km at 2,500 inhabitants, 6 km at 12,000).
+- Opening a code or link now runs the whole generation instead of waiting for a click.
+
+Source validation: TypeScript type-check passed; the import, city code and city parity suites passed (83 tests). The Azgaar export script has only been syntax-checked, not yet run in a live FMG page.
+
+Package validation: pending on the published assets.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.8
 
 - Faster display: the GPU vector engine no longer demotes itself to the CPU for the whole session (its tile timing was inflated by a synchronous error read). On a 40 km map, switching to parchment drops from about 35 s to 17 s and parchment pan/zoom stalls are halved; on a 10 km map the parchment switch drops from 6 s to 3 s.
