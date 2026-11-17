@@ -103,7 +103,12 @@ async function editHouse(before) {
     const x = box.x + box.width / 2 + (p.x - main.center.x) * scale, y = box.y + box.height / 2 + (p.y - main.center.y) * scale;
     if (x < box.x + 40 || x > box.x + box.width - 400 || y < box.y + 170 || y > box.y + box.height - 170) continue;
     await page.mouse.click(x, y);
-    if (await page.locator('#house-native-controls').count()) { selected = building; break; }
+    // The click may land on a neighbour (non-convex centroid, overlap): edit the house the panel actually opened.
+    if (await page.locator('#house-native-controls').count()) {
+      const id = await page.locator('#house-native-controls').getAttribute('data-request-id');
+      selected = before.buildings.find(b => b.nativeRequestId === id);
+      break;
+    }
   }
   assert(selected, 'No house selected through the visible map');
   const roof = page.locator('#house-native-controls [data-setting-path="overrides.roof"]');
