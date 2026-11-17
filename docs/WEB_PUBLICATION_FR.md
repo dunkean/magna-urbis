@@ -20,9 +20,20 @@ node scripts/deploy_site.mjs v1
 
 Les lanceurs Bash `scripts/deploy_pages.sh` et `scripts/deploy_v1.sh` sont
 également disponibles. Chaque commande construit `HEAD` dans un worktree
-temporaire, installe les dépendances avec `npm ci`, puis publie tout le dossier
-de sortie. Les modifications non committées sont préservées et ne sont pas
-utilisées pour la construction.
+persistant (`../_worktrees/publish-v2`, `publish-v1`), remis exactement au
+commit publié à chaque fois, puis publie tout le dossier de sortie. Les
+modifications non committées du checkout principal sont préservées et ne sont
+pas utilisées pour la construction.
+
+Le worktree garde `node_modules`, `rust/target` et les paquets WASM entre deux
+publications. `npm ci` n’est relancé que si `package-lock.json` a changé ;
+`prepare:v2` n’est relancé que si `rust/`, `web/scripts/` ou le lockfile ont
+changé (comparaison des identifiants d’objets Git du commit), et cargo
+recompile alors de façon incrémentale. Une publication qui ne touche que le
+TypeScript prend donc quelques minutes. `node scripts/deploy_site.mjs v2 --fresh`
+supprime le worktree et reconstruit tout, pour une vérification complète
+occasionnelle. L’installeur de bureau reste publié séparément, par tag, via
+GitHub Actions (`DESKTOP_RELEASE.md`).
 
 Les interfaces actuelles demandent Rust, la cible WASM et `wasm-pack` :
 `prepare:v2` compile les moteurs procéduraux et les maisons avant le build.

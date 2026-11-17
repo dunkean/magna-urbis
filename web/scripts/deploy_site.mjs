@@ -1,6 +1,6 @@
 /** Publish a committed source snapshot to one of the two custom domains. */
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,18 +31,40 @@ const revision = run('git', ['rev-parse', 'HEAD'], root, true);
 // 8.3 alias while Vite resolves imports to the long user-directory path.
 const temporaryRoot = realpathSync.native(tmpdir());
 const temporary = mkdtempSync(join(temporaryRoot, 'magna-urbis-publish-'));
-const source = join(temporary, 'source'), site = join(temporary, 'site');
-let worktreeAdded = false;
+// One persistent worktree per site, beside the checkout: it is reset to the published commit
+// each time, but keeps node_modules, the Rust target and the built WASM packages between runs,
+// so a publication rebuilds only what the commit changed. `--fresh` rebuilds everything.
+const source = resolve(root, '..', '_worktrees', `publish-${version}`), site = join(temporary, 'site');
+const state = join(source, '.publish-state');
+const fresh = process.argv.includes('--fresh');
+/** Inputs of a step, as git object ids of the commit: equal ids mean byte-identical inputs. */
+const inputs = (paths) => paths.map(path => `${path} ${run('git', ['rev-parse', `${revision}:${path}`], root, true)}`).join('\n');
+const stamp = (name) => existsSync(join(state, name)) ? readFileSync(join(state, name), 'utf8') : '';
+const remember = (name, value) => { mkdirSync(state, { recursive: true }); writeFileSync(join(state, name), value); };
 try {
-  run('git', ['worktree', 'add', '--detach', source, revision]);
-  worktreeAdded = true;
+  if (fresh && existsSync(source)) run('git', ['worktree', 'remove', '--force', source]);
+  if (!existsSync(source)) run('git', ['worktree', 'add', '--detach', source, revision]);
+  else {
+    run('git', ['checkout', '--detach', '--force', revision], source);
+    // Drop everything the commit does not hold, except the reusable build state.
+    run('git', ['clean', '-fdx', '-e', 'node_modules', '-e', 'rust/target', '-e', 'rust/pkg', '-e', '.publish-state'], source);
+  }
   const web = join(source, 'web');
-  run('npm', ['ci'], web);
-  // Both current interfaces import the Rust/WASM bridge.
-  run('npm', ['run', 'prepare:v2'], web);
+  const lock = inputs(['web/package-lock.json']);
+  if (stamp('npm') !== lock || !existsSync(join(web, 'node_modules'))) { run('npm', ['ci'], web); remember('npm', lock); }
+  else console.log('npm ci skipped: package-lock.json unchanged since the last publication.');
+  // Both current interfaces import the Rust/WASM bridge. Its packages depend only on the Rust
+  // sources and the preparation scripts: unchanged inputs give the same packages, kept from the
+  // last publication. Otherwise cargo rebuilds incrementally in the persistent target.
+  const wasm = inputs(['rust', 'web/scripts', 'web/package-lock.json']);
+  const packages = ['wasm', 'wasm-threads', 'houses'].every(name => existsSync(join(source, 'rust/pkg', name)));
+  if (stamp('wasm') !== wasm || !packages) { remember('wasm', ''); run('npm', ['run', 'prepare:v2'], web); remember('wasm', wasm); }
+  else console.log('prepare:v2 skipped: Rust sources and preparation scripts unchanged since the last publication.');
   if (version === 'v2') {
     // The detached worktree has no sibling infinite_map or generated neural package.
     // Accept only the prepared main-checkout runtime and verified profile; never rebuild it here.
+    // Staged afresh each time: the persistent worktree must not carry an older model set.
+    rmSync(join(source, 'rust/pkg/neural-web'), { recursive: true, force: true });
     await stageNeuralPublication(join(root, 'rust/pkg/neural-web'), join(source, 'rust/pkg/neural-web'));
     run('npm', ['run', 'build:v2'], web);
     run('npm', ['run', 'test:v2:static'], web);
@@ -81,7 +103,6 @@ try {
   }
   console.log(`Published ${version.toUpperCase()}: https://${target.domain}/ (${revision})`);
 } finally {
-  if (worktreeAdded) run('git', ['worktree', 'remove', '--force', source]);
   if (dirname(resolve(temporary)) !== temporaryRoot) throw new Error('Unexpected temporary directory');
   rmSync(temporary, { recursive: true, force: true });
 }
