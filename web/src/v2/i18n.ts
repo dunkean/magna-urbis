@@ -32,8 +32,8 @@ export function registerMessages(messages:Record<string,{en:string;fr:string}>):
 export function registeredEnglishMessages():string[]{return [...new Set(Object.values(registeredMessages).map(message=>message.en))];}
 registerMessages(Object.fromEntries(editingMessages.map(row=>[row[0],{en:row[0],fr:row[1]}])));
 registerMessages({
-  'Magna Urbis · V2 Workshop': { en: 'Magna Urbis · V2 Workshop', fr: 'Magna Urbis · Atelier V2' },
-  'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.': { en: 'Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.', fr: 'Magna Urbis V2 : du relief à la maison, un atelier de cartographie procédurale.' },
+  'Magna Urbis: Fantasy & Historical Map and City Generator': { en: 'Magna Urbis: Fantasy & Historical Map and City Generator', fr: 'Magna Urbis : générateur de cartes et de villes fantasy et historiques' },
+  'Free fantasy and historical map generator in your browser: regions, rivers and towns down to streets, parcels and buildings, in 2D and 3D, across many cultures.': { en: 'Free fantasy and historical map generator in your browser: regions, rivers and towns down to streets, parcels and buildings, in 2D and 3D, across many cultures.', fr: 'Générateur gratuit de cartes fantasy et historiques dans votre navigateur : régions, rivières et villes jusqu’aux rues, parcelles et bâtiments, en 2D et en 3D, pour de nombreuses cultures.' },
 });
 export const getLanguage=():Language=>language;
 export const numberLocale=():string=>LANGUAGES.find(item=>item.code===language)!.locale;
@@ -130,8 +130,8 @@ export function atlasUrl(href='./scientific/index.html'):string{
 function applyDocumentLanguage():void{
   document.documentElement.lang=language;
   document.documentElement.dir=language==='ar'?'rtl':'ltr';
-  document.title=translate('Magna Urbis · V2 Workshop');
-  document.querySelector('meta[name="description"]')?.setAttribute('content',translate('Magna Urbis V2: a procedural mapmaking workshop, from terrain to individual houses.'));
+  document.title=translate('Magna Urbis: Fantasy & Historical Map and City Generator');
+  document.querySelector('meta[name="description"]')?.setAttribute('content',translate('Free fantasy and historical map generator in your browser: regions, rivers and towns down to streets, parcels and buildings, in 2D and 3D, across many cultures.'));
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(element=>{if(!element.closest(protectedContent))element.textContent=translate(element.getAttribute('data-i18n')!);});
   for(const attr of ['aria-label','title','placeholder','alt'])document.querySelectorAll(`[data-i18n-${attr}]`).forEach(element=>element.setAttribute(attr,translate(element.getAttribute(`data-i18n-${attr}`)!)));
   for(const [element,value] of dynamicBindings){if(!element.isConnected){dynamicBindings.delete(element);continue;}element.textContent=translate(value());}
