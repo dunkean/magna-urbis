@@ -612,7 +612,14 @@ impl TerrainEngine {
     pub fn physical_height_field(&self) -> Vec<f32> { self.generator.physical_height_field() }
     pub fn physical_cave_field(&self) -> Vec<u8> { self.generator.physical_cave_field() }
     /// Underdark: carve the retained relief into caves and tunnels (rock mask in `physical_cave_field`).
-    pub fn carve_underdark(&mut self, seed: &str) -> Result<(), JsValue> { self.generator.carve_underdark(seed).map_err(|e| JsValue::from_str(&e)) }
+    /// `natural_tunnels`: lava tubes and river passages amount (0 none); absent, the default (a few).
+    pub fn carve_underdark(&mut self, seed: &str, natural_tunnels: Option<f64>) -> Result<(), JsValue> {
+        let mut options = magna_urbis_core::underdark::UnderdarkOptions::default();
+        if let Some(amount) = natural_tunnels { options.natural_tunnels = amount as f32; }
+        self.generator.carve_underdark_with(seed, &options).map_err(|e| JsValue::from_str(&e))
+    }
+    /// Natural Underdark tunnels, flattened `[kind, half_width, count, x0, y0, …]` in metres.
+    pub fn underdark_tunnels(&self) -> Vec<f32> { self.generator.underdark_tunnels() }
     pub fn sampling_parameters(&self) -> Vec<f64> {
         self.generator.sampling_parameters()
     }
