@@ -1,3 +1,14 @@
+## Alpha 0.3.7
+
+- Fix procedural relief on the in-app browser engine with WebGPU: the erosion shader no longer uses `from`, which recent WebView2/Chromium versions reserve ("485: 'from' is a reserved keyword"). A test now rejects reserved words in every WGSL source.
+- Faster release builds: the desktop packages skip the multithreaded browser core, which the native app does not use.
+
+Source validation: the WGSL reserved-word test passes; a WebGPU procedural generation completes in Chrome 157 on a real GPU. The same fix is live on magna-urbis.org.
+
+Package validation: pending on the published assets.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.6
 
 - A spinner beside the view selector turns until the view is fully drawn (style, shaders, textures, tiles, 3D opening), so a view still loading its textures is not mistaken for a broken one.
