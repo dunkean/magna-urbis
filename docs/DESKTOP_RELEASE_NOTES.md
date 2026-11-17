@@ -1,10 +1,14 @@
-## Alpha 0.3.9
+## Alpha 0.3.10
+
+Replaces 0.3.9, whose build stopped on an outdated test before publication (no 0.3.9 packages exist).
 
 - Open a city from another generator: the import dialog ("Open a code or link") accepts a watabou city or village generator link, or an Azgaar Fantasy Map Generator burg (a row of the burgs-overview CSV, header optional, or the JSON of the new Azgaar export script, copied from the dialog). The town keeps its name, population, walls, citadel, temple, port, river and coast; Azgaar burgs also bring relief, biome, climate and culture. The FMG culture name base and type choose a fitting Magna Urbis culture, drawn per town, and the toponym language. See `docs/AZGAAR_IMPORT.md`.
 - An imported town is a single place on a map sized for it (about 3 km at 2,500 inhabitants, 6 km at 12,000).
-- Opening a code or link now runs the whole generation instead of waiting for a click.
+- Opening a code or link now runs the whole generation instead of waiting for a click; the map is drawn even when the code is opened from the 3D view.
+- The map recovers from a lost GPU context, and a superseded map display no longer repaints over a newer one.
+- The Illustrate button is withdrawn for now.
 
-Source validation: TypeScript type-check passed; the import, city code and city parity suites passed (83 tests). The Azgaar export script has only been syntax-checked, not yet run in a live FMG page.
+Source validation: TypeScript type-check passed; the import, city code and city parity suites passed (83 tests) and the release integration suites passed locally (40 tests). The opened-from-3D blank map was reproduced and fixed in a headless browser. The Azgaar export script has only been syntax-checked, not yet run in a live FMG page. The same sources are live on magna-urbis.org and passed the full live check on a real GPU.
 
 Package validation: pending on the published assets.
 
