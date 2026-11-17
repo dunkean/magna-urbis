@@ -1188,6 +1188,9 @@ const cityCodeSharing = mountCityCodeSharing({
     setBusy(true);
     try { await loadProject(recipe); log('Import: generation code'); }
     finally { setBusy(false); }
+    // An opened code or link shows its city: run the whole chain without waiting for a click
+    // (not awaited, so the import dialog closes while it runs).
+    void runFullGeneration();
   },
 });
 $<HTMLInputElement>('#project-file').onchange=async e=>{

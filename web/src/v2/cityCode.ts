@@ -10,8 +10,11 @@ import { migrateUrbanSeeds } from './urbanSeeds';
 import { readGenerationSeed, writeGenerationSeed } from '../../../rust/bridge/generationSeed';
 import { applySceneClock } from './sceneClock';
 import { stripToponymOverrides } from './toponymOverrides';
+import { applyExternalCity, parseExternalCity } from './externalCity';
 
 export const CITY_CODE_PREFIX = 'MU3.';
+/** Thrown for text that is neither an MU3 code nor a known external city; localised like the other errors here (French key). */
+export const UNRECOGNISED_INPUT = 'Non reconnu : collez un code MU3, un lien de ville ou de village watabou, ou un bourg Azgaar (ligne CSV ou JSON du script d’export).';
 // MU3 recipe snapshot (cityCodeDefaults.json). The first three values encode the five essential choices:
 // seed, biome/culture/relief packed into one integer, and region extent in metres.
 // Optional trailing values are preset deltas, independent draws, and manual edits.
@@ -153,7 +156,14 @@ export function encodeCityCode(input: V2Settings, mods: unknown[] = []): string 
 }
 export interface DecodedCityCode { settings: V2Settings; mods: unknown[]; /** Saved decor to reopen before loading. */ decor?: string }
 export function decodeCityCode(text: string): DecodedCityCode {
-  const values = decodeCompact(cityCodeFromInput(text), schema, CITY_CODE_PREFIX);
+  const input = cityCodeFromInput(text);
+  if (!input.startsWith(CITY_CODE_PREFIX)) {
+    // A watabou city / village link or an Azgaar burg becomes a fresh recipe on the default baseline.
+    const hints = parseExternalCity(input);
+    if (hints) return { settings: applyExternalCity(hints, structuredClone(baseline)), mods: [] };
+    throw new Error(UNRECOGNISED_INPUT);
+  }
+  const values = decodeCompact(input, schema, CITY_CODE_PREFIX);
   try {
     if (!Array.isArray(values) || values.length < 3 || values.length > 6) throw new Error();
     const [root, choices, extent, saved = baseline, variations = {}, mods = []] = values;
@@ -191,14 +201,17 @@ export async function resolveCityCodeDecor(decoded: DecodedCityCode): Promise<{ 
   validateSettings(settings);
   return { settings, mods };
 }
-/** Accept a copied code or a share URL, including line-wrapped clipboard text. */
+/** Accept a copied code or a share URL, including line-wrapped clipboard text. Whitespace is only removed from MU3 codes
+ * and URLs; other payloads (an Azgaar CSV row or JSON) are returned trimmed for the external-city parsers. */
 export function cityCodeFromInput(text: string): string {
   text = text.trim();
-  if (!text.startsWith(CITY_CODE_PREFIX)) try {
-    const url = new URL(text);
-    text = new URLSearchParams(url.hash.slice(1)).get('city') ?? text;
-  } catch { /* A pasted code is not a URL. */ }
-  return text.replace(/\s/g, '');
+  const compact = text.replace(/\s/g, '');
+  if (compact.startsWith(CITY_CODE_PREFIX)) return compact;
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(compact)) return text;
+  try {
+    const shared = new URLSearchParams(new URL(compact).hash.slice(1)).get('city');
+    return shared === null ? compact : cityCodeFromInput(shared);
+  } catch { return compact; }
 }
 export function cityCodeUrl(code: string, base: string): string {
   const url = new URL(base);
