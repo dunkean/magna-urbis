@@ -10,6 +10,11 @@
 .view-strip .style-control{display:flex;align-items:center;gap:8px;padding:0;flex-shrink:0;position:relative;background:none;border:0;box-shadow:none}
 .view-strip .style-control select{max-width:185px;width:180px;background:var(--field);border:1px solid var(--line);font-size:12px;padding:8px 10px}
 .view-strip .style-control #view3d{min-width:40px;padding:8px 10px;border-color:#dcb86f44;color:var(--gold)}
+/* View spinner left of the view selector: the track follows the text colour (dark or light), the arc is the accent. */
+.view-loading{flex:none;box-sizing:border-box;width:16px;height:16px;margin-inline-end:-2px;border:2px solid color-mix(in srgb,currentColor 22%,transparent);border-top-color:var(--gold,currentColor);border-radius:50%;animation:view-loading-spin .9s linear infinite}
+.view-loading[hidden]{display:none}
+@keyframes view-loading-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.view-loading{animation-duration:2.4s}}
 .view-strip #render-status{position:absolute;inset-inline-start:0;top:100%;padding:5px 8px;background:var(--panel);max-width:300px;white-space:normal;z-index:2}
 .scene-controls{position:relative;display:flex;align-items:center;gap:12px;border-inline-start:1px solid var(--line);padding-inline-start:20px;min-width:0}
 .workbench-bar .header-menu{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin:0;padding:7px 20px;min-height:45px;overflow-x:auto;scrollbar-width:thin}

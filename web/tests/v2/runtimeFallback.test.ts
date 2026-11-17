@@ -4,6 +4,7 @@ import { backendAlternative, backendFailure, browserRuntimeSettings, nativeOrigi
 import { nativeFetch, NativeConnectionError, onNativeConnectionFailure } from '../../../rust/bridge/nativeAvailability';
 import { detectPlatform, resolveCompute, runtimeOptions, runtimeWorkerOptions } from '../../src/v2/platform';
 import { nativeRequest } from '../../../rust/bridge/nativeEngine';
+import { assertNeuralCompute } from '../../src/v2/neuralExecution';
 
 const caps = (over: Partial<{ webgpu: boolean; native: boolean; python: boolean }> = {}) => ({ checked: true, webgpu: true, native: false, python: false, ...over });
 
@@ -268,6 +269,21 @@ describe('web and local execution policy', () => {
     expect(runtimeChoiceStates(settings, { ...caps(), servicesChecked: false }).engine.native.enabled).toBe(false);
     setRuntimeChoice(settings, 'neural', 'python');
     expect(settings.runtime!.source).toBe('neural-python');
+  });
+  it.each([true, false])('web engine choice offers Automatic, WebGPU and CPU; explicit CPU neural is kept and refused (WebGPU=%s)', async webgpu => {
+    vi.stubGlobal('window', { location: dev }); vi.stubGlobal('fetch', vi.fn());
+    const settings = automatic(); settings.generation = 'neural'; normalizeRuntime(settings);
+    const engine = runtimeChoiceStates(settings, caps({ webgpu })).engine;
+    expect(engine.auto.enabled).toBe(true);
+    expect(engine.gpu).toEqual(webgpu ? { enabled: true } : { enabled: false, reason: expect.stringMatching(/WebGPU/) });
+    expect(engine.cpu).toMatchObject({ enabled: true, reason: expect.stringMatching(/GPU/) });
+    expect(runtimeChoiceStates(defaultSettings(), caps({ webgpu })).engine.cpu).toEqual({ enabled: true });
+    setRuntimeChoice(settings, 'engine', 'cpu');
+    expect(runtimeValues(settings)).toMatchObject({ engine: 'cpu', compute: 'cpu' });
+    expect(settings.runtime).not.toHaveProperty('autoBackend');
+    const selected = await runtimeForRun(settings, caps({ webgpu }), 'terrain');
+    expect(selected.settings.runtime).toMatchObject({ backend: 'rust', compute: 'cpu', source: 'neural-wasm' });
+    expect(() => assertNeuralCompute(true, selected.settings.runtime!.compute)).toThrow(/WebGPU/);
   });
   it('web hardware inspection never probes native services or unconfigured Python', async () => {
     vi.stubGlobal('window', { location: dev });

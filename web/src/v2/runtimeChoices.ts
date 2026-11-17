@@ -95,7 +95,9 @@ export function normalizeRuntime(settings: V2Settings, location?: OriginLocation
     if (runtime.backend === 'native' && runtime.compute === 'gpu') runtime.compute = 'auto';
     if (terrain) { delete terrain.compute; if (terrain.generationCompute && !['cpu', 'gpu-erosion'].includes(terrain.generationCompute)) delete terrain.generationCompute; }
   }
-  if (neural && runtime.compute === 'cpu') runtime.compute = 'auto';
+  // Local profile: the compute choice cannot select CPU for neural relief. In the web edition the engine choice CPU
+  // stays as chosen: a neural run is then refused before any weight download, with the WebGPU message.
+  if (neural && runtime.compute === 'cpu' && nativeOrigin(location)) runtime.compute = 'auto';
   // Only invalid combinations are corrected: the native neural service (:8792) needs the native engine.
   // Python or browser neural stays as chosen (or as the run fallback set it), even with the native engine:
   // the neural source only produces the height; the rest of the chain keeps its engine.
@@ -128,7 +130,8 @@ export function runtimeChoiceStates(settings: V2Settings, caps: RuntimeCapabilit
     engine: {
       auto: ok,
       rust: ok,
-      cpu: neural ? no(R.neuralNoCpu) : ok,
+      // Web edition: CPU stays selectable; with neural relief it carries the reason the run will be refused.
+      cpu: neural ? { enabled: true, reason: R.neuralNoCpu } : ok,
       gpu: gpuMissing ? no(R.needGpu) : ok,
       native: !nativeOrigin() || nativeMissing ? no(R.needNative) : ok,
       typescript: !nativeOrigin() || neural ? no(R.classicNoNeural) : ok,

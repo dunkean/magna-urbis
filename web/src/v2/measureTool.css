@@ -1,4 +1,4 @@
-.measure-tool-button{display:inline-flex;align-items:center;gap:6px;margin-inline-start:14px;padding:6px 10px;font-size:12px;white-space:nowrap}
+.measure-tool-button{position:relative;display:inline-flex;align-items:center;gap:6px;margin-inline-start:14px;padding:6px 8px;font-size:12px;white-space:nowrap}
 .measure-tool-button[aria-pressed=true]{border-color:#dcb86f99;background:#dcb86f22;color:var(--gold,#dcb86f)}
 .map-area .canvas-wrap.measuring canvas{cursor:crosshair}
 .map-area .canvas-wrap.measuring canvas.drag{cursor:grabbing}

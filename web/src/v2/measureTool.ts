@@ -39,7 +39,8 @@ export function mountMeasureTool(api: MeasureToolApi): { deactivate(): void } {
   const ns = 'http://www.w3.org/2000/svg';
   const button = document.createElement('button');
   button.type = 'button'; button.id = 'measure-tool'; button.className = 'measure-tool-button'; button.setAttribute('aria-pressed', 'false');
-  button.innerHTML = `${RULER_ICON}<span></span>`;
+  // Icon only: the label stays for screen readers (and is localized), visually hidden.
+  button.innerHTML = `${RULER_ICON}<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap"></span>`;
   setText(button.querySelector('span')!, 'Measure');
   button.title = 'Measure distances: click to add points, drag a point to move it, click a point to remove it. Backspace removes the last point, Escape clears.';
   api.slot.append(button);

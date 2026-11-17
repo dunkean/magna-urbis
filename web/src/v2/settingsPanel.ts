@@ -155,11 +155,11 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
         const element = select(id, values[key], options.map(([value, text]) => [value, text, states[key][value]?.enabled === false ? states[key][value].reason : undefined] as [string, string, string | undefined]), value => { setRuntimeChoice(bindings.getSettings!(), key, value, { checked: s.checked, servicesChecked: s.servicesChecked, webgpu: s.webgpu, native: s.native.available, python: s.python.available, nativeNeural: s.nativeNeural?.available }); bindings.onRuntimeChange?.(); render(); });
         element.disabled = busy; wrap.append(name, element); parent.append(wrap);
         const reason = states[key][values[key]];
-        if (reason?.enabled === false && reason.reason) { const note = document.createElement('small'); note.className = 'backend-choice-note'; setText(note, reason.reason); wrap.append(note); }
+        if (reason?.reason) { const note = document.createElement('small'); note.className = 'backend-choice-note'; setText(note, reason.reason); wrap.append(note); }
       };
       const exec = document.createElement('div'); exec.className = 'backend-execution'; exec.id = 'settings-execution'; host.append(exec);
       const local = runtimeOptions().profile === 'local';
-      choice(exec, 'engine', T.engine, local ? [['auto', T.engAuto], ['rust', T.engRust], ['native', T.engNative], ['typescript', T.engTs]] : [['auto', T.engAuto], ['gpu', T.webgpu], ['cpu', T.cCpu]]);
+      choice(exec, 'engine', T.engine, local ? [['auto', T.engAuto], ['rust', T.engRust], ['native', T.engNative], ['typescript', T.engTs]] : [['auto', T.cAuto], ['gpu', T.webgpu], ['cpu', T.cCpu]]);
       const runtimeStatus = bindings.getRuntimeStatus?.();
       if (runtimeStatus) { const note = document.createElement('small'); note.className = 'backend-choice-note'; note.setAttribute('role', 'status'); setText(note, runtimeStatus); exec.append(note); }
       if (local) choice(exec, 'compute', T.compute, [['auto', T.cAuto], ['cpu', T.cCpu], ['gpu', T.cGpu]]);

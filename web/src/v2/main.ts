@@ -84,6 +84,7 @@ import { translateLand } from '../ui/urbanSnapshot';
 import { mountSubdivisionActions, mountDeletedSubdivisions } from './localUrbanEditor';
 import { createSelectionOverlay } from './selectionOverlay';
 import { mountMeasureTool } from './measureTool';
+import { mountViewLoadingIndicator, watchDisplayPending } from './viewLoadingIndicator';
 import { resetSubdivisionChildren, rerollSubdivisionBuildings } from './subdivisionEdits';
 import { siteQuarter, siteBlock } from '../../../rust/bridge/urbanHouseEdits';
 import { renameMap } from './mapNaming';
@@ -336,6 +337,9 @@ window.addEventListener('v2-edit-mode', event => {
 });
 let city3d:V2Urban3d|undefined;
 let renderTimer:ReturnType<typeof setTimeout>|undefined,renderRevision=0;
+/** Spinner left of the view selector: a counter of the view jobs (appearance, 3D opening, 2D tiles) still owed to the map. */
+const viewLoading=mountViewLoadingIndicator($('#map-style'));
+watchDisplayPending(viewLoading,canvas,()=>client.displayPending());
 const sceneControls=mountSceneControls($('#scene-controls'),{getSettings:()=>settings,onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
 insertHTML($('.style-control'),'beforeend','<span id="render-status" class="hint" role="status" aria-live="polite" hidden></span><div id="render-controls" hidden></div>');
 const renderControls=mountRenderControls($('#render-controls'),{getSettings:()=>settings,getWorld:()=>world,getStyleSelectors:()=>[$<HTMLSelectElement>('#map-style')],getTarget:()=>document.querySelector('#view3d')?.getAttribute('aria-pressed')==='true'?'view3d':'view2d',onChange:()=>{projectRevision++;clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);}});
@@ -343,6 +347,8 @@ async function refreshAppearance():Promise<void>{
   workbenchLayout?.sync();sceneControls.sync();roadDisplay?.sync();
   city3d?.syncControls();
   const revision=++renderRevision,appearanceStart=performance.now();
+  // Keyed: a newer refresh supersedes this job; ended in `finally` whatever the revision, so it can never stay stuck.
+  const viewJob=viewLoading.begin('appearance');
   renderControls.sync();
   const status=$('#render-status');delete status.dataset.error;status.hidden=false;
   setText(status,'HD loading…');
@@ -362,12 +368,13 @@ async function refreshAppearance():Promise<void>{
     if(revision===renderRevision)renderControls.sync();
   }
   catch(error){if(revision===renderRevision)reportAppearanceError(error);}
-  finally{if(revision===renderRevision){if(status.dataset.error!=='true')status.hidden=true;performance.measure('v2:appearance',{start:appearanceStart});}}
+  finally{viewJob.end();if(revision===renderRevision){if(status.dataset.error!=='true')status.hidden=true;performance.measure('v2:appearance',{start:appearanceStart});}}
 }
 /** A new world (relief, settlements, edits) shown while the 3D view is open: the ground capture, the surface and the tiles must follow it (the 2D map redraws itself). */
 async function refresh3dWorld():Promise<void>{
   if(!city3d?.active)return;
   const revision=++renderRevision,status=$('#render-status');delete status.dataset.error;status.hidden=false;
+  const viewJob=viewLoading.begin('appearance');
   setText(status,'HD loading…');
   try{
     await client.prepare3dBackground();   // the bench ground of the new world is captured on demand, never while the 3D view is active
@@ -375,7 +382,7 @@ async function refresh3dWorld():Promise<void>{
     city3d.refresh();await city3d.prepare();
     await client.waitFor3d(city3d);
   }catch(error){if(revision===renderRevision)reportAppearanceError(error);}
-  finally{if(revision===renderRevision&&status.dataset.error!=='true')status.hidden=true;}
+  finally{viewJob.end();if(revision===renderRevision&&status.dataset.error!=='true')status.hidden=true;}
 }
 function reportAppearanceError(error:unknown):void{
   const message=error instanceof Error?error.message:String(error);
@@ -410,6 +417,7 @@ $('#view3d').onclick=async()=>{
   if(!world){toast('Create the terrain first.');return;}
   if(open3dToken||city3d?.active){
     const opening=open3dToken!==0;open3dToken=0;   // a pending opening sees its token vanish and stops without showing the 3D view
+    viewLoading.end('3d-open');
     const mapView=city3d?.active?city3d.toMapView():undefined;
     if(city3d?.active)city3d.hide();
     client.set3dActive(false);if(mapView)client.viewer.setView(mapView);setText($('#view3d'),'3D');$('#view3d').setAttribute('aria-pressed','false');$('#capture3d').hidden=true;editingTools.sync();
@@ -417,6 +425,7 @@ $('#view3d').onclick=async()=>{
     return;
   }
   const myToken=open3dToken=++open3dSeq,stale3d=()=>open3dToken!==myToken;
+  const viewJob=viewLoading.begin('3d-open');   // ended in `finally`, superseded by a newer opening, ended by a click on "2D"
   setText($('#view3d'),'2D');   // back to 2D is possible at any time, also while the 3D view loads
   // The progress card stays until the 3D view has drawn a complete first frame (tiles ready, no pending job):
   // the view needs seconds after it is shown, and a vanished card looked like a freeze.
@@ -443,7 +452,7 @@ $('#view3d').onclick=async()=>{
     try{await client.waitFor3d(view3d,request3d);}finally{clearInterval(coverageTimer);status3d.hidden=true;}
     performance.measure('v2:3d:tiles',{start:open3dStart});
   }catch(error){if(stale3d())return;if(!city3d?.active){client.set3dActive(false);setText($('#view3d'),'3D');}toast(String(error),true);}
-  finally{if(!stale3d()){open3dToken=0;if(!busy)card3d.hidden=true;cancel3d.hidden=false;}}
+  finally{viewJob.end();if(!stale3d()){open3dToken=0;if(!busy)card3d.hidden=true;cancel3d.hidden=false;}}
 };
 $('#capture3d').onclick=async()=>{try{if(city3d?.active)download(await city3d.capture(),`magna-urbis-${settings.options.seed}.3d.png`);}catch(error){toast(String(error),true);}};
 const terrainControls=mountTerrainControls($('#terrain-controls'),{getSettings:()=>settings,onChange:()=>{touchRecipe();regionControls?.sync();syncUrbanBackend();},disabled:()=>busy,context:{getWorld:()=>world,onApply:()=>void generate('terrain')}});

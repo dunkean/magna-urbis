@@ -154,14 +154,17 @@ try {
     const input = JSON.parse(await readFile(resolve(process.env.MAGNA_V2_RECIPE), 'utf8'));
     await recipe(value => { for (const key of Object.keys(value)) delete value[key]; Object.assign(value, input.settings ?? input); });
   } else {
-    await recipe(value => { value.runtime.compute = 'cpu'; });
+    // The web engine choice CPU is an explicit compute with Automatic engine off (Settings writes the same).
+    await recipe(value => { delete value.runtime.autoBackend; value.runtime.compute = 'cpu'; });
     const count = weights().length;
     await page.locator('#generate-region').click();
     await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
+    // The failure toast follows a capability re-check that names the alternative (reportGenerationFailure).
+    await page.waitForFunction(() => /WebGPU/.test(document.querySelector('#toast')?.textContent ?? '')).catch(() => {});
     const rejected = await record('cpu-rejected-before-download');
     assert.match(rejected.toast, /WebGPU/); assert.equal(weights().length, count);
     assert.equal(await page.locator('#neural-download-warning').count(), 0);
-    await recipe(value => { value.runtime.compute = 'auto'; });
+    await recipe(value => { value.runtime.autoBackend = true; value.runtime.compute = 'auto'; });
     await page.locator('#family-tab-settlements').click();
     await page.locator('#settlements-name-origin-profile').selectOption('english');
     await page.locator('#settlements-name-origin-language').selectOption('en');

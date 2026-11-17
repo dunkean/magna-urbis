@@ -394,6 +394,8 @@ export class StudioClient {
   }
   /** Progressive display finished (captures and test scripts wait for it). */
   displaySettled():Promise<void>{if(this.minimalActive)return this.minimal!.settled();return this.benchActive&&this.bench?this.bench.settled():Promise.resolve();}
+  /** Display work still owed to the 2D view (tiles, textures, programs); 0 in 3D, whose readiness is awaited separately. */
+  displayPending():number{return !this.view3dActive&&this.benchActive&&this.bench?this.bench.pendingWork():0;}
   prepareViewportCapture():void{if(this.minimalActive)this.minimal?.prepareCapture();if(this.benchActive)this.bench?.prepareCapture();}
   /** Resolve the appearance for the current products. `previewAware`: a stage-preview world is inspected through its elevation. */
   private resolve(settings:V2Settings,world:World|undefined,previewAware:boolean):ResolvedAppearance{
