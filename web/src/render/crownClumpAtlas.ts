@@ -80,6 +80,11 @@ export function crownClumpMode(detail: CrownDetail | undefined, brushes: boolean
 }
 
 const textures = new WeakMap<WebGL2RenderingContext, WebGLTexture>();
+/** Drops the context's atlas; `release` false only forgets it (a restored context, whose old texture is gone). */
+export function disposeCrownClumps(gl: WebGL2RenderingContext, release = true): void {
+  const texture = textures.get(gl); if (texture && release) gl.deleteTexture(texture);
+  textures.delete(gl);
+}
 /** Map program (TerrainGl): `uCrownClumps` (crownClumpMode), and when on the atlas on the brush-atlas unit. The painted
  * brushes and the clumps never show together (the shader reads the clumps only without brushes), so they share the
  * sampler: the map program has no free texture unit on ANGLE/D3D11 (16), nor WebGPU a free sampled texture (16). */

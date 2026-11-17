@@ -8,7 +8,8 @@ import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupatio
 import { shoreRingPixels, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
-import { bindCrownClumps, crownClumpMode, type CrownDetail } from '../render/crownClumpAtlas';
+import { bindCrownClumps, crownClumpMode, disposeCrownClumps, type CrownDetail } from '../render/crownClumpAtlas';
+import { GlContextRecovery, MAP_GPU_FAILED_EVENT, MapContextLostError, RESTORE_TIMEOUT_MS, capRgbaRaster, enterMapGpuLight, mapGpuLight, mapGpuLowEnd, mapTextureCap, noteMapRenderer } from './glContextRecovery';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { SEA_BAND_WIDTH } from '../render/terrainSea';
@@ -871,14 +872,42 @@ const terrainFragment = (v: TerrainVariant): string => specializeShader(glTerrai
 const auxKey = (v: TerrainVariant): string => `aux.${variantKey(v)}`;
 const auxFragment = (v: TerrainVariant): string => specializeShader(glTerrainFs,
   { uMode: v.mode, uRenderV2: v.v2, uForest: +v.forest, uForestBrushes: +v.brushes }, { NATURAL: 0, AUX_PASS: 1 });
+/** Light profile variant (glContextRecovery.ts), after a GPU loss: no forest pass, no Render v2 material. On FXC
+ * it links in about 5 s instead of 22 + 21 s; on Mesa/Intel it keeps the program and its memory far smaller. */
+export const lightVariant = (v: TerrainVariant): TerrainVariant => mapGpuLight() ? { ...v, v2: 0, forest: false, brushes: false } : v;
 export const lookMode = (look: TerrainLook): number => styleTraits(look.style).elevation ? 1 : look.layers.hypsometry && styleTraits(look.style).ground3d ? 3 : styleTraits(look.style).neuralEarth && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
 
 export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
-  private terrain!: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
-  private variants: ShaderVariants;
+  private terrain!: WebGLProgram; private river!: WebGLProgram; private composite!: WebGLProgram;
+  private variants!: ShaderVariants;
+  /** Context loss policy: restore and retry, then the light profile, then MapContextLostError. */
+  private recovery = new GlContextRecovery(mapGpuLight());
+  private restoreTimer?: ReturnType<typeof setTimeout>;
+  /** CPU inputs kept to rebuild every GL object on a restored context. */
+  private waterInput?: WaterLayer; private overlayInput?: OverlayLayer;
+  private forestSource?: ForestField; private occupationSource?: ForestOccupation;
+  private readonly onLost = (event: Event): void => {
+    if (this.disposed) return;
+    cancelAnimationFrame(this.frame); this.frame = 0;
+    if (this.recovery.lost()) {
+      event.preventDefault();   // without it the browser never restores the context
+      clearTimeout(this.restoreTimer);
+      this.restoreTimer = setTimeout(() => { this.recovery.expired(); if (this.recovery.failed) this.reportFailed(); }, RESTORE_TIMEOUT_MS);
+      console.warn(`Map WebGL context lost (loss ${this.recovery.losses}, ${this.recovery.stage}); waiting for a restore.`);
+    } else { console.warn('Map WebGL context lost again in the light profile: the GPU map gives up.'); this.reportFailed(); }
+  };
+  /** The page re-renders: variantReady() then throws MapContextLostError and the owner drops this renderer. */
+  private reportFailed(): void { if (!this.disposed && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(MAP_GPU_FAILED_EVENT)); }
+  private readonly onRestored = (): void => {
+    clearTimeout(this.restoreTimer);
+    if (this.disposed || this.recovery.failed) return;
+    if (this.recovery.restored()) enterMapGpuLight();
+    try { this.rebuild(); console.info(`Map WebGL context restored (${this.recovery.stage}).`); }
+    catch (error) { console.error('Map WebGL context restore failed:', error); this.recovery.stage = 'failed'; }
+  };
   /** Last terrain variant drawn: it stands in while the look's own variant links. */
   private lastTerrain?: WebGLProgram;
   /** Auxiliary pass output (RGBA32UI) and the inputs it was rendered for. */
@@ -918,12 +947,12 @@ export class TerrainGl {
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
-  private riverBuffer: WebGLBuffer; private riverVao: WebGLVertexArrayObject; private riverCount = 0; private riverRegime = false;
+  private riverBuffer!: WebGLBuffer; private riverVao!: WebGLVertexArrayObject; private riverCount = 0; private riverRegime = false;
   private view?: { view: View; width: number; height: number };
   private frame = 0;
   private disposed = false;
   private unlistenQuality?: () => void;
-  private empty: WebGLTexture;
+  private empty!: WebGLTexture;
   /** Last frame's GPU submission time, ms (CPU side). */
   drawMs = 0;
   private liveGround = new LiveGround();
@@ -937,9 +966,20 @@ export class TerrainGl {
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
-    glTerrainFs = gl && glLandDetailUnit(gl) !== undefined ? TERRAIN_FS : withoutLandDetail(TERRAIN_FS);
     if (!gl) throw new Error('WebGL2 indisponible');
+    // A canvas keeps its first context, lost or not (a GPU process exit loses them all): callers retry on a fresh canvas.
+    if (gl.isContextLost()) throw new MapContextLostError('The map canvas carries a lost WebGL2 context.');
+    glTerrainFs = glLandDetailUnit(gl) !== undefined ? TERRAIN_FS : withoutLandDetail(TERRAIN_FS);
     this.gl = gl;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    noteMapRenderer(String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? ''));
+    canvas.addEventListener('webglcontextlost', this.onLost); canvas.addEventListener('webglcontextrestored', this.onRestored);
+    this.createResources();
+    this.unlistenQuality = onDisplayQualityChange(() => this.request());
+  }
+  /** The context's fixed objects: preview variant, river and composite programs, river buffers, empty texture. */
+  private createResources(): void {
+    const gl = this.gl;
     this.variants = new ShaderVariants(gl, () => this.request());
     this.terrainVariant(PREVIEW_VARIANT, false);   // starts linking the preview
     this.river = compile(gl, RIVER_VS, RIVER_FS);
@@ -953,7 +993,27 @@ export class TerrainGl {
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24); gl.vertexAttribDivisor(2, 1);
     gl.bindVertexArray(null);
     this.empty = this.texture(1, 1, gl.R8, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(1), gl.NEAREST);
-    this.unlistenQuality = onDisplayQualityChange(() => this.request());
+  }
+  /** On a restored context every GL object is gone: forget them all, recreate the fixed ones and replay the
+   * retained CPU inputs (layers, water, overlay, forest). The look is kept; the next draw links its variant. */
+  private rebuild(): void {
+    const gl = this.gl;
+    this.variants.reset(); this.locations.clear(); this.riverLocations.clear();
+    this.lastTerrain = undefined; this.renderWater = undefined; this.prewarmStarted = false;
+    this.auxTarget = this.riverTarget = this.waterTarget = this.captureTarget = undefined; this.auxKey = ''; this.emptyAux = undefined;
+    this.retainedWaterTexture = undefined; this.retainedWaterViewKey = '';
+    this.shoreRing = undefined; this.coastDistance = undefined; this.lake = undefined; this.lakeInput = undefined; this.overlay = undefined;
+    this.forest = undefined; this.occupation = undefined; this.landDetail = undefined;
+    disposeForestBrushes(gl, false); disposeCrownClumps(gl, false);
+    const base = this.base?.layer, details = this.details.map(d => d.layer), enhanced = this.enhanced.map(d => d.layer);
+    const water = this.waterInput, overlay = this.overlayInput, forest = this.forestSource, occupation = this.occupationSource;
+    this.base = undefined; this.details = []; this.enhanced = []; this.forestSource = this.occupationSource = undefined;
+    this.createResources();
+    if (base) this.setBase(base);
+    for (const layer of details) this.setDetail(layer);
+    for (const layer of enhanced) this.setEnhancedDetail(layer);
+    this.setWater(water); this.setOverlay(overlay); this.setForest(forest, occupation);
+    this.request();
   }
 
   private uniform(name: string): WebGLUniformLocation | null {
@@ -971,6 +1031,8 @@ export class TerrainGl {
   private prewarmLikely(): void {
     if (this.prewarmStarted || this.capturing) return;
     this.prewarmStarted = true;
+    // Never a speculative heavy link on an integrated/software GPU or after a loss: it can itself lose the context.
+    if (mapGpuLowEnd() || mapGpuLight()) return;
     const start = (): void => {
       if (this.disposed || this.gl.isContextLost()) return;
       const variant: TerrainVariant = { mode: 3, v2: 1, forest: true, brushes: false };
@@ -1038,7 +1100,7 @@ export class TerrainGl {
    * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand. */
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return lightVariant({ mode, v2: styleTraits(look.style).satelliteVariant, forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 });
   }
   /** The look's variant once linked; meanwhile the last drawn variant, or the preview, stands in
    * (undefined if none is linked yet). Captures wait for the link. */
@@ -1056,8 +1118,17 @@ export class TerrainGl {
   /** Resolves once the current look's variant is linked, without blocking: callers that can wait
    * (3D material tiles) capture after it instead of stalling the page on the link. */
   async variantReady(): Promise<void> {
+    let lostSince = 0;
     while (this.look && !this.disposed) {
-      if (this.gl.isContextLost()) throw new Error('WebGL context lost while preparing the map style.');
+      // A lost context waits for its restore (rebuilt in place, then the light profile); only a final loss throws.
+      if (this.recovery.failed) throw new MapContextLostError();
+      if (this.gl.isContextLost() || this.recovery.waiting) {
+        lostSince ||= performance.now();
+        if (performance.now() - lostSince > RESTORE_TIMEOUT_MS + 2000) throw new MapContextLostError();
+        await new Promise(resolve => setTimeout(resolve, 50));
+        continue;
+      }
+      lostSince = 0;
       const v = this.lookVariant(this.look);
       const main = this.terrainVariant(v, false);
       const aux = !mapPasses(v).includes('aux') || this.variants.get(auxKey(v), () => [TERRAIN_VS, auxFragment(v)], false);
@@ -1166,6 +1237,7 @@ export class TerrainGl {
 
   setWater(water: WaterLayer | undefined): void {
     const gl = this.gl;
+    this.waterInput = water;
     const width = this.look?.mapWidth ?? this.base?.layer.width ?? 0;
     if (water?.lake !== this.lakeInput || (water?.lake && (this.lakeN !== water.n || this.lakeWidth !== width))) {
       if (this.lake) gl.deleteTexture(this.lake);
@@ -1187,6 +1259,7 @@ export class TerrainGl {
 
   setOverlay(overlay: OverlayLayer | undefined): void {
     const gl = this.gl;
+    this.overlayInput = overlay;
     if (this.overlay) gl.deleteTexture(this.overlay);
     this.overlay = overlay ? this.texture(overlay.n, overlay.n, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, overlay.rgba, gl.NEAREST) : undefined;
     this.request();
@@ -1196,16 +1269,20 @@ export class TerrainGl {
 
   /** Render3D forest: texture uploads only. `undefined` restores the legacy macro canopy exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
-    const gl = this.gl;
-    if (field !== this.forest?.field) {
+    const gl = this.gl, cap = mapTextureCap(gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    if (field !== this.forestSource) {
       deleteForestTextures(gl, this.forest);
-      this.forest = field && forestTextures(gl, field);
+      this.forestSource = field;
+      // Light profile: no forest pass, so no forest upload. Low-end GPUs: the field and its banks at most `cap`.
+      this.forest = field && !mapGpuLight() ? forestTextures(gl, cappedForest(field, cap)) : undefined;
     }
     if (occupation !== this.occupation?.data) {
       if (this.occupation) gl.deleteTexture(this.occupation.texture);
+      this.occupationSource = occupation;
       this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, true) };
     }
-    const detail = glLandDetailUnit(gl) === undefined ? undefined : occupation?.detail;
+    // Holdings are optional detail: left out in the light profile and when larger than the cap (classes cannot be box-filtered).
+    const detail = glLandDetailUnit(gl) === undefined || mapGpuLight() || (occupation?.detail?.n ?? 0) > cap ? undefined : occupation?.detail;
     if (detail !== this.landDetail?.data) {
       if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
       this.landDetail = detail && { data: detail, texture: forestTexture(gl, detail, true) };
@@ -1612,6 +1689,8 @@ export class TerrainGl {
     if (this.disposed) return;
     this.unlistenQuality?.();
     this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0; this.variants.reset(true);
+    clearTimeout(this.restoreTimer);
+    this.canvas.removeEventListener('webglcontextlost', this.onLost); this.canvas.removeEventListener('webglcontextrestored', this.onRestored);
     if (this.auxTarget) { this.gl.deleteFramebuffer(this.auxTarget.framebuffer); this.gl.deleteTexture(this.auxTarget.texture); }
     if (this.emptyAux) this.gl.deleteTexture(this.emptyAux);
     const gl = this.gl;
@@ -1623,7 +1702,7 @@ export class TerrainGl {
     if (this.occupation) gl.deleteTexture(this.occupation.texture);
     if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
     this.forest = this.occupation = this.landDetail = undefined;
-    disposeForestBrushes(gl);
+    disposeForestBrushes(gl); disposeCrownClumps(gl);
     gl.deleteBuffer(this.riverBuffer); gl.deleteVertexArray(this.riverVao);
     if (this.coastDistance) gl.deleteTexture(this.coastDistance);
     if (this.riverTarget) { gl.deleteFramebuffer(this.riverTarget.framebuffer); gl.deleteTexture(this.riverTarget.texture); }
@@ -1653,6 +1732,11 @@ export interface ForestTextures { field: ForestField; texture: WebGLTexture; ban
 export function forestTextures(gl: WebGL2RenderingContext, field: ForestField): ForestTextures {
   return { field, texture: forestTexture(gl, field, true), bank: field.bank && forestTexture(gl, { n: field.n, rgba: field.bank }, true),
     beach: field.beach && forestBeachTexture(gl, field.beach) };
+}
+/** The forest field and its same-grid bank box-halved to at most `cap` texels a side (mean cover kept). */
+export function cappedForest(field: ForestField, cap: number): ForestField {
+  const { raster, companions: [bank] } = capRgbaRaster(field, cap, [field.bank]);
+  return raster === field ? field : { ...raster, bank };
 }
 export function deleteForestTextures(gl: WebGL2RenderingContext, textures: ForestTextures | undefined): void {
   if (!textures) return;

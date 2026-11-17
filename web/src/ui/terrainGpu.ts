@@ -46,7 +46,8 @@ import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { isNeuralRefinement } from './terrainRefinement';
-import { PREVIEW_VARIANT, TerrainGl, hex, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type RetainedWaterOptions, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
+import { enterMapGpuLight, isMapContextLost, mapGpuLight, mapGpuLowEnd, mapTextureCap } from './glContextRecovery';
+import { PREVIEW_VARIANT, TerrainGl, cappedForest, hex, lightVariant, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type RetainedWaterOptions, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
 import type { TerrainRenderer } from './terrainRenderer';
 import { rendererOverride } from './rendererOverride';
 /** Runs `task` when the page is idle (at the latest after a few seconds). */
@@ -305,6 +306,8 @@ export class TerrainGpu implements TerrainRenderer {
   /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
   private readonly ringChanged = (): void => this.request();
   private forest?: ForestImages;
+  /** The forest field as given (the uploaded one may be capped, or absent in the light profile). */
+  private forestSource?: ForestField;
   private occupation?: { data: ForestOccupation; image: GpuImage };
   private landDetail?: { data: LandDetail; image: GpuImage };
   private brushes!: { image: GpuImage; full: boolean };
@@ -370,7 +373,7 @@ export class TerrainGpu implements TerrainRenderer {
 
   private inputs(): RendererInputs {
     return { look: this.look, view: this.view, base: this.base?.layer, details: this.details.map(d => d.layer), enhanced: this.enhanced.map(d => d.layer),
-      retainedWater: this.retainedWaterInput, water: this.waterInput, overlay: this.overlayInput, forest: this.forest?.field, occupation: this.occupation?.data };
+      retainedWater: this.retainedWaterInput, water: this.waterInput, overlay: this.overlayInput, forest: this.forestSource, occupation: this.occupation?.data };
   }
   /** Replays retained inputs through the public setters (look first: setWater reads its map width). */
   private static restore(target: TerrainRenderer, inputs: RendererInputs): void {
@@ -388,6 +391,9 @@ export class TerrainGpu implements TerrainRenderer {
   /** After a device loss: a new device (shared with the other renderers), its pipelines and every resource
    * re-uploaded; after three failures, or a fourth loss within a minute, the WebGL2 fall back. */
   private async recover(): Promise<void> {
+    // A lost device is rarely transient on a weak GPU (out of memory, a pipeline too heavy for the driver, or the
+    // whole GPU process exiting on Mesa/Intel): the rebuilt device draws the light profile.
+    enterMapGpuLight();
     const now = performance.now();
     this.losses = [...this.losses.filter(t => now - t < 60_000), now];
     let error: unknown = new Error('WebGPU : l’appareil est perdu à répétition.');
@@ -417,7 +423,7 @@ export class TerrainGpu implements TerrainRenderer {
     this.retainedWater = undefined; this.retainedWaterViewKey = ''; this.retainedWaterKey = '';
     this.base = undefined; this.details = []; this.enhanced = [];
     this.lake = undefined; this.lakeInput = undefined; this.overlay = undefined; this.coastDistance = undefined; this.shoreRing = undefined;
-    this.forest = undefined; this.occupation = undefined; this.landDetail = undefined;
+    this.forest = undefined; this.forestSource = undefined; this.occupation = undefined; this.landDetail = undefined;
     this.riverBuffer = undefined; this.riverCount = 0;
     TerrainGpu.restore(this, inputs);
   }
@@ -434,7 +440,15 @@ export class TerrainGpu implements TerrainRenderer {
     }
     try {
       if (!canvas) throw new Error('aucun canevas WebGL2 disponible');
-      const gl = new TerrainGl(canvas);
+      let gl: TerrainGl;
+      try { gl = new TerrainGl(canvas); }
+      catch (lost) {
+        // The factory canvas carries a context lost with the device (one GPU process): start from a fresh canvas.
+        if (!isMapContextLost(lost)) throw lost;
+        canvas = this.canvas.cloneNode(false) as HTMLCanvasElement;
+        if (this.canvas.isConnected) this.canvas.replaceWith(canvas);
+        gl = new TerrainGl(canvas);
+      }
       gl.setLivePaused(this.livePaused);
       TerrainGpu.restore(gl, inputs);
       this.fallback = gl; this.canvas = canvas;
@@ -588,18 +602,22 @@ export class TerrainGpu implements TerrainRenderer {
   /** Render3D forest: texture uploads only. `undefined` restores the legacy macro canopy exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
     if (this.fallback) return this.fallback.setForest(field, occupation);
-    if (field !== this.forest?.field) {
-      this.releaseForest();
-      this.forest = field && { field, texture: this.rgbaImage(field, true), bank: field.bank ? this.rgbaImage({ n: field.n, rgba: field.bank }, true) : undefined,
-        beach: field.beach ? this.image(field.beach.n, field.beach.n, 'r8unorm', field.beach.data, 1) : undefined };
+    const cap = mapTextureCap(this.device.limits.maxTextureDimension2D);
+    if (field !== this.forestSource) {
+      this.releaseForest(); this.forestSource = field;
+      // Light profile: no forest pass, no upload. Low-end GPUs: field and banks at most `cap` (TerrainGl.setForest).
+      const shown = field && !mapGpuLight() ? cappedForest(field, cap) : undefined;
+      this.forest = shown && { field: shown, texture: this.rgbaImage(shown, true), bank: shown.bank ? this.rgbaImage({ n: shown.n, rgba: shown.bank }, true) : undefined,
+        beach: shown.beach ? this.image(shown.beach.n, shown.beach.n, 'r8unorm', shown.beach.data, 1) : undefined };
     }
     if (occupation !== this.occupation?.data) {
       this.releaseImage(this.occupation?.image);
       this.occupation = occupation && { data: occupation, image: this.rgbaImage(occupation, true) };
     }
-    if (occupation?.detail !== this.landDetail?.data) {
+    const detail = mapGpuLight() || (occupation?.detail?.n ?? 0) > cap ? undefined : occupation?.detail;
+    if (detail !== this.landDetail?.data) {
       this.releaseImage(this.landDetail?.image);
-      this.landDetail = occupation?.detail && { data: occupation.detail, image: this.rgbaImage(occupation.detail, true) };
+      this.landDetail = detail && { data: detail, image: this.rgbaImage(detail, true) };
     }
     this.forestVersion++;
     this.request();
@@ -737,7 +755,7 @@ export class TerrainGpu implements TerrainRenderer {
    * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand. */
   private lookVariant(look: TerrainLook): TerrainVariant {
     const mode = lookMode(look);
-    return { mode, v2: styleTraits(look.style).satelliteVariant, forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 };
+    return lightVariant({ mode, v2: styleTraits(look.style).satelliteVariant, forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || !!this.forest), brushes: styleTraits(look.style).forestBrushes && mode === 3 });
   }
   private terrainPipeline(v: TerrainVariant, pass: 'map' | 'aux', blend: 'none' | 'alpha', wait: boolean): GPURenderPipeline | undefined {
     return this.gpu.pipeline(this.gpu.terrainKey(v, pass, blend), () => this.gpu.terrainDescriptor(v, pass, blend), wait);
@@ -759,6 +777,8 @@ export class TerrainGpu implements TerrainRenderer {
   private prewarmLikely(): void {
     if (this.prewarmStarted || this.capturing) return;
     this.prewarmStarted = true;
+    // No speculative heavy pipelines (nor a second 3D device) on an integrated/software GPU or after a loss.
+    if (mapGpuLowEnd() || mapGpuLight()) return;
     whenIdle(async () => {
       const gpu = this.gpu;
       if (this.disposed || gpu.lost) return;

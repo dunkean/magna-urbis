@@ -29,6 +29,8 @@ const entries: readonly (readonly [string, string])[] = [
   ["Langue de l’interface", "Interface language"],
   ["Chargement HD…", "HD loading…"],
   ["Render indisponible : WebGL2 n’a pas pu démarrer. Choisissez un style cartographique.", "Render unavailable: WebGL2 could not start. Choose a cartographic style."],
+  ["Votre carte graphique manque de ressources pour la vue satellite ; passage à une vue plus légère.", "Your graphics card ran out of resources for the satellite view; switched to a lighter view."],
+  ["Votre carte graphique n’a pas pu conserver la vue satellite ; passage à la carte parchemin.", "Your graphics card could not keep the satellite view; switched to the parchment map."],
   ["Fermer l’aperçu", "Close preview"],
   ["Ouverture de la vue 3D…", "Opening the 3D view…"],
   ["Fond de carte", "Map ground"],

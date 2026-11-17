@@ -46,6 +46,7 @@ import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/se
 import { v1LandCanvas } from '../render/v1Landscape';
 import { effectiveTerrainSettings } from './terrainSettings';
 import { createTerrainRenderer, terrainRendererCanvas, terrainRendererBackend, type TerrainRenderer } from '../ui/terrainRenderer';
+import { MAP_GPU_FAILED_MESSAGE, MAP_GPU_LIGHTER_MESSAGE, MapContextLostError, enterMapGpuLight, isMapContextLost, noteMapRenderer } from '../ui/glContextRecovery';
 import { riverCapsules, riverSegmentsInBox } from '../render/riverCapsules';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../rust/bridge/hydrologyRender';
@@ -329,12 +330,29 @@ export class BenchRenderer {
       if (!this.forestJob) request?.mark('programs-ready');
       if (!this.disposed) this.invalidate();
     }, error => {
+      // The map context is lost for good: drop it so the next appearance starts from a fresh canvas (light profile),
+      // or, after a second such loss, from the CPU raster. The page reports it and re-renders (main.ts).
+      if (isMapContextLost(error)) error = this.dropLostGpu();
       if (this.programWork === pending) { this.programWork = undefined; this.programError = error; this.invalidate(); }
       throw error;
     });
     // An exact consumer observes the original rejection; live rendering reports it on its next frame.
     void pending.catch(() => {});
     return pending;
+  }
+  /** Map GPU contexts lost for good on this renderer. */
+  private gpuLosses = 0;
+  /** Forgets a lost map renderer and its canvas (a canvas keeps its lost context); the next set() re-runs every pass. */
+  private dropLostGpu(): MapContextLostError {
+    const lostCanvas = this.gpuCanvas;
+    this.gpu?.dispose(); this.gpu = undefined; this.uploaded = undefined; this.gpuActive = false;
+    if (this.materialContext?.canvas === lostCanvas) this.materialContext = undefined;
+    this.gpuCanvas = document.createElement('canvas');
+    this.passes.reset(); enterMapGpuLight();
+    const final = ++this.gpuLosses > 1;
+    if (final) this.gpuUnavailable = true;
+    this.stats.gpuFallback = final ? 'Map GPU context lost twice: CPU raster' : 'Map GPU context lost: fresh context, light profile';
+    return new MapContextLostError(final ? MAP_GPU_FAILED_MESSAGE : MAP_GPU_LIGHTER_MESSAGE, final);
   }
   async exactReady(): Promise<void> {
     while (this.forestJob) await this.forestJob;
@@ -382,10 +400,13 @@ export class BenchRenderer {
     const t = this.native!, source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
     try {
       if (!this.gpu) {
-        const gl = this.gpuCanvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+        const attributes: WebGLContextAttributes = { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
+        let gl = this.gpuCanvas.getContext('webgl2', attributes);
+        // A canvas keeps its context even once lost (a GPU process exit loses every context): take a fresh one.
+        if (gl?.isContextLost()) { this.gpuCanvas = document.createElement('canvas'); gl = this.gpuCanvas.getContext('webgl2', attributes); }
         const extension = gl?.getExtension('WEBGL_debug_renderer_info');
         const name = extension ? String(gl!.getParameter(extension.UNMASKED_RENDERER_WEBGL)) : '';
-        reportDisplayRenderer(name);
+        reportDisplayRenderer(name); noteMapRenderer(name);
         if (!gl) throw new Error('WebGL2 indisponible pour la carte.');
         this.materialContext = { canvas: this.gpuCanvas, gl };
         if (/swiftshader|llvmpipe|software/i.test(name)) {

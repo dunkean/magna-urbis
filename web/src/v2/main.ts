@@ -18,6 +18,7 @@ import logo from '../ui/assets/logo-magna-urbis.png';
 import { CULTURE_LABELS, SITE_ARCHETYPES, type Options } from '../gen/options';
 import { STYLE_LIST, type MapStyle } from '../render/styles';
 import { mountRenderControls, currentComposition, writeAppearanceControl, PRESET_OPTIONS } from './renderControls';
+import { MAP_GPU_FAILED_EVENT, MAP_GPU_LIGHTER_EVENT, MAP_GPU_LIGHTER_MESSAGE, isMapContextLost, type MapContextLostError } from '../ui/glContextRecovery';
 import { showBrowserAdvice } from '../ui/browserAdvice';
 import { ruralSemanticLegend } from '../render/semanticLayer';
 import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance';
@@ -386,12 +387,25 @@ async function refresh3dWorld():Promise<void>{
 }
 function reportAppearanceError(error:unknown):void{
   const message=error instanceof Error?error.message:String(error);
+  // The map's GPU context was lost for good: the renderer already dropped it. Never a dead map: re-render from a fresh
+  // context in the light profile, or (second time) switch to the CPU-drawn parchment map.
+  if(isMapContextLost(error)){
+    if((error as MapContextLostError).final){
+      writeAppearanceControl(settings,'appearance.composition.preset','parchment');projectRevision++;
+      $<HTMLSelectElement>('#map-style').value=settings.appearance!.composition!.preset;
+    }
+    toast(message,true);clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);return;
+  }
   if(error instanceof Error&&error.name==='MaterialRasterUnavailableError'){
     const status=$('#render-status');status.dataset.error='true';status.hidden=false;
     setText(status,'Render unavailable: WebGL2 could not start. Choose a cartographic style.');
   }
   toast(message,true);
 }
+// A map GPU loss recovered in place, in the light profile (glContextRecovery.ts): say so once.
+window.addEventListener(MAP_GPU_LIGHTER_EVENT,()=>toast(MAP_GPU_LIGHTER_MESSAGE,true));
+// A live map context lost for good: re-render, the renderer then reports MapContextLostError (reportAppearanceError).
+window.addEventListener(MAP_GPU_FAILED_EVENT,()=>{clearTimeout(renderTimer);renderTimer=setTimeout(()=>void refreshAppearance(),120);});
 // The top-bar selector is the preset select of the render panel; 'custom' is shown but cannot be picked.
 setHTML($('#map-style'),PRESET_OPTIONS.map(o=>`<option value="${o.value}"${o.value==='custom'?' disabled':''}>${esc(o.label)}</option>`).join(''));
 /** The preset and export availability follow the current composition. */

@@ -28,7 +28,8 @@ export function bindForestBrushes(gl: WebGL2RenderingContext, uniform: (name: st
   gl.uniform1i(uniform('uForestBrushAtlas'), unit);
 }
 
-export function disposeForestBrushes(gl: WebGL2RenderingContext): void {
-  const cached = textures.get(gl); if (cached) gl.deleteTexture(cached.texture);
+/** `release` false: only forget the texture (a restored context, whose old objects are already gone). */
+export function disposeForestBrushes(gl: WebGL2RenderingContext, release = true): void {
+  const cached = textures.get(gl); if (cached && release) gl.deleteTexture(cached.texture);
   textures.delete(gl);
 }
