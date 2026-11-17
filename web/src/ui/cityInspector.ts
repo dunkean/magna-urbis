@@ -55,19 +55,19 @@ const SLOTS: Record<string, string> = { frame: 'structure', infill: 'remplissage
 const TRADES = ['tanners', 'smiths', 'weavers', 'dyers', 'potters', 'masons', 'merchants'];
 
 // ---------------------------------------------------------------- quarter statistics
-interface QuarterStats { area: number; blocks: number; lots: number; households: number }
+interface QuarterStats { area: number; blocks: number; lots: number; households: number; residents: number }
 const statsOf = new WeakMap<CityScene, Map<string, QuarterStats>>();
 /** One pass over blocks and lots per applied plan, then constant-time lookups. */
 function quarterStats(plan: CityScene, layout: number, quarter: number): QuarterStats {
   let all = statsOf.get(plan);
   if (!all) {
     all = new Map();
-    const get = (li: number, q: number): QuarterStats => { const key = `${li}:${q}`; let s = all!.get(key); if (!s) { s = { area: area(plan.layouts[li]?.quarters[q]?.shape ?? { outer: [], holes: [] }), blocks: 0, lots: 0, households: 0 }; all!.set(key, s); } return s; };
+    const get = (li: number, q: number): QuarterStats => { const key = `${li}:${q}`; let s = all!.get(key); if (!s) { s = { area: area(plan.layouts[li]?.quarters[q]?.shape ?? { outer: [], holes: [] }), blocks: 0, lots: 0, households: 0, residents: 0 }; all!.set(key, s); } return s; };
     for (const b of plan.blocks) if (!b.kind.startsWith('reserve')) get(b.layout, b.quarter).blocks++;
-    for (const p of plan.parcels) { const q = plan.layouts[p.layout]?.blocks[p.block]?.quarter; if (q === undefined) continue; const s = get(p.layout, q); s.lots++; s.households += p.allocation?.households ?? 0; }
+    for (const p of plan.parcels) { const q = plan.layouts[p.layout]?.blocks[p.block]?.quarter; if (q === undefined) continue; const s = get(p.layout, q); s.lots++; s.households += p.allocation?.households ?? 0; s.residents += p.allocation?.residents ?? (p.allocation?.households ?? 0) * householdSize(p.allocation?.culture ?? plan.layouts[p.layout].culture); }
     statsOf.set(plan, all);
   }
-  return all.get(`${layout}:${quarter}`) ?? { area: 0, blocks: 0, lots: 0, households: 0 };
+  return all.get(`${layout}:${quarter}`) ?? { area: 0, blocks: 0, lots: 0, households: 0, residents: 0 };
 }
 /** Frontage on the access, and depth measured perpendicular to the front. */
 function lotDimensions(parcel: CityParcel): { frontage?: number; depth?: number } {
@@ -127,7 +127,7 @@ function quarterSection(target: CityInspectorTarget, plan: CityScene, hooks: Cit
   const q = block.quarter, quarter = layout.quarters[q], phase = layout.phases?.[block.phase ?? quarter?.phase ?? 0];
   const district = target.parcel?.district ?? target.block?.district, edit = hooks.edits().quarters[String(q)];
   const culture = phase?.culture ?? layout.culture, stats = quarterStats(plan, li, q);
-  const population = stats.households * householdSize(culture), ha = stats.area / 1e4;
+  const population = stats.residents, ha = stats.area / 1e4;
   const body = rows([
     [roleText('Role'), district?.role ? districtRoleLabel(district.role, district.label) : roleText('Unassigned')],
     ['Richesse', district?.wealth !== undefined ? pct(district.wealth) : undefined],

@@ -94,6 +94,9 @@ export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>)
   for (const [id, edit] of Object.entries(edits)) {
     const existing = originals.get(id), candidate = extra.get(id);
     if (existing) {
+      // A renamed toponym keeps its generated placement (river paths, zoom range); only a name given to
+      // an unnamed object, or an explicit "always shown", forces a pinned label.
+      const named = !!existing.text?.trim();
       if(edit.text?.trim()){
         if(edit.mode==='proper'&&existing.parts){
           if(existing.reference?.form==='name')setSettlementName(world,existing.reference.key,edit.text);
@@ -107,7 +110,7 @@ export function applyLabelEdits(world: World, edits?: Record<string, LabelEdit>)
       if (edit.anchor) { existing.anchor = edit.anchor; existing.path = undefined; existing.span = undefined; existing.manual = true; }
       existing.labelStyle = edit.style;
       (existing as NameEntry & { hidden?: boolean }).hidden = edit.hidden || undefined;
-      existing.forceVisible = edit.hidden === false || !!edit.text?.trim() || undefined;
+      existing.forceVisible = edit.hidden === false || !named && !!edit.text?.trim() || undefined;
     } else if (!edit.hidden && edit.text?.trim() && (candidate || edit.kind === 'free') && (edit.anchor || candidate?.anchor)) {
       const entry: NameEntry = { id, kind: candidate?.kind === 'quarter' ? 'quarter' : candidate?.kind==='building'?'building':'square', text: edit.text, rank: 0,
         anchor: edit.anchor ?? candidate!.anchor, manual: true, labelStyle: edit.style, sub: candidate?.kind ?? 'free', ...(candidate?.text ? { replacedAnchor:candidate.anchor } : {}) };

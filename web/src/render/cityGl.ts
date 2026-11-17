@@ -17,7 +17,7 @@ import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityPick, Ci
 import { pickCity, selectCityLod } from './cityCanvas';
 import {
   buildFillMeshSync, buildStreetStrokes, buildTowers, buildWallStrokes, cityOrigin, fillMesh, mergeTriangulations, packBuildings, packPlan,
-  slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges,
+  META, slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges,
   type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes, type CityGlTriangulation,
 } from './cityGlBuild';
 import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, PARCHMENT_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
@@ -49,6 +49,11 @@ export interface CityGlDrawOptions {
   textured?: boolean;
   /** Custom display colours (road, roadEdge, track, building, buildingEdge). */
   colors?: import('./customColors').RenderColors;
+  /** The drawn rivers under the plan, in the terrain renderer's layout (`riverSegments`: x0, y0, x1, y1, w0, w1
+   * and a colour per segment, map metres, full widths). Where they run, the town ground (blocks, parcels) and
+   * its streets are not drawn: the river shows above them. Bridges and fords (crossing strokes), quays and
+   * landings, walls and buildings are drawn as before, above the water. */
+  water?: Float32Array;
 }
 export interface CityGlFrame { lod: CityLod; drawCalls: number; instances: number; triangles: number; cpuMs: number }
 export interface CityGlBuildStats { packMs: number; triangulateMs: number; assembleMs: number; uploadMs: number; workers: number; totalMs: number }
@@ -364,6 +369,48 @@ void main() {
   outColor = vec4(c.rgb, 1.0) * (c.a * a);
 }`;
 
+// Drawn river capsules into the stencil (bit 0x80): the town ground and streets are not drawn on them.
+const WATER_VS = `#version 300 es
+layout(location = 0) in vec4 aSeg;
+layout(location = 1) in vec2 aWidth;
+uniform vec4 uView;
+uniform vec2 uOrigin;
+out vec2 vP;
+flat out vec4 vSeg;
+flat out vec2 vHalf;
+void main() {
+  vec2 a = aSeg.xy - uOrigin, b = aSeg.zw - uOrigin, d = b - a;
+  float l = length(d);
+  vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
+  vec2 half_ = aWidth * 0.5;
+  float r = max(half_.x, half_.y) + 0.5;
+  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  vec2 p = mix(a - dir * r, b + dir * r, corner.x) + nrm * r * (corner.y * 2.0 - 1.0);
+  vP = p; vSeg = vec4(a, b); vHalf = half_;
+  gl_Position = vec4(p * uView.xy + uView.zw, 0.0, 1.0);
+}`;
+const WATER_FS = `#version 300 es
+precision highp float;
+in vec2 vP;
+flat in vec4 vSeg;
+flat in vec2 vHalf;
+out vec4 outColor;
+void main() {
+  vec2 pa = vP - vSeg.xy, ba = vSeg.zw - vSeg.xy;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
+  if (length(pa - ba * h) > mix(vHalf.x, vHalf.y, h)) discard;
+  outColor = vec4(0.0);
+}`;
+/** Stencil bit of the drawn water (cityGl draw: ground and streets kept off it). */
+const WATER_BIT = 0x80;
+/** First street stroke that is a crossing (bridge, ford, pier, boardwalk): crossings are sorted last. */
+function crossingStart(strokes: CityGlStrokes | undefined): number {
+  if (!strokes) return 0;
+  const u = new Uint32Array(strokes.data);
+  for (let i = 0; i < strokes.count; i++) if (u[i * STROKE_STRIDE + 8] & META.crossing) return i;
+  return strokes.count;
+}
+
 const strokeVariant = (source: string, variant: 0 | 1 | 2 | 3): string => source.replace(/^#version 300 es\n/, `#version 300 es\n#define VARIANT ${variant}\n`);
 // ---------------------------------------------------------------- GL helpers
 type Uniforms = Record<string, WebGLUniformLocation | null>;
@@ -495,7 +542,8 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     const info = gl.getExtension('WEBGL_debug_renderer_info'), name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
     if (SOFTWARE_GL.test(name)) { gl.getExtension('WEBGL_lose_context')?.loseContext(); throw new Error(`WebGL2 logiciel (${name})`); }
   }
-  let fillP: Program, strokeP: Program, casingP: Program, surfaceP: Program, discP: Program, pavedP: Program, tfillP: Program, texturedP: Program;
+  let fillP: Program, strokeP: Program, casingP: Program, surfaceP: Program, discP: Program, pavedP: Program, tfillP: Program, texturedP: Program, waterP: Program;
+  let water: { source: Float32Array; vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number } | undefined, streetCrossings = 0;
   // Textured materials: the albedo array (loaded lazily on the first textured draw) and the key of each uploaded material table.
   let albedoTex: WebGLTexture | undefined, albedoLoading = false, planMatKey = '', streetMatKey = '', builtMatKey = '';
   let plan: FillPack | undefined, built: FillPack | undefined, streets: StrokePack | undefined, walls: StrokePack | undefined, selection: StrokePack | undefined;
@@ -512,7 +560,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
   function init(): void {
     fillP = compile(gl, FILL_VS, FILL_FS); strokeP = compile(gl, strokeVariant(STROKE_VS, 0), strokeVariant(STROKE_FS, 0));
     casingP = compile(gl, strokeVariant(STROKE_VS, 1), strokeVariant(STROKE_FS, 1)); surfaceP = compile(gl, strokeVariant(STROKE_VS, 2), strokeVariant(STROKE_FS, 2)); discP = compile(gl, DISC_VS, DISC_FS); pavedP = compile(gl, PAVED_VS, PAVED_FS);
-    tfillP = compile(gl, TFILL_VS, TFILL_FS); texturedP = compile(gl, strokeVariant(STROKE_VS, 3), strokeVariant(STROKE_FS, 3));
+    tfillP = compile(gl, TFILL_VS, TFILL_FS); texturedP = compile(gl, strokeVariant(STROKE_VS, 3), strokeVariant(STROKE_FS, 3)); waterP = compile(gl, WATER_VS, WATER_FS);
     wallGl = createCityGlWalls(gl); // walls hook
   }
   init();
@@ -522,7 +570,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     if (towers) { gl.deleteBuffer(towers.vbo); gl.deleteVertexArray(towers.vao); towers = undefined; }
     plan = planMesh && new FillPack(gl, planMesh);
     wallGl.upload(scene, origin); // walls hook
-    streets = streetData && new StrokePack(gl, streetData); walls = wallData && new StrokePack(gl, wallData);
+    streets = streetData && new StrokePack(gl, streetData); walls = wallData && new StrokePack(gl, wallData); streetCrossings = crossingStart(streetData);
     if (towerData) {
       const vbo = gl.createBuffer()!, vao = gl.createVertexArray()!;
       gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, towerData, gl.STATIC_DRAW);
@@ -542,7 +590,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
   const onRestored = (): void => {
     // Old GL objects are invalid after restoration. Keep Canvas active until
     // programmes and the latest retained CPU meshes have all been reuploaded.
-    lost = true; plan = built = streets = walls = selection = undefined; towers = undefined; albedoTex = undefined; albedoLoading = false;
+    lost = true; plan = built = streets = walls = selection = undefined; towers = undefined; water = undefined; albedoTex = undefined; albedoLoading = false;
     try { init(); uploadPlan(); uploadBuildings(); lost = false; }
     catch (error) { console.warn('Restauration WebGL de la ville indisponible, Canvas 2D utilisé', error); }
     finally { invalidate(); }
@@ -603,7 +651,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       const surface = layers.roadSurface !== false;
       if (surface !== streetSurface) {
         streetSurface = surface;
-        if (scene && origin && !lost && !gl.isContextLost()) { streetData = buildStreetStrokes(scene, origin, surface); streets?.dispose(); streets = new StrokePack(gl, streetData); streetKey = ''; }
+        if (scene && origin && !lost && !gl.isContextLost()) { streetData = buildStreetStrokes(scene, origin, surface); streets?.dispose(); streets = new StrokePack(gl, streetData); streetCrossings = crossingStart(streetData); streetKey = ''; }
       }
       const footprint = o.buildingStyle === 'silhouette';
       const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = !footprint && (o.paintedBuildings ?? renderBackground);
@@ -636,6 +684,34 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       const view = [sx, sy, -1 - (v.minX - origin.x) * sx, 1 - (v.minY - origin.y) * sy];
       const devPx = (v.maxX - v.minX) / Math.max(1, W);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DEPTH_TEST);
+      // The drawn rivers above the town ground and streets: their capsules mark the stencil (WATER_BIT); blocks,
+      // parcels and non-crossing streets are drawn only off it, so the river shows through, bridges and fords over it.
+      if (o.water !== water?.source) {
+        if (water) { gl.deleteBuffer(water.vbo); gl.deleteVertexArray(water.vao); water = undefined; }
+        if (o.water && o.water.length >= 9) {
+          const vbo = gl.createBuffer()!, vao = gl.createVertexArray()!;
+          gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, o.water, gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 36, 0); gl.vertexAttribDivisor(0, 1);
+          gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 36, 16); gl.vertexAttribDivisor(1, 1);
+          gl.bindVertexArray(null);
+          water = { source: o.water, vbo, vao, count: Math.floor(o.water.length / 9) };
+        }
+      }
+      const wet = !!water && water.count > 0;
+      if (wet) {
+        gl.enable(gl.STENCIL_TEST); gl.stencilMask(0xff); gl.clearStencil(0); gl.clear(gl.STENCIL_BUFFER_BIT);
+        gl.stencilFunc(gl.ALWAYS, WATER_BIT, WATER_BIT); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE); gl.stencilMask(WATER_BIT);
+        gl.colorMask(false, false, false, false);
+        gl.useProgram(waterP.program); gl.uniform4fv(waterP.u.uView, view); gl.uniform2f(waterP.u.uOrigin, origin.x, origin.y);
+        gl.bindVertexArray(water!.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, water!.count); frame.drawCalls++; frame.instances += water!.count;
+        gl.colorMask(true, true, true, true); gl.stencilMask(0xff); gl.disable(gl.STENCIL_TEST);
+      }
+      /** Draws only off the drawn water (no-op without it). */
+      const dry = (on: boolean): void => {
+        if (!wet) return;
+        if (!on) { gl.disable(gl.STENCIL_TEST); return; }
+        gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, 0, WATER_BIT); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+      };
       gl.activeTexture(gl.TEXTURE0);
       // Binds a material table (unit 1) and the albedo array (unit 2) to a textured program.
       const extents = new Float32Array(32).fill(2); MATERIALS.layers.forEach((l, i) => { extents[i] = l.extent_m; });
@@ -663,6 +739,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           frame.drawCalls++; if (!lines) frame.triangles += count / 3;
         }
       };
+      dry(true);
       if (lod === 'far') { if (d.footprint) fills(plan, 'footprint', false); if (d.footprintLines) fills(plan, 'footprint', true); }
       else {
         if (d.blocks) fills(plan, 'blocks', false); if (d.blockLines) fills(plan, 'blocks', true);
@@ -678,6 +755,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           if (d.blockLines) fills(plan, 'blocks', true); if (d.parcelLines) fills(plan, 'parcels', true);
         }
       }
+      dry(false);
       if (layers.streets) { fills(plan, 'quays', false); fills(plan, 'quays', true); }
       const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures }; // walls hook
       frame.drawCalls += wallGl.draw('ground', wallDraw); // walls hook: ditches and glacis under the streets
@@ -696,25 +774,34 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         gl.uniform1i(u.uPass, pass); gl.uniform1f(u.uEdgePx, p.edgePx); gl.uniform1f(u.uInnerScale, p.inner); gl.uniform1f(u.uMinPxScale, p.minPx);
         gl.uniform1i(u.uMaxRank, p.maxRank); gl.uniform1i(u.uCrossings, p.crossings ? 1 : 0); gl.uniform1i(u.uDashKind, p.dash);
         gl.uniform1i(u.uSingle, single ? 1 : 0);
+        // Streets stay off the drawn water up to their crossings (sorted last), which run over it.
+        const wetFrom = wet && pack === streets ? streetCrossings : -1;
         if (!single) {
-          for (const [start, count] of ranges) { pack.bind(start); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count); frame.drawCalls++; frame.instances += count; }
+          for (const [start, count] of ranges) {
+            const end = start + count, split = wetFrom < 0 ? start : Math.max(start, Math.min(end, wetFrom));
+            if (split > start) { dry(true); pack.bind(start); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, split - start); frame.drawCalls++; frame.instances += split - start; dry(false); }
+            if (end > split) { pack.bind(split); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - split); frame.drawCalls++; frame.instances += end - split; }
+          }
           return;
         }
         // Translucent streets: each rank class covers a sample once (stencil ref rises with the
         // class, minor → major), a major still laid over a minor as before.
         const bounds = pack.strokes.firstWithRank;
         const rankOf = (i: number): number => { let r = 0; while (r < 15 && bounds[r] > i) r++; return r; };
-        gl.enable(gl.STENCIL_TEST); gl.clearStencil(0); gl.clear(gl.STENCIL_BUFFER_BIT); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+        // Over the drawn water the rank bits are cleared, the water bit kept: a sample marked water (≥ WATER_BIT)
+        // never passes GREATER against a rank reference, except for the crossings, which compare the rank bits only.
+        gl.enable(gl.STENCIL_TEST); gl.clearStencil(0); gl.stencilMask(wet ? WATER_BIT - 1 : 0xff); gl.clear(gl.STENCIL_BUFFER_BIT); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
         for (const [start, count] of ranges) {
           for (let i = start, end = start + count; i < end;) {
             const r = rankOf(i), stop = Math.min(end, r > 0 ? bounds[r - 1] : end);
-            const next = stop > i ? stop : end;
-            gl.stencilFunc(gl.GREATER, 16 - r, 0xff);
+            let next = stop > i ? stop : end;
+            if (wetFrom >= 0 && i < wetFrom && next > wetFrom) next = wetFrom;
+            gl.stencilFunc(gl.GREATER, 16 - r, wetFrom >= 0 && i >= wetFrom ? WATER_BIT - 1 : 0xff);
             pack.bind(i); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, next - i); frame.drawCalls++; frame.instances += next - i;
             i = next;
           }
         }
-        gl.disable(gl.STENCIL_TEST); gl.uniform1i(u.uSingle, 0);
+        gl.stencilMask(0xff); gl.disable(gl.STENCIL_TEST); gl.uniform1i(u.uSingle, 0);
       };
       if (d.streets && streets) {
         const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 15, crossings = true;
@@ -816,7 +903,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       triangulator.dispose();
       plan?.dispose(); built?.dispose(); streets?.dispose(); walls?.dispose(); selection?.dispose();
       if (towers) { gl.deleteBuffer(towers.vbo); gl.deleteVertexArray(towers.vao); }
-      gl.deleteProgram(fillP.program); gl.deleteProgram(strokeP.program); gl.deleteProgram(casingP.program); gl.deleteProgram(surfaceP.program); gl.deleteProgram(discP.program); gl.deleteProgram(pavedP.program); gl.deleteProgram(tfillP.program); gl.deleteProgram(texturedP.program); if (albedoTex) gl.deleteTexture(albedoTex);
+      gl.deleteProgram(fillP.program); gl.deleteProgram(strokeP.program); gl.deleteProgram(casingP.program); gl.deleteProgram(surfaceP.program); gl.deleteProgram(discP.program); gl.deleteProgram(pavedP.program); gl.deleteProgram(tfillP.program); gl.deleteProgram(texturedP.program); gl.deleteProgram(waterP.program); if (water) { gl.deleteBuffer(water.vbo); gl.deleteVertexArray(water.vao); water = undefined; } if (albedoTex) gl.deleteTexture(albedoTex);
       wallGl.dispose(); // walls hook
       canvas.removeEventListener('webglcontextlost', onLost as EventListener); canvas.removeEventListener('webglcontextrestored', onRestored as EventListener);
       plan = built = streets = walls = selection = undefined; towers = undefined; scene = undefined; buildings = undefined; planMesh = builtMesh = undefined;

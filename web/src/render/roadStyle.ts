@@ -76,23 +76,24 @@ export const emphasisAlpha = (emphasis: number): number => clamp(.5 + .5 * empha
 export interface RoadGroundTones { key: string; base: Rgb; kinds: Partial<Record<LandKind, Rgb>>; soil?: BiomeSoil }
 /** Open ground of a biome seen from above (what the satellite ground paints between the land-use classes), and its bare
  * soil, worn by traffic: a dirt road is that soil, never a foreign colour band. */
-export interface BiomeSoil { ground: Rgb; earth: Rgb }
+export interface BiomeSoil { ground: Rgb; earth: Rgb; /** 0–1: how far the worn ways sink into the local cover (vegetation regrowth, dust of the same soil); humid lush grounds the most. */ merge: number }
 const BIOME_SOIL: Readonly<Record<string, BiomeSoil>> = {
-  temperate: { ground: [112, 132, 74], earth: [134, 116, 90] },
-  forest: { ground: [100, 122, 70], earth: [120, 104, 82] },
-  desert: { ground: [198, 172, 130], earth: [212, 190, 150] },
-  steppe: { ground: [166, 156, 106], earth: [182, 160, 120] },
-  tropical: { ground: [94, 124, 64], earth: [164, 102, 70] },
-  tundra: { ground: [138, 140, 116], earth: [132, 124, 108] },
-  underdark: { ground: [92, 88, 98], earth: [112, 106, 114] },
+  temperate: { ground: [112, 132, 74], earth: [134, 116, 90], merge: .25 },
+  forest: { ground: [100, 122, 70], earth: [120, 104, 82], merge: .3 },
+  desert: { ground: [198, 172, 130], earth: [212, 190, 150], merge: .15 },
+  steppe: { ground: [166, 156, 106], earth: [182, 160, 120], merge: .2 },
+  // Tropical red earth is muted and soon grassed over: seen from above a track is a dull, slightly warmer green-brown.
+  tropical: { ground: [94, 124, 64], earth: [140, 112, 84], merge: .6 },
+  tundra: { ground: [138, 140, 116], earth: [132, 124, 108], merge: .2 },
+  underdark: { ground: [92, 88, 98], earth: [112, 106, 114], merge: .15 },
   // Climate zones of the terrain (terrainClimate CLIMATE_ZONES): they win over the map biome where the region has one.
-  mediterranean: { ground: [148, 140, 96], earth: [180, 152, 114] },
-  continental: { ground: [110, 128, 72], earth: [128, 112, 90] },
-  nordic: { ground: [96, 112, 72], earth: [112, 102, 88] },
-  alpine: { ground: [110, 124, 80], earth: [142, 136, 126] },
-  arctic: { ground: [150, 150, 140], earth: [128, 122, 112] },
-  savanna: { ground: [168, 150, 96], earth: [178, 122, 82] },
-  wetland: { ground: [92, 112, 72], earth: [98, 88, 72] },
+  mediterranean: { ground: [148, 140, 96], earth: [180, 152, 114], merge: .2 },
+  continental: { ground: [110, 128, 72], earth: [128, 112, 90], merge: .25 },
+  nordic: { ground: [96, 112, 72], earth: [112, 102, 88], merge: .3 },
+  alpine: { ground: [110, 124, 80], earth: [142, 136, 126], merge: .2 },
+  arctic: { ground: [150, 150, 140], earth: [128, 122, 112], merge: .2 },
+  savanna: { ground: [168, 150, 96], earth: [168, 128, 94], merge: .4 },
+  wetland: { ground: [92, 112, 72], earth: [98, 88, 72], merge: .45 },
 };
 /** The soil of a climate zone or biome name; unknown names take the temperate soil. */
 /** The soil name of a map: its terrain climate zone, unless that is the default temperate zone and the map biome says more. */
@@ -134,14 +135,22 @@ const RENDERED_EARTH: Readonly<Record<RoadRank, { gravel: number; light: number;
   track: { gravel: 0, light: 1, ground: .28 }, path: { gravel: 0, light: .98, ground: .4 },
 };
 const ROAD_GRAVEL: Rgb = [172, 166, 154];
+/** Share of the soil's merge each rank takes: main roads keep the most of their own surface, town streets nearly all. */
+const MERGE_SHARE: Readonly<Record<RoadRank, number>> = { major: .55, minor: .75, street: .3, lane: .45, track: 1, path: 1 };
+/** Merge of the current ground's soil, 0 on the plan looks. */
+const soilMerge = (): number => ground?.soil?.merge ?? 0;
 export function renderedTone(ground: Rgb, soil: BiomeSoil, rank: RoadRank, emphasis: number, night: boolean, snow = mapGroundSnow()): Rgb {
   if (night) return over(NIGHT_EARTH, ground, .7 + .08 * clamp(emphasis, .5, 1.5));
   const r = RENDERED_EARTH[rank], e = clamp(emphasis, .5, 1.5);
   const earth = over(ROAD_GRAVEL, soil.earth, r.gravel), k = r.light * (1 + .06 * (e - 1));
-  const bare = over([earth[0] * k, earth[1] * k, earth[2] * k], ground, 1 - r.ground);
+  // The soil's merge takes the way further into the local cover, tracks the most, made roads less (they stay a little
+  // more visible), town streets only slightly; the result loses some chroma (dust, sparse grass), never a colour band.
+  const merge = soil.merge * MERGE_SHARE[rank], take = r.ground + (1 - r.ground) * merge;
+  const mixed = over([earth[0] * k, earth[1] * k, earth[2] * k], ground, 1 - take), grey = lum(mixed) * 255, dull = 1 - .45 * merge;
+  const bare: Rgb = [grey + (mixed[0] - grey) * dull, grey + (mixed[1] - grey) * dull, grey + (mixed[2] - grey) * dull];
   // Pale soils (desert, steppe) would vanish into a pale ground: the worn bed is a touch darker or lighter there.
   const l = lum(bare), g = lum(ground);
-  const out: Rgb = Math.abs(l - g) < .035 * e ? (l >= g ? [bare[0] * 1.05, bare[1] * 1.05, bare[2] * 1.04] : [bare[0] * .93, bare[1] * .93, bare[2] * .94]) : bare;
+  const out: Rgb = Math.abs(l - g) < .025 * e ? (l >= g ? [bare[0] * 1.04, bare[1] * 1.04, bare[2] * 1.03] : [bare[0] * .95, bare[1] * .95, bare[2] * .96]) : bare;
   const compact = (rank === 'path' || rank === 'track' ? 7 : 0) - 12 * (e - 1);
   return over([180 + compact, 192 + compact, 202 + compact], out, snow);
 }
@@ -326,9 +335,10 @@ export function naturalMarks(rank: RoadRank, width: number, scale: number, style
   const cover = rank === 'track' || rank === 'path' ? clamp((rank === 'track' ? 3 : 1.6) * scale / s.floor, rank === 'track' ? .3 : .2, 1) : 1;
   if (style.look === 'rendered' && !snow && !style.night) {
     // Rendered: no drawn shoulder. A worn, dusty verge of the same soil, wide and faint, only once it covers a pixel.
-    const apron = px >= 1.6 ? RENDERED_APRON[rank] : 0;
-    return { shadow: apron > 0 ? { color: rgbCss(apronTone()), alpha: clamp(apron * e, 0, .3), extra: Math.max(1.6 / scale, width * (rank === 'track' || rank === 'path' ? .7 : .5)) } : undefined,
-      bed: { alpha: clamp(RENDERED_BED[rank] * e, .2, 1) },
+    // The soil's merge thins the verge and lets the cover back over the quiet ways (encroaching grass, crowns).
+    const merge = soilMerge() * MERGE_SHARE[rank], apron = px >= 1.6 ? RENDERED_APRON[rank] * (1 - .7 * merge) : 0;
+    return { shadow: apron > 0 ? { color: rgbCss(apronTone()), alpha: clamp(apron * e, 0, .3), extra: Math.max(1.2 / scale, width * (rank === 'track' || rank === 'path' ? .45 : .32)) } : undefined,
+      bed: { alpha: clamp(RENDERED_BED[rank] * e * (1 - .3 * merge), .2, 1) },
       wear: px >= 2.6 && px < 9 ? { color: WEAR, alpha: .1 * e, share: .5, dash: WEAR_DASH } : undefined,
       grain: px >= 7 ? .45 * Math.min(1, e) * grainVisibility(scale) : 0 };
   }
@@ -468,7 +478,9 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
 export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: RoadRank, width: number, scale: number, style: RoadStyle, canopy = 0, metres = width): void {
   if (pavedRank(rank, style.pavement)) { strokePavedRoad(ctx, path, rank, width, scale, style, canopy, metres); return; }
   const paint = roadPaint(ctx, rank, style), marks = naturalMarks(rank, width, scale, style), px = width * scale, earthen = rank === 'track' || rank === 'path', snow = !style.night && mapGroundSnow();
-  const rendered = style.look === 'rendered', cover = rendered ? clamp(metres / Math.max(width, 1e-6), .12, 1) : 1;
+  // Rendered: below a pixel the road's true share of it, a little less again (a photograph loses a thin way into its
+  // verges), so regional roads read narrower and quieter from afar.
+  const share = metres / Math.max(width, 1e-6), rendered = style.look === 'rendered', cover = rendered ? clamp(share < 1 ? .8 * share : 1, .1, 1) : 1;
   const open = 1 - canopy, under = roadCanopyOpacity(rank, canopy) * cover;
   marks.bed.alpha *= under;
   if (rendered && marks.shadow) marks.shadow.alpha *= cover;
@@ -485,9 +497,11 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
   else if (rendered) {
     // A continuous worn core, full-width irregular runs and a frayed outer edge: the edge wanders and softens into the
     // verge without any new geometry, never a crisp band.
-    stroke(paint, width * (earthen ? .6 : .82), marks.bed.alpha);
-    stroke(paint, width, marks.bed.alpha * (earthen ? .68 : .9), EDGE_DASH);
-    if (px >= 3) stroke(paint, width * 1.14, marks.bed.alpha * .3, FRAY_DASH);
+    // A merging soil narrows the continuous core further and softens the runs: the cover eats in from both sides.
+    const merge = soilMerge() * MERGE_SHARE[rank];
+    stroke(paint, width * (earthen ? .6 - .15 * merge : .82 - .1 * merge), marks.bed.alpha);
+    stroke(paint, width, marks.bed.alpha * (earthen ? .68 : .9) * (1 - .35 * merge), EDGE_DASH);
+    if (px >= 3) stroke(paint, width * 1.08, marks.bed.alpha * .22, FRAY_DASH);
   } else {
     // A narrower continuous bed and full-width irregular runs: the edge wanders without any new geometry; on earth the grass eats further in.
     stroke(paint, width * (earthen ? .66 : .88), marks.bed.alpha);

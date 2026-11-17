@@ -3,7 +3,7 @@
 // The decor raster itself stays on the terrain (`v2DecorRaster`): placement, roads and towns read it as is
 // (rustSettlementRaster), so the V2 builds its city on exactly the ground City Bench uses.
 import type { TerrainLayer, River, Polygon } from '../gen/types';
-import type { SettlementRaster } from '../../../rust/bridge/settlements';
+import { CAVE_ROCK_DEPTH, type SettlementRaster } from '../../../rust/bridge/settlements';
 import { slopeGrid } from '../gen/core/grid';
 import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
 import { loadCoreWasm } from '../../../rust/bridge/wasmRuntime';
@@ -88,7 +88,11 @@ export async function decorTerrainLayer(decor: Decor, id: string): Promise<Decor
   for (let i = 0; i < length; i++) {
     const w = r.water[i];
     if (w === 1) { water[i] = 1; sea[i] = 1; seaCells++; }
-    else if (w === 2) { water[i] = cave ? 4 : 2; if (!cave) lake[i] = 1; }
+    else if (w === 2) {
+      water[i] = cave ? 4 : 2; if (!cave) lake[i] = 1;
+      // A saved cavern decor: its rock reaches placement as cave rock (`CAVE_ROCK_DEPTH`).
+      if (cave) r.waterLevel[i] = r.height[i] - CAVE_ROCK_DEPTH;
+    }
     else if (w === 3) { water[i] = 3; flow.data[i] = Math.max(1, r.riverWidth[i] ** 2); }
     if (w) filled[i] = Math.max(r.height[i], r.waterLevel[i]);
   }

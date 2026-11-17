@@ -13,6 +13,7 @@ import type { TerrainProgressCallback } from '../../../rust/bridge/terrainProgre
 import { isCompactProcedural, type GenerationControl } from '../../../rust/bridge/terrainGenerationRecipe';
 import { sourceDefinition } from '../../../rust/bridge/terrainDefinition';
 import { TERRAIN_STAGE_OUTPUTS, TerrainStageOutput, previewTerrainData } from './terrainStagePreview';
+import { responsiveTimeout } from '../../../rust/bridge/nativeAvailability';
 export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'unavailable'; message: string; source: 'browser' | 'rust' | 'python' };
 export interface PlatformCapabilities {
   cpu: true;
@@ -21,11 +22,15 @@ export interface PlatformCapabilities {
   desktop: boolean;
   local: { available: boolean; server: string; capabilities: string[]; error?: string };
   python: { available: boolean; server: string; backend?: string; loaded: boolean; state?: string; message?: string; error?: string };
+  /** Native Rust neural service (:8792): it answered a probe, or the desktop app starts it on demand. Never probed on the web profile. */
+  nativeNeural: { available: boolean; server: string; error?: string };
 }
 export interface DetectPlatformOptions {
   profile?: 'web' | 'local';
+  probePython?: boolean;
   localServer?: string;
   pythonServer?: string;
+  neuralServer?: string;
   signal?: AbortSignal;
   onProgress?: (event: PlatformProgress) => void;
 }
@@ -40,32 +45,47 @@ export function loopbackServer(value: string): string {
   return url.origin;
 }
 
-export function runtimeOptions(location?: Pick<Location, 'search' | 'hostname'>): DetectPlatformOptions {
+export type RuntimeLocation = Pick<Location, 'hostname' | 'protocol'> & Partial<Pick<Location, 'search'>>;
+export function runtimeOptions(location?: Partial<RuntimeLocation>): DetectPlatformOptions {
   const current = location ?? (typeof window !== 'undefined' ? window.location : undefined);
   const params = new URLSearchParams(current?.search ?? '');
+  const desktop = current?.protocol === 'tauri:' || /(?:^|\.)tauri\.localhost$/.test(current?.hostname ?? '')
+    || !location && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  // Workers receive the page profile through their name, never from saved recipes.
+  const workerLocal = !current && /(?:^|\s)profile=local\b/.test((globalThis as { name?: string }).name ?? '');
   // A development URL remains a full web app until local is explicitly requested.
   return {
-    profile: params.get('profile') === 'local' ? 'local' : 'web',
+    profile: desktop || workerLocal || params.get('profile') === 'local' ? 'local' : 'web',
     localServer: params.get('localServer') ?? 'http://127.0.0.1:8791',
     pythonServer: params.get('pythonServer') ?? 'http://127.0.0.1:8793',
   };
 }
 
 async function serviceStatus(server: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-  const timeout = AbortSignal.timeout(2500);
-  const response = await fetch(`${server}/status`, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout, cache: 'no-store' });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+  // A busy page delays the reply's task, not the service: count only responsive time.
+  const timeout = new AbortController(), stop = responsiveTimeout(2500, () => timeout.abort(new DOMException('Service status timed out.', 'TimeoutError')));
+  try {
+    const response = await fetch(`${server}/status`, { signal: signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal, cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } finally { stop(); }
+}
+
+/** Carry the page's execution policy into workers, whose URL is a bundled script. */
+export function runtimeWorkerOptions(options: WorkerOptions = {}): WorkerOptions {
+  return { ...options, name: `${options.name ?? 'magna-v2'} profile=${runtimeOptions().profile}` };
 }
 
 export async function detectPlatform(options: DetectPlatformOptions = runtimeOptions()): Promise<PlatformCapabilities> {
   const localServer = loopbackServer(options.localServer ?? 'http://127.0.0.1:8791');
   const pythonServer = loopbackServer(options.pythonServer ?? 'http://127.0.0.1:8793');
+  const neuralServer = loopbackServer(options.neuralServer ?? 'http://127.0.0.1:8792');
   const result: PlatformCapabilities = {
     cpu: true, webgpu: false,
     desktop: typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || /(?:^|\.)tauri\.localhost$/.test(window.location.hostname) || window.location.protocol === 'tauri:'),
     local: { available: false, server: localServer, capabilities: [] },
     python: { available: false, server: pythonServer, loaded: false },
+    nativeNeural: { available: false, server: neuralServer },
   };
   const progress = options.onProgress ?? (() => {});
   const gpu = async () => {
@@ -111,7 +131,19 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
       progress({ phase: 'unavailable', source: 'python', message: 'Neuronal Python/CUDA indisponible' });
     }
   };
-  await Promise.all([gpu(), ...(options.profile === 'local' ? [rust(), python()] : [])]);
+  const nativeNeural = async () => {
+    try {
+      const status = await serviceStatus(neuralServer, options.signal);
+      if (status.service !== 'magna-urbis-neural') throw new Error('Native neural service not recognised');
+      result.nativeNeural.available = true;
+    } catch (error) {
+      result.nativeNeural.error = String(error);
+      // The desktop app ships the native neural executable and starts it on demand (ensureDesktopNeuralServer).
+      const desktop = typeof window !== 'undefined' ? window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown }; __TAURI__?: { core?: { invoke?: unknown } } } : undefined;
+      if (desktop?.__TAURI__?.core?.invoke ?? desktop?.__TAURI_INTERNALS__?.invoke) result.nativeNeural.available = true;
+    }
+  };
+  await Promise.all([gpu(), ...(options.profile === 'local' ? [rust(), nativeNeural()] : []), ...(options.probePython ? [python()] : [])]);
   options.signal?.throwIfAborted();
   return result;
 }
@@ -192,7 +224,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   if (request.terrain) {
     // These fields are derived by the orchestrator, not user-editable recipe parameters.
     const { sourceNativeResolution: _nativeResolution, generalSeed: _generalSeed, ...recipe } = request.terrain as Partial<TerrainSettings>;
-    validateTerrainSettings(recipe);
+    validateTerrainSettings(recipe, true);
   }
   const n = request.terrain?.resolution ?? request.resolution ?? 512;
   if (!Number.isInteger(n) || n < 64 || n > 1024) throw new Error('Résolution d’aperçu invalide (64–1024).');
@@ -224,7 +256,7 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   if (usesNeural && request.source !== 'neural-python' && [custom.coarseModel, custom.baseModel, custom.decoderModel].some(Boolean)) throw new Error('Checkpoint selection is available with Python/CUDA. Browser and native Rust neural generation use their installed model profile.');
   const settings: TerrainSettings = {
     ...defaults, ...custom,
-    seed: request.seed, width: request.width, motifSize: custom.motifSize ?? 10000, relief: custom.relief ?? request.relief,
+    seed: request.seed, width: request.width, motifSize: custom.motifSize ?? 10000, relief: custom.zones ? 'hills' : custom.relief ?? request.relief, // same carrier family as effectiveTerrainSettings
     coastMask: custom.coastMask ?? coasts[request.coast ?? 'none'], erosion: custom.erosion ?? request.erosion ?? 1, mountainMix: custom.mountainMix ?? .5, resolution: n,
     compute: custom.compute ?? (request.compute === 'cpu' ? 'wasm' : 'gpu-f32'),
     generationCompute: custom.generationCompute ?? (request.native && !usesNeural ? 'native' : request.compute === 'cpu' ? 'cpu' : undefined),

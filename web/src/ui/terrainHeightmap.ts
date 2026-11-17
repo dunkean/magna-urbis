@@ -1,7 +1,7 @@
 import { zlibSync, unzlibSync, strToU8, strFromU8 } from 'fflate';
 import { parseTerrainSketch, type TerrainSketch } from '../../../rust/bridge/terrainSketch';
 
-export interface HeightmapFile { terrain: TerrainSketch; width?: number }
+export interface HeightmapFile { terrain: TerrainSketch; width?: number; /** Black/white defaults when no metre elevations were embedded. */ elevationRange?: [number, number] }
 const signature = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
 const crcTable = Uint32Array.from({ length: 256 }, (_, i) => {
   for (let k = 0; k < 8; k++) i = i & 1 ? 0xedb88320 ^ (i >>> 1) : i >>> 1;
@@ -42,7 +42,7 @@ export async function readHeightmap(file: File, min: number, max: number): Promi
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (signature.some((v, i) => bytes[i] !== v)) throw new Error('Importez une heightmap JSON ou PNG en niveaux de gris.');
   const view = new DataView(bytes.buffer), idat: Uint8Array[] = [];
-  let n = 0, depth = 0, colour = 0, width: number | undefined, packed = 0;
+  let n = 0, depth = 0, colour = 0, width: number | undefined, packed = 0, embeddedElevations = false;
   for (let p = 8; p + 12 <= bytes.length;) {
     const size = view.getUint32(p), name = strFromU8(bytes.subarray(p + 4, p + 8)), start = p + 8;
     if (size > bytes.length - p - 12) throw new Error('PNG tronqué.');
@@ -54,7 +54,7 @@ export async function readHeightmap(file: File, min: number, max: number): Promi
     } else if (name === 'tEXt') {
       const text = strFromU8(bytes.subarray(start, start + size));
       if (text.startsWith('magna-urbis\0')) {
-        const meta = JSON.parse(text.slice(12)); min = meta.min; max = meta.max; width = validWidth(meta.width);
+        const meta = JSON.parse(text.slice(12)); min = meta.min; max = meta.max; width = validWidth(meta.width); embeddedElevations = true;
       }
     } else if (name === 'IDAT') { idat.push(bytes.subarray(start, start + size)); packed += size; }
     p += size + 12;
@@ -77,7 +77,8 @@ export async function readHeightmap(file: File, min: number, max: number): Promi
     }
   }
   const heights = Array.from({ length: n * n }, (_, i) => min + (depth === 16 ? decoded[i * 2] * 256 + decoded[i * 2 + 1] : decoded[i]) / (depth === 16 ? 65535 : 255) * (max - min));
-  return { terrain: parseTerrainSketch({ version: 1, resolution: n, heights, processing: 'surface' }), width };
+  return { terrain: parseTerrainSketch({ version: 1, resolution: n, heights, processing: 'surface' }), width,
+    ...(!embeddedElevations ? { elevationRange: [min, max] as [number, number] } : {}) };
 }
 function validWidth(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 500 && value <= 100000 ? value : undefined;

@@ -15,11 +15,13 @@ export interface CityGlViewFrame {
   buildingStyle: CityGlDrawOptions['buildingStyle']; painted: boolean; buildingsVisible: boolean;
   diagnostic: string; refusedParcels?: ReadonlySet<string>; textured?: boolean; colors?: RenderColors;
   selectedId?: string; selectedParcel?: number;
+  /** The drawn rivers under the plan (`riverSegments` layout), kept clear of town ground and streets. */
+  water?: Float32Array;
 }
 export const cityGlDrawOptions = (f: CityGlViewFrame): CityGlDrawOptions => ({
   viewport: f.viewport, metresPerPixel: f.mpp, lod: f.lod, view: f.view, palette: f.palette, layers: f.layers,
   selectedId: f.selectedId, selectedParcel: f.selectedParcel, buildingStyle: f.buildingStyle, paintedBuildings: f.painted,
-  buildingsVisible: f.buildingsVisible, diagnostic: f.diagnostic, refusedParcels: f.refusedParcels, textured: f.textured, colors: f.colors,
+  buildingsVisible: f.buildingsVisible, diagnostic: f.diagnostic, refusedParcels: f.refusedParcels, textured: f.textured, colors: f.colors, water: f.water,
 });
 /** Layers drawCity paints in a frame: the overlay left over a GL frame, or every layer on the Canvas 2D path. */
 export const cityCanvasLayers = (layers: CityLayers, glFrame: CityGlFrame | undefined): CityLayers =>

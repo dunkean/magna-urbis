@@ -1,8 +1,13 @@
+import { fortificationClearings } from '../render/forestClearance';
 import { cityForestInput } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
 import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
-import { nativeTerrainLayer } from './nativeProducts';
+import { nativeTerrainLayer, nativeTerrainOf } from './nativeProducts';
+import { riverSegments } from '../ui/vectorWaterRender';
+import type { VectorWater } from '../ui/vectorWater';
+import { waterClimate } from '../render/waterRegime';
+import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { buildForestField, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import type { LandUseLayer, World } from '../gen/types';
 import type { V2Settings } from './contracts';
@@ -18,6 +23,45 @@ import { nativeCitiesOf } from './nativeProducts';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
 import { executionRuntime } from '../ui/executionProfile';
 
+/** Displayed river geometry for the gallery envelope (vector water, hydraulic widths). Without it the forest field falls
+ * back to one point per routing river cell, and the bank envelope became a chain of discs, one per 78 m cell: the
+ * riverside trees and their colour stood in a row of equal round patches. */
+export function forestDisplayRivers(water: VectorWater | undefined, zone?: ClimateZone): Float32Array | undefined {
+  if (!water?.rivers?.rivers.length) return undefined;
+  // Material segments carry the regime of an average year in their colour (r: running water share, b > .5: plume).
+  const segments = riverSegments(water, { style: 'render-v2', showLakes: true, showOxbows: false, riverArea: water.riverArea ?? .02,
+    riverMode: 'vector', overlay: 'none', material: true, ...(zone ? { season: { zone } } : {}) });
+  const aridity = zone ? waterClimate({ zone }).aridity : 0, out: number[] = [];
+  for (let k = 0; k + 8 < segments.length; k += 9) {
+    if (segments[k + 8] > .5) continue;
+    // The gallery follows the water a course has. Humid zones keep every bank. In dry zones a flowing reach keeps
+    // clumps with breaks of irregular length, a dry bed only small clumps at long intervals: a seeded noise along the
+    // course (world position, so stable under resegmentation) keeps a share of the bank set by the running water.
+    if (aridity > 0) {
+      const running = segments[k + 6], x = .5 * (segments[k] + segments[k + 2]), y = .5 * (segments[k + 1] + segments[k + 3]);
+      const share = 1 - aridity * (1 - (.12 + .5 * running));
+      const clumps = .65 * galleryNoise(x / 260, y / 260) + .35 * galleryNoise(x / 90 + 17.3, y / 90 - 5.1);
+      if (clumps > galleryQuantile(share)) continue;
+    }
+    for (let i = 0; i < 9; i++) out.push(segments[k + i]);
+  }
+  return Float32Array.from(out);
+}
+/** Level of the clump noise below which a share of the bank lies (its measured quantiles), so the kept share is the asked one. */
+const GALLERY_QUANTILES: readonly [number, number][] = [[0, 0], [.05, .239], [.12, .305], [.25, .385], [.5, .499], [.75, .613], [.95, .759], [1, 1]];
+function galleryQuantile(share: number): number {
+  for (let i = 1; i < GALLERY_QUANTILES.length; i++) { const [q1, v1] = GALLERY_QUANTILES[i], [q0, v0] = GALLERY_QUANTILES[i - 1]; if (share <= q1) return v0 + (v1 - v0) * (share - q0) / (q1 - q0); }
+  return 1;
+}
+/** Value noise in [0, 1] (smooth, fixed seed): the clumping of dry-zone galleries along their course. */
+function galleryNoise(x: number, y: number): number {
+  const hash = (i: number, j: number): number => { let h = Math.imul(i, 0x27d4eb2d) ^ Math.imul(j, 0x165667b1) ^ 0x5bd1e995; h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); return ((h ^ (h >>> 13)) >>> 0) / 4294967296; };
+  const i = Math.floor(x), j = Math.floor(y), u = x - i, v = y - j, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+  const a = hash(i, j), b = hash(i + 1, j), c = hash(i, j + 1), d = hash(i + 1, j + 1);
+  return a + (b - a) * su + (c - a) * sv + (a - b - c + d) * su * sv;
+}
+/** Field key part of its river geometry (terrainForest key: …:water:segments:enabled:density:clearings:occupation…). */
+const builtWithRivers = (field: ForestField): boolean => field.key.split(':')[7] !== '-';
 /** Fields are terrain products: keyed by the terrain object (kept across town builds, see terrainIntern.ts), not the World. */
 const cache = new WeakMap<object, Map<string, ForestField>>();
 type OccupationParts = { occupation: Promise<ForestOccupation | undefined>; detail: Promise<LandDetail | undefined> };
@@ -45,7 +89,7 @@ function occupationEntry(world: World): OccupationEntry | undefined {
 /** Land-use/corridor revision, independent from presentation and visibility. Synchronous consumers reuse the async product. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const entry = occupationEntry(world); if (!entry) return;
-  if (!entry.complete) { const ways = v2Corridors(world); entry.whole = withLandDetail(withWays(forestOccupation(world.landuse!, undefined, undefined, ways), ways), world.landuse!, worldLandCultures(world)); entry.complete = true; }
+  if (!entry.complete) { const ways = v2Corridors(world); entry.whole = withLandDetail(withWays(forestOccupation(world.landuse!, undefined, undefined, ways, fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? []))), ways), world.landuse!, worldLandCultures(world)); entry.complete = true; }
   return entry.whole;
 }
 /** One preparation lane for occupation, holdings, footprint merges and display forest overrides. */
@@ -58,11 +102,11 @@ export function v2ForestOccupationParts(world: World): OccupationParts {
   }
   if (!entry.parts) {
     const registered = registerDisplayLanduse(landuse), revision = productRevision(entry), ways = v2Corridors(world);
-    const occupation = registered.ready.then(() => runDisplayJob('occupation', { landuseRevision: registered.revision, revision, corridors: ways }))
+    const occupation = registered.ready.then(() => runDisplayJob('occupation', { landuseRevision: registered.revision, revision, corridors: ways, clearings: fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? [])) }))
       .then(result => {
         if (result) workerOccupations.set(result.rgba, { landuseRevision: registered.revision, revision, epoch: registered.epoch });
         return withWays(result, ways);
-      }).catch(() => withWays(forestOccupation(landuse, undefined, undefined, ways), ways));
+      }).catch(() => withWays(forestOccupation(landuse, undefined, undefined, ways, fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? []))), ways));
     // Let every occupation subscriber post its dependent merge before sending optional detail.
     // A main-thread task boundary preserves that order even when the page is CPU-throttled.
     // Holdings take the crops of the culture of the nearest place.
@@ -90,7 +134,7 @@ export function withBuildingOccupationAsync(base: ForestOccupation | undefined, 
   const packed = packOccupationShapes(shapes);
   const ref = base && workerOccupations.get(base.rgba), retained = ref?.epoch === displayWorkerEpoch() ? ref : undefined;
   const job = typeof Worker === 'undefined' || typeof document === 'undefined' ? Promise.resolve(local())
-    : runDisplayJob('merge', { retained, source: !retained && base ? { x: base.x, y: base.y, width: base.width, n: base.n, rgba: base.rgba, key: base.key } : undefined, shapes: packed }, [packed.buffer]).catch(local);
+    : runDisplayJob('merge', { retained, source: !retained && base ? { x: base.x, y: base.y, width: base.width, n: base.n, rgba: base.rgba, key: base.key, clearings: base.clearings } : undefined, shapes: packed }, [packed.buffer]).catch(local);
   slot.pending = job.then(result => slot.value = { ...result, detail: base?.detail, ways: base?.ways }).finally(() => { slot.pending = undefined; });
   return slot.pending;
 }
@@ -101,8 +145,10 @@ function displayForestRequest(world: World, settings: V2Settings, resolved: Reso
   const configuration = effectiveTerrainSettings(settings, world.mapSize), overrides = resolved.vegetation.forest;
   const { enabled: _enabled, ...parameters } = overrides, forest = { ...configuration.forest, ...parameters, enabled: true };
   const decor = retainedDecorOf(world.terrain);
+  const vectorRivers = decor ? undefined : forestDisplayRivers(nativeTerrainOf(world)?.water, configuration.climateZone);
   const retained = !decor && !Object.keys(parameters).length ? nativeTerrainLayer(world)?.v2ForestField : undefined;
-  if (retained) return retained;
+  // A retained field built without the displayed rivers (older projects) is rebuilt with them.
+  if (retained && (!vectorRivers || builtWithRivers(retained))) return retained;
   // Imported and older projects may have retained heights without a forest field.
   // Build the display product over those heights instead of silently losing all trees.
   const climate = configuration.climateValues!, clearingProfile = resolved.traits.forestClearingProfile;
@@ -110,12 +156,12 @@ function displayForestRequest(world: World, settings: V2Settings, resolved: Reso
   const seed = seedSubset(world.seed, step => !step.startsWith('city/'));
   const raster = decor?.raster;
   const key = JSON.stringify([forest, climate, seed, clearingProfile, productRevision(raster?.height ?? world.terrain.height.data),
-    productRevision(raster?.water ?? world.terrain.water), raster?.n ?? world.terrain.height.w, raster?.width ?? world.mapSize]);
+    productRevision(raster?.water ?? world.terrain.water), raster?.n ?? world.terrain.height.w, raster?.width ?? world.mapSize, vectorRivers?.length ?? 0]);
   const input = cityForestInput(seed, climate,
     raster ? { x: 0, y: 0, width: raster.width, n: raster.n, data: raster.height }
       : { x: 0, y: 0, width: world.mapSize, n: world.terrain.height.w, data: world.terrain.height.data },
     raster?.water ?? world.terrain.water, { clearingProfile,
-      ...(decor ? { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, decor.raster.width) } : {}) });
+      ...(decor ? { riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, decor.raster.width) } : vectorRivers ? { riverSegments: vectorRivers } : {}) });
   return { key, build: () => typeof Worker === 'undefined' || typeof document === 'undefined'
     ? buildForestField(input, forest) : runDisplayJob('forest', { input, settings: forest, runtime: executionRuntime }).catch(() => buildForestField(input, forest)) };
 }

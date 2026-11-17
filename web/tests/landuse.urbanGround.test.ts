@@ -20,7 +20,11 @@ function fixture(): World {
     phases: [], parcels: [{ poly: plot, use: 'plot', block: 0, zone: 'middle' }], buildings: [], masses: [], backLand: [],
     landmarks: [], squares: [], streets: [], quarters: [], blocks: [plot], blockInfo: [],
   } as unknown as UrbanLayer;
-  return { urban, roads: [], settlements: [] } as unknown as World;
+  // The request header reads the terrain raster frame and the biome; without them the call threw and every check saw [].
+  // An 8 m cell: the natural ground drops pieces under max(1200 m², 2.2 cell²), so a coarse cell would prune real plots.
+  const terrain = { height: { w: 2, h: 2, cell: 8, data: new Float32Array(4) }, seaLevel: 0, seaFraction: 0,
+    coastline: [], islands: [], lakes: [], rivers: [] };
+  return { urban, roads: [], settlements: [], terrain, options: { biome: 'temperate' } } as unknown as World;
 }
 
 describe('shared natural ground permission', () => {
@@ -84,7 +88,7 @@ describe('shared natural ground permission', () => {
 
   it('protects vector lakes and sea while retaining dry island interiors', () => {
     const world = fixture();
-    world.terrain = { coastline: [box(-100, -100, 500, 500)], islands: [box(80, 80, 320, 320)],
+    world.terrain = { ...world.terrain, coastline: [box(-100, -100, 500, 500)], islands: [box(80, 80, 320, 320)],
       lakes: [box(190, 190, 192, 250)], rivers: [] } as unknown as World['terrain'];
     const mask = urbanNaturalGround(world);
     expect(contains(mask, 150, 150)).toBe(true);

@@ -391,7 +391,8 @@ export function specialityName(id: string, locale: RoleLocale): string {
   const row = SPECIALITIES.get(id), fallback = id.replace(/[-_]/g, ' ');
   return row && locale !== 'en' ? pick(row, locale) : fallback;
 }
-/** Rust (French) district label → district role key, from `services.json`; the web never shows these outside French. */
+/** Generic French district role label → role key, from `services.json`.
+ * Named districts and labels in a culture's own language pass through unchanged. */
 const FRENCH_DISTRICT_LABELS: Map<string, string> = (() => {
   const data = services as unknown as { districtLabels: Record<string, string>; familyDistrictLabels: Record<string, Record<string, string>> };
   const out = new Map<string, string>();

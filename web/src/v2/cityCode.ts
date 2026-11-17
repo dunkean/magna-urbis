@@ -9,6 +9,7 @@ import { urbanEffectiveValues } from './urbanControls';
 import { migrateUrbanSeeds } from './urbanSeeds';
 import { readGenerationSeed, writeGenerationSeed } from '../../../rust/bridge/generationSeed';
 import { applySceneClock } from './sceneClock';
+import { stripToponymOverrides } from './toponymOverrides';
 
 export const CITY_CODE_PREFIX = 'MU3.';
 // MU3 recipe snapshot (cityCodeDefaults.json). The first three values encode the five essential choices:
@@ -77,6 +78,8 @@ function portableSettings(input: V2Settings): V2Settings {
   migrateUrbanSeeds(settings);
   if (settings.runtime) {
     delete settings.runtime.localServer; delete settings.runtime.pythonServer;
+    // The engine choice (Automatic or forced) belongs to the receiver's machine, not to the city.
+    delete settings.runtime.autoBackend;
     // Native and browser Rust run the same recipe; connections belong to the receiver.
     if (settings.runtime.backend === 'native') settings.runtime.backend = 'rust';
     if (settings.runtime.source === 'neural') settings.runtime.source = 'neural-wasm';
@@ -105,6 +108,7 @@ function portableSettings(input: V2Settings): V2Settings {
   compactUrban(settings);
   for (const [key, options] of Object.entries(settings.local)) if (!Object.values(options).some(v => v !== undefined)) delete settings.local[key];
   if (settings.naming) {
+    stripToponymOverrides(settings.naming);
     for (const key of ['labels','places','features','local','variations'] as const) if (settings.naming[key] && !Object.keys(settings.naming[key]!).length) delete settings.naming[key];
     if (!Object.keys(settings.naming).length) delete settings.naming;
   }
@@ -169,6 +173,8 @@ export function decodeCityCode(text: string): DecodedCityCode {
     settings.options.culture = culture;
     if (relief !== settings.options.relief) { settings.terrain ??= {}; settings.terrain.relief = relief as NonNullable<V2Settings['terrain']>['relief']; }
     settings.extent = extent === 0 ? 'auto' : extent;
+    // The receiver's engine choice is not in the code: a decoded city starts on Automatic.
+    if (settings.runtime) settings.runtime.autoBackend = true;
     const effects=settings.appearance?.composition?.effects;
     if(settings.scene&&effects&&(effects.season===undefined||effects.ambience===undefined||effects.lighting?.azimuth===undefined||effects.lighting?.elevation===undefined||effects.lighting?.enabled===undefined))applySceneClock(settings,settings.scene);
     validateSettings(settings); validateModifications(mods);

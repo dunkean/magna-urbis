@@ -62,7 +62,7 @@ export const PROFILE_COUNTRIES: readonly string[] = [...new Set(Object.values(P)
 
 /** Explicit mapping covers the native catalogue and the web culture registry. */
 export const CULTURE_PROFILES: Readonly<Record<string, ToponymProfile>> = {
-  'european-organic': P.french, bastide: P.french, medina: P.arabic, chinese: P.chinese,
+  'european-organic': P.english, bastide: P.french, medina: P.arabic, chinese: P.chinese,
   'japanese-jokamachi': P.japanese, 'indian-temple': P.sanskrit, 'roman-core': P.roman,
   elven: P.elven, dwarven: P.dwarven, necropolis: P.orcish, 'russian-kremlin': P.russian,
   aztec: P.aztec, inca: P.andean, 'byzantine-greek': P.greek, 'venetian-lagoon': P.italian,

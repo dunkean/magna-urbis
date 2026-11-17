@@ -2,21 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
 import { recommendedCounts, recommendedCulture, settlementEnvironment } from '../src/v2/settlementDefaults';
 import { plausibleCultures } from '../src/v2/environmentCultures';
+import { regionalPopulation } from '../src/v2/regionalPopulation';
 
 describe('workbench environmental settlement suggestions', () => {
   it('scales counts with land area and density, and makes hostile terrain less populated', () => {
     const settings = defaultSettings(); settings.extent = 20000; settings.terrain!.relief = 'flat';
     const total = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
     const plain = total(recommendedCounts(settings));
-    expect(total(recommendedCounts(settings, 2))).toBeGreaterThan(plain);
+    // Density resizes the places; the list follows the map size and biome.
+    expect(total(recommendedCounts(settings, 2))).toBe(plain);
     expect(total(recommendedCounts(settings, 0))).toBe(0);
     settings.extent = 40000;
     const larger = total(recommendedCounts(settings));
     expect(larger).toBeGreaterThan(plain);
     // Four times the surface/population should grow the centres, not quadruple sites.
     expect(larger).toBeLessThan(plain * 3);
-    settings.extent = 20000; settings.terrain!.relief = 'high-mountains'; settings.options.biome = 'desert';
-    expect(total(recommendedCounts(settings))).toBeLessThan(plain / 5);
+    settings.extent = 20000; const plainPopulation = regionalPopulation(settings).population;
+    settings.terrain!.relief = 'high-mountains'; settings.options.biome = 'desert';
+    // Hostile terrain keeps the floor's few small places, far fewer inhabitants.
+    expect(total(recommendedCounts(settings))).toBeLessThan(plain);
+    expect(regionalPopulation(settings).population).toBeLessThan(plainPopulation / 5);
   });
   it('draws among plausible desert mountain cultures when environmental follow is requested', () => {
     const settings = defaultSettings(); settings.terrain!.relief = 'mountains'; settings.options.biome = 'desert';

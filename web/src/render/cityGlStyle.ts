@@ -15,6 +15,7 @@ import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMateri
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { mapGroundSnow } from './seasonPalette';
 import { quayFill } from './roadStyle';
+import { harbourPaint, harbourShown } from './harbourStyle';
 import { funeraryLandFill } from './cityRoles';
 
 export interface CityGlStyleState {
@@ -89,12 +90,11 @@ export function streetPaint(role: string, rank: number, palette: CityPalette): {
   if (palette === 'ink') return { fill: '#6b5640', casing: '#3c3024' };
   if (isBoardwalk(role)) return { fill: '#b49a6d', casing: '#514431' };
   if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink } : role === 'bridge' ? { fill: PARCH.bridge, casing: PARCH.wall }
-    : role === 'quay' ? { fill: PARCH.quay, casing: PARCH.ink } : { fill: PARCH.street, casing: PARCH.streetEdge };
+    : { fill: PARCH.street, casing: PARCH.streetEdge };
   switch (role) {
     case 'bridge': return { fill: '#ddd3c2', casing: '#4d4740' };
     case 'causeway': return { fill: '#dccaa0', casing: '#76664f' };
     case 'ford': return { fill: '#b9d0d6', casing: '#6f8f9a' };
-    case 'quay': return { fill: '#bdb4a0', casing: '#57534b' };
     case 'port-stairs': case 'stairs': return { fill: '#e6d5b2', casing: '#705d45' };
     case 'market': return { fill: '#f5d98f', casing: '#9a7d4f' };
     case 'collective': return { fill: '#ccdacf', casing: '#8a9a8d' };
@@ -122,8 +122,10 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     buildings: false, buildingLines: false };
   if (layers.streets && mesh.layers.quays) (scene.quays ?? []).forEach((q, i) => {
     const f = mesh.layers.quays.features[0] + i;
-    put(fill, f, quayFill(q.material, parchment));
-    put(line, f, q.kind === 'mole' ? '#2b2015' : parchment ? PARCH.ink : '#57534b');
+    // Harbour platforms and furniture (harbourStyle.ts, shared with drawCity and the 3D city); small furniture on close views only.
+    if (!harbourShown(q.kind, lod)) { put(fill, f, undefined); put(line, f, undefined); return; }
+    const paint = harbourPaint(q.kind, q.material, parchment, parchment ? PARCH.ink : '#57534b');
+    put(fill, f, paint.fill, paint.fillAlpha); put(line, f, paint.line, paint.lineAlpha);
   });
   if (lod === 'far') {
     if (layers.blocks && blend) {
@@ -143,6 +145,8 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
   scene.blocks.forEach((b, i) => {
     const reserve = b.kind.startsWith('reserve');
     if (reserve ? !layers.domains : !layers.blocks) return;
+    // A culture without lot limits (`hideLotLines`: catalogue `render.plotLines: false`, e.g. a myconid colony) outlines no block either; squares keep their edge.
+    const blockLine = layers.planLines !== false && (b.kind === 'place' || b.kind === 'common' || !scene.enclosureProfiles?.[b.layout]?.hideLotLines);
     let color: string | undefined;
     if (palette === 'terrain' && view !== 'roles') color = undefined;
     else if (reserve) color = parchment ? PARCH.reserve : '#cbc2a8';
@@ -156,7 +160,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     if (blend && color) {
       const w = washAt(reserve ? 'reserve' : b.kind === 'common' ? 'common' : b.kind === 'place' ? 'place' : 'block', tone, b.shape);
       put(fill, b0 + i, w.color, w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1));
-      if (lod === 'close') { put(line, b0 + i, softLine.color, softLine.alpha); draws.blockLines = true; }
+      if (lod === 'close' && blockLine) { put(line, b0 + i, softLine.color, softLine.alpha); draws.blockLines = true; }
       draws.blocks = true;
       return;
     }
@@ -164,16 +168,16 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     const alpha = paved ? PAVED_ALPHA : b.peripheral && view !== 'buildings' ? 0.6 : 1;
     if (paved && color) draws.paved = true;
     put(fill, b0 + i, color, alpha);
-    const square = parchment && b.kind === 'place' && !blockStroke;   // V1 squares keep a thin edge at every zoom
-    if (blockStroke) put(line, b0 + i, outline, alpha); else if (square) put(line, b0 + i, PARCH.inkSoft, 0.7);
-    draws.blocks ||= !!color; draws.blockLines ||= blockStroke || square;
+    const square = blockLine && parchment && b.kind === 'place' && !blockStroke;   // V1 squares keep a thin edge at every zoom
+    if (blockStroke && blockLine) put(line, b0 + i, outline, alpha); else if (square) put(line, b0 + i, PARCH.inkSoft, 0.7);
+    draws.blocks ||= !!color; draws.blockLines ||= blockStroke && blockLine || square;
   });
   // Parcels.
   const p0 = mesh.layers.parcels.features[0], parcelLevel: CityLod = view === 'uses' || view === 'roles' ? 'mid' : 'near';
   if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') scene.parcels.forEach((p, i) => {
     const use = p.use, built = BUILT.has(use), open = OPEN.has(use), f = p0 + i;
     // A culture without lot limits (`hideLotLines`) leaves its lots unoutlined; squares keep their edge.
-    const lotLine = open || !scene.enclosureProfiles?.[p.layout]?.hideLotLines;
+    const lotLine = layers.planLines !== false && (open || !scene.enclosureProfiles?.[p.layout]?.hideLotLines);
     if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) return;
     const burialFill = funeraryLandFill(p.allocation?.role);
     const openFill = burialFill ?? (parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
@@ -199,11 +203,11 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
       if (openFill) put(fill, f, openFill, parchment && lod === 'close' ? 0.9 : paved ? PAVED_ALPHA : 1);
       if (paved) draws.paved = true;
       if (lod === 'close' && lotLine) { put(line, f, openFill ? (parchment ? PARCH.inkSoft : '#b9a98d') : parchment ? PARCH.inkSoft : '#c4b597', !parchment ? 1 : openFill ? 0.9 : 0.45); draws.parcelLines = true; }
-      else if (parchment && openFill && (use === 'place' || use === 'market')) { put(line, f, PARCH.inkSoft, 0.7); draws.parcelLines = true; }
+      else if (lotLine && parchment && openFill && (use === 'place' || use === 'market')) { put(line, f, PARCH.inkSoft, 0.7); draws.parcelLines = true; }
     }
     draws.parcels = true;
   });
-  if (layers.parcelOverlay !== false && atLeast(lod, 'near') && s.refusedParcels?.size) scene.parcels.forEach((p, i) => { if (p.id && s.refusedParcels!.has(p.id)) { put(line, p0 + i, urbanFunctionColor('refusal')); draws.parcelLines = true; } });
+  if (layers.parcelOverlay !== false && layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size) scene.parcels.forEach((p, i) => { if (p.id && s.refusedParcels!.has(p.id)) { put(line, p0 + i, urbanFunctionColor('refusal')); draws.parcelLines = true; } });
   draws.buildings = s.buildingsVisible && (s.buildingStyle === 'silhouette' || atLeast(lod, 'near')) && (view === 'buildings' || view === 'roles');
   draws.buildingLines = draws.buildings && (s.buildingStyle === 'silhouette' || atLeast(lod, 'near'));
   return { fill, line, draws };

@@ -8,7 +8,7 @@ import type { GroundSnowSettings } from './seasonPalette';
 /** `silhouette`: flat occupied footprints with optional uniform ink; no relief or shadows. */
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
-export interface UrbanBuildingAppearance { ambience?: 'day' | 'night'; nightInk?: boolean; colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Physical satellite ground driving roof snow, including season cache invalidation. */ roofSnow?: GroundSnowSettings; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
+export interface UrbanBuildingAppearance { ambience?: 'day' | 'night'; /** Underdark: the culture colours under the cave light (caveRoof), no night ink. */ cave?: boolean; /** Lamp visibility is independent of the cave's permanent darkness. */ lightsOn?: boolean; nightInk?: boolean; colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Physical satellite ground driving roof snow, including season cache invalidation. */ roofSnow?: GroundSnowSettings; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
 export const buildingColors = (colors: RenderColors | undefined, ambience?: 'day' | 'night'): RenderColors | undefined => ambience === 'night' ? { building: '#232a42', buildingEdge: '#070a14', road: '#444b62', track: '#3a4054', roadEdge: '#141927', ...colors } : colors;
 export interface BuildingPaint { wall: string; roof: string; edge: string; courtyard: string }
 export const URBAN_FUNCTION_LABELS: Record<ArchitectureFunction, string> = {

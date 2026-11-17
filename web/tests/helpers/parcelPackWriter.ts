@@ -88,6 +88,7 @@ export function writeParcelPack(partitions: any[], envelope: Record<string, unkn
           col(`allocations.${section}`, 'u32').push(code(table, a[field]));
         col('allocations.landmark', 'u8').push(a.landmark ? 1 : 0);
         for (const f of ['capacity', 'score', 'households', 'wealth']) col(`allocations.${f}`, 'f64').push(a[f]);
+        col('allocations.residents', 'f64').push(a.residents ?? -1);
         const rs = starts('allocations.reasons.start');
         for (const r of a.reasons) col('allocations.reasons.codes', 'u32').push(code('allocReason', r));
         rs.push(col('allocations.reasons.codes', 'u32').length);

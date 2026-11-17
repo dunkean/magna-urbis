@@ -12,16 +12,14 @@ function region(culture='european-organic',climate='temperate',relief='flat') {
   s.terrain!.climate=climate as NonNullable<typeof s.terrain>['climate'];s.terrain!.relief=relief as NonNullable<typeof s.terrain>['relief'];return s;
 }
 describe('regional population and distribution',()=>{
-  it('keeps 10,000 inhabitants without hundreds of automatic farmsteads and hamlets',()=>{
+  it('resizes the automatic places for a typed population without changing their number',()=>{
     for (const culture of ['european-organic', 'elven', 'halfling']) {
+      const automatic=regionalPopulation(region(culture));
       const s=region(culture);s.region={demography:{population:10000}};
       const plan=regionalPopulation(s);
-      expect(plan.counts.farmstead).toBeLessThanOrEqual(1);
-      expect(plan.counts.hamlet).toBeLessThanOrEqual(1);
-      expect(plan.counts.village).toBeLessThanOrEqual(2);
-      expect(plan.isolatedCount).toBeLessThanOrEqual(3);
+      expect(plan.places).toHaveLength(automatic.places.length);
+      expect(plan.places.length).toBeLessThanOrEqual(30);
       expect(plan.allocatedPopulation).toBe(10000);
-      expect(plan.places.length).toBeLessThanOrEqual(5);
       expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(plan);
       s.region.demography!.counts={farmstead:150,hamlet:55};
       expect(regionalPopulation(s).counts).toMatchObject({farmstead:150,hamlet:55});
@@ -75,7 +73,7 @@ describe('regional population and distribution',()=>{
     const s=region(),plain=regionalPopulation(s);s.extent=20000;
     expect(regionalPopulation(s).population).toBe(plain.population/4);
     const arctic=regionalPopulation(region('inuit-camp','arctic','high-mountains'));
-    expect(arctic.population).toBeLessThan(20);expect(Math.max(0,...arctic.places.map(p=>p.population))).toBeLessThanOrEqual(120);
+    expect(arctic.population).toBeLessThan(plain.population/50);expect(Math.max(0,...arctic.places.map(p=>p.population))).toBeLessThanOrEqual(120);
     expect(arctic.counts.city+arctic.counts.town+arctic.counts.village).toBe(0);
     const modern=regionalPopulation(region('american-grid'));
     expect(modern.population).toBeGreaterThan(plain.population*10);expect(Math.max(...modern.places.map(p=>p.population))).toBeGreaterThan(100000);
@@ -100,15 +98,54 @@ describe('regional population and distribution',()=>{
     const s=region();s.region={demography:{population:5000,counts:{city:0,town:1},followCulture:false}};
     const p=regionalPopulation(s);expect(p.counts.town).toBe(1);expect(p.allocatedPopulation).toBe(5000);
     s.local.main={population:2300};expect(regionalPopulation(s).places[0].population).toBe(2300);
-    // The only town is fixed at 2,300. Automatic villages/hamlets/farms cannot
-    // bypass their ceilings to hide the capacity conflict.
-    const fixed=regionalPopulation(s);expect(fixed.allocatedPopulation).toBe(4461);
+    // The only town is fixed at 2,300; the automatic places keep their number and hold the rest.
+    const fixed=regionalPopulation(s);expect(fixed.allocatedPopulation).toBe(5000);
     expect(fixed.allocatedPopulation+fixed.unallocated).toBe(5000);
     delete s.local.main;s.region.demography!.counts={city:1};expect(regionalPopulation(s).unallocated).toBeLessThan(0);
     expect(()=>validateRegionSettings({demography:{population:-1}})).toThrow();
     expect(()=>validateRegionSettings({demography:{counts:{village:800,hamlet:800}}})).toThrow();
     expect(()=>validateRegionSettings({autoBuildPopulation:5000})).not.toThrow();
     expect(()=>validateRegionSettings({autoBuildPopulation:8001})).toThrow('Automatic small-place population');
+  });
+  it('keeps a few places on a harsh map, scaled by area, below a temperate one',()=>{
+    const alpine=(extent:number,culture='european-organic',climate='alpine',relief='high-mountains')=>{const s=region(culture,climate,relief);s.extent=extent;return s;};
+    const ten=regionalPopulation(alpine(10000));
+    expect(ten.population).toBeGreaterThanOrEqual(300);expect(ten.population).toBeLessThanOrEqual(600);
+    expect(ten.counts.village).toBeGreaterThanOrEqual(1);expect(ten.counts.hamlet+ten.counts.farmstead).toBeGreaterThanOrEqual(2);
+    expect(ten.allocatedPopulation).toBe(ten.population);
+    for (const [climate,relief] of [['arctic','flat'],['desert','canyon'],['alpine','mountains']]) {
+      const harsh=regionalPopulation(alpine(10000,'european-organic',climate,relief));
+      expect(harsh.population).toBeGreaterThanOrEqual(300);expect(harsh.counts.village).toBeGreaterThanOrEqual(1);
+    }
+    const small=regionalPopulation(alpine(2400));
+    expect(small.counts.hamlet).toBeGreaterThanOrEqual(1);expect(small.population).toBeLessThan(300);
+    const large=regionalPopulation(alpine(40000));
+    expect(large.counts.town).toBeGreaterThanOrEqual(1);expect(large.counts.village).toBeGreaterThanOrEqual(3);
+    expect(regionalPopulation(alpine(100000)).counts.town).toBeGreaterThanOrEqual(3);
+    // Temperate stays the realistic estimate, well above the floor.
+    for (const relief of ['flat','mountains']) {
+      const temperate=regionalPopulation(alpine(10000,'european-organic','temperate',relief));
+      expect(temperate.population).toBe(Math.round(100*75*temperate.environmentFactor));
+      expect(temperate.population).toBeGreaterThan(ten.population);
+    }
+    expect(regionalPopulation(alpine(40000,'european-organic','temperate','flat')).population).toBeGreaterThan(large.population*10);
+  });
+  it('never applies the floor to a population, density or count the user chose',()=>{
+    const s=region('european-organic','alpine','high-mountains');s.extent=10000;
+    s.region={demography:{population:5}};expect(regionalPopulation(s).population).toBe(5);
+    s.region={demography:{density:.05}};expect(regionalPopulation(s).population).toBe(5);
+    s.region={demography:{counts:{village:0,hamlet:0,farmstead:0}}};
+    expect(regionalPopulation(s).places).toEqual([]);expect(regionalPopulation(s).population).toBe(0);
+  });
+  it('derives the population from the places: adding a town adds its inhabitants',()=>{
+    const s=region('european-organic','alpine','high-mountains');s.extent=10000;
+    const before=regionalPopulation(s);
+    s.region={demography:{counts:{town:1}}};
+    const after=regionalPopulation(s);
+    expect(after.population).toBe(before.population+before.classSizes.town);
+    expect(after.places).toHaveLength(before.places.length+1);
+    expect({...after.counts,town:0}).toEqual(before.counts);
+    expect(after.allocatedPopulation).toBe(after.population);
   });
   it('allows a completely empty region and restores automatic choices after removing overrides',()=>{
     const s=region();s.region={demography:{density:0}};

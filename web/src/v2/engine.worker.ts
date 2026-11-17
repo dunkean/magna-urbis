@@ -7,8 +7,7 @@ import { wasmThreadsInfo } from '../../../rust/bridge/wasmThreads';
 import { showCityStageOutput } from './cityStageOutput';
 import { packWorldLanduse } from './landusePack';
 import { HEAVY_RESULT_BYTES, packWorldPartitions, unpackWorldPartitions } from './urbanPack';
-import { browserRuntimeSettings, retryNativeStage, runtimeForRun, usesNativeRuntime, F } from './runtimeChoices';
-import { onNativeConnectionFailure } from '../../../rust/bridge/nativeAvailability';
+import { retryNativeStage, runtimeForRun, usesNativeRuntime } from './runtimeChoices';
 import type { V2Settings } from './contracts';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -43,14 +42,11 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
     const send = (message: V2WorkerResponse): void => scope.postMessage(message);
     const progress: ProgressCallback = value => send({ id, type: 'progress', progress: value });
     const fallback = (effective: V2Settings, note: string, server = effective.runtime?.localServer ?? 'http://127.0.0.1:8791'): void => {
-      const changed = usesNativeRuntime(settings);
+      const changed = usesNativeRuntime(settings, action);
       settings = effective;
       if (changed) progress({ stage: 'runtime-fallback', label: note, detail: server, completed: 0, total: 0 });
     };
-    const stopObserving = onNativeConnectionFailure(server => {
-      if (usesNativeRuntime(settings)) fallback(browserRuntimeSettings(settings), F.engineToBrowser, server);
-    });
-    const stage = <T>(run: (effective: V2Settings) => Promise<T>): Promise<T> => retryNativeStage(settings, run, fallback);
+    const stage = <T>(run: (effective: V2Settings) => Promise<T>): Promise<T> => retryNativeStage(settings, run, fallback, action);
     try {
       // A world sent by the page carries its town partitions packed (urbanPack.ts).
       let world = retained.resolve(request.retainedWorldId,unpackWorldPartitions(request.world));
@@ -77,6 +73,5 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
       if (heavy) {retained.clear();await(await import('./rustUrban')).releaseUrbanLanes();}
       scope.postMessage({ id, type: 'result', world: packed.world, wasm: wasmThreadsInfo(), ...(heavy ? { heavy } : {}) } satisfies V2WorkerResponse, [...landuse.transfer, ...packed.transfer]);
     } catch (error) { await(await import('./rustUrban')).releaseUrbanLanes();send({ id, type: 'error', error: error instanceof Error ? error.message : String(error), wasm: wasmThreadsInfo() }); }
-    finally { stopObserving(); }
   });
 };

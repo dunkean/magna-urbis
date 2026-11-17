@@ -303,6 +303,15 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
       // Wide chambers rank first in the text layer's selection (importance, then extent).
       add({ kind: 'hill', text: parts.cultural, parts, rank: 3, anchor: c.p, detail: .2, span: c.c * cell * 2 });
     }
+    // Tunnels (lava tubes, river passages, dug roads) are named along their passage; the generic word follows
+    // the display language ("Lava Tube …", « Tube de lave … »).
+    for (const tunnel of t.caverns.tunnels ?? []) {
+      if (tunnel.path.length < 2) continue;
+      const key = 'tunnel:' + pointKey(tunnel.path[0]) + ':' + pointKey(tunnel.path[tunnel.path.length - 1]);
+      const parts = { ...feature('hill', key), role: 'terrain.tunnel.' + tunnel.kind };
+      parts.cultural = presentName({ ...parts, opaque: false }, { mode: 'localized', language: 'en' });
+      add({ entityKey: key, kind: 'hill', text: parts.cultural, parts, rank: 4, anchor: pathMid(tunnel.path), path: tunnel.path, detail: .45 });
+    }
   }
 
   // ---- water bodies, forests
@@ -607,7 +616,9 @@ export function settlementNames(world: World, _root: Rng): void {
     const isFarm = s.detail === 'farmstead';
     const parts: NameParts = { kind: isFarm ? 'farm' : 'village', proper: record.proper, cultural: text, opaque: record.opaque,profile:'profile' in record ? record.profile : undefined,sourceMode:'sourceMode' in record ? record.sourceMode : undefined };
     names.entries.push({
-      id: `settlement:${s.key}`, entityKey:`settlement:${s.key}`, generated:true, detail:isFarm ? 1 : s.population >= 5000 ? .1 : s.population >= 1000 ? .3 : s.population >= 150 ? .65 : .9, kind: isFarm ? 'farm' : 'village', text: presentName(parts, names.presentation), canonicalText: text, parts, rank: isFarm ? 6 : tier, anchor: s.center,
+      id: `settlement:${s.key}`, entityKey:`settlement:${s.key}`, generated:true, detail:isFarm ? 1 : s.population >= 5000 ? .1 : s.population >= 1000 ? .3 : s.population >= 150 ? .65 : .9, kind: isFarm ? 'farm' : 'village', text: presentName(parts, names.presentation), canonicalText: text, parts, rank: isFarm ? 6 : tier,
+      // The label stands on the place's published centre: its built core when the town is built beside its placed centre.
+      anchor: s.core ?? s.center,
       sub: 'settlement:' + s.key, reference: { key: s.key, form: 'name', family: familyFor(s.culture, s.options?.language ?? world.options.language, world.seed) },
     });
   }

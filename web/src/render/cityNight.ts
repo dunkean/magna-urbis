@@ -2,6 +2,13 @@
 import type { CompactBuildingVisual, BuildingViewport } from './urbanBuildingLod';
 import type { CityScene } from './cityCanvas';
 
+/** Underdark roof: the culture's own colour under the cave light (no sky; lanterns light walls from the side), darker
+ * than the walls and a little cooled. */
+export function caveRoof(color: string): string {
+  const v = parseInt(color.replace('#', ''), 16), rgb = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(color);
+  const c = rgb ? rgb.slice(1).map(Number) : [v >> 16 & 255, v >> 8 & 255, v & 255];
+  return '#' + [c[0] * .5, c[1] * .5, c[2] * .55].map(x => Math.round(Math.min(255, x)).toString(16).padStart(2, '0')).join('');
+}
 export function nightRoof(color: string, ink = false): string {
   const v = parseInt(color.replace('#', ''), 16), rgb = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(color);
   const c = rgb ? rgb.slice(1).map(Number) : [v >> 16 & 255, v >> 8 & 255, v & 255];

@@ -23,19 +23,26 @@ export function cityReachedPopulation(target: number, programmes: readonly (Urba
   const built = new Map<string, string>();
   for (const b of scene.buildings) built.set(b.parcel_id, b.function);
   let need = 0, housed = 0, size: number | undefined;
+  let residents = 0, recordedResidents = false;
   for (const programme of programmes) {
     if (!programme) continue;
     for (const d of programme.demands) if (d.unit === 'domesticUnits') {
       need += d.requested;
       for (const p of d.provenance) { const m = /profile:([0-9.]+) persons\/domesticUnit/.exec(p); if (m && size === undefined) size = Number(m[1]); }
     }
-    for (const a of programme.allocations) if (a.unit === 'domesticUnits' && built.get(a.parcelId) === a.function) housed += finite(a.households) ? a.households : finite(a.capacity) ? a.capacity : 0;
+    for (const a of programme.allocations) if (a.unit === 'domesticUnits' && built.get(a.parcelId) === a.function) {
+      const households = finite(a.households) ? a.households : finite(a.capacity) ? a.capacity : 0;
+      housed += households;
+      if (finite(a.residents)) { residents += a.residents; recordedResidents = true; }
+      else residents += households * (size ?? target / need);
+    }
   }
   if (!need) return undefined;
   const persons = size ?? target / need;
   if (!(persons > 0)) return undefined;
   const missing = Math.max(0, need - housed);
-  return { target, reached: Math.round(Math.min(housed, need) * persons), shortfallHouseholds: Math.round(missing), shortfall: Math.round(missing * persons) };
+  const reached = Math.round(Math.min(target, recordedResidents ? residents : Math.min(housed, need) * persons));
+  return { target, reached, shortfallHouseholds: Math.round(missing), shortfall: Math.max(0, Math.round(target - reached)) };
 }
 
 /** Display hooks: `t` translates an English template with `{name}` slots (identity = English), `locale` formats numbers. */

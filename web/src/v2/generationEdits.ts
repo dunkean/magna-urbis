@@ -11,14 +11,26 @@ export function urbanParentControls(base: V2UrbanControls | undefined, local: V2
   return { ...base, layout, parcels, houses: undefined };
 }
 
+const regionalSeed = (settings: V2Settings): string => seedSubset(settings.options.seed, key => !key.startsWith('city/'));
 export function regionalParentKey(settings: V2Settings): string {
   const d=settings.region?.demography,p=settings.region?.placement;
   return JSON.stringify([settings.extent,settings.options.mapSize,cultureEnvironment(settings),settings.options.culture,
-    seedSubset(settings.options.seed,key=>!key.startsWith('city/')),d?.density,d?.population,d?.counts,p?.mode,p?.counts,p?.list]);
+    regionalSeed(settings),d?.density,d?.population,d?.counts,p?.mode,p?.counts,p?.list]);
 }
+/** Keys of the automatic plan's slots (regionalPopulation): a list made only of them is a frozen copy of one draw
+ * (moved towns, "use the current places"), not a list of places the user added. */
+const AUTOMATIC_PLACE = /^(main|(city|town|village|hamlet|farmstead)-\d+)$/;
 
-/** Upstream regional changes replace descendant recipes; restored complete projects are not edits. */
-export function resetRegionalChildren(settings: V2Settings, mods: unknown[] = []): unknown[] {
+/** Upstream regional changes replace descendant recipes; restored complete projects are not edits.
+ * `previousParentKey`: the regionalParentKey before the change. A new region seed also drops a list frozen from
+ * the previous draw (its positions and sizes), so the next placement and its planned sizes follow the new seed.
+ * Explicit counts, population and density the user typed are kept. */
+export function resetRegionalChildren(settings: V2Settings, mods: unknown[] = [], previousParentKey?: string): unknown[] {
+  const placement = settings.region?.placement;
+  if (previousParentKey !== undefined && placement?.list?.length && placement.list.every(place => AUTOMATIC_PLACE.test(place.key))
+    && (JSON.parse(previousParentKey) as unknown[])[4] !== regionalSeed(settings)) {
+    delete placement.list; placement.mode = 'auto';
+  }
   settings.local = {};
   if (settings.urban) {
     delete settings.urban.layout; delete settings.urban.parcels; delete settings.urban.houses;

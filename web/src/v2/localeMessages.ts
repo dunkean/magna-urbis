@@ -2,12 +2,16 @@ import { localeExtraLatin } from './localeExtraLatin';
 import { localeExtraAsia } from './localeExtraAsia';
 import { localeExtraArRu } from './localeExtraArRu';
 import { localeNaming } from './localeNaming';
+import { localeEditor } from './localeEditor';
 import { localeUnderdark } from './localeUnderdark';
 import { localeRuntimeSource } from './localeRuntimeSource';
 import { localeExtraFill } from './localeExtraFill';
 import { localeExtraCultures } from './localeExtraCultures';
 import { neuralDownloadMessages } from './neuralDownloadMessages';
 import { editingMessages } from './editingMessages';
+import { symbolicMapMessages } from './symbolicMapMessages';
+import { coastTraceMessages } from './coastTraceMessages';
+import { engineRuntimeEntries, engineRuntimeTemplates } from './engineRuntimeMessages';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
 export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
@@ -8370,10 +8374,28 @@ for (const [language, messages] of Object.entries({ ...localeExtraLatin, ...loca
 }
 for(const [language,messages] of Object.entries(localeUnderdark))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeNaming))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
+for(const [language,messages] of Object.entries(localeEditor))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeRuntimeSource))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeExtraFill))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeExtraCultures))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for (const [index, language] of (['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const).entries()) {
   for (const row of neuralDownloadMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of editingMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of [...coastTraceMessages, ...symbolicMapMessages]) localeMessages[language][row[0]] = row[index + 1];
+}
+
+// Detailed engine diagnostics have a complete French/English catalog. Until a
+// diagnostic has an authored translation in another locale, label its English
+// reference text explicitly (the same source-text policy as runtimeDiagnosticLabel).
+// Never overwrite an existing translated message or silently call English localized.
+const engineSourceLabels = {
+  es: 'Diagnóstico del motor (texto fuente)', pt: 'Diagnóstico do motor (texto de origem)',
+  zh: '引擎诊断（源文本）', ar: 'تشخيص المحرك (النص الأصلي)',
+  ru: 'Диагностика движка (исходный текст)', ja: 'エンジン診断（原文）',
+} as const;
+for (const language of Object.keys(engineSourceLabels) as (keyof typeof engineSourceLabels)[]) {
+  for (const [, english] of [...engineRuntimeEntries, ...engineRuntimeTemplates]) {
+    localeMessages[language][english] ??= `${engineSourceLabels[language]}: ${english}`;
+    localeMessages[language][english.trim()] ??= `${engineSourceLabels[language]}: ${english.trim()}`;
+  }
 }

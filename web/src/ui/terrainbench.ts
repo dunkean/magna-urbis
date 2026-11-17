@@ -339,7 +339,7 @@ let settings: TerrainSettings = {
     const index = (COAST_DIRECTIONS as readonly string[]).indexOf(direction);
     return index < 0 ? mask : mask | (1 << index);
   }, 0),
-  islandMode: ISLAND_MODES.includes(query.get('islands') as IslandMode) ? query.get('islands') as IslandMode : 'island',
+  islandMode: (ISLAND_MODES as readonly string[]).includes(query.get('islands') ?? '') ? query.get('islands') as IslandMode : 'island',
   mountainMix: bounded(finite(query.get('mix'), 0.5), 0, 1),
   erosion: bounded(finite(query.get('erosion'), 1), 0, 2), resolution: 512,
   compute: COMPUTE_MODES.includes(query.get('compute') as TerrainCompute) ? query.get('compute') as TerrainCompute : profileDefaults.compute as TerrainCompute,

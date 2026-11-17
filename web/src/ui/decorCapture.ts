@@ -16,7 +16,7 @@ function tagsOf(settings: TerrainSettings, output: SettlementOutput, roadConfig:
   const h = settings.hydrology ?? DEFAULT_HYDROLOGY, main = output.settlements.slice().sort((a, b) => b.population - a.population)[0];
   return {
     source: settings.source ?? 'procedural', hydrology: h.engine,
-    relief: settings.relief, coast: mask === 255 ? settings.islandMode ?? 'island' : coasts.length ? coasts.join('+') : 'inland',
+    relief: settings.relief, coast: mask === 255 ? settings.islandMode?.startsWith('traced:') ? 'traced' : settings.islandMode ?? 'island' : coasts.length ? coasts.join('+') : 'inland',
     river: h.enabled ? h.main : 'none', meanders: h.meanders, lakes: h.lakes,
     roads: roadConfig ? `${roadConfig.level}/${roadConfig.culture}` : 'none', culture: main?.culture ?? '',
   };

@@ -59,6 +59,7 @@
 .advanced-card h3{font:18px Georgia,serif;margin-bottom:12px}
 .advanced-grid .stage-body{display:block!important;border:0;padding:8px 0 0}
 .advanced-grid .parameter-field{min-width:0}
+.advanced-grid.stage-columns{display:block;columns:340px;column-gap:16px}.advanced-grid.stage-columns>*{break-inside:avoid;margin:0 0 16px}
 .density-control{display:grid;grid-template-columns:1fr auto;gap:9px;font-size:12px;color:var(--muted);margin:18px 0}
 .density-control input{grid-column:1/-1;width:100%}.density-control output{color:var(--gold)}
 .settlement-counts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -90,6 +91,9 @@
 #app #places-panel .settlement-choice>input[type=radio]{width:15px;min-width:15px;height:15px;padding:0;margin:0;flex:0 0 15px;appearance:auto}
 #app #places-panel .settlement-choice>.settlement-item{flex:1;width:auto;min-width:0}
 #app #places-panel .settlement-item .grow{min-width:0}
+#app #places-panel .settlement-name{display:flex;align-items:center;gap:5px;min-width:0}
+#app #places-panel .settlement-name strong{min-width:0}
+#app #places-panel .settlement-warning{flex:none;color:#e4b08b;font-size:12px;line-height:1;cursor:help}
 #app #places-panel .settlement-item strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #app #places-panel .settlement-item{padding:6px 7px;gap:6px}
 #app #places-panel .settlement-item strong{font-size:12px}#app #places-panel .settlement-item small{font-size:10px}
@@ -114,7 +118,7 @@
 #family-map #header-menu button[data-editor-icon]:disabled::before{opacity:.45}
 #app:has(#family-map:not([hidden])) #generate-region>.art{width:26px;height:26px;background:url('./assets/icons/family-display.webp') center/contain no-repeat}
 #family-map #editor-dock{position:static;width:auto;max-width:none;background:none;border:0;box-shadow:none;backdrop-filter:none;overflow:visible}
-#family-map #editor-dock>header{padding:10px 0;background:none}#family-map #editor-content{padding:10px 0}
+#family-map #editor-dock>header{padding:10px 0;background:#24231e}#family-map #editor-content{padding:10px 0}
 
 /* Both views use the same visibility controls. Only navigation and modelled trees are 3D-specific. */
 #app .toolbar-row>.city3d-bar:not([hidden]){position:static;display:flex;align-items:center;flex-wrap:nowrap;gap:8px;max-width:none;padding:0;border:0;border-radius:0;background:none;box-shadow:none;white-space:nowrap;color:var(--ink);font-size:11px;flex:none}
@@ -153,11 +157,19 @@
 .render-pass-card>.parameter-field{display:grid;gap:6px;margin:0;font-size:11px}.render-pass-placeholder{display:inline-block;flex:none;height:16px}
 .render-pass-card .city-rendering-settings{padding:0;background:none;border:0}.render-pass-card .view3d-settings{padding:0;background:none;border:0;display:grid;gap:10px}
 .render-pass-card .view3d-settings[hidden]{display:none}.render-pass-card .view3d-settings label{display:grid;gap:6px;font-size:11px;color:var(--muted)}.render-pass-card .view3d-settings select{width:100%;font-size:11px}
-.render-pass-options{border-top:1px solid var(--line);padding-top:10px}.render-pass-options>summary{font-size:10px;color:var(--muted);cursor:pointer}.render-pass-options>.parameter-field{margin:12px 0 0}.render-pass-options .parameter-field select{width:100%;font-size:11px}.render-pass-options>.city-rendering-settings{margin:12px 0}.render-pass-options .view3d-settings{margin-top:12px}.render-pass-options .view3d-settings label{margin:0}
-.render-fine-settings{margin:0 20px 20px;border-top:1px solid var(--line);padding-top:14px}.render-fine-settings>summary{cursor:pointer;font-size:12px;color:var(--muted)}
-.render-fine-settings>.advanced-grid{padding:14px 0 0}.render-fine-group>summary{font-size:12px;color:var(--gold);cursor:pointer}
-.render-fine-group .stage-row{border:0;margin:0;padding:0;background:none}.render-fine-group .stage-body{padding-top:10px}
-@media(max-width:720px){.render-pass-introduction{padding:12px 12px 4px;grid-template-columns:1fr}.render-context{justify-self:start}.render-fine-settings{margin-inline:12px}}
+.render-pass-options{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:10px}.render-pass-options>.parameter-field{margin:0}.render-pass-options .parameter-field select{width:100%;font-size:11px}.render-pass-options>.city-rendering-settings{margin:0}.render-pass-options .view3d-settings{margin:0}.render-pass-options .view3d-settings label{margin:0}
+/* The render view is one page: theme sections in reading order, every card open, a sticky index in the header. */
+.workbench-advanced>header{flex-wrap:wrap;row-gap:10px}.workbench-advanced>header>.section-index{flex:1 0 100%;order:9}
+.advanced-grid.render-themes{display:flex;flex-direction:column;align-items:stretch;gap:26px;padding-top:16px}
+.render-theme{min-width:0}.render-theme>h3{font:19px Georgia,serif;color:var(--gold);margin:0 0 12px;padding-bottom:7px;border-bottom:1px solid #dcb86f33}
+.render-theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr));gap:12px;align-items:start}
+.render-theme-grid>.name-visibility-controls{grid-column:1/-1;margin:0;padding:14px}.render-theme-grid>.name-visibility-controls h3{font:15px Georgia,serif;margin:0 0 10px}
+.render-fine-group>h4{font:15px Georgia,serif;color:var(--ink);margin:0 0 4px}
+.render-fine-group .stage-row{border:0;margin:0;padding:0;background:none}.render-fine-group .stage-body{padding-top:4px}
+.render-fine-group .render-settings-fields{padding:0}.render-fine-group .render-settings-advanced{margin-top:2px}.render-fine-group .render-settings-advanced:not(:has(:is(.parameter-field,.render-color-row,.v2-render-conditional):not([hidden]))){display:none}
+.render-fine-group .v2-render-conditional{margin-top:12px}.render-fine-group .v2-render-conditional[hidden]{display:none}
+.render-fine-group .v2-render-subhead{font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+@media(max-width:720px){.render-pass-introduction{padding:12px 12px 4px;grid-template-columns:1fr}.render-context{justify-self:start}}
 .name-visibility-controls{margin:0 20px 16px;padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px}.name-visibility-controls h3{margin:0 0 12px}.name-detail-control{display:grid;grid-template-columns:auto minmax(120px,1fr) 70px;align-items:center;gap:12px;font-size:12px}.name-detail-control input{width:100%;accent-color:var(--gold)}.name-category-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 18px;margin:14px 0}.name-category-choices label{display:flex;align-items:center;gap:7px;font-size:12px}.name-category-choices input{accent-color:var(--gold);width:15px;height:15px}.name-visibility-controls .hint{margin:10px 0}@media(max-width:720px){.name-visibility-controls{margin-inline:12px}.name-category-choices{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .name-origin-controls { border-top: 1px solid var(--line, #494637); margin-top: 12px; padding-top: 10px; }
 .name-origin-controls h4 { margin: 0 0 8px; }

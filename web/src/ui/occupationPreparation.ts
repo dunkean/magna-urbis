@@ -1,4 +1,4 @@
-import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
+import type { ForestClearing, ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { ForestCorridor } from '../render/forestRoom';
 import type { LandUseLayer } from '../gen/types';
 import { forestOccupation, unpackOccupationShapes, withOccupationShapes } from './forestOccupation';
@@ -17,10 +17,10 @@ export class OccupationPreparation {
     if (!source) throw new Error(`Land-use revision ${revision} is not registered.`);
     return source;
   }
-  occupation(landuseRevision: number, revision: number, corridors: ForestCorridor[]): ForestOccupation | undefined {
+  occupation(landuseRevision: number, revision: number, corridors: ForestCorridor[], clearings: readonly ForestClearing[] = []): ForestOccupation | undefined {
     const source = this.input(landuseRevision);
     if (!source.occupations.has(revision)) {
-      source.occupations.set(revision, forestOccupation(source.landuse, undefined, undefined, corridors));
+      source.occupations.set(revision, forestOccupation(source.landuse, undefined, undefined, corridors, clearings));
       if (source.occupations.size > 4) source.occupations.delete(source.occupations.keys().next().value!);
     }
     const result = source.occupations.get(revision);

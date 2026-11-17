@@ -17,12 +17,11 @@
 import type { V2TownStage } from './contracts';
 
 export type StageFamily = 'region' | 'settlements' | 'cities' | 'map';
-export type ReliefSource = 'procedural' | 'neural' | 'heightmap';
+/** Internal generation methods; Heightmap contains both heightmap and symbolic. */
+export type ReliefSource = 'procedural' | 'neural' | 'heightmap' | 'symbolic';
 export interface Copy { en: string; fr: string }
 export interface StageContext {
   relief: ReliefSource;
-  /** A drawn heightmap is refined by the procedural pipeline. */
-  proceduralBase?: boolean;
   /** Classic TypeScript terrain engine: only its original parameters apply. */
   classicTerrain: boolean;
   /** Plain, plateau, volcano, caldera and cavern have no decomposed erosion output. */
@@ -37,7 +36,7 @@ export type StageRun =
   | { action: 'town'; townStage: V2TownStage } | { action: 'display' } | { action: 'mask' };
 export interface StageToggle {
   /** Setting path written by the toggle, or a named behaviour handled by the UI. */
-  kind: 'path' | 'coasts' | 'mask' | 'roads' | 'unavailable';
+  kind: 'path' | 'coasts' | 'roads' | 'unavailable';
   path?: string;
   /** Default when the path is absent. */
   fallback?: boolean | ((ctx: { compact: boolean; relief: string }) => boolean);
@@ -71,7 +70,9 @@ export const FAMILIES: readonly { id: StageFamily; label: Copy; summary: Copy }[
   { id: 'map', label: { en: 'Map', fr: 'Carte' }, summary: { en: 'Appearance, names and export', fr: 'Affichage, nommage et export' } },
 ];
 
-const procedural = (c: StageContext) => (c.relief === 'procedural' || !!c.proceduralBase) && !c.classicTerrain;
+// Zoned generation owns its landform pipeline; decomposed procedural knobs do not apply.
+const procedural = (c: StageContext) => c.relief === 'procedural' && !c.classicTerrain;
+const proceduralOrSymbolic = (c: StageContext) => (c.relief === 'procedural' || c.relief === 'symbolic') && !c.classicTerrain;
 const neural = (c: StageContext) => c.relief === 'neural' && !c.classicTerrain;
 const always = () => true;
 const finite = (c: StageContext): Copy | undefined => c.finiteRelief
@@ -97,7 +98,7 @@ export const STAGES: readonly StageDef[] = [
     summary: { en: 'Source preparation and terrain adjustments', fr: 'Préparation de la source et ajustements du relief' },
     controls: ['widget:source-mode', 'widget:seed', 'widget:extent', 'widget:heightmap-library', 'widget:heightmap-import',
       'terrain.relief', 'terrain.motifSize', 'terrain.sampleSpacing', 'terrain.procedural.preset', 'terrain.environment', 'terrain.mountainMix', 'terrain.erosion',
-      'options.relief', 'options.coast', 'options.river', 'options.seaLevel', 'options.biome', 'widget:coasts', 'terrain.islandMode'],
+      'options.relief', 'options.coast', 'options.river', 'options.seaLevel', 'options.biome', 'terrain.underdarkTunnels', 'widget:coasts', 'terrain.islandMode'],
     quick: ['widget:source-mode', 'widget:extent-km', 'options.biome', 'terrain.relief'],
     progress: ['compute', 'runtime-download', 'runtime-compile', 'runtime-ready', 'gpu-device', 'terrain-module', 'relief-engine', 'terrain-generation', 'terrain-import', 'pipeline:prepare', 'terrain-cache', 'terrain-projection', 'terrain-retain', 'terrain-sampling', 'gpu-sampling-compile', 'pipeline:retain', 'pipeline:sampling'] },
   { id: 'relief-climate', family: 'region', optional: false, when: c => !c.classicTerrain, run: terrainRun,
@@ -105,17 +106,17 @@ export const STAGES: readonly StageDef[] = [
     summary: { en: 'Temperature and rain condition neural generation, climate-driven erosion, water and vegetation', fr: 'Température et pluie conditionnent le neuronal, l’érosion climatique, l’eau et la végétation' },
     controls: ['terrain.climate', 'terrain.climateValues.temperature', 'terrain.climateValues.temperatureStd', 'terrain.climateValues.precipitation', 'terrain.climateValues.precipitationCv'],
     quick: ['terrain.climate'] },
-  { id: 'relief-mask', family: 'region', optional: true, toggle: { kind: 'mask' }, when: procedural, run: { action: 'mask' },
-    label: { en: 'Drawing base', fr: 'Dessin de base' },
-    summary: { en: 'Coarse drawing refined by procedural noise and erosion', fr: 'Esquisse enrichie par le bruit procédural et l’érosion' },
+  { id: 'relief-mask', family: 'region', optional: false, when: c => c.relief === 'symbolic' && !c.classicTerrain, run: { action: 'mask' },
+    label: { en: 'Symbolic map', fr: 'Carte symbolique' },
+    summary: { en: 'Painted zones guide natural landforms', fr: 'Les zones peintes guident les formes naturelles du relief' },
     controls: ['widget:sketch'], quick: ['widget:paint'] },
-  { id: 'relief-grids', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun,
+  { id: 'relief-grids', family: 'region', optional: false, when: proceduralOrSymbolic, run: terrainRun,
     label: { en: 'Grids and buffers', fr: 'Grilles et tampons' }, summary: { en: 'Regional and surface grids, output sampling', fr: 'Grilles régionale et de surface, échantillonnage' },
     controls: ['terrain.resolution', 'terrain.phasor.quality', 'terrain.procedural.regionalN', 'terrain.procedural.surfaceN'], quick: [], progress: ['pipeline:grids'] },
   { id: 'relief-noise', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun, variation: 'relief-noise',
     label: { en: 'Initial noise and uplift', fr: 'Bruit initial et soulèvement' }, summary: { en: 'Regional noise scale and crest strength', fr: 'Échelle du bruit régional et force des crêtes' },
     controls: ['terrain.procedural.noiseScale', 'terrain.procedural.crest'], quick: ['terrain.procedural.noiseScale'], progress: ['pipeline:initialize'] },
-  { id: 'relief-coast-cut', family: 'region', optional: true, toggle: enabled('terrain.procedural.enabled.coastCut'), when: procedural, unavailable: finite, run: terrainRun, variation: 'relief-coast-cut',
+  { id: 'relief-coast-cut', family: 'region', optional: true, toggle: { kind: 'coasts' }, when: c => !c.classicTerrain, run: terrainRun, variation: 'relief-coast-cut',
     label: { en: 'Coast formation', fr: 'Formation des côtes' }, summary: { en: 'Movable land/sea deformation; the final cut preserves a coast after later erosion', fr: 'Déformation terre/mer déplaçable ; la découpe finale conserve une côte après les érosions suivantes' },
     controls: ['terrain.procedural.coastAfter'], quick: ['terrain.procedural.coastAfter'], progress: ['pipeline:coastCut'] },
   { id: 'relief-regional', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun,
@@ -159,7 +160,7 @@ export const STAGES: readonly StageDef[] = [
     label: { en: 'Neural decoder', fr: 'Décodeur neuronal' }, summary: { en: 'Decoding, amplification and extent fitting', fr: 'Décodage, amplification et adaptation de l’étendue' },
     controls: ['terrain.decoderModel', 'terrain.neuralTuning.detail'], quick: ['terrain.neuralTuning.detail'] },
   { id: 'relief-heightmap-fit', family: 'region', optional: false, when: c => c.relief === 'heightmap', run: terrainRun,
-    label: { en: 'Heightmap fit', fr: 'Ajustement de la heightmap' }, summary: { en: 'Resample, vertical scale, datum, crop', fr: 'Rééchantillonnage, échelle verticale, datum, recadrage' },
+    label: { en: 'Heightmap fit', fr: 'Ajustement de la heightmap' }, summary: { en: 'Elevations, vertical scale, datum, crop', fr: 'Altitudes, échelle verticale, datum, recadrage' },
     controls: ['widget:heightmap-fit', 'options.heightScale', 'options.importSea'], quick: ['widget:heightmap-scale'] },
   { id: 'relief-refine', family: 'region', optional: true, toggle: enabled('terrain.refine'), when: c => !c.classicTerrain, run: terrainRun,
     label: { en: 'Fractal refinement', fr: 'Raffinement fractal' }, summary: { en: 'Slope-dependent detail below the source cell', fr: 'Détail dépendant de la pente sous la cellule source' },
@@ -171,7 +172,7 @@ export const STAGES: readonly StageDef[] = [
   { id: 'relief-aeolian', family: 'region', optional: true, toggle: enabled('terrain.procedural.enabled.wind'), when: procedural, unavailable: finite, run: terrainRun,
     label: { en: 'Aeolian transport', fr: 'Transport éolien' }, summary: { en: 'Wind passes, direction, transported metres', fr: 'Passes de vent, direction, mètres transportés' },
     controls: ['terrain.procedural.wind.iterations', 'terrain.procedural.wind.azimuth', 'terrain.procedural.wind.transport'], quick: ['terrain.procedural.wind.iterations'], progress: ['pipeline:wind'] },
-  { id: 'relief-coasts', family: 'region', optional: false, when: procedural, unavailable: finite, run: terrainRun,
+  { id: 'relief-coasts', family: 'region', optional: false, when: proceduralOrSymbolic, run: terrainRun,
     label: { en: 'Coastal finishing', fr: 'Finition côtière' }, summary: { en: 'Coastal erosion on the land/sea mask chosen above; zero cycles disables erosion', fr: 'Érosion du littoral sur le masque terre/mer choisi en haut ; zéro cycle désactive l’érosion' },
     controls: ['terrain.procedural.coastIterations', 'terrain.procedural.coastIncision', 'terrain.procedural.coastThermal', 'terrain.procedural.coastDiffusion'],
     quick: ['terrain.procedural.coastIterations'], progress: ['terrain-coast', 'pipeline:coasts'] },

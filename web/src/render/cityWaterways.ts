@@ -1,4 +1,5 @@
-/** Retained native lagoon water in public ribbons, with pedestrian crossings. */
+/** Retained native canal water in public ribbons (urban/lagoon.rs), with bridges and lock gates. Its colour comes from
+ * townWater.ts (the rivers' colour of the map) through the draw options. */
 import type { Layout, Shape } from '../../../rust/bridge/urban';
 const cache = new WeakMap<object, { water: Path2D; bridges: Path2D }>();
 export function cityWaterwayPaths(layouts: readonly Layout[]): { water: Path2D; bridges: Path2D } {
@@ -15,7 +16,7 @@ export function cityWaterwayPaths(layouts: readonly Layout[]): { water: Path2D; 
   if (!paths) {
     paths = { water: new Path2D(), bridges: new Path2D() };
     for (const layout of layouts) for (const w of layout.structure?.waterways ?? []) {
-      paths.water.addPath(path(w.shape)); for (const s of w.crossings) paths.bridges.addPath(path(s));
+      paths.water.addPath(path(w.shape)); for (const s of [...w.crossings, ...(w.locks ?? [])]) paths.bridges.addPath(path(s));
     }
     // Nonzero fill unions overlapping ribbons without a floating-point boolean
     // that can abort the whole town frame. No outlines on internal segment caps.
@@ -24,6 +25,8 @@ export function cityWaterwayPaths(layouts: readonly Layout[]): { water: Path2D; 
   return paths;
 }
 export function drawCityWaterways(ctx: CanvasRenderingContext2D, layouts: readonly Layout[], mpp: number, color = '#8aaeb8'): void {
+  // Towns without canals (nearly all) build no paths and touch no context state.
+  if (!layouts.some(layout => layout.structure?.waterways?.length)) return;
   const paths = cityWaterwayPaths(layouts);
   ctx.save(); ctx.lineWidth = Math.max(0.4, mpp * 0.6);
   ctx.fillStyle = color; ctx.fill(paths.water);

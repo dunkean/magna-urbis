@@ -7,9 +7,11 @@
 import type { Language } from './languages';
 import { localeMessages } from './localeMessages';
 import { neuralDownloadMessages } from './neuralDownloadMessages';
+import { engineRuntimeAliases, engineRuntimeEntries, engineRuntimeTemplates } from './engineRuntimeMessages';
 export type RuntimeLanguage = Language;
 
 const entries: readonly (readonly [string, string])[] = [
+  ...engineRuntimeEntries,
   ...neuralDownloadMessages.map(([en, fr]) => [fr, en] as const),
   ["Créez d’abord le relief.", "Create the terrain first."],
   ["Chargement du moteur Rust/WASM (threads)…", "Loading the Rust/WASM engine (threads)…"],
@@ -348,11 +350,11 @@ const numericSlots = new Set(['count', 'index', 'done', 'total', 'quarters', 'pa
 const numberPattern = '[-+]?\\p{Nd}[\\p{Nd} \\u00a0\\u202f.,\\u066b\\u066c]*(?:[eE][-+]?\\d+)?';
 function compileTemplate(source: string, target: string): Template {
   const keys: string[] = [];
-  const token = /\{([a-zA-Z]+)\}/g;
+  const token = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
   let start = 0, pattern = '';
   for (const match of source.matchAll(token)) {
     pattern += escapeRegex(source.slice(start, match.index));
-    const capture = numericSlots.has(match[1]) ? numberPattern : match[1] === 'request' ? '(?:main/)?layout-[A-Za-z0-9:/_.-]+' : '[\\s\\S]+?';
+    const capture = numericSlots.has(match[1]) ? numberPattern : match[1] === 'request' ? '(?:main/)?layout-[A-Za-z0-9:/_.-]+' : '[\\s\\S]*?';
     pattern += `(${capture})`; keys.push(match[1]); start = match.index! + match[0].length;
   }
   pattern += escapeRegex(source.slice(start));
@@ -450,9 +452,12 @@ const templatePairs: readonly (readonly [string, string])[] = [
   ['Heightmap 8 bits : noir {min} m, blanc {max} m. Projet JSON pour conserver FP32.', '8-bit heightmap: black {min} m, white {max} m. Use a JSON project to retain FP32.'],
   ['Terminé en {seconds} s · relief {backend} · villes {urban}', 'Finished in {seconds} s · relief {backend} · cities {urban}'],
   ['{kind} · {count} bâtiments · {residents} habitants', '{kind} · {count} buildings · {residents} inhabitants'],
+  ...engineRuntimeTemplates,
 ];
-const toEnglish = templatePairs.map(([fr, en]) => compileTemplate(fr, en));
-const toFrench = templatePairs.map(([fr, en]) => compileTemplate(en, fr));
+// A headline may already be in the selected language while its nested engine
+// error is not (for example an English “Failed:” around a French Rust error).
+const toEnglish = [...templatePairs.map(([fr, en]) => compileTemplate(fr, en)), ...templatePairs.map(([, en]) => compileTemplate(en, en))];
+const toFrench = [...templatePairs.map(([fr, en]) => compileTemplate(en, fr)), ...templatePairs.map(([fr]) => compileTemplate(fr, fr))];
 const localizedTemplates = Object.fromEntries(Object.entries(localeMessages).map(([language, dictionary]) => [language,
   templatePairs.flatMap(([fr, en]) => [compileTemplate(fr, dictionary[en] ?? en), compileTemplate(en, dictionary[en] ?? en)])]));
 
@@ -473,6 +478,13 @@ const fieldLabels = new Map<string, string>([
 const frenchFieldLabels = new Map([...fieldLabels].map(([fr, en]) => [en, fr]));
 
 function translateLine(message: string, language: RuntimeLanguage): string {
+  message = engineRuntimeAliases.get(message) ?? message;
+  // Only machine-readable envelopes: arbitrary names followed by a colon are not wrappers.
+  const envelope = /^(\[[a-z_][a-z0-9_-]*\]\s+|[a-z_][a-z0-9_]*: )([\s\S]+)$/u.exec(message);
+  if (envelope) {
+    const translated = translateLine(envelope[2], language);
+    if (translated !== envelope[2]) return envelope[1] + translated;
+  }
   if (language !== 'en' && language !== 'fr') {
     const dictionary = localeMessages[language];
     const english = frenchToEnglish.get(message) ?? message;
@@ -485,9 +497,9 @@ function translateLine(message: string, language: RuntimeLanguage): string {
       const match = template.pattern.exec(message);
       if (!match) continue;
       const values = Object.fromEntries(template.keys.map((key, index) => [key, match[index + 1]]));
-      if (values.reason) values.reason = translateLine(values.reason, language);
+      for (const key of ['reason', 'message', 'error', 'why', 'prefix', 'rest', 'detail', 'e']) if (values[key]) values[key] = translateLine(values[key], language);
       if (values.field) values.field = dictionary[fieldLabels.get(values.field) ?? values.field] ?? fieldLabels.get(values.field) ?? values.field;
-      return template.target.replace(/\{([a-zA-Z]+)\}/g, (_placeholder, key: string) => values[key]);
+      return template.target.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_placeholder, key: string) => values[key]);
     }
     return translateLine(message, 'en');
   }
@@ -507,9 +519,9 @@ function translateLine(message: string, language: RuntimeLanguage): string {
     if (!match) continue;
     const values = Object.fromEntries(template.keys.map((key, index) => [key, match[index + 1]]));
     if (values.field) values.field = (language === 'en' ? fieldLabels : frenchFieldLabels).get(values.field) ?? values.field;
-    if (values.reason) values.reason = translateLine(values.reason, language);
+    for (const key of ['reason', 'message', 'error', 'why', 'prefix', 'rest', 'detail', 'e']) if (values[key]) values[key] = translateLine(values[key], language);
     // French elision before a name that starts with a vowel or an h (taken as mute): « les terres d’Aubeville ».
-    return template.target.replace(/(\bde )?\{([a-zA-Z]+)\}/g, (_placeholder, de: string | undefined, key: string) =>
+    return template.target.replace(/(\bde )?\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_placeholder, de: string | undefined, key: string) =>
       de && language === 'fr' && /^[aeiouyhàâäéèêëîïôöùûüÿæœ]/iu.test(values[key]) ? `d’${values[key]}` : (de ?? '') + values[key]);
   }
   return message;
@@ -533,3 +545,8 @@ export const RUNTIME_MESSAGE_COUNT = entries.length;
 
 /** Read-only list of the English runtime sources (exact messages and templates), for coverage checks. */
 export function runtimeEnglishSources(): string[] { return [...entries.map(([, en]) => en), ...templatePairs.map(([, en]) => en)]; }
+
+/** Complete bilingual declarations for static engine/bridge coverage (slots remain symbolic). */
+export function runtimeMessagePairs(): readonly (readonly [string, string])[] {
+  return [...entries, ...templatePairs, ...[...engineRuntimeAliases].map(([raw, clean]) => [raw, frenchToEnglish.get(clean) ?? clean] as const)];
+}

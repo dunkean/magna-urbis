@@ -1,3 +1,5 @@
+import { fortificationClearings } from '../render/forestClearance';
+import { underdarkSceneLook } from '../render/underdarkLighting';
 import { cityGroundSettings, cityGroundLook, cityForestInput, cityForestSettings } from '../render/cityEnvironment';
 import { cityRegionalStreets } from '../render/cityContract';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
@@ -204,7 +206,7 @@ function benchForestResult() {
     const corridors = [...(regional ? regional.segments.filter(s => s.path.length > 1).map(s => regionalRoadCorridor(s.path, s.width, s.class))
       : streets.filter(s => s.path.length > 1).map(s => roadCorridor(s.path, Math.max(3, ...s.widths)))),
       ...layouts.flatMap(layout => streetCorridors(layout.streets, layoutStreetPavements(layout)))];
-    const base = settlements.landuse ? forestOccupation(settlements.landuse, undefined, undefined, corridors) : undefined;
+    const base = settlements.landuse ? forestOccupation(settlements.landuse, undefined, undefined, corridors, fortificationClearings(layouts)) : undefined;
     occupation = settlements.landuse ? withLandDetail(base && { ...base, ways: corridors }, settlements.landuse, settlements.landCultures) : undefined;
   }
   return { field: forestField, occupation };
@@ -238,7 +240,7 @@ function publishBenchCapabilities(): void {
   if (!groundRenderer && getBenchComposition().vegetation.look === 'procedural-canopy' && !styleTraits(backgroundStyle).ground3d) limitations.push({ pass: 'vegetation', kind: 'backend', reason: 'The raster backend cannot compose procedural canopy on map grounds.' });
   limitations.push({ pass: 'networks', kind: 'data', field: 'oxbows', reason: 'No retained oxbow geometry in this bench.' }, ...benchVegetationLimitations(city3d.active));
   if (city3d.active && resolveBenchAppearance().composition.buildings.meshes === 'none' && settlements.urban.buildingProjection && !settlements.urban.buildingState.scene) limitations.push({ pass: 'buildings', kind: 'backend', reason: 'The 3D bench cannot drape footprints from retained building projections.' });
-  setBenchRenderCapabilities({ nativeTerrain: !!terrain, nativeCities: !!settlements.urban.layouts?.length, buildings: !!settlements.urban.buildingState.scene?.buildings.length || !!settlements.urban.buildingProjection, parcels: !!settlements.urban.partitions?.length, ruralLanduse: !!settlements.landuse, urbanLanduse: !!settlements.urban.layouts?.length, limitations }, city3d.active ? 'view3d' : 'view2d');
+  setBenchRenderCapabilities({ biome: decor && decorBiome(decor.meta), nativeTerrain: !!terrain, nativeCities: !!settlements.urban.layouts?.length, buildings: !!settlements.urban.buildingState.scene?.buildings.length || !!settlements.urban.buildingProjection, parcels: !!settlements.urban.partitions?.length, ruralLanduse: !!settlements.landuse, urbanLanduse: !!settlements.urban.layouts?.length, limitations }, city3d.active ? 'view3d' : 'view2d');
 }
 
 function contoursReady(): void { contourScale = NaN; drawContours(); }
@@ -323,7 +325,7 @@ async function drawBackground(d: Decor): Promise<void> {
     const field = t.field!;
     if (uploadedBackground !== t) { groundRenderer.setBase({ x: 0, y: 0, width: t.width, n: field.n, data: field.data, cave: field.cave, waterSurface: t.waterSurface }); uploadedBackground = t; }
     groundRenderer.setForest(canopy?.field, canopy?.occupation); setRoadCanopy(canopy?.field, canopy?.occupation);
-    backgroundLook={ style: r.ground.style, ambience:c.ambience,waterLook:c.networks.water.look,coastWaves:c.networks.water.waves,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
+    backgroundLook={ style: r.ground.style, ...underdarkSceneLook(decorBiome(d.meta), c.ambience, d.meta.settlements, settlements.landuse?.farmsteads), ambience:c.ambience,waterLook:c.networks.water.look,coastWaves:c.networks.water.waves,crownDetail:c.vegetation.crownDetail,waterStyle: c.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, independentCanopy: c.vegetation.procedural,
       colors: r.palette.colors, mapWidth: t.width, lighting: r.ground.lighting, layers: r.ground.layers, globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight,
       contours: false, contourStep: 1, flatRelief: relief === 'flat', refine: d.meta.terrainDisplay?.refine !== false, sourceCell: d.meta.terrainDisplay?.sourceCell ?? t.width / field.n,
       seed: seedHash(d.meta.seed), detail: DEFAULT_FRACTAL_DETAIL, floor: field.floor ?? 0, frame: r.ground.layers.frame, background: terrainStyle(c.variant, r.palette.colors).palette.paper, climate, climateZone: settings.climateZone, v2Season: r.ground.season, v2Calendar: r.ground.calendar };
@@ -347,7 +349,7 @@ async function drawBackground(d: Decor): Promise<void> {
 
 window.addEventListener('bench-render-colors-change', () => { contourStyle = ''; if (decor) void drawBackground(decor); drawContours(); save(); city3d.refresh(); });
 window.addEventListener('bench-composition-change', () => {
-  if(benchMaterialNightChange() && groundRenderer && backgroundLook){backgroundLook={...backgroundLook,ambience:resolveBenchAppearance().composition.ambience};groundRenderer.setLook(backgroundLook);showView();city3d.refresh();save();return;}
+  if(benchMaterialNightChange() && groundRenderer && backgroundLook){backgroundLook={...backgroundLook,...underdarkSceneLook(decor && decorBiome(decor.meta),resolveBenchAppearance().composition.ambience,decor?.meta.settlements,settlements.landuse?.farmsteads),ambience:resolveBenchAppearance().composition.ambience};groundRenderer.setLook(backgroundLook);showView();city3d.refresh();save();return;}
   if (benchOverlayChange()) { showView(); city3d.refresh(); save(); return; } contourStyle = ''; if (decor) void drawBackground(decor); showView(); save(); city3d.refresh();
 });
 function shareQuery(): string {
@@ -398,7 +400,7 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
   getProjection: () => settlements.urban.buildingProjection,
   getLotEnclosures: () => settlements.urban.lotEnclosures,
   getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => cityRegionalStreets(resolveBenchAppearance({}, 'view3d'), settlements.urban.regionalStreets), getPartitions: () => settlements.urban.partitions, getSelected: () => { const s = settlements.urban.buildingState; return s.parentSelected?.kind === 'member' ? s.parentSelected.member_id : s.selected; }, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
-  details: settlements.urban.buildingDetails, getBuildingAppearance: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ...settlements.urban.buildingState.appearance, colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
+  details: settlements.urban.buildingDetails, getBuildingAppearance: () => { const r = resolveBenchAppearance({}, 'view3d'); return { ...settlements.urban.buildingState.appearance, ...city3dPlanOptions(r).appearance }; },
   getBackground: backgroundUrl,
   getPhysicalGround: material => material ? undefined : drapedPhysicalGround(),
   getRetainedWater: retainedWater3d,
@@ -417,6 +419,7 @@ const city3d = mountCity3d({ getText: () => benchTextLayer(benchSettlementTextWo
   getGroundSettings: ground => {
     if (!decor) return;
     return cityGroundSettings(resolveBenchAppearance({}, 'view3d'), ground, { seed: decor.meta.seed, climate: decorClimate(decor.meta),
+      ...underdarkSceneLook(decorBiome(decor.meta), resolveBenchAppearance({}, 'view3d').composition.ambience, decor.meta.settlements, settlements.landuse?.farmsteads),
       climateZone: decorClimateZone(decor.meta), sourceCell: decor.meta.terrainDisplay?.sourceCell ?? decor.raster.width / decor.raster.n,
       relief: new URLSearchParams(decor.meta.query).get('relief') ?? 'mountains' });
   },

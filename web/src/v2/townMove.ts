@@ -12,7 +12,7 @@ export function moveTown(source:World,key:string,target:Vec2):World{
   if(!dx&&!dy)return source;
   const point=(p:Vec2)=>({x:p.x+dx,y:p.y+dy});
   const urban=(u:UrbanLayer|undefined)=>u&&translateLand(u,dx,dy);
-  const moved={...town,center:point(town.center),extent:translateLand(town.extent,dx,dy),urban:urban(town.main?source.urban:town.urban),fixed:true,
+  const moved={...town,center:point(town.center),...(town.core?{core:point(town.core)}:{}),extent:translateLand(town.extent,dx,dy),urban:urban(town.main?source.urban:town.urban),fixed:true,
     crossing:town.crossing&&point(town.crossing),harbor:town.harbor&&point(town.harbor)};
   const debug={...source.debug},cities=debug.v2RustCities as Record<string,RustTownSnapshot>|undefined;
   if(cities?.[key]){
@@ -49,7 +49,7 @@ export function moveTown(source:World,key:string,target:Vec2):World{
     const local=new Set(['quarter','street','square','church','castle','gate']);
     const prefix=`urban:${encodeURIComponent(key)}:`;
     next.names={...(next.names??source.names),entries:(next.names??source.names).entries.map(e=>{
-      const own=e.id.startsWith(prefix)||e.reference?.key===key&&e.reference.form==='name'||['town','village','farm'].includes(e.kind)&&Math.hypot(e.anchor.x-town.center.x,e.anchor.y-town.center.y)<1||local.has(e.kind)&&pointInRing(town.extent,e.anchor);
+      const own=e.id.startsWith(prefix)||e.reference?.key===key&&e.reference.form==='name'||['town','village','farm'].includes(e.kind)&&Math.hypot(e.anchor.x-(town.core??town.center).x,e.anchor.y-(town.core??town.center).y)<1||local.has(e.kind)&&pointInRing(town.extent,e.anchor);
       return own?{...e,anchor:point(e.anchor),path:e.path?.map(point),replacedAnchor:e.replacedAnchor&&point(e.replacedAnchor)}:e;
     })};
   }

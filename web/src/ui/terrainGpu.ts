@@ -25,6 +25,7 @@ import { boxMips, rasterMips } from './boxMips';
 import { LiveGround } from './liveGround';
 import { displayQualityUniform, onDisplayQualityChange } from '../render/displayQuality';
 import atlas from '../render/assets/fantasy/forest-brushes.json';
+import { CROWN_CLUMP_LAYERS, CROWN_CLUMP_SIZE, crownClumpLevels, crownClumpMode, type CrownDetail } from '../render/crownClumpAtlas';
 import { shoreRingPixels } from '../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
@@ -307,6 +308,8 @@ export class TerrainGpu implements TerrainRenderer {
   private occupation?: { data: ForestOccupation; image: GpuImage };
   private landDetail?: { data: LandDetail; image: GpuImage };
   private brushes!: { image: GpuImage; full: boolean };
+  /** Optional crown clumps (bindCrownClumps), uploaded on first use. */
+  private crownClumps?: GpuImage;
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
@@ -358,6 +361,7 @@ export class TerrainGpu implements TerrainRenderer {
     this.empty = this.image(1, 1, 'r8unorm', new Uint8Array(1), 1);
     this.emptyUint = this.image(1, 1, 'rgba32uint', new Uint32Array(4), 16);
     this.brushes = { image: this.arrayImage(1, 1, 1, [new Uint8Array([255, 128])]), full: false };
+    this.crownClumps = undefined;
     const align = this.device.limits.minStorageBufferOffsetAlignment;
     const slotSize = Math.ceil(Math.max(...Object.values(WGSL.WGSL_PARAMS).map(p => p.size)) / align) * align, count = 64;
     this.slots = { buffer: this.device.createBuffer({ label: 'map parameters', size: slotSize * count, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
@@ -452,11 +456,12 @@ export class TerrainGpu implements TerrainRenderer {
     });
     return { texture, view: texture.createView() };
   }
-  private arrayImage(size: number, layers: number, levels: number, data: Uint8Array[]): GpuImage {
-    const texture = this.device.createTexture({ size: [size, size, layers], format: 'rg8unorm', mipLevelCount: levels, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+  private arrayImage(size: number, layers: number, levels: number, data: readonly Uint8Array[], format: 'rg8unorm' | 'rgba8unorm' = 'rg8unorm'): GpuImage {
+    const texture = this.device.createTexture({ size: [size, size, layers], format, mipLevelCount: levels, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    const bytes = format === 'rgba8unorm' ? 4 : 2;
     data.forEach((level, mip) => {
       const s = Math.max(1, size >> mip);
-      this.device.queue.writeTexture({ texture, mipLevel: mip }, level as BufferSource, { bytesPerRow: s * 2, rowsPerImage: s }, [s, s, layers]);
+      this.device.queue.writeTexture({ texture, mipLevel: mip }, level as BufferSource, { bytesPerRow: s * bytes, rowsPerImage: s }, [s, s, layers]);
     });
     return { texture, view: texture.createView({ dimension: '2d-array' }) };
   }
@@ -858,7 +863,7 @@ export class TerrainGpu implements TerrainRenderer {
       }
       textures.uShoreRing = this.shoreRing?.image.view ?? empty;
       p.set('uShoreRingRect', this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
-      this.bindBrushes(textures, styleTraits(look.style).forestBrushes && mode === 3);
+      this.bindBrushes(p, textures, styleTraits(look.style).forestBrushes && mode === 3, look.crownDetail);
       p.set('uV2WaterVisible', look.layers.water === false ? 0 : 1);
       if (this.base && look.climate) p.setArray('uV2GlacierSources', renderV2GlacierSources(this.base.layer, look.climate));
       p.setArray('uWaterSeason', waterSeasonUniforms(look.v2Season, look.climateZone, look.v2Calendar));
@@ -1087,8 +1092,9 @@ export class TerrainGpu implements TerrainRenderer {
     textures.uLandDetail = detail?.image.view ?? empty;
     p.set('uHasLandDetail', detail ? 1 : 0); p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1); p.set('uLandDetailN', detail?.data.n ?? 1);
   }
-  /** Brush atlas (bindForestBrushes): a 1×1 placeholder until a brush look first needs the full array. */
-  private bindBrushes(textures: Record<string, GPUTextureView>, enabled: boolean): void {
+  /** Brush atlas (bindForestBrushes): a 1×1 placeholder until a brush look first needs the full array. Without
+   * brushes, the optional crown clumps take the same binding (bindCrownClumps). */
+  private bindBrushes(p: Params, textures: Record<string, GPUTextureView>, enabled: boolean, crownDetail: CrownDetail | undefined): void {
     if (enabled && !this.brushes.full) {
       const pixels = unzlibSync(Uint8Array.from(atob(atlas.zlib), c => c.charCodeAt(0)));
       const layers = atlas.families.length * atlas.variants, levels = boxMips(pixels, atlas.size, atlas.size, 2, layers);
@@ -1096,6 +1102,12 @@ export class TerrainGpu implements TerrainRenderer {
       this.brushes = { image: this.arrayImage(atlas.size, layers, levels.length, levels.map(l => l.data)), full: true };
     }
     textures.uForestBrushAtlas = this.brushes.image.view;
+    const mode = crownClumpMode(crownDetail, enabled);
+    p.set('uCrownClumps', mode);
+    if (mode === 0) return;
+    const chain = crownClumpLevels();
+    this.crownClumps ??= this.arrayImage(CROWN_CLUMP_SIZE, CROWN_CLUMP_LAYERS, chain.length, chain, 'rgba8unorm');
+    textures.uForestBrushAtlas = this.crownClumps.view;
   }
 
   dispose(): void {
@@ -1106,7 +1118,7 @@ export class TerrainGpu implements TerrainRenderer {
     if (this.fallback) { this.fallback.dispose(); return; }
     for (const target of [this.auxTarget, this.mapTarget, this.riverTarget, this.waterTarget]) target?.texture.destroy();
     this.release(this.base); this.details.forEach(d => this.release(d)); this.enhanced.forEach(d => this.release(d));
-    for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.landDetail?.image, this.retainedWater, this.brushes.image, this.empty, this.emptyUint]) this.releaseImage(image);
+    for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.landDetail?.image, this.retainedWater, this.brushes.image, this.crownClumps, this.empty, this.emptyUint]) this.releaseImage(image);
     this.releaseForest();
     this.riverBuffer?.destroy(); this.slots.buffer.destroy();
     this.context.unconfigure(); this.capture?.context.unconfigure();

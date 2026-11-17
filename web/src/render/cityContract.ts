@@ -45,7 +45,7 @@ export function cityGlBlockReason(o: {
   if (groundRoadLook(c.networks.roads.look)) return 'natural-roads';
   if (r.city.buildingStyle !== 'cartographic') return 'building-style';
   if (r.city.painted) return 'painted';
-  if (c.ambience === 'night') return 'night';
+  if (r.underdark || c.ambience === 'night') return 'night';
   return null;
 }
 

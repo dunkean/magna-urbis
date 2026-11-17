@@ -2,8 +2,10 @@ import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecip
 import { openMethodNote } from '../ui/methodNotes';
 import type { V2Settings } from './contracts';
 import { adaptedExtent } from './settings';
-import { effectiveTerrainSettings } from './terrainSettings';
-import { bindTree, onLanguageChange, registerMessages, setText } from './i18n';
+import { heightmapPixels, setHeightmapDefinition } from './heightmapModel';
+import { canUseTracedCoast, effectiveTerrainSettings } from './terrainSettings';
+import { coastTraceMode } from './coastTrace';
+import { bindTree, onLanguageChange, registerMessages, setText, setDynamicText, translate, numberLocale } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
 import {
   terrainCopy as copy, terrainControlMessages, terrainSourceFields, terrainBasicFields, terrainProceduralFields,
@@ -13,6 +15,7 @@ import {
 } from './terrainControlSchema';
 import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
+import { runtimeOptions } from './platform';
 import { mountTerrainSketchControls, type TerrainSketchContext, type ReliefEditorKind } from './terrainSketchControls';
 import { UNDERDARK_CULTURES } from './underdarkCultures';
 import { loadTerrainControlDefaults } from './terrainControlDefaults';
@@ -32,10 +35,18 @@ export interface TerrainControls { sync(): void; dispose(): void; openEditor(kin
 
 const ui = {
   width: copy('Map width', 'Largeur de la carte'),
+  imageResolution: copy('Image resolution: {resolution} {unit} per pixel', 'Résolution de l’image : {resolution} {unit} par pixel'),
+  imagePixels: copy('The image has {pixels} × {pixels} pixels: its size and its resolution go together.', 'L’image a {pixels} × {pixels} pixels : sa taille et sa résolution sont liées.'),
   extentHelp: copy('Square map. Choose its physical width and generation spacing. Changing spacing can change drainage for the same seed.', 'Carte carrée. Choisissez sa largeur physique et son pas de génération. Changer le pas peut modifier le drainage pour une même graine.'),
   unit: copy('Map distance unit', 'Unité de distance de la carte'),
   coasts: copy('Sea directions', 'Directions de la mer'),
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
+  traceCoast: copy('Trace coastline…', 'Tracer le littoral…'),
+  editTrace: copy('Edit traced coastline', 'Modifier le littoral tracé'),
+  clearTrace: copy('Remove traced coastline', 'Supprimer le littoral tracé'),
+  traceHint: copy('The traced coastline combines with the selected sea directions.', 'Le littoral tracé se combine aux directions de mer sélectionnées.'),
+  traceUnused: copy('The traced coastline is not used with this source.', 'Le littoral tracé n’est pas utilisé avec cette source.'),
+  traced: copy('Traced', 'Tracé'),
   none: copy('Inland', 'Intérieur des terres'), island: copy('Island', 'Île'), archipelago: copy('Archipelago', 'Archipel'),
   peninsula: copy('Peninsula', 'Presqu’île'),
   quick: copy('Create the terrain', 'Créer le terrain'), coastline: copy('Coasts', 'Côtes'),
@@ -43,7 +54,7 @@ const ui = {
   basics: copy('Relief and climate', 'Relief et climat'), procedural: copy('Procedural terrain', 'Relief procédural'),
   climate: copy('Detailed climate', 'Climat détaillé'), neural: copy('Neural generation', 'Génération neuronale'),
   models: copy('Models and local services', 'Modèles et services locaux'), erosion: copy('Detailed erosion', 'Érosion détaillée'),
-  expertErosion: copy('Super advanced · erosion', 'Super avancé · érosion'),
+  expertErosion: copy('Expert settings', 'Paramètres experts'),
   refinement: copy('Fractal refinement', 'Raffinement fractal'), hydrology: copy('Hydrology', 'Hydrologie'),
   rustWater: copy('Rust hydrology parameters', 'Paramètres hydrologiques Rust'), vectorWater: copy('Vector hydrology parameters', 'Paramètres hydrologiques vectoriels'),
   forest: copy('Forest and clearings', 'Forêts et clairières'),
@@ -104,6 +115,9 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const change = () => { bindings.onChange(); sync(); };
   const get = (path: string): unknown => {
     const settings = bindings.getSettings();
+    if (path === 'terrain.sampleSpacing' && heightmapPixels(settings)) return adaptedExtent(settings) / heightmapPixels(settings)!;
+    if (path==='terrain.coastMask')return settings.terrain?.coastMask??{none:0,N:1,E:4,S:16,W:64,random:255}[settings.options.coast];
+    if (path==='terrain.islandMode')return settings.terrain?.islandMode??'island';
     if (path==='terrain.procedural.preset')return settings.terrain?.procedural?.preset??'classic';
     if (path==='terrain.procedural.enabled.phasor')return settings.terrain?.procedural?.enabled?.phasor??isCompactProcedural({source:settings.runtime?.source,procedural:settings.terrain?.procedural});
     if (path==='terrain.procedural.biome')return settings.terrain?.procedural?.biome??true;
@@ -122,9 +136,11 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   };
   const set = (path: string, value: unknown) => {
     const settings = bindings.getSettings();
-    if (path === 'terrain.coastMask' && Number(value) !== 0 && settings.terrain?.procedural?.enabled?.coasts === false) settings.terrain.procedural.enabled.coasts = true;
+    if (path === 'terrain.coastMask' && Number(value) !== 0 && settings.terrain?.procedural?.enabled) { settings.terrain.procedural.enabled.coasts = true; settings.terrain.procedural.enabled.coastCut = true; }
     if (path.startsWith('runtime.') && !settings.runtime) settings.runtime = { backend: 'rust', compute: 'auto', source: 'procedural' };
-    if (path === 'terrain.climate') {
+    if (path === 'terrain.sampleSpacing' && typeof value === 'number' && setHeightmapDefinition(settings, value)) {
+      // Size and image definition edit the same footprint.
+    } else if (path === 'terrain.climate') {
       setTerrainClimateChoice(settings, String(value));
     } else {
       if (path.startsWith('terrain.climateValues.') && !settings.terrain?.climateValues) {
@@ -142,18 +158,19 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     change();
   };
   const form = (host: HTMLElement, fields: readonly ParameterField[]) => { const mounted = mountParameterForm(host, fields, { getValue: get, setValue: set, disabled: bindings.disabled }); forms.push(mounted); return mounted; };
-  const group = (title: string, fields: readonly ParameterField[], open = false, host: HTMLElement = root): HTMLDetailsElement => {
-    const details = document.createElement('details'); details.className = 'terrain-control-group'; details.open = open;
-    const summary = document.createElement('summary'); setText(summary, title); details.append(summary);
-    const body = document.createElement('div'); body.className = 'terrain-group-body'; details.append(body); host.append(details);
+  // Groups are only shown inside the advanced relief view: a titled block, never a second disclosure level.
+  const group = (title: string, fields: readonly ParameterField[], host: HTMLElement = root): HTMLElement => {
+    const block = document.createElement('section'); block.className = 'terrain-control-group';
+    const heading = document.createElement('h4'); heading.className = 'terrain-group-title'; setText(heading, title); block.append(heading);
+    const body = document.createElement('div'); body.className = 'terrain-group-body'; block.append(body); host.append(block);
     form(body, fields.filter(field => !isTerrainExpertControl(field.path)));
     const expert = fields.filter(field => isTerrainExpertControl(field.path));
     if (expert.length) {
-      const advanced = document.createElement('details'); advanced.className = 'terrain-super-advanced';
-      const label = document.createElement('summary'); setText(label, ui.expertErosion);
-      advanced.append(label); body.append(advanced); form(advanced, expert);
+      const fine = document.createElement('div'); fine.className = 'terrain-super-advanced';
+      const label = document.createElement('h5'); label.className = 'terrain-fine-title'; setText(label, ui.expertErosion);
+      fine.append(label); body.append(fine); form(fine, expert);
     }
-    return details;
+    return block;
   };
   const button = (host: HTMLElement, label: string, action: () => void, id?: string): HTMLButtonElement => {
     const result = document.createElement('button'); result.type = 'button'; if (id) result.id = id; setText(result, label);
@@ -172,7 +189,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const classicNote = document.createElement('p'); classicNote.className = 'hint'; setText(classicNote, ui.classicNote); source.append(classicNote);
   const importedNote = document.createElement('p'); importedNote.className = 'hint'; setText(importedNote, ui.importedNote); source.append(importedNote);
   const inputActions = document.createElement('div'); inputActions.className = 'terrain-presets'; source.append(inputActions);
-  button(inputActions, ui.import, () => { sketchHost.querySelector<HTMLInputElement>('[data-id="file"]')?.click(); }, 'terrain-import-heightmap');
+  button(inputActions, ui.import, () => { sketchHost.querySelector<HTMLInputElement>('[data-id="heightmap-file"]')?.click(); }, 'terrain-import-heightmap');
   button(inputActions, ui.paint, () => { sketchHost.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); sketchHost.querySelector<HTMLButtonElement>('[data-id="edit"]')?.click(); }, 'terrain-paint-regions');
   const extent = document.createElement('fieldset'); extent.className = 'terrain-extent';
   const extentLegend = document.createElement('legend'); setText(extentLegend, ui.width); extent.append(extentLegend);
@@ -216,8 +233,9 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const compassButtons = new Map<string, HTMLButtonElement>();
   for (const direction of ['NW', 'N', 'NE', 'W', 'center', 'E', 'SW', 'S', 'SE'] as const) {
     // The centre is the island: sea on all eight sides (archipelago and peninsula are in the list beside it).
-    if (direction === 'center') { const center = button(compass, ui.island, () => { const s = bindings.getSettings(), island = Number(get('terrain.coastMask')) === 255 && (get('terrain.islandMode') ?? 'island') === 'island'; if (!island) writeSettingPath(s, 'terrain.islandMode', 'island'); set('terrain.coastMask', island ? 0 : 255); }, 'terrain-coast-all'); center.setAttribute('aria-label', ui.island); center.setAttribute('title', ui.island); coastArt(center, 'island'); compassButtons.set('all', center); continue; }
+    if (direction === 'center') { const center = button(compass, ui.island, () => { const s = bindings.getSettings(), island = Number(get('terrain.coastMask')) === 255 && (get('terrain.islandMode') ?? 'island') === 'island'; if (!island) writeSettingPath(s, 'terrain.islandMode', 'island'); set('terrain.coastMask', island ? 0 : 255); }, 'terrain-coast-all'); center.style.gridArea='2 / 2';center.setAttribute('aria-label', ui.island); center.setAttribute('title', ui.island); coastArt(center, 'island'); compassButtons.set('all', center); continue; }
     const coast = button(compass, direction, () => set('terrain.coastMask', toggleCoastDirection(Number(get('terrain.coastMask')), direction)), `terrain-coast-${direction}`);
+    const position=['NW','N','NE','W','center','E','SW','S','SE'].indexOf(direction);coast.style.gridArea=`${Math.floor(position/3)+1} / ${position%3+1}`;
     coast.dataset.coast = direction; coast.dataset.settingPath = 'terrain.coastMask';
     coast.setAttribute('aria-label', seaNames[direction][0]); coast.setAttribute('title', seaNames[direction][0]); compassButtons.set(direction, coast);
     const cardinal=['N','E','S','W'].indexOf(direction),diagonal=['NE','SE','SW','NW'].indexOf(direction);
@@ -239,6 +257,10 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     input.addEventListener('change', onChoice); cleanup.push(() => input.removeEventListener('change', onChoice));
   }
   coasts.append(coastPresets); coasts.id = 'terrain-coast-panel';
+  const traceActions=document.createElement('div');traceActions.className='terrain-coast-trace-actions heightmap-actions';
+  const traceButton=button(traceActions,ui.traceCoast,()=>sketchControls?.open('coast'),'terrain-coast-trace');
+  const traceClear=button(traceActions,ui.clearTrace,()=>{const s=bindings.getSettings();if(s.terrain)delete s.terrain.coastTrace;change();},'terrain-coast-trace-clear');
+  const traceHint=document.createElement('p');traceHint.className='hint terrain-coast-trace-hint';setText(traceHint,ui.traceHint);coasts.append(traceActions,traceHint);
   const quickOptions = document.createElement('div'); quickOptions.className = 'terrain-quick-options'; root.append(quickOptions);
   const option = (label: string, id: string, panel: HTMLElement, artClass: string) => {
     const control = button(quickOptions, label, () => { panel.hidden = control.getAttribute('aria-expanded') === 'true'; control.setAttribute('aria-expanded', String(!panel.hidden)); }, id);
@@ -254,18 +276,29 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const coastOption = option(ui.coastline, 'terrain-coast-toggle', coasts, 'coast-art coast-art-island'); root.append(coasts);
   const waterPanel = document.createElement('div'); waterPanel.id = 'terrain-hydrology-panel'; waterPanel.className = 'terrain-option-panel';
   const waterOption = option(ui.hydrology, 'terrain-hydrology-toggle', waterPanel, 'art-hydrology'); root.append(waterPanel);
-  group(ui.hydrology, terrainHydrologyFields, true, waterPanel);
+  group(ui.hydrology, terrainHydrologyFields, waterPanel);
   const riverLengthInputs = Array.from(waterPanel.querySelectorAll<HTMLInputElement>('[data-setting-path="terrain.hydrology.minRiverLength"], [data-slider-path="terrain.hydrology.minRiverLength"]'));
-  const rustWater = group(ui.rustWater, terrainRustHydrologyFields, true, waterPanel);
-  const vectorWater = group(ui.vectorWater, terrainVectorHydrologyFields, true, waterPanel);
-  group(ui.compute, terrainSourceFields.filter(field => field.path !== 'runtime.source'));
+  const rustWater = group(ui.rustWater, terrainRustHydrologyFields, waterPanel);
+  const vectorWater = group(ui.vectorWater, terrainVectorHydrologyFields, waterPanel);
+  group(ui.compute, terrainSourceFields.filter(field => field.path !== 'runtime.source' && (runtimeOptions().profile === 'local' || field.path !== 'runtime.backend')));
   const basics = group(ui.basics, terrainBasicFields.filter(field => !['options.biome', 'terrain.relief'].includes(field.path)));
   const classic = group(ui.classic, terrainClassicFields.filter(field => field.path !== 'options.relief'));
   classic.querySelector('.terrain-group-body')!.prepend(classicNote);
   const inputGroup = group(ui.sourceHelp, []); inputGroup.querySelector('.terrain-group-body')!.append(source);
   const neuralNote = document.createElement('p'); neuralNote.className = 'hint terrain-neural-note'; setText(neuralNote, ui.neuralNote); root.append(neuralNote);
   const procedural = group(ui.procedural, terrainProceduralFields.filter(field => !['terrain.motifSize', 'terrain.sampleSpacing'].includes(field.path)));
-  form(extent, [terrainProceduralFields.find(field => field.path === 'terrain.sampleSpacing')!]);
+  const spacingField = { ...terrainProceduralFields.find(field => field.path === 'terrain.sampleSpacing')! };
+  const spacingDefaults = { min: spacingField.min, max: spacingField.max };
+  form(extent, [spacingField]);
+  const imageDefinition = document.createElement('small'); imageDefinition.className = 'parameter-help';
+  const spacingRow = extent.querySelector<HTMLElement>('[data-field-path="terrain.sampleSpacing"]')!;
+  spacingRow.append(imageDefinition);
+  const imageDefinitionText = (): string => {
+    const settings = bindings.getSettings(), pixels = heightmapPixels(settings) ?? 1;
+    const resolution = convertUnits(adaptedExtent(settings) / pixels, 'm', displayUnit('m', getDistanceUnit())).toLocaleString(numberLocale(), { maximumFractionDigits: 2 });
+    return translate(ui.imageResolution).replace('{resolution}', resolution).replace('{unit}', displayUnit('m', getDistanceUnit()))
+      + '. ' + translate(ui.imagePixels).replaceAll('{pixels}', pixels.toLocaleString(numberLocale()));
+  };
   const spacingHelp = extent.querySelector<HTMLElement>('.parameter-help'); if (spacingHelp) sizeHelp.append(spacingHelp);
   const compactHelp = button(procedural, '? · Phasor', () => openMethodNote('compact-terrain-phasor'), 'terrain-phasor-method');
   const climate = group(ui.climate, terrainClimateFields);
@@ -273,7 +306,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   const histActions = document.createElement('div'); histActions.className = 'terrain-presets'; neural.append(histActions);
   button(histActions, ui.zero, () => set('terrain.neuralTuning.histogram', [0, 0, 0, 0, 0]));
   button(histActions, ui.hero, () => set('terrain.neuralTuning.histogram', [0, 0, 0, 1, 1.5]));
-  const models = group(ui.models, terrainModelFields);
+  const models = group(ui.models, terrainModelFields.filter(field => runtimeOptions().profile === 'local' || !['runtime.localServer', 'runtime.neuralServer'].includes(field.path)));
   const modelNote = document.createElement('p'); modelNote.className = 'hint'; setText(modelNote, ui.browserModels); models.append(modelNote);
   const erosion = group(ui.erosion, terrainErosionFields);
   const erosionHint = document.createElement('p'); erosionHint.className = 'hint'; setText(erosionHint, ui.erosionHelp); erosion.append(erosionHint);
@@ -285,6 +318,10 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   sketchControls = mountTerrainSketchControls(sketchHost, { ...bindings, onChange: change });
   bindTree(root);
   function sync(): void {
+    const nativePixels = heightmapPixels(bindings.getSettings());
+    const currentCapability = terrainCapability({ ...effectiveTerrainSettings(bindings.getSettings(), adaptedExtent(bindings.getSettings())), backend: bindings.getSettings().runtime?.backend });
+    spacingField.min = nativePixels ? currentCapability.minWidth / nativePixels : spacingDefaults.min;
+    spacingField.max = nativePixels ? currentCapability.maxWidth / nativePixels : spacingDefaults.max;
     for (const mounted of forms) mounted.sync();
     // The shared physical-unit editor resets steps to `any`; retain this knob's 10 m increment.
     for (const input of riverLengthInputs) input.step = String(convertUnits(10, 'm', displayUnit('m', getDistanceUnit())));
@@ -305,10 +342,17 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (metres < min || metres > max) width.setAttribute('aria-invalid', 'true'); else width.removeAttribute('aria-invalid');
     for (const preset of Array.from(presetRow.querySelectorAll<HTMLButtonElement>('button'))) preset.disabled = Number(preset.dataset.extent) < min || Number(preset.dataset.extent) > max || (bindings.disabled?.() ?? false);
     const spacingControl = root.querySelector<HTMLInputElement>('[data-setting-path="terrain.sampleSpacing"]');
-    if (spacingControl) { spacingControl.min = String(convertUnits(capability.minSpacing,'m',displayUnit('m',getDistanceUnit()))); spacingControl.max = String(convertUnits(Math.min(1000, metres / 16),'m',displayUnit('m',getDistanceUnit()))); spacingControl.step = 'any'; spacingControl.disabled = isClassicEngine || capability.kind === 'finite-neural' || (bindings.disabled?.() ?? false); }
+    if (spacingControl) { spacingControl.min = String(convertUnits(nativePixels ? min / nativePixels : capability.minSpacing,'m',displayUnit('m',getDistanceUnit()))); spacingControl.max = String(convertUnits(nativePixels ? max / nativePixels : Math.min(1000, metres / 16),'m',displayUnit('m',getDistanceUnit()))); spacingControl.step = 'any'; spacingControl.disabled = !nativePixels && (isClassicEngine || capability.kind === 'finite-neural') || (bindings.disabled?.() ?? false); }
+    imageDefinition.hidden = !nativePixels;
+    sizeHelp.hidden = !!nativePixels;
+    spacingHelp?.toggleAttribute('hidden', !!nativePixels);
+    const spacingSlider = spacingRow.querySelector<HTMLInputElement>('[data-slider-path="terrain.sampleSpacing"]');
+    if (spacingSlider) { spacingSlider.hidden = !!nativePixels; spacingSlider.disabled = !!nativePixels || !!spacingControl?.disabled; }
+    if (nativePixels) setDynamicText(imageDefinition, imageDefinitionText);
     try {
       const french = document.documentElement.lang.startsWith('fr');
-      if (isClassicEngine) definitionHint.textContent = french ? 'Source TypeScript classique · définition propre au moteur.' : 'Classic TypeScript source · engine-defined spacing.';
+      if (nativePixels) { definitionHint.textContent = ''; spacingControl?.removeAttribute('aria-invalid'); }
+      else if (isClassicEngine) definitionHint.textContent = french ? 'Source TypeScript classique · définition propre au moteur.' : 'Classic TypeScript source · engine-defined spacing.';
       else {
         const definition = sourceDefinition(effective);
         const runtime = settings.runtime;
@@ -322,25 +366,35 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
           : ' · regional conditioning at 7.68 km; the model always computes at 30 m, including for coarser output';
       }
       spacingControl?.removeAttribute('aria-invalid');
-    } catch (error) { definitionHint.textContent = error instanceof Error ? error.message : String(error); spacingControl?.setAttribute('aria-invalid', 'true'); }
-    for (const [direction, coast] of compassButtons) { const mask = Number(get('terrain.coastMask')); coast.setAttribute('aria-pressed', String(direction === 'all' ? mask === 255 && (get('terrain.islandMode') ?? 'island') === 'island' : !!(mask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = bindings.disabled?.() ?? false; }
-    for (const [value, input] of coastChoices) {
-      const mask = Number(get('terrain.coastMask'));
-      input.checked = value === 'none' ? mask === 0 : mask === 255 && get('terrain.islandMode') === value;
-      input.disabled = bindings.disabled?.() ?? false;
-    }
+    } catch (error) { setText(definitionHint, error instanceof Error ? error.message : String(error)); spacingControl?.setAttribute('aria-invalid', 'true'); }
+    const hasTrace=!!settings.terrain?.coastTrace;
     const importedSurface = !!(settings.terrain?.sketch?.processing || settings.options.importedHeight);
     const isNeural = !['procedural', 'procedural-phasor'].includes(String(get('runtime.source'))) && !importedSurface, isClassic = get('runtime.backend') === 'typescript';
+    const traceActive=canUseTracedCoast(settings)&&!!settings.terrain?.coastTrace&&!!coastTraceMode(settings.terrain.coastTrace);
+    const symbolic = !!settings.terrain?.zones || coasts.dataset.reliefSource === 'symbolic';
+    const compassMask=settings.terrain?.coastMask??{none:0,N:1,E:4,S:16,W:64,random:255}[settings.options.coast];
+    const compassMode=settings.terrain?.islandMode??'island';
+    coastPresets.hidden=importedSurface||symbolic;
+    compassButtons.get('all')!.hidden=importedSurface||symbolic;
+    for (const [direction, coast] of compassButtons) { coast.setAttribute('aria-pressed', String(direction === 'all' ? compassMask === 255 && compassMode === 'island' : !!(compassMask & 1 << coastDirections.indexOf(direction as typeof coastDirections[number])))); coast.disabled = (bindings.disabled?.() ?? false); }
+    for (const [value, input] of coastChoices) {
+      input.checked = value === 'none' ? compassMask === 0 : compassMask === 255 && compassMode === value;
+      input.disabled = (bindings.disabled?.() ?? false);
+    }
+    traceActions.hidden=importedSurface||isClassic||!!settings.decor;
+    traceClear.hidden=!hasTrace;traceHint.hidden=!hasTrace;
+    setText(traceHint,traceActive?ui.traceHint:ui.traceUnused);
+    traceButton.disabled=traceClear.disabled=bindings.disabled?.()??false;setText(traceButton,hasTrace?ui.editTrace:ui.traceCoast);
     importedNote.hidden = !importedSurface || isClassic;
     classicNote.hidden = !isClassic; classic.hidden = !isClassic;
     for (const section of [basics, climate, refinement, forest, inputGroup]) section.hidden = isClassic;
-    coastOption.control.hidden = isClassic || importedSurface;
-    coasts.hidden = coastOption.control.hidden || coastOption.control.getAttribute('aria-expanded') !== 'true';
+    coastOption.control.hidden = isClassic;
+    coasts.hidden = isClassic && !hasTrace || !coasts.closest('.stage-chain') && coastOption.control.getAttribute('aria-expanded') !== 'true';
     waterOption.control.hidden = isClassic;
     waterPanel.hidden = isClassic || waterOption.control.getAttribute('aria-expanded') !== 'true';
     quickOptions.hidden = isClassic;
     const mask = Number(get('terrain.coastMask'));
-    setText(coastOption.badge, mask === 0 ? ui.none : mask === 255 ? get('terrain.islandMode') === 'archipelago' ? ui.archipelago : ui.island : `${coastDirections.filter((_, index) => mask & 1 << index).length} / 8`);
+    setText(coastOption.badge, traceActive ? ui.traced : mask === 0 ? ui.none : mask === 255 ? get('terrain.islandMode') === 'archipelago' ? ui.archipelago : ui.island : `${coastDirections.filter((_, index) => mask & 1 << index).length} / 8`);
     const compact = !isNeural && get('terrain.procedural.preset') === 'compact';
     const generationCompute = root.querySelector<HTMLSelectElement>('[data-setting-path="terrain.generationCompute"]');
     if (generationCompute) for (const option of Array.from(generationCompute.options)) option.disabled = compact && !!option.value && !['cpu','gpu-erosion','native'].includes(option.value);
@@ -359,13 +413,13 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     root.querySelector<HTMLElement>('[data-field-path="terrain.neuralTuning.reliefScale"]')!.hidden = mode !== 'scale';
     root.querySelector<HTMLElement>('[data-field-path="terrain.neuralTuning.reliefFixed"]')!.hidden = mode !== 'fixed';
     const relief = get('terrain.relief');
-    root.querySelector<HTMLElement>('[data-field-path="terrain.mountainMix"]')!.hidden = relief !== 'mixed' && !(get('terrain.environment') === 'mixed' && ['plateau', 'volcano', 'caldera'].includes(String(relief)));
-    root.querySelector<HTMLElement>('[data-field-path="terrain.environment"]')!.hidden = !['plateau', 'volcano', 'caldera'].includes(String(relief));
+    root.querySelector<HTMLElement>('[data-field-path="terrain.mountainMix"]')!.hidden = symbolic || relief !== 'mixed' && !(get('terrain.environment') === 'mixed' && ['plateau', 'volcano', 'caldera'].includes(String(relief)));
+    root.querySelector<HTMLElement>('[data-field-path="terrain.environment"]')!.hidden = symbolic || !['plateau', 'volcano', 'caldera'].includes(String(relief));
     const reliefSelect = root.querySelector<HTMLSelectElement>('[data-setting-path="terrain.relief"]')!;
-    reliefSelect.closest<HTMLElement>('[data-field-path]')!.hidden = settings.terrain?.sketch?.processing === 'surface' || isClassic;
-    root.querySelector<HTMLElement>('[data-field-path="options.relief"]')!.hidden = !isClassic;
+    reliefSelect.closest<HTMLElement>('[data-field-path]')!.hidden = symbolic || settings.terrain?.sketch?.processing === 'surface' || isClassic;
+    root.querySelector<HTMLElement>('[data-field-path="options.relief"]')!.hidden = symbolic || !isClassic;
     scale.closest<HTMLElement>('[data-field-path]')!.hidden = isNeural || importedSurface || isClassic;
-    root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || isClassic;
+    root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || symbolic || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.climate"]')!.hidden = isClassic;
     root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic;
     for (const option of Array.from(reliefSelect.options)) option.disabled = isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value) || compact && !['flat','hills','valley','canyon','mountains','mixed','high-mountains'].includes(option.value);

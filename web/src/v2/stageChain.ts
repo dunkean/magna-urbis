@@ -9,8 +9,11 @@ import { atlasUrl, bindTree, getLanguage, numberLocale, registerMessages, setDyn
 import { iconImg, type IconId } from './stageIcons';
 import { isCompactProcedural, generationStageActive, type GenerationStage } from '../../../rust/bridge/terrainGenerationRecipe';
 import { effectiveTerrainSettings } from './terrainSettings';
+import { createReliefSources, RELIEF_TABS, reliefTab, type ReliefTab } from './reliefSources';
 import { adaptedExtent } from './settings';
+import { mountHeightmapFit } from './heightmapLibrary';
 import { stageLed, terrainStageValidityKeys, settlementStageValidityKeys, cityStageValidityKeys } from './stageValidity';
+import { mountSectionIndex } from './sectionIndex';
 import type { TerrainControls } from './terrainControls';
 import type { V2Progress, V2Settings, V2TerrainSettings } from './contracts';
 import type { World } from '../gen/types';
@@ -32,6 +35,7 @@ const T = {
   needTerrain: copy('Create the relief first', 'Créez d’abord le relief'), needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
   needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'), procedural: copy('Procedural', 'Procédural'), neural: copy('Neural', 'Neuronal'),
   heightmap: copy('Heightmap', 'Carte de hauteurs'), source: copy('Relief source', 'Source du relief'),
+  loadHeightmap: copy('Load a heightmap', 'Charger une carte de hauteurs'), paintSymbolic: copy('Paint a symbolic map', 'Peindre une carte symbolique'),
   view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'),
   noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),
@@ -46,8 +50,9 @@ const T = {
 };
 /** Relief-source fields that only apply to some sources. */
 const SOURCE_FIELDS: Record<string, readonly StageContext['relief'][]> = {
-  'terrain.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural'], 'terrain.procedural.preset': ['procedural'],
-  'terrain.environment': ['procedural'], 'terrain.mountainMix': ['procedural', 'neural'], 'terrain.erosion': ['procedural', 'heightmap'],
+  'terrain.phasor.quality': ['procedural'], 'terrain.procedural.regionalN': ['procedural'], 'terrain.procedural.surfaceN': ['procedural'], 'terrain.procedural.coastAfter': ['procedural'],
+  'terrain.relief': ['procedural', 'neural'], 'options.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural', 'symbolic'], 'terrain.procedural.preset': ['procedural'],
+  'terrain.environment': ['procedural'], 'terrain.mountainMix': ['procedural', 'neural'], 'terrain.erosion': ['procedural', 'heightmap', 'symbolic'],
 };
 for (const family of FAMILIES) registerMessages({ [family.label.en]: family.label, [family.summary.en]: family.summary });
 for (const stage of STAGES) registerMessages({ [stage.label.en]: stage.label, [stage.summary.en]: stage.summary, ...(stage.toggle?.reason ? { [stage.toggle.reason.en]: stage.toggle.reason } : {}) });
@@ -99,8 +104,9 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const forms: ParameterForm[] = [], syncers: (() => void)[] = [];
   root.addEventListener('terrain-defaults-ready', () => { forms.forEach(form => form.sync()); });
   const rows = new Map<string, Row>();
-  const stashes: { zones?: V2TerrainSettings['zones']; drawing?: V2TerrainSettings['drawing']; coastMask?: number; heightmap?: { drawing?: V2TerrainSettings['drawing']; sketch?: V2TerrainSettings['sketch']; image?: V2Settings['options']['importedHeight'] }; neural?: string } = {};
-  let pendingHeightmap = false, family: StageFamily = 'region';
+  const stashes: { coastMask?: number; coastTrace?: V2TerrainSettings['coastTrace'] } = {};
+  const sources = createReliefSources(get, () => Number(b.terrain.access.get('terrain.coastMask')));
+  let family: StageFamily = 'region';
   const timings = new Map<string, { ms: number; state: 'done' | 'cached' | 'stale' | 'running' | '' }>();
   const savedKeys = new Map<string, string>();
   let runKeys = new Map<string, string>();
@@ -123,7 +129,12 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const advancedClose = document.createElement('button'); advancedClose.type = 'button'; setText(advancedClose, T.close);
   advancedHead.append(advancedTitle, advancedClose);
   const advancedContent = document.createElement('div'); advancedContent.className = 'relief-advanced-content';
-  advanced.append(advancedHead, advancedContent); root.append(advanced);
+  // The scroller holds a column flow: a multicol box of fixed height would overflow sideways instead.
+  const advancedColumns = document.createElement('div'); advancedColumns.className = 'relief-advanced-columns'; advancedContent.append(advancedColumns);
+  // One page in generation order: every stage card is open; the index jumps to a stage.
+  const advancedIndex = mountSectionIndex(advancedContent, () => [...advancedThemes.values()].map(({ section }) => ({ section, heading: section.querySelector<HTMLElement>('h3')! })));
+  advancedIndex.nav.classList.add('relief-advanced-index');
+  advanced.append(advancedHead, advancedIndex.nav, advancedContent); root.append(advanced);
   const advancedButton = document.createElement('button'); advancedButton.type = 'button'; advancedButton.id = 'relief-advanced-open'; advancedButton.className = 'relief-advanced-open';
   setText(advancedButton, T.advanced); advancedButton.setAttribute('aria-controls', advanced.id); advancedButton.setAttribute('aria-expanded', 'false');
   const modifyButton=document.createElement('button');modifyButton.type='button';modifyButton.id='relief-modify-open';modifyButton.className='relief-modify-open';modifyButton.setAttribute('aria-haspopup','dialog');modifyButton.setAttribute('aria-controls','relief-paint-dialog');
@@ -131,27 +142,17 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const modifyCaption=document.createElement('span');setText(modifyCaption,copy('Modify relief','Modifier le relief'));modifyButton.append(modifyIcon,modifyCaption);modifyButton.onclick=()=>b.terrain.openEditor('modify');
   let advancedReturn: HTMLElement = advancedButton;
   const advancedThemes = new Map<string, { section: HTMLElement }>();
-  const packAdvanced = () => {
-    if (!advanced.matches(':popover-open')) return;
-    const cards = [...advancedThemes.values()].map(theme => theme.section).filter(section => !section.hidden);
-    advancedContent.classList.remove('is-packed');
-    for (const card of cards) card.style.gridRowEnd = '';
-    const heights = cards.map(card => card.getBoundingClientRect().height);
-    advancedContent.classList.add('is-packed');
-    cards.forEach((card, index) => { card.style.gridRowEnd = `span ${Math.ceil((heights[index] + 10) / 12)}`; });
-  };
-  let packFrame = 0;
-  const cardResize = new ResizeObserver(() => { if (!packFrame) packFrame = requestAnimationFrame(() => { packFrame = 0; packAdvanced(); }); });
+  // Cards flow in columns (CSS), so reading and focus order follow the generation order.
   const addTheme = (id: string, label: string, ...contents: HTMLElement[]) => {
     const section = document.createElement('section'); section.className = 'relief-theme'; section.id = `relief-theme-${id}`; section.dataset.stageControl = id;
     const heading = document.createElement('h3'); heading.id = `${section.id}-title`; setText(heading, label); section.setAttribute('aria-labelledby', heading.id); section.append(heading, ...contents);
-    advancedContent.append(section); advancedThemes.set(id, { section }); cardResize.observe(section);
+    advancedColumns.append(section); advancedThemes.set(id, { section });
   };
   const positionAdvanced = () => {
     if (!advanced.matches(':popover-open')) return;
     const map = document.querySelector('.map-area')?.getBoundingClientRect(); if (!map) return;
     Object.assign(advanced.style, { left: `${map.left}px`, top: `${map.top}px`, width: `${map.width}px`, height: `${map.height}px` });
-    packAdvanced();
+    advancedIndex.sync();
   };
   const closeAdvanced = (restoreFocus = true) => {
     if (!advanced.matches(':popover-open')) return;
@@ -268,22 +269,17 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   }
 
   // ── Context and toggles ──────────────────────────────────────────────────
-  const reliefOf = (settings: V2Settings): StageContext['relief'] => {
-    if (settings.terrain?.drawing || settings.terrain?.sketch?.processing || settings.options.importedHeight || pendingHeightmap) return 'heightmap';
-    const source = settings.runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
-    return source === 'procedural' || source === 'procedural-phasor' ? 'procedural' : 'neural';
-  };
+  const reliefOf = () => sources.current();
   function context(): StageContext {
-    const settings = get(), world = b.getWorld(), relief = String(b.terrain.access.get('terrain.relief') ?? settings.options.relief);
-    return { relief: reliefOf(settings), proceduralBase: !!settings.terrain?.drawing, classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['flat', 'plateau', 'volcano', 'caldera'].includes(relief),
+    const settings = get(), world = b.getWorld(), relief = effectiveTerrainSettings(settings, adaptedExtent(settings)).relief;
+    return { relief: reliefOf(), classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['flat', 'plateau', 'volcano', 'caldera'].includes(relief),
       urban: settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript', hasTerrain: !!world, hasRegion: !!world?.settlements?.length, place: b.getPlace()?.key };
   }
   const compact = () => { const s = get(); return isCompactProcedural({ source: s.runtime?.source, procedural: s.terrain?.procedural }); };
   function toggleState(stage: StageDef): boolean {
     const t = stage.toggle, settings = get();
     if (!t || t.kind === 'unavailable') return true;
-    if (t.kind === 'coasts') return Number(b.terrain.access.get('terrain.coastMask') ?? 0) !== 0;
-    if (t.kind === 'mask') return !!(settings.terrain?.drawing||settings.terrain?.zones);
+    if (t.kind === 'coasts') return settings.terrain?.procedural?.enabled?.coasts !== false && effectiveTerrainSettings(settings, adaptedExtent(settings)).coastMask !== 0;
     if (t.kind === 'roads') return settings.region?.roads !== null;
     const value = t.path!.startsWith('terrain.procedural.') ? readSettingPath(settings, t.path!) : b.terrain.access.get(t.path!);
     if (typeof value === 'boolean') return value;
@@ -293,14 +289,20 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   function toggle(stage: StageDef): void {
     const t = stage.toggle!, settings = get(), on = toggleState(stage);
     if (t.kind === 'coasts') {
-      if (on) { stashes.coastMask = Number(b.terrain.access.get('terrain.coastMask')); b.terrain.access.set('terrain.coastMask', 0); }
-      else b.terrain.access.set('terrain.coastMask', stashes.coastMask || 1);
-    } else if (t.kind === 'mask') {
-      settings.terrain ??= {};
-      if (on) { stashes.zones = settings.terrain.zones;stashes.drawing=settings.terrain.drawing; delete settings.terrain.zones;delete settings.terrain.drawing; b.onChange(); b.terrain.sync(); }
-      else if (stashes.drawing) {settings.terrain.drawing=stashes.drawing;b.onChange();b.terrain.sync();}
-      else if (stashes.zones) { settings.terrain.zones = stashes.zones; b.onChange(); b.terrain.sync(); }
-      else paint();
+      settings.terrain ??= {};settings.terrain.procedural ??= {};settings.terrain.procedural.enabled ??= {};
+      settings.terrain.procedural.enabled.coasts=!on;settings.terrain.procedural.enabled.coastCut=!on;
+      if (on) {
+        stashes.coastMask = settings.terrain?.coastMask ?? { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 }[settings.options.coast];
+        stashes.coastTrace = settings.terrain?.coastTrace;
+        if (settings.terrain) delete settings.terrain.coastTrace;
+        b.terrain.access.set('terrain.coastMask', 0);
+      } else {
+        if (stashes.coastTrace) {
+          settings.terrain ??= {}; settings.terrain.coastTrace = stashes.coastTrace;
+          if (settings.terrain.procedural?.enabled?.coasts === false) settings.terrain.procedural.enabled.coasts = true;
+        }
+        b.terrain.access.set('terrain.coastMask', stashes.coastMask ?? (settings.terrain?.zones ? 0 : 1));
+      }
     } else if (t.kind === 'roads') {
       settings.region ??= {}; settings.region.roads = on ? null : {}; b.onRegionChange();
     } else if (t.path!.startsWith('terrain.procedural.')) {
@@ -308,43 +310,32 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     } else b.terrain.access.set(t.path!, !on);
     markStale(stage.id); sync();
   }
-  const paint = () => b.terrain.openEditor('draw');
+  const paint = () => b.terrain.openEditor('symbolic');
 
   // ── Relief source alternatives ───────────────────────────────────────────
   function setSource(mode: StageContext['relief']): void {
-    const settings = get(), current = reliefOf(settings);
-    if (mode === current && !(mode === 'heightmap' && pendingHeightmap)) { if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' }); if (mode === 'neural') b.onNeuralSelected?.(); return; }
-    if (current === 'heightmap' && mode !== 'heightmap') {
-      stashes.heightmap = { drawing:settings.terrain?.drawing,sketch: settings.terrain?.sketch?.processing ? settings.terrain.sketch : undefined, image: settings.options.importedHeight };
-      if(settings.terrain?.drawing)delete settings.terrain.drawing;
-      if (settings.terrain?.sketch?.processing) delete settings.terrain.sketch;
-      delete settings.options.importedHeight; pendingHeightmap = false;
-    }
-    if (mode === 'procedural') { if (current === 'neural') stashes.neural = String(settings.runtime?.source); b.terrain.access.set('runtime.source', 'procedural'); }
-    else if (mode === 'neural') b.terrain.access.set('runtime.source', stashes.neural ?? 'neural-wasm');
-    else {
-      if (current === 'neural') stashes.neural = String(settings.runtime?.source);
-      const stash = stashes.heightmap;
-      if (stash?.drawing) {settings.terrain??={};settings.terrain.drawing=stash.drawing;}
-      else if (stash?.sketch) { settings.terrain ??= {}; settings.terrain.sketch = stash.sketch; }
-      else if (stash?.image) settings.options.importedHeight = stash.image;
-      else pendingHeightmap = true;
-      if (settings.runtime?.source && settings.runtime.source !== 'procedural') b.terrain.access.set('runtime.source', 'procedural');
-    }
+    if (!sources.select(mode)) { if (mode === 'neural') b.onNeuralSelected?.(); return; }
+    b.terrain.access.set('runtime.source', get().runtime!.source);
     b.onChange(); b.terrain.sync(); markStale('relief-source'); sync();
     if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' });
     if (mode === 'neural') b.onNeuralSelected?.();
   }
   function sourceSwitch(): HTMLElement {
     const group = document.createElement('div'); group.className = 'source-switch'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', translate(T.source));
-    const buttons: [StageContext['relief'], HTMLButtonElement][] = [];
-    for (const [mode, label, icon] of [['procedural', T.procedural, 'source-procedural'], ['neural', T.neural, 'source-neural'], ['heightmap', T.heightmap, 'source-heightmap']] as const) {
+    const buttons: [ReliefTab, HTMLButtonElement][] = [];
+    for (const mode of RELIEF_TABS) {
       const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'radio'); button.dataset.source = mode; button.id = `source-${mode}`;
-      const caption = document.createElement('span'); setText(caption, label); button.append(iconImg(icon, 22), caption); button.onclick = () => setSource(mode);
+      const caption = document.createElement('span'); setText(caption, T[mode]); button.append(iconImg(`source-${mode}`, 22), caption); button.onclick = () => setSource(mode === 'heightmap' ? sources.method() : mode);
+      button.onkeydown = event => {
+        const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+        if (!step) return; event.preventDefault();
+        const next = buttons[(buttons.findIndex(([, item]) => item === button) + step + buttons.length) % buttons.length][1];
+        if (!next.disabled) { next.click(); next.focus(); }
+      };
       buttons.push([mode, button]); group.append(button);
     }
     syncers.push(() => {
-      const mode = reliefOf(get()), caps = b.availability(), neuralReason = caps.checked && !caps.webgpu && !caps.python && !caps.native ? T.noNeural : undefined, busy = b.busy();
+      const mode = reliefTab(reliefOf()), caps = b.availability(), neuralReason = caps.checked && !caps.webgpu && !caps.python && !caps.native ? T.noNeural : undefined, busy = b.busy();
       for (const [value, button] of buttons) {
         button.setAttribute('aria-checked', String(value === mode)); button.tabIndex = value === mode ? 0 : -1;
         const blocked = value === 'neural' && !!neuralReason && mode !== 'neural';
@@ -361,10 +352,11 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const expertHost = (stageId: string): HTMLElement => {
     let host = expertHosts.get(stageId);
     if (!host) {
-      const details = document.createElement('details'); details.className = 'terrain-super-advanced';
-      const summary = document.createElement('summary'); setText(summary, copy('Super advanced · erosion', 'Super avancé · érosion'));
+      // Shown in place under a sub-heading: the advanced view has no further disclosure level.
+      const block = document.createElement('div'); block.className = 'terrain-super-advanced';
+      const heading = document.createElement('h5'); heading.className = 'terrain-fine-title'; setText(heading, copy('Expert settings', 'Paramètres experts'));
       host = document.createElement('div'); host.className = 'parameter-form relief-expert-fields';
-      details.append(summary, host); rows.get(stageId)!.body.append(details); expertHosts.set(stageId, host);
+      block.append(heading, host); rows.get(stageId)!.body.append(block); expertHosts.set(stageId, host);
     }
     return host;
   };
@@ -375,9 +367,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   };
   const tRoot = leftovers, sketchHost = b.terrain.sketchHost;
   root.addEventListener('relief-source-changed',event=>{
-    const settings=get();stashes.drawing=settings.terrain?.drawing;stashes.zones=settings.terrain?.zones;
-    stashes.heightmap={drawing:settings.terrain?.drawing,sketch:settings.terrain?.sketch?.processing?settings.terrain.sketch:undefined,image:settings.options.importedHeight};
-    if((event as CustomEvent).detail==='draw')pendingHeightmap=true;
+    sources.changed((event as CustomEvent).detail);
     sync();
   });
   // Composite widgets first, so their fields stay together.
@@ -388,13 +378,13 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   tRoot.querySelector<HTMLElement>('#terrain-coast-toggle')?.setAttribute('aria-expanded', 'true');
   place(sketchHost, 'relief-mask');
   const hydrology = tRoot.querySelector('#terrain-hydrology-panel');
-  for (const group of Array.from(hydrology?.querySelectorAll(':scope > details') ?? [])) { (group as HTMLDetailsElement).open = true; group.classList.add('stage-subgroup'); place(group, 'water-hydrology'); }
-  const classicGroup = tRoot.querySelector('[data-field-path="options.coast"]')?.closest('details');
-  if (classicGroup) { (classicGroup as HTMLDetailsElement).open = true; classicGroup.classList.add('stage-subgroup'); place(classicGroup.querySelector('[data-field-path="options.heightScale"]'), 'relief-heightmap-fit'); place(classicGroup.querySelector('[data-field-path="options.importSea"]'), 'relief-heightmap-fit'); place(classicGroup, 'relief-source'); }
+  for (const group of Array.from(hydrology?.querySelectorAll(':scope > .terrain-control-group') ?? [])) { group.classList.add('stage-subgroup'); place(group, 'water-hydrology'); }
+  const classicGroup = tRoot.querySelector('[data-field-path="options.coast"]')?.closest('.terrain-control-group');
+  if (classicGroup) { classicGroup.classList.add('stage-subgroup'); place(classicGroup, 'relief-source'); }
   place(tRoot.querySelector('.terrain-extent'), 'relief-source');
-  const histogram = tRoot.querySelector('[data-field-path="terrain.neuralTuning.steps"]')?.closest('details')?.querySelector(':scope > .terrain-presets');
+  const histogram = tRoot.querySelector('[data-field-path="terrain.neuralTuning.steps"]')?.closest('.terrain-control-group')?.querySelector(':scope > .terrain-presets');
   const neuralNote = tRoot.querySelector('.terrain-neural-note');
-  const modelNote = tRoot.querySelector('[data-field-path="terrain.coarseModel"]')?.closest('details')?.querySelector(':scope > p.hint');
+  const modelNote = tRoot.querySelector('[data-field-path="terrain.coarseModel"]')?.closest('.terrain-control-group')?.querySelector(':scope > p.hint');
   // Every remaining schema field goes to the stage that owns its path.
   for (const field of Array.from(tRoot.querySelectorAll<HTMLElement>('[data-field-path]'))) {
     if (field.closest('.stage-row')) continue;
@@ -413,7 +403,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     place(element, stage);
   }
   // Region controls: every field by its path; the manual list as a block.
-  const regionList = b.regionRoot.querySelector('#region-add-place')?.closest('details');
+  const regionList = b.regionRoot.querySelector('#region-add-place')?.closest('.parameter-group');
   if (regionList) { regionList.classList.add('stage-subgroup'); place(regionList, 'settle-sites'); }
   for (const field of Array.from(b.regionRoot.querySelectorAll<HTMLElement>('[data-field-path]'))) {
     if (field.closest('.stage-row')) continue;
@@ -509,16 +499,40 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   });
   // Import and terrain editing stay beside the main relief choices.
   const sidebarTools = document.createElement('section'); sidebarTools.className = 'relief-sidebar-tools'; methodPanel.after(sidebarTools);
-  const importHost = document.createElement('div'); importHost.id = 'relief-import'; sidebarTools.append(importHost);
-  const importSync = b.heightmap.source(importHost); syncers.push(() => { importHost.hidden = reliefOf(get()) !== 'heightmap'; importSync.sync(); importHost.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = b.busy(); }); });
-  const drawButton=document.createElement('button');drawButton.type='button';drawButton.id='relief-symbolic-open';drawButton.className='relief-draw-open';drawButton.setAttribute('aria-haspopup','dialog');drawButton.setAttribute('aria-controls','relief-paint-dialog');
-  const drawIcon=modifyIcon.cloneNode(true);const drawCaption=document.createElement('span');setText(drawCaption,copy('Draw relief','Dessiner le relief'));drawButton.append(drawIcon,drawCaption);drawButton.onclick=()=>b.terrain.openEditor('draw');importHost.prepend(drawButton);
-  syncers.push(()=>{drawButton.disabled=b.busy()||context().classicTerrain;modifyButton.disabled=b.busy()||!b.getWorld()||context().classicTerrain;});
-  root.append(sketchHost);
-  for (const path of ['options.heightScale', 'options.importSea']) {
-    const field = root.querySelector<HTMLElement>(`[data-field-path="${path}"]`); if (field) importHost.append(field);
+  const methodSwitch = document.createElement('div'); methodSwitch.className = 'source-switch heightmap-method-switch'; methodSwitch.setAttribute('role', 'radiogroup'); methodSwitch.setAttribute('aria-label', translate(T.heightmap));
+  const methodButtons: HTMLButtonElement[] = [];
+  for (const [mode, label, id, panel] of [['heightmap', T.loadHeightmap, 'load', 'relief-import'], ['symbolic', T.paintSymbolic, 'symbolic', 'relief-symbolic']] as const) {
+    const button = document.createElement('button'); button.type = 'button'; button.id = `heightmap-method-${id}`; button.setAttribute('role', 'radio'); button.setAttribute('aria-controls', panel); setText(button, label);
+    button.onclick = () => setSource(mode);
+    button.onkeydown = event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault(); const next = methodButtons.find(other => other !== button);
+      if (next && !next.disabled) { next.click(); next.focus(); }
+    };
+    methodButtons.push(button); methodSwitch.append(button);
+    syncers.push(() => { const selected = reliefOf() === mode; button.setAttribute('aria-checked', String(selected)); button.tabIndex = selected ? 0 : -1; button.disabled = b.busy(); });
   }
-  syncers.push(() => { sidebarTools.hidden = reliefOf(get()) !== 'heightmap'; });
+  sidebarTools.append(methodSwitch);
+  const importHost = document.createElement('div'); importHost.id = 'relief-import'; sidebarTools.append(importHost);
+  const importSync = b.heightmap.source(importHost); syncers.push(() => { importHost.hidden = reliefOf() !== 'heightmap'; importSync.sync(); importHost.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = b.busy(); }); });
+  const fitHost = document.createElement('div'); place(fitHost, 'relief-heightmap-fit');
+  const heightmapFit = mountHeightmapFit(fitHost, { getSettings: get, disabled: b.busy,
+    onChange: () => { b.onChange(); b.terrain.sync(); markStale('relief-heightmap-fit'); sync(); },
+  });
+  // Keep the physical interpretation visible beside import actions; adjustments live in their stage.
+  importHost.prepend(heightmapFit.summary);
+  syncers.push(heightmapFit.sync);
+
+  const symbolicHost = document.createElement('div'); symbolicHost.id = 'relief-symbolic'; sidebarTools.append(symbolicHost);
+  const drawButton=document.createElement('button');drawButton.type='button';drawButton.id='relief-symbolic-open';drawButton.className='relief-draw-open';drawButton.setAttribute('aria-haspopup','dialog');drawButton.setAttribute('aria-controls','relief-paint-dialog');
+  const drawIcon=modifyIcon.cloneNode(true);const drawCaption=document.createElement('span');setText(drawCaption,copy('Paint the map','Peindre la carte'));drawButton.append(drawIcon,drawCaption);drawButton.onclick=()=>b.terrain.openEditor('symbolic');
+  const drawActions=document.createElement('div');drawActions.className='heightmap-actions';drawActions.append(drawButton);
+  const symbolicHint=document.createElement('p');symbolicHint.className='hint';setText(symbolicHint,copy('Paint where the sea, plains, hills and mountains are. Unpainted areas are plains.','Peignez la mer, les plaines, les collines et les montagnes. Les zones non peintes sont des plaines.'));symbolicHost.append(drawActions,symbolicHint);
+  syncers.push(()=>{symbolicHost.hidden=reliefOf()!=='symbolic';drawButton.disabled=b.busy()||context().classicTerrain;modifyButton.disabled=b.busy()||!b.getWorld()||context().classicTerrain;});
+  root.append(sketchHost);
+  // The heightmap fit panel owns elevations for every import path.
+  for (const path of ['options.heightScale', 'options.importSea']) root.querySelector(`[data-field-path="${path}"]`)?.remove();
+  syncers.push(() => { sidebarTools.hidden = reliefTab(reliefOf()) !== 'heightmap'; });
 
   for (const stage of stagesOf('region')) {
     const row = rows.get(stage.id)!; row.body.hidden = false;
@@ -540,8 +554,8 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const compass = panel.querySelector<HTMLElement>('.terrain-coast-compass')!;
     const presets = panel.querySelector<HTMLElement>('.coast-presets')!;
     const grid = document.createElement('div'); grid.className = 'coast-grid';
-    grid.append(compass, presets); panel.append(grid);
-    grid.addEventListener('click', () => { markStale('relief-source'); sync(); });
+    grid.append(compass, presets); panel.insertBefore(grid, panel.querySelector('.terrain-coast-trace-actions'));
+    grid.addEventListener('click', () => { markStale('relief-coast-cut'); sync(); });
     // A new coast draw: only its variation changes, and the chain resumes at the coast cut.
     const coastStage = STAGES.find(stage => stage.id === 'relief-coast-cut')!;
     const reroll = document.createElement('button'); reroll.type = 'button'; reroll.id = 'terrain-coast-reroll'; reroll.className = 'coast-reroll';
@@ -549,12 +563,17 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const die = document.createElement('i'); die.className = 'art art-dice'; die.setAttribute('aria-hidden', 'true'); reroll.append(die);
     const rerollCaption = document.createElement('span'); setText(rerollCaption, T.rerollCoast); reroll.append(rerollCaption);
     reroll.onclick = event => { event.stopPropagation(); if (!reroll.disabled) b.reroll?.(coastStage, true); sync(); };
-    presets.append(reroll);
+    grid.append(reroll);
     syncers.push(() => {
-      panel.toggleAttribute('data-chain-hidden', context().relief === 'heightmap');
+      panel.toggleAttribute('data-chain-hidden', false);
       const ctx = context();
+      panel.hidden=ctx.classicTerrain&&!get().terrain?.coastTrace;panel.dataset.reliefSource=ctx.relief;
+      grid.hidden=ctx.classicTerrain;
+      presets.hidden=ctx.relief==='symbolic'||ctx.relief==='heightmap';
+      panel.querySelector<HTMLElement>('#terrain-coast-all')!.hidden=presets.hidden;
+      panel.querySelector<HTMLElement>('.terrain-coast-trace-actions')!.hidden=ctx.relief==='heightmap'||ctx.classicTerrain;
       reroll.hidden = !b.reroll || !coastStage.when(ctx) || !!coastStage.unavailable?.(ctx);
-      reroll.disabled = b.busy() || Number(b.terrain.access.get('terrain.coastMask') ?? 0) === 0;
+      reroll.disabled = b.busy() || !toggleState(coastStage);
       reroll.title = translate(T.rerollCoastHelp);
     });
   }
@@ -684,14 +703,12 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       const controls = Array.from(panel.querySelectorAll<HTMLElement>(':scope > [data-stage-control], :scope > .region-water-landforms > [data-stage-control]'));
       for (const control of controls) {
         const stage = rows.get(control.dataset.stageControl!)?.stage;
-        control.toggleAttribute('data-general-hidden', !!stage && !stage.when(ctx) || family === 'region' && ctx.classicTerrain && control.matches('.climate-picker,#terrain-coast-panel'));
+        control.toggleAttribute('data-general-hidden', !!stage && !stage.when(ctx) || family === 'region' && ctx.classicTerrain && (control.matches('.climate-picker') || control.id==='terrain-coast-panel'&&!get().terrain?.coastTrace));
       }
       const visible = (control: HTMLElement) => !control.hidden && !control.hasAttribute('data-general-hidden') && !control.hasAttribute('data-chain-hidden');
       if (panel.contains(waterLandforms)) waterLandforms.hidden = !controls.some(control => control.parentElement === waterLandforms && visible(control));
       panel.hidden = !controls.some(visible);
     }
-    // The 8-bit image scale and sea level only apply to an imported grayscale image.
-    for (const path of ['options.heightScale', 'options.importSea']) root.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-chain-hidden', !get().options.importedHeight);
     const ordered = [...stagesOf('region', get().terrain?.procedural?.coastAfter), ...stagesOf('settlements'), ...stagesOf('cities'), ...stagesOf('map')];
     const regionOrder = ordered.filter(stage => stage.family === 'region');
     const cut = rows.get('relief-coast-cut')!.element, previous = rows.get(regionOrder[regionOrder.findIndex(stage => stage.id === 'relief-coast-cut') - 1].id)!.element;
@@ -719,6 +736,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       row.run.title = translate(prerequisite || (reason ? text(reason) : T.run));
     }
     for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run'); if (button) button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain) || (f.id === 'cities' && (!ctx.hasRegion || !b.cityScope().count)); }
+    advancedIndex.sync();
     renderTimes();
   }
   selectFamily('region'); sync();

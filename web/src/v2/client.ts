@@ -1,4 +1,5 @@
 import EngineWorker from './engine.worker?worker';
+import { runtimeWorkerOptions } from './platform';
 import { RenderReadiness } from '../render/renderReadiness';
 import { getLanguage } from './i18n';
 import { getDistanceUnit } from './units';
@@ -27,8 +28,9 @@ import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/re
 import { mapPresentation } from './mapPresentation';
 import { ensureDesktopNeuralServer } from './desktopNeural';
 import { prepareBrowserNeuralDownload } from './neuralDownload';
-import { runtimeForRun } from './runtimeChoices';
+import { browserRuntimeSettings, engineIdentityOf, runtimeForRun, RuntimeFallbackState, type ServiceCapabilities } from './runtimeChoices';
 import { markNativeUnavailable } from '../../../rust/bridge/nativeAvailability';
+import { reportDrawnLabels } from './drawnLabels';
 
 /** Delay of the miniature after a new live frame (its first frame must not wait for it). */
 const MINI_DELAY_MS = 350;
@@ -55,7 +57,7 @@ function townlessWorld(world: World): World {
 export class StudioClient {
   onEngineReset?: () => void;
   // The worker name carries `?threads=`; after a worker death, the single-thread package.
-  private engine = new EngineWorker(wasmWorkerOptions('magna-v2'));
+  private engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2')));
   private render: Worker | null = null;
   private syncRenderer: CanvasRenderer | null = null;
   private id = 0;
@@ -141,7 +143,7 @@ export class StudioClient {
       if (m.type === 'progress') {
         if (m.progress.stage === 'runtime-fallback') {
           if (m.progress.detail) markNativeUnavailable(m.progress.detail);
-          this.onRuntimeFallback?.(m.progress.label);
+          if (this.runtimePreference) this.recordRuntime(browserRuntimeSettings(this.runtimePreference));
         }
         else (this.pending!.progress ?? this.onProgress)(m.progress);
       }
@@ -154,13 +156,13 @@ export class StudioClient {
       else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldPartitions(unpackWorldLanduse(m.world))); this.retained={id:m.id,world};p.resolve(world); }
       else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
-    this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine(); this.onEngineReset?.(); };
+    this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2'))); this.attachEngine(); this.onEngineReset?.(); };
   }
   /** A fresh engine worker in place of the current one (its retained world and native session caches are dropped). */
   private replaceEngine(): void {
     this.failResources(new Error('The generation worker was replaced.'));
     this.retained = undefined; this.engine.terminate();
-    this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
+    this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2'))); this.attachEngine();
   }
   async init(): Promise<void> {
     // Composite and Minimal own their surfaces; start the classic worker only when it is actually selected.
@@ -181,7 +183,7 @@ export class StudioClient {
       if (m.type === 'content') this.viewer.contentChanged(m.mapSize, true, m.marker);
       else if (m.type === 'frame') {
         const shown=this.viewer.present(m, m.gen === this.drawingId);
-        if(shown){this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
+        if(shown){reportDrawnLabels(m.labels.map(label=>label.id));this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
         if(shown&&m.gen===this.pendingDraw?.gen){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
       }
       else if (m.type === 'error') { const error=new Error(m.error); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.reject(error);this.pendingDraw=null;}else this.onError(error); }
@@ -190,8 +192,17 @@ export class StudioClient {
     render.postMessage({ type: 'display', display: this.display });
     if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
   }
-  /** `progress` replaces the page progress for this run (background builds stay silent). */
-  onRuntimeFallback?: (note: string) => void;
+  /** The engine in use changed (native ⇄ browser): Settings shows it; no notice is raised. */
+  onRuntimeStatusChange?: () => void;
+  runtimeCapabilities?: () => ServiceCapabilities;
+  /** Resolves when the startup service probe is done: a run started earlier waits for it to choose its backends. */
+  capabilitiesReady?: () => Promise<unknown>;
+  readonly runtimeFallback = new RuntimeFallbackState();
+  private runtimePreference?: V2Settings;
+  private recordRuntime(effective: V2Settings): void {
+    if (this.runtimePreference) this.runtimeFallback.update(this.runtimePreference, effective);
+    this.onRuntimeStatusChange?.();
+  }
   run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string,
     progress?: (p: V2Progress) => void, keepUrbanLanes = false): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
@@ -204,11 +215,14 @@ export class StudioClient {
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject, progress };
+      this.runtimePreference = { ...settings, runtime: settings.runtime && { ...settings.runtime }, urban: settings.urban && { ...settings.urban } };
       const dispatch = async () => {
-        const selected = await runtimeForRun(settings);
+        if (this.runtimeCapabilities && !this.runtimeCapabilities().checked) await this.capabilitiesReady?.();
+        const selected = await runtimeForRun(settings, this.runtimeCapabilities?.(), action);
         if (this.pending?.id !== id) return;
         settings = selected.settings;
-        selected.notes.forEach(note => this.onRuntimeFallback?.(note));
+        this.recordRuntime(selected.nativeOffline ? settings : this.runtimePreference!);
+        selected.notes.forEach(label => (progress ?? this.onProgress)({ stage: 'runtime-info', label, completed: 0, total: 0 }));
         if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural-wasm'
           && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
           const controller = new AbortController(); this.neuralDownload = controller;
@@ -236,7 +250,9 @@ export class StudioClient {
     this.neuralDownload?.abort();
     if (!this.pending) return;
     this.pending.reject(new DOMException('Calcul annulé. La carte précédente est conservée.', 'AbortError'));
-    this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(wasmWorkerOptions('magna-v2')); this.attachEngine();
+    this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2'))); this.attachEngine();
+    // Requests of the terminated worker never answer: settle them instead of caching a promise that hangs.
+    this.failResources(new DOMException('Computation cancelled.', 'AbortError'));
     this.onEngineReset?.();
   }
   private failResources(error: Error): void { for (const request of this.resourceRequests.values()) request.reject(error); this.resourceRequests.clear(); this.resourceCache = undefined; }
@@ -244,7 +260,7 @@ export class StudioClient {
   resources(world: World): Promise<ResourcePayload | undefined> {
     const settings = this.appearanceSettings;
     if (!settings) return Promise.resolve(undefined);
-    const key = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.stats['v2.waterEditRevision'] ?? 0, world.mapSize, world.seed, settings.runtime?.backend]);
+    const key = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.stats['v2.waterEditRevision'] ?? 0, world.mapSize, world.seed, settings.runtime?.backend, engineIdentityOf(settings)]);
     if (this.resourceCache?.key === key) return this.resourceCache.payload;
     const id = ++this.id;
     const payload = new Promise<ResourcePayload | undefined>((resolve, reject) => {
@@ -453,5 +469,6 @@ export class StudioClient {
     if (this.render) { if(!this.benchActive)this.render.postMessage({ type: 'display', display: this.display }); }
     else if (this.world) this.show({ ...this.world, options: { ...this.world.options, contours: this.display.contours ?? true, landuse: this.display.landuse ?? true, labels: this.display.labels } }, true);
   }
-  destroy(): void { this.cancel();this.minimal?.dispose();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
+  /** Page unload: the job is dropped, not rejected, so its continuation cannot touch a UI that is being torn down. */
+  destroy(): void { this.neuralDownload?.abort();this.pending=null;this.retained=undefined;this.minimal?.dispose();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
 }

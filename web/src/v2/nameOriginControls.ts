@@ -48,7 +48,7 @@ export function mountNameOriginControls(host: HTMLElement, id: string, b: {
     form.sync();
     const s=b.getSettings(), p=b.city ? namingPolicy(s.naming,b.city) : s.naming ?? {};
     const culture=b.getCulture?.() ?? (b.city ? s.local[b.city]?.culture : undefined) ?? s.options.culture;
-    const profile=resolveToponymProfile(culture,p.profile ?? s.options.language);
+    const profile=resolveToponymProfile(culture,s.naming?.toponymCulture ? resolveToponymProfile(s.naming.toponymCulture).id : p.profile ?? s.options.language);
     const sample=generateToponymRecord({seed:s.options.seed,key:'naming-preview',kind:'place',culture,language:profile.id,source:p.source ?? s.options.nameSource});
     const parts={kind:'gate' as const,proper:sample.proper,cultural:formatToponym(profile,'gate',sample.proper),opaque:false};
     preview.textContent=`${translate(nameProfileLabels[profile.id])} · ${presentName(parts,namePresentation(s))}`;

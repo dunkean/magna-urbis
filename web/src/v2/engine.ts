@@ -15,7 +15,7 @@ import { refreshCavernMask } from '../gen/terrain/caverns';
 import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/bridge/landuseNative';
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
-import { matchesRustTransport } from './runtimeChoices';
+import { matchesRustTransport, terrainRecipeSettings } from './runtimeChoices';
 import { effectiveRegion, generationRegion } from './regionSettings';
 import { regionalPopulation, REGIONAL_POPULATION_VERSION } from './regionalPopulation';
 import { routeRoads } from '../gen/roads/regional';
@@ -29,6 +29,7 @@ import { getCulture, populationCulture } from '../gen/urban/culture';
 import { generateNames, settlementNames } from '../gen/names';
 import { neighbourClaimsOf, planTownRun, townSeats, type TownRun } from './townNeighbours';
 import { createTownRunQueue } from './townRunQueue';
+import { builtCore } from './builtCore';
 import type { Claim } from '../../../rust/bridge/urban';
 import { mainPopulation, applyNameOverrides } from '../gen/pipeline';
 import type { World, TerrainLayer, LandUseLayer } from '../gen/types';
@@ -48,6 +49,7 @@ import { cloneV2TerrainForStage, cloneV2WorldForGeneration } from './worldState'
 import { proceduralSignatures, stableKey } from '../../../rust/bridge/terrainCheckpoints';
 import { TERRAIN_STAGE_OUTPUTS } from './terrainStagePreview';
 import { startTerrainDisplayPreparation } from './displayPrep';
+import { recordGenerationValidity } from './stageValidity';
 export { defaultSettings, adaptedExtent } from './settings';
 export type { V2Settings, V2Progress, ProgressCallback, V2Project } from './contracts';
 const forestFields = new Map<string, { field: ForestField; cover: Float32Array }>();
@@ -56,7 +58,11 @@ const stagePreviews = new Map<string, TerrainLayer>();
 export function clearTerrainPreviews(): void { stagePreviews.clear(); }
 
 function effectiveOptions(settings: V2Settings, mapSize = adaptedExtent(settings)): Options {
-  return { ...settings.options, seed: seedRoot(settings.options.seed), mapSize };
+  const sketch = settings.terrain?.sketch;
+  const importedHeight = settings.runtime?.backend === 'typescript' && sketch?.processing
+    ? { w: sketch.resolution, h: sketch.resolution, rgba: new Uint8Array(0), elevations: Float32Array.from(sketch.heights) }
+    : settings.options.importedHeight;
+  return { ...settings.options, importedHeight, seed: seedRoot(settings.options.seed), mapSize };
 }
 function report(onProgress: ProgressCallback | undefined, stage: string, label: string, completed: number, total: number,
   cache?: 'memory' | 'disk' | 'miss'): void { onProgress?.({ stage, label, completed, total, ...(cache ? { cache } : {}) }); }
@@ -67,6 +73,8 @@ function stableStringify(value: unknown): string {
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 }
 export function terrainCacheKey(settings: V2Settings): string {
+  // Only what changes the terrain: never where a run executed or which neural service a fallback picked.
+  settings = terrainRecipeSettings(settings);
   const o = settings.options, image = o.importedHeight;
   const runtime = settings.runtime;
   const physics = runtime ? { ...(settings.terrain?.procedural ? { proceduralVersion: PROCEDURAL_RECIPE_VERSION } : {}), ...(isCompactProcedural({source:runtime.source,procedural:settings.terrain?.procedural}) ? { compactVersion: COMPACT_VERSION } : {}), backend: runtime.backend, compute: runtime.compute, source: runtime.source,
@@ -77,11 +85,10 @@ export function terrainCacheKey(settings: V2Settings): string {
   const native = runtime && (runtime.backend !== 'typescript' || runtime.source !== 'procedural');
   const compactTerrain = native ? { ...terrain,
     ...(terrain.sketch ? { sketch: { ...terrain.sketch, heights: { fingerprint128: fingerprintNumbers(terrain.sketch.heights) } } } : {}),
-    ...(terrain.drawing ? { drawing: { ...terrain.drawing, heights: { fingerprint128: fingerprintNumbers(terrain.drawing.heights) } } } : {}),
     ...(terrain.modification ? { modification: { ...terrain.modification, delta: { fingerprint128: fingerprintNumbers(terrain.modification.delta) } } } : {}),
     ...(terrain.zones ? { zones: { ...terrain.zones, weights: { fingerprint128: fingerprintNumbers(terrain.zones.weights) } } } : {}),
   } : null;
-  return stableStringify([V2_ENGINE_VERSION, settings.generation, seedSubset(o.seed, key => /^(relief-|water-)/.test(key)), adaptedExtent(settings), o.relief, o.coast,
+  return stableStringify([V2_ENGINE_VERSION, settings.generation, seedSubset(o.seed, key => /^(relief-|water-)/.test(key)), adaptedExtent(settings), native ? terrain.relief : o.relief, o.coast,
     o.river, o.seaLevel ?? 0, (o as Options & { lakes?: string }).lakes ?? 'auto',
     physics, compactTerrain,
     image ? [image.w, image.h, fingerprintBytes(image.elevations ? new Uint8Array(image.elevations.buffer, image.elevations.byteOffset, image.elevations.byteLength) : image.rgba), o.heightScale ?? 120, o.importSea ?? 0]
@@ -213,7 +220,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         controls.sketch = { version: 1, resolution: sourceN, heights: Array.from(image.data), processing: 'surface' };
       }
       const execute = () => generateEngineHeight({ seed: configuration.seed, width: options.mapSize!,
-        relief: options.relief, coast: options.coast,
+        relief: configuration.relief, coast: options.coast,
         climate: options.biome === 'desert' ? 'arid' : options.biome === 'tropical' ? 'tropical' : options.biome === 'tundra' ? 'cold' : 'temperate',
         compute, strictCompute: runtime!.compute === 'gpu' || configuration.compute === 'gpu-f32' || gpuGeneration, source: runtime!.source, native: runtime!.backend === 'native',
         localServer: runtime!.localServer, pythonServer: runtime!.pythonServer, neuralServer: runtime!.neuralServer,
@@ -261,7 +268,9 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     const climate = configuration.climateValues!;
     const forestRuntime = settings.runtime?.backend === 'native' ? { profile: 'local' as const, server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined;
     const forest = await buildForestField({ seed: seedHash(stepSeed(settings.options.seed, 'cover-climate')), climate: [climate.temperature, climate.precipitation],
-      height: { x: 0, y: 0, width: options.mapSize!, n: terrain.height.w, data: terrain.height.data }, water: terrain.water }, configuration.forest, forestRuntime);
+      height: { x: 0, y: 0, width: options.mapSize!, n: terrain.height.w, data: terrain.height.data }, water: terrain.water,
+      // The displayed river geometry defines the riverside gallery (displayForest.ts forestDisplayRivers).
+      riverSegments: (await import('./displayForest')).forestDisplayRivers(retained.v2NativeTerrain?.water, configuration.climateZone) }, configuration.forest, forestRuntime);
     retained.v2ForestField = forest;
     const cover = new Float32Array(terrain.height.data.length), n = terrain.height.w;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cover[y * n + x] = forest.rgba[(Math.min(forest.n - 1, Math.floor((y + .5) * forest.n / n)) * forest.n + Math.min(forest.n - 1, Math.floor((x + .5) * forest.n / n))) * 4] / 255;
@@ -287,6 +296,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
       'v2.cache': hit?.source ?? 'miss', 'v2.persisted': persisted ? 1 : 0, 'ms.total': Math.round(performance.now() - t0) } };
   refreshCavernMask(world);
   report(onProgress, 'terrain', 'Topography ready', 3, 3, hit?.source ?? 'miss');
+  recordGenerationValidity(world, settings, 'terrain');
   return world;
 }
 
@@ -304,6 +314,12 @@ function nameWorld(world: World, mainOptions?: Partial<Options>): void {
   applyNameOverrides(world);
 }
 
+/** A new placement replaces every place of the input world: the previous run's per-place targets, town stages,
+ * refusals, warnings and placement/city fingerprints must not describe the new places (same keys, another seed). */
+const PLACEMENT_STAT = /^(v2\.(population|culture|urban[A-Za-z]*|housesRegenerated):|v2\.valid:(settle|city)-|v2\.(planKey|placementKey|cityOutput|cityOutputKeys|regionPopulation|requestedRegionPopulation|requestedIsolatedSites|regionalRoads|baseBridges|unreachable|urbanBackend)$|settlements(\.|$)|ms\.(region|towns)$)/;
+export function regionInputStats(stats: World['stats']): World['stats'] {
+  return Object.fromEntries(Object.entries(stats).filter(([name]) => !PLACEMENT_STAT.test(name)));
+}
 /** This stage never invokes the urban generator: the retained region contains only sites and regional routes. */
 /** `deferSite`: the town stages follow in this request (whole chain): the native site fields may arrive during them (finishTowns). */
 export async function planRegion(terrainWorld: World, settings: V2Settings, onProgress?: ProgressCallback, deferSite = false): Promise<World> {
@@ -318,12 +334,13 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   mainOptions.size = sizeForPop(mainPopulation(mainOptions, root));
   const world: World = { seed: options.seed, options, mapSize: terrainWorld.mapSize,
     terrain: cloneV2TerrainForStage(terrainWorld.terrain), landuse: terrainWorld.landuse,
-    stats: { ...terrainWorld.stats, 'v2.stage': 'region' } };
+    stats: { ...regionInputStats(terrainWorld.stats), 'v2.stage': 'region' } };
   if (!placement.list.length) {
     world.settlements=[];world.roads=[];world.bridges=[];
     world.names={family:'english',town:settings.naming?.title??'',entries:[]};
     world.stats['v2.planKey']=regionKey(settings);world.stats['v2.placementKey']=placementKey(settings);
     Object.assign(world.stats,{settlements:0,'settlements.requested':0,'v2.regionPopulation':0,'v2.requestedRegionPopulation':regionalPopulation(settings).population});
+    recordGenerationValidity(world, settings, 'region');
     return world;
   }
   if(settings.runtime?.backend&&settings.runtime.backend!=='typescript'){
@@ -331,7 +348,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
     world.stats['v2.planKey']=regionKey(settings);world.stats['v2.placementKey']=placementKey(settings);nameWorld(world,mainOptions);
     const native=(world.debug?.v2RustRegion as import('./region').RustRegionSnapshot).placement;
     for(const spec of native.settlements)if(spec.name){const place=world.settlements!.find(s=>s.key===spec.key);if(place){place.name=spec.name;if(place.main){world.names!.town=spec.name;const entry=world.names!.entries.find(e=>e.kind==='town');if(entry)entry.text=spec.name;}else{const entry=world.names!.entries.find(e=>e.sub==='settlement:'+place.key);if(entry)entry.text=spec.name;}}}
-    refreshCavernMask(world);return world;
+    refreshCavernMask(world);recordGenerationValidity(world, settings, 'region');return world;
   }
   report(onProgress, 'sites', 'Finding suitable settlement sites…', 0, 4);
   const cprefs = getCulture(mainOptions.culture).sitePrefs;
@@ -386,6 +403,7 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   nameWorld(world, mainOptions);
   refreshCavernMask(world);
   report(onProgress, 'network', 'Settlement sites and roads ready', 4, 4);
+  recordGenerationValidity(world, settings, 'region');
   return world;
 }
 
@@ -421,7 +439,7 @@ export async function rerouteRegion(source:World,settings:V2Settings,onProgress?
   const savedUrban=world.urban;
   await (await import('./region')).planRustRegion(world,settings,onProgress,true);
   world.urban=savedUrban;if(oldTownBridges){world.debug!.v2TownBridges=oldTownBridges;world.bridges!.push(...Object.values(oldTownBridges).flat());}
-  world.stats['v2.planKey']=regionKey(settings);return world;
+  world.stats['v2.planKey']=regionKey(settings);recordGenerationValidity(world, settings, 'roads');return world;
 }
 function localOverrides(options: Partial<Options>): SettlementOverrides {
   return Object.fromEntries(SETTLEMENT_OVERRIDE_KEYS.filter(key => options[key] !== undefined).map(key => [key, options[key]]));
@@ -477,6 +495,9 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
     if (!settlement.main) settlement.detail = 'eager';
     const cities = (world.debug.v2RustCities ??= {}) as Record<string, unknown>;
     cities[key] = result.snapshot;
+    // A town built beside its placed centre publishes its built core: label, click target and camera follow the houses.
+    const core = builtCore(result.snapshot.layouts, settlement.center, settlement.radius, result.urban.buildings);
+    if (core) settlement.core = core; else delete settlement.core;
     Object.assign(world.stats, result.stats);
     // The page draws the cities on this ground: the worker's cached settlement raster, not a second build on the main thread.
     (await import('./rustUrban')).retainCityGround(world);
@@ -506,6 +527,7 @@ async function buildTown(world: World, settings: V2Settings, key: string, onProg
   settlement.options = localOverrides(options);
   world.bridges = [...baseBridges, ...Object.keys(townBridges).sort().flatMap(key => townBridges[key])];
   world.stats['v2.stage'] = 'towns';
+  recordGenerationValidity(world, settings, 'town', key, requestedStage);
 }
 
 /** Set by the engine worker, which renames every result after its action (mapNaming.renameMap, from the same geometry):

@@ -1,8 +1,9 @@
-import { bindTree, setText, setDynamicText, translate, onLanguageChange } from '../v2/i18n';
+import { bindTree, setText, setDynamicText, translate, onLanguageChange, getLanguage } from '../v2/i18n';
 import { convertUnits, displayUnit, getDistanceUnit, onUnitsChange, unitInputNumber, type PhysicalUnit } from '../v2/units';
 import { mountCityPatternChoices } from '../v2/cityPatternChoices';
 
-export interface ParameterChoice { value: string; label: string }
+/** `group` puts a contextual choice in an option group; `note` is a short qualifier shown after its label. */
+export interface ParameterChoice { value: string; label: string; group?: string; note?: string }
 export interface ParameterField {
   path: string;
   label: string;
@@ -136,11 +137,21 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
     for (const { field, input, slider, reset, automatic } of controls) {
       const dynamic = input instanceof HTMLSelectElement ? bindings.choices?.(field.path) : undefined;
       if (dynamic) {
-        const key = JSON.stringify(dynamic);
+        // Group labels and notes are plain translated text: a language change rebuilds the list.
+        const key = getLanguage() + JSON.stringify(dynamic);
         if (choiceKeys.get(field.path) !== key) {
           choiceKeys.set(field.path, key); input.replaceChildren();
-          for (const choice of [...(field.optional ? [{ value: '', label: field.emptyLabel ?? 'Automatic' }] : []), ...dynamic]) {
-            const option = document.createElement('option'); option.value = choice.value; setText(option, choice.label); input.append(option);
+          const groups = new Map<string, HTMLOptGroupElement>();
+          for (const choice of [...(field.optional ? [{ value: '', label: field.emptyLabel ?? 'Automatic' } as ParameterChoice] : []), ...dynamic]) {
+            const option = document.createElement('option'); option.value = choice.value;
+            if (choice.note) option.textContent = `${translate(choice.label)} · ${translate(choice.note)}`; else setText(option, choice.label);
+            let parent: HTMLElement = input;
+            if (choice.group) {
+              let group = groups.get(choice.group);
+              if (!group) { group = document.createElement('optgroup'); group.label = translate(choice.group); groups.set(choice.group, group); input.append(group); }
+              parent = group;
+            }
+            parent.append(option);
           }
         }
       }

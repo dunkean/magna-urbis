@@ -9,6 +9,11 @@ const programme = { demands: [{ id: 'd', unit: 'domesticUnits', requested: 100, 
 const scene = (ids: string[]) => ({ buildings: ids.map(id => ({ parcel_id: id, function: 'domestic' })) }) as unknown as PlacementBatch;
 
 describe('reached population', () => {
+  it('uses each household’s planned occupants instead of multiplying every home by the average', () => {
+    const p = { ...programme, allocations: programme.allocations.map((a, i) => ({ ...a, households: 1, residents: [1, 2, 5, 6][i] })) };
+    expect(cityReachedPopulation(500, [p], scene(['p1', 'p2', 'p3']))!.reached).toBe(8);
+    expect(cityReachedPopulation(500, [p], scene(['p1', 'p2', 'p3']))!.shortfall).toBe(492);
+  });
   it('keeps the target before any building exists', () => {
     expect(cityReachedPopulation(500, [programme], undefined)).toBeUndefined();
     expect(populationText(500, undefined)).toBe('500 inh.');

@@ -1,4 +1,4 @@
-import { registerMessages, translate, setText } from './i18n';
+import { registerMessages, translate, setText, setDynamicText } from './i18n';
 import { loopbackServer } from './platform';
 
 registerMessages({
@@ -38,7 +38,7 @@ export async function ensureDesktopNeuralServer(server: string, onProgress: (mes
       || url.username || url.password || url.search || url.hash) throw new Error('Invalid neural service URL');
     return url.origin;
   } catch (error) {
-    throw new Error(translate('Could not start the neural service: {error}').replace('{error}', String(error)));
+    throw new Error(translate('Could not start the neural service: {error}').replace('{error}', translate(String(error))));
   }
 }
 
@@ -63,7 +63,7 @@ registerMessages({
 });
 function describe(state: NeuralStatus): string {
   const p = state.progress;
-  if (p.phase === 'error') return p.message ?? '';
+  if (p.phase === 'error') return translate(p.message ?? '');
   if (p.phase === 'download') return `${translate('Downloading terrain models…')} ${p.file} · ${((p.received ?? 0) / 1e6).toFixed(1)} / ${((p.total ?? 0) / 1e6).toFixed(1)} MB`;
   if (p.phase === 'verify') return translate('Verifying terrain models…');
   if (p.phase === 'starting') return translate('Starting the neural service…');
@@ -85,18 +85,18 @@ export function mountDesktopNeural(host: HTMLElement): boolean {
     clearTimeout(timer);
     try {
       const state = await invoke!('desktop_neural_status') as NeuralStatus;
-      status.textContent = `${state.profile} · ${describe(state)}`; directory.textContent = state.directory;
+      setDynamicText(status, () => `${state.profile} · ${describe(state)}`); directory.textContent = state.directory;
       // The size notice is for a first download only.
       hint.hidden = state.models.length > 0 && state.models.every(m => m.present);
       button.disabled = pending || state.busy;
       bar.hidden = state.progress.phase !== 'download';
       bar.value = (state.progress.received ?? 0) / (state.progress.total || 1);
       if (!disposed && (state.busy || pending)) timer = setTimeout(() => void refresh(), 500);
-    } catch (error) { status.textContent = String(error); button.disabled = false; }
+    } catch (error) { setText(status, String(error)); button.disabled = false; }
   }
   button.onclick = () => {
     pending = true; button.disabled = true;
-    void invoke('desktop_neural_download').catch(error => { status.textContent = String(error); }).finally(() => { pending = false; void refresh(); });
+    void invoke('desktop_neural_download').catch(error => { setText(status, String(error)); }).finally(() => { pending = false; void refresh(); });
     void refresh();
   };
   panel.append(hint, status, bar, button, directory); host.append(panel);

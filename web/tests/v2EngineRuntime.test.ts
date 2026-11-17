@@ -5,7 +5,8 @@ import { TerrainCache, type TerrainStore } from '../src/v2/cache';
 import type { TerrainLayer } from '../src/gen/types';
 
 const platform = vi.hoisted(() => ({ generateEngineHeight: vi.fn() }));
-vi.mock('../src/v2/platform', () => platform);
+// Only the hardware call is mocked: stage validity now reads the engine identity (loopbackServer) on every run.
+vi.mock('../src/v2/platform', async importOriginal => ({ ...await importOriginal<typeof import('../src/v2/platform')>(), ...platform }));
 class Store implements TerrainStore {
   async get(): Promise<TerrainLayer | undefined> { return undefined; }
   async put(): Promise<void> {}

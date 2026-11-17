@@ -127,6 +127,12 @@ function overlaps(w: World): { water: number; road: number; urban: number; n: nu
   for (const r of w.roads ?? []) roads.add(r.path, r.width / 2);
   const foots: { outer: Polygon; holes: Polygon[] }[] = [...(w.urban?.footprintH ?? [])];
   for (const st of w.settlements ?? []) foots.push(...(st.urban?.footprintH ?? []));
+  // Water is the drawn water the land use is cut by (river ribbons at their widths, lakes, sea cells), not the coarse
+  // river cells: field limits now lie on the drawn bank, which runs through river cells of the raster.
+  const rivers = new SegIndex();
+  for (const r of w.terrain.rivers) for (let i = 1; i < r.path.length; i++) rivers.add([r.path[i - 1], r.path[i]], Math.max(1, Math.min(r.width[i - 1], r.width[i])) / 2);
+  const wet = (p: Vec2): boolean => w.terrain.water[cellOf(w, p)] === 1 || rivers.near(p, 4) < -0.5
+    || w.terrain.lakes.some(l => polygonContains(l, p));
   let water = 0, road = 0, urban = 0, n = 0;
   for (const a of w.landuse!.areas) {
     if (a.kind !== 'field') continue;
@@ -134,7 +140,7 @@ function overlaps(w: World): { water: number; road: number; urban: number; n: nu
     for (const s of a.strips ?? []) pts.push(...s);
     for (const p of pts) {
       n++;
-      if (w.terrain.water[cellOf(w, p)]) water++;
+      if (wet(p)) water++;
       if (roads.near(p, 4) < 0) road++;
       for (const f of foots) if (polygonContains(f.outer, p) && !f.holes.some((h) => polygonContains(h, p))) { urban++; break; }
     }
@@ -186,7 +192,8 @@ describe('open fields on town maps (seeds 1-4)', () => {
       expect(d.length, `strips seed ${w.seed}`).toBeGreaterThan(100);
       const Wv = d.map((x) => x.W), Lv = d.map((x) => x.L);
       expect(weighted(d, Wv, 0.1), 'width p10').toBeGreaterThanOrEqual(9);
-      expect(weighted(d, Wv, 0.9), 'width p90').toBeLessThanOrEqual(26);
+      // 34, not 26: fields are cut exactly by roads and drawn water, and the slivers left there merge into wider strips.
+      expect(weighted(d, Wv, 0.9), 'width p90').toBeLessThanOrEqual(34);
       const med = weighted(d, Lv, 0.5);
       expect(med, 'length median').toBeGreaterThanOrEqual(100);
       expect(med, 'length median').toBeLessThanOrEqual(330);

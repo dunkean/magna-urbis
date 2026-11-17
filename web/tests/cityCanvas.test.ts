@@ -103,4 +103,15 @@ describe('City Bench canvas scene', () => {
       try { expect(districtRoleLabel('craft:tanners', 'Quartier des tanneurs')).toBe(expected); } finally { vi.unstubAllGlobals(); }
     }
   });
+
+  it('preserves cultural district names independently of the UI language', () => {
+    for (const locale of ['en', 'fr', 'es', 'ja'] as const) {
+      expect(districtRoleLabel('commoner', "St Mary's Parish", locale)).toBe("St Mary's Parish");
+      expect(districtRoleLabel('craft:tanners', "Tanners' Quarter, St Giles' Parish", locale)).toBe("Tanners' Quarter, St Giles' Parish");
+      expect(districtRoleLabel('craft:tanners', "Tanners' Quarter", locale)).toBe("Tanners' Quarter");
+      expect(districtRoleLabel('', "St Mary's Parish", locale)).toBe("St Mary's Parish");
+      expect(districtRoleLabel('commoner', 'Paroisse Saint-Martin', locale)).toBe('Paroisse Saint-Martin');
+      expect(districtRoleLabel('craft:tanners', 'Quartier des tanneurs, paroisse Saint-Éloi', locale)).toBe('Quartier des tanneurs, paroisse Saint-Éloi');
+    }
+  });
 });

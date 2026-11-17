@@ -18,10 +18,30 @@ export function advancedPanel(host: HTMLElement, title: string) {
 }
 
 export function organizeUrbanForm(root: HTMLElement): void {
-  const sections = Array.from(root.querySelectorAll<HTMLDetailsElement>(':scope > .urban-control-section'));
+  const sections = Array.from(root.querySelectorAll<HTMLElement>(':scope > .urban-control-section'));
   if (!sections.length) return;
+  const main = document.createElement('div'); main.className = 'urban-primary';
+  // Editor levels (quarter, block, parcel, building): their few working choices shown directly, every other
+  // parameter that acts at that level in a collapsed Advanced section below them.
+  if (['quarter', 'block', 'parcel', 'building'].includes(root.dataset.controlScope ?? '')) {
+    root.prepend(main);
+    let more: HTMLDetailsElement | undefined;
+    for (const section of sections) {
+      if (section.dataset.section === 'advanced' && !more) {
+        more = document.createElement('details'); more.className = 'urban-advanced';
+        const summary = document.createElement('summary'); setText(summary, 'Advanced'); more.append(summary); main.after(more);
+      }
+      const target = section.dataset.section === 'advanced' ? more! : main;
+      for (const field of Array.from(section.querySelectorAll<HTMLElement>('[data-field-path]'))) {
+        const preview = field.nextElementSibling?.matches('.city-pattern-choices') ? field.nextElementSibling : undefined;
+        target.append(field); if (preview) target.append(preview);
+      }
+      section.remove();
+    }
+    return;
+  }
   const advanced = advancedPanel(root, 'Advanced');
-  const main = document.createElement('div'); main.className = 'urban-primary'; root.prepend(main);
+  root.prepend(main);
   const primary = root.dataset.controlScope === 'settlement'
     ? /^(layout\.(tissue|density|phases))$/
     : /^(layout\.(culture|tissue|density|phases)|parcels\.(operator|density)|overrides\.(roof|floors)|culture|tissue|density|operator|households)$/;
@@ -33,7 +53,7 @@ export function organizeUrbanForm(root: HTMLElement): void {
         main.append(field); if (preview) main.append(preview);
       }
     }
-    section.open = true; advanced.grid.append(section);
+    advanced.grid.append(section);
   }
 }
 

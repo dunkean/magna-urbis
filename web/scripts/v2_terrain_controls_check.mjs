@@ -35,8 +35,7 @@ try {
   await page.screenshot({ path: resolve(output, 'desktop-first-fold-en.png') });
   console.log('Terrain UI check: dimensions and coasts passed');
   await page.locator('#terrain-source').selectOption('neural-python');
-  const neural = page.locator('.terrain-control-group').filter({ has: page.locator('[data-setting-path="terrain.neuralTuning.steps"]') });
-  await neural.locator('summary').click();
+  // The neural settings are open in place (no group to unfold).
   await page.locator('[data-setting-path="terrain.neuralTuning.steps"]').fill('8');
   await page.locator('[data-setting-path="terrain.neuralTuning.steps"]').blur();
   assert.equal((await recipe()).terrain.neuralTuning.steps, 8);

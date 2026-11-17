@@ -55,13 +55,16 @@ export function mountRenderSettingsPanel(host: HTMLElement, text: RenderText): R
   document.addEventListener('pointerdown', dismiss); root.addEventListener('keydown', escape);
   return { root, popup, sections, bodies, dispose() { document.removeEventListener('pointerdown', dismiss); root.removeEventListener('keydown', escape); root.removeEventListener('toggle', layout); window.removeEventListener('resize', layout); root.remove(); } };
 }
-export interface SectionLevels { /** Level 2: the composition rows, always visible. */ rows: HTMLElement; /** Level 3: the fine controls, folded by default. */ advanced: HTMLElement; details: HTMLDetailsElement }
-/** Split a section body in composition rows (open) and a folded advanced group. */
-export function splitSectionLevels(body: HTMLElement, text: RenderText): SectionLevels {
+export interface SectionLevels { /** Level 2: the composition rows, always visible. */ rows: HTMLElement; /** Level 3: the fine controls, folded by default (open in place when `flat`). */ advanced: HTMLElement; details: HTMLElement }
+/** Split a section body in composition rows (open) and a folded advanced group; `flat` (the V2 advanced view, already
+ * an advanced page) keeps the fine controls in place after the rows, without a disclosure. */
+export function splitSectionLevels(body: HTMLElement, text: RenderText, flat = false): SectionLevels {
   const rows = document.createElement('div'); rows.className = 'render-settings-composition';
+  const advanced = document.createElement('div'); advanced.className = 'render-settings-advanced-body';
+  if (flat) { advanced.classList.add('render-settings-advanced'); body.append(rows, advanced); return { rows, advanced, details: advanced }; }
   const details = document.createElement('details'); details.className = 'render-settings-advanced';
   const summary = document.createElement('summary'); text(summary, 'Advanced settings', 'Réglages avancés');
-  const advanced = document.createElement('div'); advanced.className = 'render-settings-advanced-body'; details.append(summary, advanced);
+  details.append(summary, advanced);
   body.append(rows, details); return { rows, advanced, details };
 }
 export const COLOR_LABELS: Record<RenderColorKey, readonly [string, string]> = {

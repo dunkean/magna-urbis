@@ -18,6 +18,8 @@ export type NameDisplayLanguage = 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh'
 export type NameSource = 'auto' | 'geographic' | 'invented' | 'mixed';
 export interface NamingPolicy { profile?: string; source?: NameSource }
 export interface NamingSettings extends NamingPolicy {
+  /** Map-wide naming culture; absent means each place keeps its own naming policy. */
+  toponymCulture?: string;
   title?: string;
   places?: Record<string, string>;
   mode?: 'cultural' | 'localized';

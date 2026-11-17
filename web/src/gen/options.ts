@@ -21,6 +21,15 @@ export type Tri = 'auto' | 'yes' | 'no';
 /** Suburb growth (M4): none, the faubourg ribbons, or thick suburbs with their own churches (and an outer wall for cities). */
 /** Town wall (M4): auto, none (open town), single curtain, double enceinte (inner curtain + outer wall, lists between). 'yes' / 'no' are the older spellings of single / none. */
 export type WallsOpt = Tri | 'none' | 'single' | 'double';
+/** Fortification styles of the native engine (`urban/fortifications.json`), `auto` = by culture. */
+export const WALL_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
+export type WallStyleOpt = typeof WALL_STYLES[number];
+/** Native layout fortification of the town options: enclosure type, style override (its family sets the type when the
+ * enclosure follows the culture or is forced) and moat refusal. Shared by every native settings path. */
+export function layoutFortification(o: Partial<Pick<Options, 'walls' | 'wallStyle' | 'moat'>>): { fortification: 'culture' | 'none' | 'wall'; fortificationStyle?: Exclude<WallStyleOpt, 'auto'>; moat?: 'none' } {
+  const none = o.walls === 'none' || o.walls === 'no', style = o.wallStyle && o.wallStyle !== 'auto' ? o.wallStyle : undefined;
+  return { fortification: none ? 'none' : o.walls === 'auto' || style ? 'culture' : 'wall', ...(style && !none ? { fortificationStyle: style } : {}), ...(o.moat === 'no' ? { moat: 'none' as const } : {}) };
+}
 /** Number of castles: auto (size and culture) or 0–3 on distinct defensible sites. */
 export type CastlesOpt = 'auto' | '0' | '1' | '2' | '3';
 export type SuburbOpt = 'auto' | 'none' | 'some' | 'many';
@@ -169,6 +178,8 @@ export interface Options {
   walls: WallsOpt;
   /** Wet ditch outside the curtain; auto follows the culture and local water supply. */
   moat?: Tri;
+  /** Fortification style (« Style de fortification »): `auto` by culture, or one style of `fortifications.json` for every town. */
+  wallStyle?: WallStyleOpt;
   /** Castle count (M4): overrides `castle` when not 'auto'. */
   castles?: CastlesOpt;
   /** Castle / citadel on the most defensible spot at the town edge (auto: town and larger, sometimes a village motte). */
@@ -255,7 +266,7 @@ export function cleanSettlementName(value: unknown): string | undefined {
   return name || undefined;
 }
 export type SettlementOverrides = Partial<Pick<Options,
-  'size' | 'sitePrefs' | 'walls' | 'moat' | 'castles' | 'castle' | 'cathedral' | 'palace' |
+  'size' | 'sitePrefs' | 'walls' | 'wallStyle' | 'moat' | 'castles' | 'castle' | 'cathedral' | 'palace' |
   'monasteries' | 'port' | 'arena' | 'activities' | 'suburbs' | 'shantytowns' |
   'roads' | 'cultureMix' | 'plan' | 'sprawl' | 'language' | 'nameSource'
 >>;
@@ -331,7 +342,7 @@ export function settlementsFromString(v: string | null): SettlementsOpt {
 export const SETTLEMENT_OVERRIDE_KEYS = [
   'size', 'sitePrefs', 'walls', 'moat', 'castles', 'castle', 'cathedral', 'palace',
   'monasteries', 'port', 'arena', 'activities', 'suburbs', 'shantytowns',
-  'roads', 'cultureMix', 'plan', 'sprawl', 'language', 'nameSource',
+  'roads', 'cultureMix', 'plan', 'sprawl', 'language', 'nameSource', 'wallStyle',
 ] as const;
 
 /** The first entry is the main settlement in workflow=list. Legacy settl=L... remains secondary-only. */
@@ -390,6 +401,8 @@ function validOverrides(raw: unknown): SettlementOverrides | undefined {
   if (typeof walls === 'string' && WALLS.includes(walls as WallsOpt)) out.walls = walls as WallsOpt;
   const moat = value('moat');
   if (typeof moat === 'string' && TRIS.includes(moat as Tri)) out.moat = moat as Tri;
+  const wallStyle = value('wallStyle');
+  if (typeof wallStyle === 'string' && (WALL_STYLES as readonly string[]).includes(wallStyle)) out.wallStyle = wallStyle as WallStyleOpt;
   const castles = value('castles');
   if (typeof castles === 'string' && CASTLES.includes(castles as CastlesOpt)) out.castles = castles as CastlesOpt;
   for (const key of ['castle', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities'] as const) {
@@ -591,6 +604,7 @@ function queryForOptions(o: Options, includeUid: boolean): string {
   for (const k of keys) if (o[k] !== DEFAULTS[k]) p.set(k, String(o[k]));
   if (o.biome && o.biome !== 'temperate') p.set('biome', o.biome);
   if (o.moat && o.moat !== 'auto') p.set('moat', o.moat);
+  if (o.wallStyle && o.wallStyle !== 'auto') p.set('wallStyle', o.wallStyle);
   for (const [k, q] of LANDMARK_TOGGLES) if (o[k] && o[k] !== 'auto') p.set(q, String(o[k]));
   if (o.suburbs && o.suburbs !== 'auto') p.set('suburbs', o.suburbs);
   if (o.castles && o.castles !== 'auto') p.set('castles', o.castles);
@@ -661,6 +675,7 @@ export function fromQuery(q: string | URLSearchParams): Options {
   o.center = positionFromString(p.get('center'));
   o.walls = oneOf(p.get('walls'), WALLS, DEFAULTS.walls);
   if (p.has('moat')) o.moat = oneOf(p.get('moat'), TRIS, 'auto');
+  if (p.has('wallStyle')) o.wallStyle = oneOf(p.get('wallStyle'), [...WALL_STYLES], 'auto');
   o.castles = oneOf(p.get('castles'), CASTLES, 'auto');
   o.castle = oneOf(p.get('castle'), TRIS, DEFAULTS.castle);
   for (const [k, q] of LANDMARK_TOGGLES) o[k] = oneOf(p.get(q), TRIS, 'auto');
@@ -718,6 +733,7 @@ export function applyOverride(o: Options, k: string, v: string): void {
   else if (k === 'center') o.center = positionFromString(v);
   else if (k === 'biome') o.biome = biomeName(v);
   else if (k === 'moat') o.moat = oneOf(v, TRIS, 'auto');
+  else if (k === 'wallStyle') o.wallStyle = oneOf(v, [...WALL_STYLES], 'auto');
   else if (k === 'settlements' || k === 'settl') o.settlements = settlementsFromString(v);
   else if (k === 'set2') o.settlements = { list: settlementListFromString(v) };
   else if (k === 'workflow' || k === 'mode') o.workflow = v === 'e' ? 'environment' : v === 'a' ? 'automatic' : v === 'l' ? 'list' : v as Options['workflow'];

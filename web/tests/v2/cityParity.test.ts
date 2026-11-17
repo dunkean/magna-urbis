@@ -20,13 +20,15 @@ import { applySettlementStyle } from '../../src/ui/urbanSettlementStyles';
 import { CITY_DISPLAY_DEFAULTS, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
 import { CITY_DEFAULT_PARCEL_FIT, CITY_RASTER_RESOLUTION, cityRasterSide, parcelFitOf, defaultCityLayoutConfig, CITY_LAYOUT_DEFAULTS } from '../../src/render/cityGeneration';
 import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions } from '../../src/render/cityDrawOptions';
-import { resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
+import { URBAN_PHYSICAL_LAYERS, URBAN_PLAN_LAYERS, resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
 import type { V2Settings } from '../../src/v2/contracts';
 import type { Options } from '../../src/gen/types';
 import { city3dScene } from '../../src/render/city3dMeshes';
 import { pieceShadow, pieceShadows, pieceVolumes, planRoof, volumeRoof, type MassingPiece } from '../../src/render/cityMassing';
 import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from '../../src/render/urbanBuildingGeometry';
-import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality } from '../../src/render/composition';
+import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality, resolveComposition, DEFAULT_CROWN_DETAIL } from '../../src/render/composition';
+import { crownClumpMode } from '../../src/render/crownClumpAtlas';
+import { styleTraits } from '../../src/render/terrainStyle';
 import { PRESET_OPTIONS, compositionMessages } from '../../src/ui/compositionControls';
 import { passKeys } from '../../src/v2/passes/pass';
 import { LiveGround } from '../../src/ui/liveGround';
@@ -386,6 +388,36 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/ui/city3d.ts')).toContain('yardsShown = !flat && yardLayers?.lotEnclosures !== false;');
   });
 
+  it('hides only the plan drawing with Urban plan off: roads, walls, fences, water and lights keep their own switches', () => {
+    for (const style of ['parchment', 'satellite', 'satellite-2'] as const) for (const target of ['view2d', 'view3d', 'export'] as const) {
+      const composition = presetComposition(style); composition.buildings.parcels = true; composition.buildings.blocks = true;
+      const r = resolveAppearance({ style: 'parchment', composition, city: { plan: false } }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+      const on = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+      // Abstract plan graphics off: outlines (planLines), block and lot washes, quarters, domains, tints, diagrams.
+      for (const layer of URBAN_PLAN_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(false);
+      // Real objects unchanged: streets, walls, fences/hedges/gates with their yards, gardens and squares as ground, waterways.
+      for (const layer of URBAN_PHYSICAL_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(on.city.layers[layer]);
+      expect(r.city.layers, `${style} ${target}`).toMatchObject({ planLines: false, streets: true, enclosures: true, lotEnclosures: true });
+      // The map overlay's dashed site reserve outline follows the switch per frame (raster tile keys) with no overlay
+      // rebuild: a rebuild repaints the countryside field strips at a coarser look.
+      expect(cityCountrysideCanvasOptions(r, 4000).urbanPlan(), `${style} ${target}`).toBe(false);
+      expect(r.keys.cartography, `${style} ${target}`).toBe(on.keys.cartography);
+      expect(city3dPlanOptions(r).layers.streets, `${target} 3D`).toBe(true);
+      expect(cityBuildingAppearance(r), `${style} ${target}`).toEqual(cityBuildingAppearance(resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target)));
+    }
+    // No page gates its streets, regional roads or whole plan scene on the switch; all use withoutUrbanPlan.
+    expect(read('../../src/v2/nativeCityMap.ts')).not.toMatch(/city\.plan \?/);
+    const city3d = read('../../src/ui/city3d.ts');
+    expect(city3d).not.toMatch(/planOverlay && !tile\.preview|planOverlay \? cityPlan\(\)/);
+    expect(city3d).toContain('withoutUrbanPlan(requestedLayers)');
+    expect(read('../../src/ui/terrainUrban.ts')).toContain('withoutUrbanPlan(cityLook().layers)');
+    expect(read('../../src/render/canvas.ts')).toContain("world.site && deps.urbanPlan?.() !== false) drawSiteMarker(");
+    expect(read('../../src/v2/benchRenderer.ts')).toContain('urbanPlan: () => this.resolved?.city.plan !== false,');
+    // Dashed refused-lot outlines are plan lines in both draw paths.
+    expect(read('../../src/render/cityCanvas.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
+    expect(read('../../src/render/cityGlStyle.ts')).toContain("layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size");
+  });
+
   it('builds the drawCity options of both pages with the shared function only', () => {
     const bench = read('../../src/ui/terrainUrban.ts'), v2 = read('../../src/v2/nativeCityMap.ts');
     for (const page of [bench, v2]) {
@@ -400,6 +432,28 @@ describe('V2 and City Bench stay in sync', () => {
   it('passes the coastal swell option of the resolved water to the ground renderer on both pages', () => {
     expect(read('../../src/v2/benchRenderer.ts')).toContain('coastWaves:r.composition.networks.water.waves');
     expect(read('../../src/ui/citybench.ts')).toContain('coastWaves:c.networks.water.waves');
+  });
+
+  it('passes the crown detail option of the resolved vegetation to the ground renderer on both pages', () => {
+    expect(read('../../src/v2/benchRenderer.ts')).toContain('crownDetail:r.composition.vegetation.crownDetail');
+    expect(read('../../src/ui/citybench.ts')).toContain('crownDetail:c.vegetation.crownDetail');
+  });
+
+  it('resolves the crown detail to off by default, keeps it across presets, and keeps the three values', () => {
+    expect(DEFAULT_CROWN_DETAIL).toBe('plain');
+    const caps = { nativeCities: true, parcels: true, ruralLanduse: true, urbanLanduse: true, buildings: true };
+    for (const preset of ['satellite', 'parchment', 'satellite-light'] as const) {
+      const recipe = presetComposition(preset);
+      expect(recipe.vegetation.crownDetail).toBeUndefined();
+      expect(resolveComposition(recipe, styleTraits(recipe.ground.variant), 'view2d', caps).vegetation.crownDetail).toBe('plain');
+    }
+    for (const crownDetail of ['plain', 'clumps', 'clumps-fine'] as const) {
+      const chosen = { ...presetComposition('satellite'), vegetation: { ...presetComposition('satellite').vegetation, crownDetail } };
+      expect(resolveComposition(chosen, styleTraits(chosen.ground.variant), 'view2d', caps).vegetation.crownDetail).toBe(crownDetail);
+    }
+    // Painted brushes take the shared sampler: no clumps under them.
+    expect(crownClumpMode('clumps-fine', true)).toBe(0);
+    expect([crownClumpMode('plain', false), crownClumpMode('clumps', false), crownClumpMode('clumps-fine', false), crownClumpMode(undefined, false)]).toEqual([0, 1, 2, 0]);
   });
 
   it('uses the one raster side rule in both pages', () => {
@@ -437,6 +491,11 @@ describe('V2 and City Bench stay in sync', () => {
     expect(options.night).toBe(true); expect(options.roadEmphasis).toBe(r.composition.networks.roads.emphasis);
     expect(cityBuildingAppearance(r).nightInk).toBe(true);
     expect(options.buildingsVisible).toBe(r.composition.buildings.visible && r.composition.buildings.meshes === 'none');
+  });
+
+  it('draws the Underdark ornaments from one shared derivation in 2D and 3D', () => {
+    expect(read('../../src/render/cityDrawOptions.ts')).toContain('drawUnderdarkOrnaments(ctx, underdarkOrnaments(scene.layouts, buildings)');
+    expect(read('../../src/ui/city3d.ts')).toContain('city3dUnderdarkOrnaments(underdarkOrnaments(layouts, scene?.buildings)');
   });
 
   it('keeps the massing and its 3D facade windows on the shared silhouette path', () => {
@@ -598,6 +657,28 @@ describe('V2 and City Bench stay in sync', () => {
 
 
 describe('retained city environment parity', () => {
+
+  it('shares Underdark lamps between 2D and 3D without changing the selected period or rebuilding the terrain', () => {
+    for (const preset of ['satellite', 'parchment'] as const) {
+      const resolve = (ambience: 'day' | 'night', target: 'view2d' | 'view3d') => {
+        const composition = presetComposition(preset); composition.effects.ambience = ambience;
+        return resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target, { biome: 'underdark' });
+      };
+      const on = resolve('day', 'view2d'), off = resolve('night', 'view2d');
+      expect(on.composition.ambience).toBe('day'); expect(off.composition.ambience).toBe('night');
+      expect(on.ground.style).toBe(off.ground.style);
+      for (const key of ['terrainBase', 'forest', 'cartography', 'water'] as const) expect(on.keys[key]).toBe(off.keys[key]);
+      for (const ambience of ['day', 'night'] as const) {
+        const building = cityBuildingAppearance(resolve(ambience, 'view2d'));
+        expect(building.ambience).toBe('night');
+        expect(building.lightsOn).toBe(ambience === 'day');
+        expect(city3dPlanOptions(resolve(ambience, 'view3d')).appearance.lightsOn).toBe(building.lightsOn);
+      }
+    }
+    for (const file of ['../../src/v2/benchRenderer.ts', '../../src/v2/urban3d.ts', '../../src/ui/citybench.ts'])
+      expect(read(file)).toContain('...underdarkSceneLook(');
+  });
+
   it('keeps water independent from streets and retains the decor vectors', () => {
     const parchment = resolveAppearance({ style: 'parchment', composition: presetComposition('parchment') }, {} as never, { nativeCities: true }, 'view2d');
     expect(cityWaterCutsLand(parchment)).toBe(true);
@@ -680,9 +761,18 @@ describe('retained city environment parity', () => {
   });
   it('draws the 3D sea at the 2D coast in both pages (render/seaCover.ts)', async () => {
     const { paintSeaCover } = await import('../../src/render/seaCover');
-    const pixels = new Uint8ClampedArray(4 * 4);
-    paintSeaCover(pixels, [-1, 0, .1, 3], [1, 2, 3, 255]);
-    expect([...pixels]).toEqual([1, 2, 3, 255, 1, 2, 3, 255, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // A straight coast: height = x - 3.5 (cells), so the spline's zero line lies at x = 3.5, halfway between points 3 and 4.
+    const n = 8, height = Array.from({ length: n * n }, (_, i) => i % n - 3.5), pixels = new Uint8ClampedArray(n * n * 4);
+    paintSeaCover(pixels, height, [1, 2, 3, 255]);
+    const alpha = Array.from({ length: n }, (_, x) => pixels[(4 * n + x) * 4 + 3]);
+    // Full sea a cell inside, nothing a cell inland; the tile painter's 102/255 threshold falls on the zero line.
+    expect(alpha.slice(0, 3)).toEqual([255, 255, 255]);
+    expect(alpha.slice(5)).toEqual([0, 0, 0]);
+    const edge = 3 + (alpha[3] - 102) / (alpha[3] - alpha[4]);
+    expect(Math.abs(edge - 3.5)).toBeLessThan(.02);
+    expect([...pixels.subarray((4 * n) * 4, (4 * n) * 4 + 3)]).toEqual([1, 2, 3]);
+    // The 2D land cover keeps the same zero line: refinement never turns spline land into sea or back.
+    expect(read('../../src/ui/terrainGl.ts')).toContain('s.x = shoreH > 0.0 ? max(s.x, min(shoreH, 0.05)) : min(s.x, shoreH);');
     // V2 (native field) and City Bench (decor heights) paint the sea through the same helper.
     expect(read('../../src/v2/urban3d.ts')).toContain('paintSeaCover(');
     expect(read('../../src/ui/city3d.ts')).toContain('paintSeaCover(');
@@ -704,5 +794,17 @@ describe('causeways are ordinary raised roads', () => {
       expect(crossings).toContain("'bridge'");
       expect(crossings).not.toContain("'causeway'");
     }
+  });
+});
+
+
+describe('defensive vegetation parity', () => {
+  it('uses the shared fortification polygons in V2 and City Bench, including worker preparation', () => {
+    for (const path of ['../../src/v2/displayForest.ts', '../../src/ui/citybench.ts']) {
+      const source = read(path);
+      expect(source).toContain("import { fortificationClearings } from '../render/forestClearance'");
+      expect(source).toMatch(/forestOccupation\([^;]+fortificationClearings/);
+    }
+    expect(read('../../src/v2/occupation.worker.ts')).toContain('data.input.clearings');
   });
 });

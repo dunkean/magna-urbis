@@ -5,6 +5,7 @@ import type { HydrologyData } from '../../rust/bridge/hydrology';
 import type { TerrainLayer } from '../src/gen/types';
 import { defaultSettings, adaptedExtent } from '../src/v2/settings';
 import { effectiveTerrainSettings, validateTerrainSettings } from '../src/v2/terrainSettings';
+import { filledSymbolicZones } from '../src/v2/symbolicMap';
 import { generateEngineHeight } from '../src/v2/platform';
 import { generateTerrain, terrainCacheKey, retainedTerrainMatchesSettings } from '../src/v2/engine';
 import { projectEngineTerrain, type V2TerrainLayer } from '../src/v2/terrainProjection';
@@ -159,7 +160,8 @@ describe('V2 bench terrain contract', () => {
     // .2 stored these complete numeric arrays where .3 stores their fingerprints.
     const historical = JSON.parse(terrainCacheKey(settings)); historical[0] = 'mu-v2-bench-terrain-2026-10-28.2';
     historical[10].sketch.heights = settings.terrain.sketch!.heights;
-    historical[10].zones.weights = settings.terrain.zones!.weights;
+    // The key records the effective zones: unpainted cells now carry the plain channel (filledSymbolicZones).
+    historical[10].zones.weights = filledSymbolicZones(settings.terrain.zones!).weights;
     const canonical = (value: unknown): string => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
       ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
     world.stats['v2.terrainKey'] = canonical(historical);

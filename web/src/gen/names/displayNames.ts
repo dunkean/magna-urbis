@@ -31,6 +31,14 @@ const TOWER: Record<NameDisplayLanguage, string> = { en: 'Tower', fr: 'Tour', es
 
 /** Translate only a typed generic; the proper name and its canonical cultural form are retained. */
 export function presentName(parts: NameParts, presentation: NamePresentation = {}): string {
+  // Some geographic hydronyms contain an explicit French generic. Keep the
+  // complete corpus spelling in cultural mode, but localize this reviewed
+  // standalone prefix in display mode (including retained name-bank entries).
+  if (presentation.mode === 'localized' && presentation.language !== 'fr' && parts.kind === 'river' && parts.opaque && parts.sourceMode === 'country') {
+    const match = /^(Ruisseau|Rivière|Fleuve)\s+(?:de\s+|d['’])(.+)$/iu.exec(parts.cultural);
+    if (match) return presentName({ ...parts, opaque: false, proper: match[2],
+      role: parts.role ?? (match[1].toLowerCase() === 'ruisseau' ? 'water.stream' : 'water.river') }, presentation);
+  }
   if (presentation.mode !== 'localized' || parts.opaque || parts.kind === 'town' || parts.kind === 'village') return presentation.script==='latin' ? latinReading(parts.cultural) ?? parts.cultural : parts.cultural;
   const language = presentation.language ?? 'en';
   const description = descriptiveText(parts.meaning, language);

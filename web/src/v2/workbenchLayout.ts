@@ -4,6 +4,7 @@ import { cultureEra } from '../gen/options';
 import { installCultureBrowser } from './cultureBrowser';
 import { advancedPanel } from './advancedPanel';
 import { mountRenderPassControls } from './renderPassControls';
+import { mountSectionIndex } from './sectionIndex';
 import { editorButtonIcon } from './editorIcons';
 import { recommendedCulture } from './settlementDefaults';
 import { mountSettlementPopulationPanel } from './settlementPopulationPanel';
@@ -109,6 +110,11 @@ export function mountWorkbenchLayout(api: {
     }
     family.querySelector('.chain-spine')?.remove();
     family.querySelector('.family-head')?.remove();
+    // One page: stage cards flow down columns in chain order, all open; the header index jumps to a stage.
+    advanced.grid.classList.add('stage-columns');
+    const header = advanced.panel.querySelector<HTMLElement>(':scope > header')!;
+    const index = mountSectionIndex(advanced.panel, () => Array.from(advanced.grid.querySelectorAll<HTMLElement>(':scope > .stage-row')).map(section => ({ section, heading: section.querySelector<HTMLElement>('.stage-name')! })), () => header.offsetHeight);
+    header.append(index.nav); advanced.panel.addEventListener('toggle', index.sync);
   }
   // Selection belongs to the list on the right, not to a second scope panel on the left.
   cities.querySelector('.family-city-scope')?.remove();
@@ -190,12 +196,16 @@ export function mountWorkbenchLayout(api: {
     }
     previous.autoCulture = s.region?.demography?.followCulture ?? previous.autoCulture;
     const cultureEnvironmentKey = JSON.stringify(cultureEnvironment(s));
-    if (previous.autoCulture && (cultureEnvironmentKey !== previous.cultureEnvironment || force)) {
+    // A loaded code, recipe or project keeps its culture (a new settings object starts from its own environment).
+    // "Follow the environment" re-picks only after an environment change (or ticking it) that rules the current culture out.
+    if (previous.autoCulture && (cultureEnvironmentKey !== previous.cultureEnvironment || force) && !plausibleCultures(s).includes(s.options.culture)) {
       s.options.culture = recommendedCulture(s);
       api.syncForms();
     }
     previous.cultureEnvironment = cultureEnvironmentKey;
-    const allowed = previous.autoCulture ? plausibleCultures(s) : allCultureOptions.map(option => option.value);
+    const plausible = plausibleCultures(s);
+    // A stored culture outside the environment's list stays selectable (and shown) until the environment changes.
+    const allowed = previous.autoCulture ? allCultureOptions.map(option => option.value).filter(id => plausible.includes(id) || id === s.options.culture) : allCultureOptions.map(option => option.value);
     const choicesKey = allowed.join('|');
     if (choicesKey !== cultureChoices) {
       culture.replaceChildren(...allCultureOptions.filter(option => allowed.includes(option.value)));
@@ -210,5 +220,6 @@ export function mountWorkbenchLayout(api: {
       ? currentComposition(s).buildings.look === button.dataset.cityDisplay
       : i === 5 ? !!s.appearance?.textured : !s.appearance?.textured && (i === 3 ? s.appearance?.city?.palette === 'ink' : s.appearance?.city?.palette !== 'ink'))));
   }
-  sync(); return { sync, prepareGeneration: () => { sync(); if (state.get(api.getSettings())!.autoCulture) rollCulture(); } };
+  // A run never redraws the culture: the same recipe gives the same map (the dice draws a new one on request).
+  sync(); return { sync, prepareGeneration: () => { sync(); } };
 }

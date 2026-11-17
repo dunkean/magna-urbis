@@ -1,13 +1,14 @@
 import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
 import { nativeCityRecords } from './nativeProducts';
-import { runtimeValues } from './runtimeChoices';
+import { nativeOrigin, runtimeValues } from './runtimeChoices';
 
 export interface ExecutionRow { process: string; configured: string; actual?: string }
 const engineName = (engine: string) => engine === 'native' ? 'Rust · native service' : engine === 'typescript' ? 'TypeScript · classic' : 'Rust · in the browser';
 /** Evidence comes from retained products, never from currently available hardware or the next recipe. */
 export function executionOverview(settings: V2Settings, world?: World, renderPath?: string): ExecutionRow[] {
-  const v = runtimeValues(settings), stats = world?.stats;
+  // runtimeValues().engine is the UI choice (auto/cpu/gpu/...): the overview names the backend that will run.
+  const v = { ...runtimeValues(settings), engine: !nativeOrigin() ? 'rust' : settings.runtime?.autoBackend ? 'native' : settings.runtime?.backend ?? 'rust' }, stats = world?.stats;
   const cities = Object.values(nativeCityRecords(world) ?? {});
   const cityPaths = [...new Set(cities.map(city => city.backend))];
   const urban = cityPaths.length ? cityPaths.join(' / ') : world?.urban || world?.settlements?.some(place => place.urban) ? 'typescript-cpu' : undefined;

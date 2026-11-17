@@ -108,9 +108,14 @@ export interface V2Settings {
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';
     backend: 'typescript' | 'rust' | 'native';
+    /** Automatic engine (default): `backend` is re-resolved for the page origin (native on loopback/desktop, else browser Rust). */
+    autoBackend?: boolean;
     source: 'procedural' | 'procedural-phasor' | 'neural-wasm' | 'neural-python' | 'neural';
     localServer?: string; pythonServer?: string; neuralServer?: string; neuralAssets?: string;
     resolution?: number; erosion?: number;
+    /** Run-only stamp (never saved in a recipe): the engine builds the page resolved for this run, so the
+     * worker records its results under the identities the page compares (`engineIdentity.ts`). */
+    engineBuilds?: import('../../../rust/bridge/engineIdentity').EngineBuilds;
   };
 }
 

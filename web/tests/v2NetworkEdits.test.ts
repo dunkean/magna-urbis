@@ -36,7 +36,9 @@ function fixture(options: { native?: 'vector' | 'hydrology' | 'none' } = {}): Wo
   for (const river of projected) for (let j = 1; j < river.path.length; j++)
     forCellsNearPolyline([river.path[j - 1], river.path[j]], N, N, CELL, Math.max(CELL * .6, river.width[j] / 2), i => { if (!water[i]) water[i] = 3; });
   let native: unknown;
-  if (mode === 'vector') native = { water: { rivers: network, hydro: { n: N, width: SIZE, sea: new Uint8Array(N * N) }, lake: new Uint8Array(N * N) } };
+  // VectorWater.lakeField is required: bridge snapping now probes lake shores (no lake here: negative field).
+  if (mode === 'vector') native = { water: { rivers: network, hydro: { n: N, width: SIZE, sea: new Uint8Array(N * N) }, lake: new Uint8Array(N * N),
+    lakeField: { n: N, values: new Float32Array(N * N).fill(-4), distance: new Float32Array(N * N).fill(1e9) } } };
   if (mode === 'hydrology') {
     const points: number[] = [], offsets = [0], meta: number[] = [];
     for (const s of mains) { for (const p of pathOf(s.points)) points.push(p.x, p.y, s.width, 0); offsets.push(points.length / 4); meta.push(s.id!, 0, 0, s.joins! >= 0 ? s.joins! + 1 : 0, 0, 0); }
@@ -110,7 +112,8 @@ describe('V2 regional road edits', () => {
     const moved = world.roads![0].path;
     expect(moved).toEqual([{ x: 40, y: 30 }, { x: 170, y: 30 }]);
     expect(region(world).segments[0].crossings.map(c => c.kind)).toEqual(['bridge']);
-    expect(world.landuse!.forestCorridors).toEqual([{ path: moved, half: 5 / 2 + 2.5 }]);
+    // Cleared regional roads hold crowns back (forestRoom.ts roadCorridor, crownSetback).
+    expect(world.landuse!.forestCorridors).toEqual([{ path: moved, half: 5 / 2 + 2.5, crownSetback: true }]);
     const label = world.names!.entries.find(e => e.id === 'r')!;
     expect(label.path).toEqual(moved); expect(label.anchor).toEqual({ x: 105, y: 30 });
     expect(region(world).nodes).toEqual([]);

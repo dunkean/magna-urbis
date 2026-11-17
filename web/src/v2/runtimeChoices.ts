@@ -3,11 +3,13 @@
 import type { V2Settings } from './contracts';
 import { registerMessages } from './i18n';
 import { isNativeConnectionFailure, markNativeUnavailable, nativeRuntimeAvailable } from '../../../rust/bridge/nativeAvailability';
-import { loopbackServer } from './platform';
+import { loopbackServer, runtimeOptions, type RuntimeLocation } from './platform';
+import { engineIdentity, nativeBuild, refreshWasmBuild } from '../../../rust/bridge/engineIdentity';
 
-export interface RuntimeCapabilities { checked: boolean; webgpu: boolean; native: boolean; python: boolean }
+export interface RuntimeCapabilities { checked: boolean; servicesChecked?: boolean; webgpu: boolean; native: boolean; python: boolean }
 export interface ChoiceState { enabled: boolean; reason?: string }
 export type EngineChoice = 'rust' | 'native' | 'typescript';
+type OriginLocation = RuntimeLocation;
 export type ComputeChoice = 'auto' | 'cpu' | 'gpu';
 export type NeuralChoice = 'auto' | 'python';
 export type RuntimeKey = 'engine' | 'compute' | 'neural' | 'sampling' | 'generationCompute' | 'hydrology' | 'urban';
@@ -37,9 +39,25 @@ function ensure(s: V2Settings): NonNullable<V2Settings['runtime']> {
   return s.runtime ??= { backend: 'rust', compute: 'auto', source: 'procedural' };
 }
 
+/** Only an explicit local profile or the desktop app may use native services. */
+export function nativeOrigin(location?: OriginLocation): boolean {
+  return runtimeOptions(location).profile === 'local';
+}
+/** Automatic engine: native preferred where reachable from this origin, else Rust in the browser. The run still
+ * re-checks native reachability and silently uses the browser when it does not answer. */
+export function resolveAutoBackend(settings: V2Settings, location?: OriginLocation): V2Settings {
+  const runtime = settings.runtime;
+  if (!runtime?.autoBackend) return normalizeRuntime(settings, location);
+  const backend = nativeOrigin(location) ? 'native' : 'rust';
+  runtime.backend = backend;
+  if (backend === 'rust') runtime.compute = 'auto';
+  return normalizeRuntime(settings, location);
+}
+
 /** Apply a single runtime-related setting path, then restore global coherence. Returns true if the path was handled. */
 export function applyRuntimePath(settings: V2Settings, path: string, value: unknown): void {
   const runtime = ensure(settings);
+  if (path === 'runtime.compute' && !nativeOrigin()) delete runtime.autoBackend;
   if (path === 'runtime.source') {
     const wasClassic = runtime.backend === 'typescript';
     settings.generation = value === 'procedural' ? 'procedural' : 'neural';
@@ -53,12 +71,12 @@ export function applyRuntimePath(settings: V2Settings, path: string, value: unkn
 }
 
 /** Idempotent: brings any settings object to a state that the engines accept. */
-export function normalizeRuntime(settings: V2Settings): V2Settings {
+export function normalizeRuntime(settings: V2Settings, location?: OriginLocation): V2Settings {
   const runtime = ensure(settings);
   if ((runtime.source as string) === 'procedural-phasor') {
     settings.terrain ??= {}; settings.terrain.procedural = { ...settings.terrain.procedural, preset: 'compact' }; runtime.source = 'procedural';
   }
-  if (settings.generation === 'neural' && runtime.source === 'procedural') runtime.source = runtime.backend === 'native' ? 'neural' : 'neural-wasm';
+  if (settings.generation === 'neural' && runtime.source === 'procedural') runtime.source = runtime.backend === 'native' && !runtime.autoBackend ? 'neural' : 'neural-wasm';
   if (settings.generation === 'procedural' && NEURAL_SOURCES.includes(runtime.source as never)) settings.generation = 'neural';
   const neural = isNeural(settings);
   if (runtime.backend === 'typescript') {
@@ -67,13 +85,22 @@ export function normalizeRuntime(settings: V2Settings): V2Settings {
   }
   const terrain = settings.terrain;
   if ((terrain?.generationCompute as string) === 'native') { delete terrain!.generationCompute; runtime.backend = 'native'; }
+  if (!nativeOrigin(location)) {
+    if (runtime.backend === 'typescript') runtime.compute = 'cpu';
+    runtime.backend = 'rust';
+    if (runtime.source === 'neural') runtime.source = 'neural-wasm';
+    if (settings.urban?.backend === 'native' || settings.urban?.backend === 'typescript') settings.urban.backend = 'rust';
+  }
   if (isCompact(settings) && !neural) {
     if (runtime.backend === 'native' && runtime.compute === 'gpu') runtime.compute = 'auto';
     if (terrain) { delete terrain.compute; if (terrain.generationCompute && !['cpu', 'gpu-erosion'].includes(terrain.generationCompute)) delete terrain.generationCompute; }
   }
   if (neural && runtime.compute === 'cpu') runtime.compute = 'auto';
-  // Neural runtime follows the engine unless Python is explicitly chosen.
-  if (neural && runtime.source !== 'neural-python') runtime.source = runtime.backend === 'native' ? 'neural' : 'neural-wasm';
+  // Only invalid combinations are corrected: the native neural service (:8792) needs the native engine.
+  // Python or browser neural stays as chosen (or as the run fallback set it), even with the native engine:
+  // the neural source only produces the height; the rest of the chain keeps its engine.
+  // Automatic selects the native neural service only once its probe answered (fallbackRuntime).
+  if (neural && runtime.source === 'neural' && runtime.backend !== 'native') runtime.source = 'neural-wasm';
   if (runtime.backend === 'typescript' && terrain) { delete terrain.compute; delete terrain.generationCompute; }
   // Explicit overrides never contradict the global compute choice.
   if (terrain) {
@@ -92,15 +119,19 @@ const no = (reason: string): ChoiceState => ({ enabled: false, reason });
 export function runtimeChoiceStates(settings: V2Settings, caps: RuntimeCapabilities): Record<RuntimeKey, Record<string, ChoiceState>> {
   const runtime = settings.runtime ?? { backend: 'rust', compute: 'auto', source: 'procedural' } as const;
   const neural = isNeural(settings), compact = isCompact(settings), classic = runtime.backend === 'typescript';
-  const gpuMissing = caps.checked && !caps.webgpu, nativeMissing = caps.checked && !caps.native, pythonMissing = caps.checked && !caps.python;
+  const servicesChecked = caps.servicesChecked ?? caps.checked;
+  const gpuMissing = caps.checked && !caps.webgpu, nativeMissing = servicesChecked && !caps.native, pythonMissing = servicesChecked && !caps.python;
   const terrain = settings.terrain ?? {};
   const gpuOverride = terrain.compute === 'gpu-f32' || GPU_GEN.includes(terrain.generationCompute ?? '');
   const gpu = (): ChoiceState => classic ? no(R.engineNoGpu) : gpuMissing ? no(R.needGpu) : ok;
   return {
     engine: {
+      auto: ok,
       rust: ok,
-      native: nativeMissing ? no(R.needNative) : ok,
-      typescript: neural ? no(R.classicNoNeural) : ok,
+      cpu: neural ? no(R.neuralNoCpu) : ok,
+      gpu: gpuMissing ? no(R.needGpu) : ok,
+      native: !nativeOrigin() || nativeMissing ? no(R.needNative) : ok,
+      typescript: !nativeOrigin() || neural ? no(R.classicNoNeural) : ok,
     },
     compute: {
       auto: ok,
@@ -124,7 +155,7 @@ export function runtimeChoiceStates(settings: V2Settings, caps: RuntimeCapabilit
       'gpu-erosion': neural ? no(R.proceduralOnly) : runtime.compute === 'cpu' ? no(R.cpuNoGpu) : terrain.compute === 'wasm' ? no(R.cpuVsGpu) : gpu(),
     },
     hydrology: { auto: ok, cpu: ok, gpu: gpuMissing ? no(R.needGpu) : ok },
-    urban: { '': ok, typescript: ok, rust: ok, native: nativeMissing ? no(R.needNative) : ok },
+    urban: { '': ok, typescript: nativeOrigin() ? ok : no(R.classicNoNeural), rust: ok, native: !nativeOrigin() || nativeMissing ? no(R.needNative) : ok },
   };
 }
 
@@ -133,21 +164,29 @@ export type RuntimeValues = Record<RuntimeKey, string>;
 export function runtimeValues(settings: V2Settings): RuntimeValues {
   const runtime = settings.runtime ?? { backend: 'rust', compute: 'auto', source: 'procedural' } as const;
   return {
-    engine: runtime.backend, compute: runtime.compute, neural: runtime.source === 'neural-python' ? 'python' : 'auto',
+    engine: settings.runtime?.autoBackend ? 'auto' : nativeOrigin() ? runtime.backend : runtime.compute, compute: runtime.compute, neural: runtime.source === 'neural-python' ? 'python' : 'auto',
     sampling: settings.terrain?.compute ?? '', generationCompute: settings.terrain?.generationCompute ?? '',
     hydrology: settings.terrain?.hydrology?.compute ?? 'auto', urban: settings.urban?.backend ?? '',
   };
 }
 
-/** Writes one choice and re-normalizes. Overrides set to '' (or hydrology 'auto') are removed so they follow the engine. */
-export function setRuntimeChoice(settings: V2Settings, key: RuntimeKey, value: string): V2Settings {
+/** Writes one choice and re-normalizes. Overrides set to '' (or hydrology 'auto') are removed so they follow the engine.
+ * `caps` decides the automatic neural source: native neural only when its probe answered (the run then still picks
+ * Python before the browser when the native neural service is not usable, see fallbackRuntime). */
+export function setRuntimeChoice(settings: V2Settings, key: RuntimeKey, value: string, caps?: ServiceCapabilities): V2Settings {
   const runtime = ensure(settings);
   switch (key) {
-    case 'engine': applyRuntimePath(settings, 'runtime.backend', value); runtime.backend = value as EngineChoice; break;
+    case 'engine':
+      if (value === 'auto') { runtime.autoBackend = true; resolveAutoBackend(settings); break; }
+      if (value === 'cpu' || value === 'gpu') { delete runtime.autoBackend; runtime.backend = 'rust'; runtime.compute = value; break; }
+      delete runtime.autoBackend; applyRuntimePath(settings, 'runtime.backend', value); runtime.backend = value as EngineChoice;
+      // Automatic neural follows an explicit engine choice; the run checks the native neural service.
+      if (isNeural(settings) && runtime.source !== 'neural-python') runtime.source = runtime.backend === 'native' ? 'neural' : 'neural-wasm';
+      break;
     case 'compute': runtime.compute = value as ComputeChoice; break;
     case 'neural':
       if (value === 'python') { settings.generation = 'neural'; runtime.source = 'neural-python'; }
-      else if (isNeural(settings)) runtime.source = runtime.backend === 'native' ? 'neural' : 'neural-wasm';
+      else if (isNeural(settings)) runtime.source = runtime.backend === 'native' && caps?.nativeNeural === true ? 'neural' : 'neural-wasm';
       break;
     case 'sampling': settings.terrain ??= {}; if (value) settings.terrain.compute = value as 'wasm' | 'gpu-f32'; else delete settings.terrain.compute; break;
     case 'generationCompute': settings.terrain ??= {}; if (value) settings.terrain.generationCompute = value as never; else delete settings.terrain.generationCompute; break;
@@ -168,7 +207,7 @@ export function runtimeSummary(settings: V2Settings, effectiveGpu?: boolean): st
 }
 
 // ── Offline backends ──────────────────────────────────────────────────────────────────────
-/** `nativeNeural`: the native neural service (:8792); undefined = not probed, assumed usable. */
+/** `nativeNeural`: the native neural service (:8792); only `true` (a probe saw it answer) makes it usable. */
 export interface ServiceCapabilities extends RuntimeCapabilities { nativeNeural?: boolean }
 export const F = {
   connection: copy('NativeConnectionError: Native engine is unreachable.', 'NativeConnectionError : Le moteur natif est inaccessible.'),
@@ -185,10 +224,37 @@ export const F = {
   altBrowserNeural: copy('browser neural generation (Rust · WebGPU)', 'la génération neuronale du navigateur (Rust · WebGPU)'),
   altPython: copy('the Python/CUDA neural service', 'le service neuronal Python/CUDA'),
   altNativeNeural: copy('native Rust neural generation', 'la génération neuronale Rust native'),
+  runningInBrowser: copy('running in the browser (native unreachable)', 'exécution dans le navigateur (natif inaccessible)'),
+  nativeQuiet: copy('Native engine not answering: this action stopped; the next run picks the available engine.', 'Moteur natif sans réponse : cette action s’est arrêtée ; le prochain calcul choisit le moteur disponible.'),
+  autoNative: copy('In use: native Rust service', 'En cours : service Rust natif'),
+  autoBrowser: copy('In use: Rust in the browser', 'En cours : Rust dans le navigateur'),
 };
 
-export const usesNativeRuntime = (settings: V2Settings): boolean => settings.runtime?.backend === 'native' || settings.urban?.backend === 'native';
+export const usesNativeRuntime = (settings: V2Settings, action?: string): boolean => settings.runtime?.backend === 'native'
+  || settings.urban?.backend === 'native' && (action === undefined || ['town', 'towns', 'all'].includes(action));
 const nativeRuntime = (settings: V2Settings) => ({ profile: 'local' as const, server: loopbackServer(settings.runtime?.localServer ?? 'http://127.0.0.1:8791') });
+/** Optional neural/illustration services cannot take the procedural engine offline. */
+export function isSelectedNativeServer(settings: V2Settings, server: string, action?: string): boolean {
+  return usesNativeRuntime(settings, action) && server.replace(/\/+$/, '') === nativeRuntime(settings).server;
+}
+
+/** The UI keeps preferences and effective execution separate; repeated stages share one notice. */
+export class RuntimeFallbackState {
+  private episode?: string;
+  private key(settings: V2Settings): string {
+    return JSON.stringify([settings.runtime?.backend ?? 'rust', settings.urban?.backend ?? '', settings.runtime?.localServer ?? 'http://127.0.0.1:8791']);
+  }
+  update(preference: V2Settings, effective: V2Settings): boolean {
+    const fellBack = preference.runtime?.backend === 'native' && effective.runtime?.backend === 'rust'
+      || preference.urban?.backend === 'native' && effective.urban?.backend === 'rust';
+    const episode = fellBack ? this.key(preference) : undefined, notify = episode !== undefined && episode !== this.episode;
+    this.episode = episode;
+    return notify;
+  }
+  status(preference: V2Settings): string | undefined {
+    return this.episode === this.key(preference) ? F.runningInBrowser : undefined;
+  }
+}
 function copyRuntimeSettings(settings: V2Settings): V2Settings {
   return { ...settings, runtime: settings.runtime && { ...settings.runtime }, urban: settings.urban && { ...settings.urban },
     terrain: settings.terrain && { ...settings.terrain } };
@@ -204,25 +270,63 @@ export function browserRuntimeSettings(settings: V2Settings): V2Settings {
   return browser;
 }
 
-/** Probe even a previously reachable service. A result lives for only three seconds. */
-export async function runtimeForRun(settings: V2Settings, capabilities?: ServiceCapabilities): Promise<{ settings: V2Settings; notes: string[] }> {
+/** The settings as terrain keys see them: only what changes the terrain. Where it ran (native, browser, the neural
+ * service a fallback picked for one run), the devices and the endpoints are left out; the classic TypeScript engine,
+ * procedural vs neural, and Python checkpoint choices (which only Python runs) stay in. */
+export function terrainRecipeSettings(settings: V2Settings): V2Settings {
+  const recipe = browserRuntimeSettings(settings), runtime = recipe.runtime;
+  if (runtime) {
+    const checkpoints = [settings.terrain?.coarseModel, settings.terrain?.baseModel, settings.terrain?.decoderModel].some(Boolean);
+    if (NEURAL_SOURCES.includes(runtime.source as never)) runtime.source = runtime.source === 'neural-python' && checkpoints ? 'neural-python' : 'neural-wasm';
+    if (runtime.backend !== 'typescript') runtime.compute = 'auto'; // the classic engine always runs on CPU
+    delete runtime.autoBackend; delete runtime.localServer; delete runtime.pythonServer; delete runtime.neuralServer; delete runtime.engineBuilds;
+  }
+  if (recipe.terrain) {
+    delete recipe.terrain.compute; delete recipe.terrain.generationCompute;
+    if (recipe.terrain.hydrology) { recipe.terrain.hydrology = { ...recipe.terrain.hydrology }; delete recipe.terrain.hydrology.compute; }
+  }
+  return recipe;
+}
+
+/** Explicit runs recheck completed health results, sharing only an in-flight probe.
+ * The native engine is chosen automatically: used when reachable, otherwise the run silently
+ * moves to Rust in the browser (`nativeOffline`, shown only as a Settings status; no notice). */
+export async function runtimeForRun(settings: V2Settings, capabilities?: ServiceCapabilities, action?: string, location?: OriginLocation): Promise<{ settings: V2Settings; notes: string[]; nativeOffline: boolean }> {
+  settings = resolveAutoBackend(copyRuntimeSettings(settings), location);
   let effective = copyRuntimeSettings(settings), notes: string[] = [];
   let native: boolean | undefined;
-  if (usesNativeRuntime(settings)) {
-    native = await nativeRuntimeAvailable(nativeRuntime(settings));
-    if (!native) { effective = browserRuntimeSettings(settings); notes.push(F.engineToBrowser); }
+  if (usesNativeRuntime(settings, action)) {
+    native = await nativeRuntimeAvailable(nativeRuntime(settings), true);
+    if (!native) effective = browserRuntimeSettings(settings);
   }
-  if (capabilities && native !== false) notes.push(...fallbackRuntime(effective, { ...capabilities, ...(native === undefined ? {} : { native }) }));
-  return { settings: effective, notes };
+  if (capabilities && native !== false) notes.push(...fallbackRuntime(effective, { ...capabilities,
+    // An unused city override must not trigger a terrain fallback.
+    native: native ?? (settings.urban?.backend === 'native' && !usesNativeRuntime(settings, action) ? true : capabilities.native) }, location)
+    .filter(note => note !== F.engineToBrowser && note !== F.urbanToEngine));
+  // The worker records its results under the engine builds the page compares (engineIdentity.ts).
+  if (effective.runtime) effective.runtime.engineBuilds = { native: nativeBuild(nativeRuntime(settings).server), wasm: await refreshWasmBuild() };
+  return { settings: effective, notes, nativeOffline: native === false };
+}
+
+/** Identity of the engine that runs `backend` (default: the terrain/region backend) for these settings:
+ * part of every retained stage key, so a rebuilt engine invalidates what the previous binary produced. */
+export function engineIdentityOf(settings: V2Settings, backend: string | undefined = settings.runtime?.backend): string {
+  return engineIdentity(backend, nativeRuntime(settings).server, settings.runtime?.engineBuilds);
+}
+/** Re-read the engine identities before deciding which stages a run may reuse (one short /status probe). */
+export async function refreshEngineIdentity(settings: V2Settings): Promise<void> {
+  if (usesNativeRuntime(settings)) await nativeRuntimeAvailable(nativeRuntime(settings), true);
+  await refreshWasmBuild();
 }
 
 /** One retry of this stage, never a replay of earlier completed generation stages.
  * JSON/HTTP engine failures have no transport marker and propagate unchanged. */
 export async function retryNativeStage<T>(settings: V2Settings, stage: (effective: V2Settings) => Promise<T>,
-  onFallback: (effective: V2Settings, note: string) => void): Promise<T> {
+  onFallback: (effective: V2Settings, note: string) => void, action?: string): Promise<T> {
   try { return await stage(settings); }
   catch (error) {
-    if (!usesNativeRuntime(settings) || !isNativeConnectionFailure(error)) throw error;
+    if (!usesNativeRuntime(settings, action) || !isNativeConnectionFailure(error)) throw error;
+    if (error && typeof error === 'object' && 'server' in error && !isSelectedNativeServer(settings, String(error.server), action)) throw error;
     markNativeUnavailable(nativeRuntime(settings).server);
     const browser = browserRuntimeSettings(settings);
     onFallback(browser, F.engineToBrowser);
@@ -245,7 +349,7 @@ export function matchesRustTransport(settings: V2Settings, key: (settings: V2Set
 /** True when a service the settings rely on has not been probed, or was last seen offline (it may be back). */
 export function runtimeNeedsProbe(settings: V2Settings, caps: RuntimeCapabilities): boolean {
   const runtime = settings.runtime; if (!runtime) return false;
-  const native = runtime.backend === 'native' || settings.urban?.backend === 'native';
+  const native = nativeOrigin() && (runtime.backend === 'native' || settings.urban?.backend === 'native');
   const python = isNeural(settings) && runtime.source === 'neural-python';
   const gpuNeural = isNeural(settings) && runtime.source === 'neural-wasm';
   return !caps.checked ? native || python || gpuNeural : native && !caps.native || python && !caps.python;
@@ -253,21 +357,33 @@ export function runtimeNeedsProbe(settings: V2Settings, caps: RuntimeCapabilitie
 
 /** Moves every choice whose backend is known to be offline to the best available alternative.
  * Returns one note per change ([] when nothing is offline, or when no alternative exists: the run then reports the error). */
-export function fallbackRuntime(settings: V2Settings, caps: ServiceCapabilities): string[] {
+export function fallbackRuntime(settings: V2Settings, caps: ServiceCapabilities, location?: OriginLocation): string[] {
+  if (!nativeOrigin(location)) normalizeRuntime(settings, location);
   if (!caps.checked || !settings.runtime) return [];
   const runtime = settings.runtime, notes: string[] = [], neural = isNeural(settings);
-  if (runtime.backend === 'native' && (!caps.native || caps.nativeNeural === false && neural && runtime.source !== 'neural-python')) {
+  const servicesChecked = caps.servicesChecked ?? caps.checked;
+  if (runtime.backend === 'native' && servicesChecked && !caps.native) {
     if (!neural || runtime.source === 'neural-python') { runtime.backend = 'rust'; notes.push(F.engineToBrowser); }
+    else if (nativeOrigin(location) && caps.python) { runtime.backend = 'rust'; runtime.source = 'neural-python'; notes.push(F.neuralToPython); }
     else if (caps.webgpu) { runtime.backend = 'rust'; runtime.source = 'neural-wasm'; notes.push(F.neuralToBrowser); }
-    else if (caps.python) { runtime.backend = 'rust'; runtime.source = 'neural-python'; notes.push(F.neuralToPython); }
+  } else if (runtime.backend === 'native' && neural && nativeOrigin(location) && (runtime.source === 'neural' || runtime.source === 'neural-wasm')) {
+    // Native engine up: only the neural source is chosen here, the rest of the chain stays native.
+    // The native neural service (:8792) is a separate process, used only once a probe saw it answer;
+    // otherwise Python/CUDA when it answers, else the browser.
+    const source = caps.nativeNeural === true ? 'neural' : caps.python ? 'neural-python' : 'neural-wasm';
+    if (source !== runtime.source) {
+      // Leaving an unusable native neural service, or a browser without WebGPU, is announced; an automatic upgrade is not.
+      if (runtime.source === 'neural' || !caps.webgpu) notes.push(source === 'neural-python' ? F.neuralToPython : F.neuralToBrowser);
+      runtime.source = source;
+    }
   }
-  if (neural && runtime.source === 'neural-python' && !caps.python) {
-    if (runtime.backend === 'native' && caps.nativeNeural !== false) { runtime.source = 'neural'; notes.push(F.pythonToNative); }
-    else if (caps.webgpu) { runtime.backend = 'rust'; runtime.source = 'neural-wasm'; notes.push(F.neuralToBrowser); }
+  if (neural && runtime.source === 'neural-python' && servicesChecked && !caps.python) {
+    if (runtime.backend === 'native' && caps.nativeNeural === true) { runtime.source = 'neural'; notes.push(F.pythonToNative); }
+    else if (caps.webgpu) { runtime.source = 'neural-wasm'; notes.push(F.neuralToBrowser); }
   }
-  if (neural && runtime.backend === 'rust' && runtime.source === 'neural-wasm' && !caps.webgpu && caps.python) { runtime.source = 'neural-python'; notes.push(F.neuralToPython); }
-  if (settings.urban?.backend === 'native' && !caps.native) { delete settings.urban.backend; notes.push(F.urbanToEngine); }
-  if (notes.length) normalizeRuntime(settings);
+  if (nativeOrigin(location) && neural && runtime.backend === 'rust' && runtime.source === 'neural-wasm' && !caps.webgpu && caps.python) { runtime.source = 'neural-python'; notes.push(F.neuralToPython); }
+  if (settings.urban?.backend === 'native' && servicesChecked && !caps.native) { delete settings.urban.backend; notes.push(F.urbanToEngine); }
+  if (notes.length) normalizeRuntime(settings, location);
   return notes;
 }
 
@@ -285,7 +401,7 @@ export function backendAlternative(settings: V2Settings, caps: RuntimeCapabiliti
   const trial = { ...settings, runtime: settings.runtime && { ...settings.runtime }, urban: settings.urban && { ...settings.urban },
     terrain: settings.terrain && { ...settings.terrain } } as V2Settings;
   const source = settings.runtime?.source;
-  const failed: ServiceCapabilities = { ...caps, checked: true, ...(failure === 'native' ? { native: false } : failure === 'webgpu' ? { webgpu: false }
+  const failed: ServiceCapabilities = { ...caps, checked: true, servicesChecked: true, ...(failure === 'native' ? { native: false } : failure === 'webgpu' ? { webgpu: false }
     : source === 'neural-python' ? { python: false } : { nativeNeural: false }) };
   if (!fallbackRuntime(trial, failed).length) return undefined;
   const runtime = trial.runtime!;

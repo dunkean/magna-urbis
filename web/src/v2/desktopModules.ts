@@ -1,4 +1,4 @@
-import { registerMessages, setText } from './i18n';
+import { registerMessages, setText, setDynamicText, translate } from './i18n';
 import './desktopModules.css';
 import modelCatalog from '../../../rust/models/neural-earth/catalog.json';
 
@@ -104,20 +104,20 @@ export function mountDesktopModules(host: HTMLElement, onServicesChanged?: () =>
       if (!state.busy) operationRequested = false;
       previousBusy = state.busy;
       if (servicesChanged) onServicesChanged?.();
-      log.textContent = state.log ?? '';
-      if (state.busy) { setText(resultText, 'Working…'); resultDetail.textContent = ''; }
-      else if (state.lastOperation) { setText(resultText, state.lastOperation.success ? 'Last operation succeeded' : 'Last operation failed'); resultDetail.textContent = `: ${state.lastOperation.message}`; }
-      else { setText(resultText, ''); resultDetail.textContent = ''; }
+      setDynamicText(log, () => translate(state.log ?? ''));
+      if (state.busy) { setText(resultText, 'Working…'); setText(resultDetail, ''); }
+      else if (state.lastOperation) { setText(resultText, state.lastOperation.success ? 'Last operation succeeded' : 'Last operation failed'); setDynamicText(resultDetail, () => `: ${translate(state.lastOperation!.message)}`); }
+      else { setText(resultText, ''); setText(resultDetail, ''); }
       for (const control of controls) control.disabled = control !== refreshButton && (state.busy || pending);
       if (state.busy || (Date.now() < pollUntil && state.components.some(item => item.installed && !item.online))) timer = setTimeout(() => { void refresh(); }, 1000);
-    } catch (error) { setText(resultText, ''); resultDetail.textContent = String(error); for (const control of controls) control.disabled = false; }
+    } catch (error) { setText(resultText, ''); setText(resultDetail, String(error)); for (const control of controls) control.disabled = false; }
   }
   async function perform(command: string, args: Record<string, unknown>): Promise<void> {
     if (pending) return;
     pending = true; pollUntil = Date.now() + 60_000; for (const control of controls) control.disabled = control !== refreshButton;
     if (command === 'desktop_action') operationRequested = true;
     try { await invoke(command, args); pending = false; await refresh(); }
-    catch (error) { pending = false; operationRequested = false; setText(resultText, ''); resultDetail.textContent = String(error); for (const control of controls) control.disabled = false; }
+    catch (error) { pending = false; operationRequested = false; setText(resultText, ''); setText(resultDetail, String(error)); for (const control of controls) control.disabled = false; }
   }
   function action(name: Action, args: Record<string, unknown> = {}): void { void perform('desktop_action', { action: name, ...args }); }
   for (const component of ['terrain', 'illustration'] as const) {

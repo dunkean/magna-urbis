@@ -46,7 +46,7 @@ export function terrain3dBackend(view: Terrain3d): Terrain3dBackend {
 
 const RECOVERY_ATTEMPTS = 3, RECOVERY_DELAY_MS = 500, LOSS_WINDOW_MS = 60_000, WARMUP_LIMIT_MS = 45_000;
 /** Calls that change a view's inputs or camera: also applied to a view being prepared behind it. */
-const MIRRORED = new Set<PropertyKey>(['setSurface', 'setHeightSampler', 'setGroundMaterial', 'setLook', 'setRenderV2Season', 'setTileBoundaries', 'setBuildings',
+const MIRRORED = new Set<PropertyKey>(['setSurface', 'setHeightSampler', 'setGroundCuts', 'setGroundMaterial', 'setLook', 'setRenderV2Season', 'setTileBoundaries', 'setBuildings',
   'replaceBuildings', 'setForest', 'setNearTrees', 'setTreeDistance', 'setTileLoader', 'invalidateTiles', 'setTexture', 'setCamera', 'setNavigation', 'setActive', 'resize', 'fit', 'zoom', 'north']);
 
 /** A drawing canvas laid exactly over the owner's element (same offset parent, box and stacking), without

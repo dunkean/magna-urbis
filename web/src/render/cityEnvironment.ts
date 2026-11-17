@@ -9,18 +9,21 @@ import type { ForestFieldInput } from '../../../rust/bridge/terrainForest';
 import { seedHash } from '../../../rust/bridge/terrainAdjust';
 import { terrainStyle } from './terrainStyle';
 import { CONTOUR_INTERVAL } from './contours';
+import { underdarkCavernOf } from './underdarkCavern';
+import { underdarkLightingLook } from './underdarkLighting';
 
-export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, waterLook: r.composition.networks.water.look,
+export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, underdark: r.underdark, waterLook: r.composition.networks.water.look,
   waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
 
 export function cityGroundSettings(r: ResolvedAppearance, ground: City3dGround,
-  source: Pick<Terrain3dGroundSettings, 'climate' | 'climateZone' | 'sourceCell' | 'underdark' | 'townGlow' | 'farmBeds'> & { seed: string; relief: string }): Terrain3dGroundSettings | undefined {
+  source: Pick<Terrain3dGroundSettings, 'climate' | 'climateZone' | 'sourceCell' | 'underdark' | 'townGlow' | 'townSites' | 'farmBeds'> & { seed: string; relief: string }): Terrain3dGroundSettings | undefined {
   if (ground === 'map' || !r.ground.layers.relief || !r.ground.layers.hypsometry) return;
   const style = terrainStyle(ground === 'render' ? 'render3d' : ground, r.palette.colors);
   const relief = source.relief === 'flat' || source.relief === 'hills' || source.relief === 'valley' ? source.relief : 'mountains';
-  return { seed: seedHash(source.seed), climate: source.climate, climateZone: source.climateZone, sourceCell: source.sourceCell, ...(source.underdark ? { underdark: true, ...(source.townGlow ? { townGlow: source.townGlow } : {}), ...(source.farmBeds ? { farmBeds: source.farmBeds } : {}) } : {}),
+  const caveLook = underdarkLightingLook(source, r.composition.ambience);
+  return { seed: seedHash(source.seed), climate: source.climate, climateZone: source.climateZone, sourceCell: source.sourceCell, ...(source.underdark ? { underdark: true, townGlow: caveLook.townGlow, townSites: caveLook.townSites, ...(source.farmBeds ? { farmBeds: source.farmBeds } : {}), cavern: underdarkCavernOf(r.composition.recipe) } : {}),
     lighting: { ...r.ground.lighting }, renderV2: style.traits.satelliteVariant, paperMap: !!style.traits.paperMap,
-    v2Season: r.ground.season, v2Calendar: r.ground.calendar, ...cityGroundLook(r),
+    v2Season: r.ground.season, v2Calendar: r.ground.calendar, ...cityGroundLook(r), underdark: !!source.underdark || r.underdark,
     displacement: r.city.refinement !== 'source', forestBrushes: style.traits.forestBrushes,
     contours: r.ground.contours && source.relief !== 'cavern' ? { step: CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1),
       color: style.palette.contour, opacity: style.palette.contourOpacity, flat: relief === 'flat' } : undefined };
@@ -60,7 +63,7 @@ export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.string
 /** Both 2D hosts use the raster tile renderer and the retained map extent for decorative field scale. */
 export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number) {
   return { transparentBackground: true, raster: true, vegetation: r.vegetation.symbols,
-    furrowReferenceSize: mapSize, mask: { landuse: cityOverlayLandKinds(r) } };
+    furrowReferenceSize: mapSize, mask: { landuse: cityOverlayLandKinds(r) }, urbanPlan: () => r.city.plan };
 }
 
 /** Whole crowns remain readable at near town scale, including the narrower bench viewport. */

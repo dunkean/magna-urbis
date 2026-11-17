@@ -1,9 +1,8 @@
 /** The river courses of a vector water network as the satellite ground draws them, for the white water marks
  * (whiteWater.ts): drawn points, widths and water levels of every main river line, one source object per network. */
-import { riverGeometry } from '../ui/vectorWaterRender';
-import { channelWidth } from '../ui/riverVectors';
+import { riverGeometry, widthRegimeSize } from '../ui/vectorWaterRender';
 import type { VectorWater } from '../ui/vectorWater';
-import { riverState, waterClimate, type WaterSeason } from './waterRegime';
+import { BANKFULL_RUNOFF, riverState, waterClimate, type WaterSeason } from './waterRegime';
 import type { WhiteWaterCourse, WhiteWaterSource } from './whiteWater';
 
 /** Courses of the main rivers. A course that joins no other stream ends in the sea or a lake, unless it leaves the map.
@@ -13,16 +12,13 @@ export function vectorWhiteWaterCourses(water: VectorWater, riverAreaKm2: number
   if (!network) return [];
   const h = water.hydro, edge = 2 * h.width / h.n;
   const climate = season?.zone ? waterClimate({ ...season, landIce: true }) : undefined;
-  const scale = water.widthScale ?? network.widthScale ?? 1, threshold = riverAreaKm2 * 1e6;
-  let top = threshold;
-  for (const l of network.rivers) top = Math.max(top, l.area[l.area.length - 1] ?? 0);
-  const w0 = channelWidth(threshold, scale), span = Math.log(Math.max(w0 * 1.5, channelWidth(top, scale)) / w0);
+  const scale = water.widthScale ?? network.widthScale ?? 1, r0 = water.runoff?.r0 ?? BANKFULL_RUNOFF;
   return network.rivers.map((line, i) => {
     const geo = riverGeometry(water, line, 0, riverAreaKm2), m = geo.widths.length - 1;
     const x = geo.points[2 * m], y = geo.points[2 * m + 1];
     const leaves = x < edge || y < edge || x > h.width - edge || y > h.width - edge;
     const wet = climate && climate.aridity > 0
-      ? geo.widths.map(w => 1 - riverState(climate, Math.max(0, Math.min(1, Math.log(Math.max(w, w0 * .3) / w0) / span))).dry) : undefined;
+      ? geo.widths.map(w => 1 - riverState(climate, widthRegimeSize(w, scale, r0)).dry) : undefined;
     return { id: line.id ?? i, points: geo.points, level: geo.level, width: geo.widths, wet, mouth: !(line.joins !== undefined && line.joins >= 0) && !leaves };
   });
 }

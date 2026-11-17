@@ -35,6 +35,17 @@ export interface CavernLayer {
   clearance: Float32Array;
   /** Kept empty: rooms follow real settlement footprints rather than a radial room template. */
   chambers: { center: Vec2; radius: number }[];
+  /** Natural tunnels of the Underdark carve (terrain stage), centre lines mouth to mouth. */
+  tunnels?: CaveTunnel[];
+}
+
+/** A tunnel through the Underdark rock: `lava-tube` and `river-passage` come from the terrain carve, `dug` from the roads. */
+export interface CaveTunnel {
+  kind: 'lava-tube' | 'river-passage' | 'dug';
+  /** Centre line in metres; a lava tube runs downhill, a river passage downstream. */
+  path: Vec2[];
+  /** Half width of the open floor in metres. */
+  halfWidth: number;
 }
 
 export interface TerrainLayer {
@@ -54,6 +65,9 @@ export interface TerrainLayer {
   islands?: Polygon[];
   lakes: Polygon[];
   rivers: River[];
+  /** The drawn water as closed domains, one even-odd ring group each (sea, lakes, river banks): the settlement
+   * raster's `geometry.water`, the same water the towns are built against. The rural land use is cut by it. */
+  waterGeometry?: Polygon[][];
   /** D8 receiver index per cell after depression filling (-1 = outlet). */
   receiver: Int32Array;
   /** Depression-filled surface. */
@@ -337,7 +351,11 @@ export interface Settlement {
   culture: string;
   /** Explicit controls retained for eager, lazy and macro-quarter generation. */
   options?: SettlementOverrides;
+  /** Placed centre: the site the place was given (placement, roads, generation keys). */
   center: Vec2;
+  /** Built core, set once the town is built beside its placed centre (a village moved to its landing, a farm beside its
+   * road): the published centre of the place — label, click target, camera (`v2/builtCore.ts`). Absent: `center`. */
+  core?: Vec2;
   archetype: SiteArchetype;
   /** Projected radius of the built extent (m) and its outline (disc clipped to the region). */
   radius: number;

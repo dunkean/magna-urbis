@@ -12,6 +12,8 @@ import { ShaderVariants, specializeShader } from './glVariants';
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { UNDERDARK_GLSL } from '../../../rust/bridge/terrainRenderUnderdark';
+import { CROWN_WATER_GLSL } from '../../../rust/bridge/terrainCrownWater';
+import { CAVERN_3D_GLSL, CAVERN_ROOF_GLSL, cavernReveal, cavernRoofMesh, UNDERDARK_CAVERN_DEFAULTS, cavernField, cavernRoofAt, cavernTexelAt, cavernWallAt, cavernUniform, type CavernField, type UnderdarkCavern3d } from '../render/underdarkCavern';
 import { CITY_WATER_3D_GLSL } from '../../../rust/bridge/cityWater3d';
 import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
@@ -28,10 +30,12 @@ import type { BuildingVector, Building3dVisual, Building3dScene } from '../rende
 import type { BuildingFrame } from './urbanBuilding3d';
 import { occupationMergeSlot, withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
+import { UrbanGroundCuts } from './urbanGroundCuts';
 import { lakeSample, type LakeField } from './lakeGeometry';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL, groundCoverActive } from '../render/materialLook';
 import { groundNavigationScale, walkDisplacement, flightDisplacement, navigationFogDistance, WALK_EYE_HEIGHT } from './terrain3dNavigation';
 import { terrain3dPixelRatio, TERRAIN_3D_SETTLE_MS } from './terrain3dResolution';
+import { buildFungi, buildFungiSteps, FUNGUS_3D_GLSL, FUNGUS_FAR, FUNGUS_LOD_VERTICES, FUNGUS_NEAR, FUNGUS_STRIDE, type FungusInputs, type FungusStream } from './terrain3dFungi';
 import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_3D_GLSL, TREE_DISTANCE_DEFAULT, TREE_STRIDE, TREE_VERTICES, treeLimits, type TreeInputs } from './terrain3dTrees';
 /** Light display quality: illustrated stamps raised within this distance of the eye (m). */
 const BILLBOARD_LIGHT_RADIUS = 600;
@@ -72,8 +76,12 @@ export interface Terrain3dLookSettings { paperMap?: boolean; ambience?: 'day' | 
   underdark?: boolean;
   /** Underdark: lantern glow around towns on the cave floor, x, y, radius (m) per town, up to 16. */
   townGlow?: Float32Array;
+  /** Physical town clearances for mushroom placement; retained when lamps are off. */
+  townSites?: Float32Array;
   /** Underdark: fungal farm lots (underdarkFarmBeds), up to 32. */
-  farmBeds?: Float32Array }
+  farmBeds?: Float32Array;
+  /** Underdark 3D display: roof of the section cut, darkness, mushrooms (render/underdarkCavern.ts); defaults when absent. */
+  cavern?: UnderdarkCavern3d }
 export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
@@ -261,7 +269,11 @@ float forestWaterCoverage(vec2 p){
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${groundCoverInputsGlsl(forestMaterial)}
 ${RENDER_V2_GLSL}
+${CROWN_WATER_GLSL}
+// Water cover (0-1) at a crown's foot: the displayed water mask (terrainCrownWater.ts).
+float crownFootWater(vec2 p){return displayWaterVisible==0?0.:displayWaterCover(p);}
 ${UNDERDARK_GLSL}
+${CAVERN_3D_GLSL}
 vec4 groundTileSample(vec4 rect,bool previous,int slot){
   vec2 uv=rect.xy+texcoord*rect.zw;
   if(slot<0){if(previous)return texture(previousSemanticTile,uv);return texture(semanticTile,uv);}
@@ -346,6 +358,7 @@ void main() {
         rim=smoothstep(.5,.5+ledge*.35,raw)*(1.-smoothstep(.5+ledge*.35,.5+ledge,raw))*clamp(cell/footprint*.25,0.,1.);
       }
       float cover=displayWaterVisible==0?0.:(hasCanopyWater==1||hasPreviousCanopyWater==1)?displayWaterCover(physical.xz):projected.a;
+      udPaintCaps=uFungusArea.w>0.?smoothstep(uFungusArea.z,uFungusArea.w,distance(physical.xz,uFungusArea.xy)):1.;
       base=underdarkFloor(s,physical.xz,footprint,clamp(cover*1.5,0.,1.),ao);
       float glow=0.;
       for(int k=0;k<16;k++){if(k>=uTownGlowCount)break;vec4 g=uTownGlow[k];float d=length(physical.xz-g.xy)/max(g.z,1.);glow+=exp(-d*d*.9);}
@@ -357,9 +370,11 @@ void main() {
         base=mix(base,tile.rgb/max(tile.a,.001)*.32*udLight(s.yz),a);
       }
       float depth=s.x<0.?-s.x:6.*cover;
-      base=mix(base,underdarkWater(physical.xz,footprint,depth,1.-smoothstep(0.,.9,cover)*smoothstep(0.,3.,depth)),cover);
+      base=mix(base,underdarkWater(physical.xz,footprint,depth,1.-smoothstep(0.,.9,cover)*smoothstep(0.,3.,depth)),waterUnderCrown(cover,udCapCover));
       vec3 rockColor=underdarkRock(s,physical.xz,footprint,rim);
       base=uPaperMap==1?mix(underdarkPaper(base),underdarkPaper(rockColor)*vec3(.42,.38,.36),rock):mix(base,rockColor,rock);
+      // The cave as a section model (render/underdarkCavern.ts): walls cut at the roof, the cave's own light.
+      if(uHasCave==1&&uPaperMap==0){vec3 mn=normalize(cross(dFdx(physical),dFdy(physical)));if(mn.y<0.)mn=-mn;base=cavernSection(base,rock,physical.y,glow,physical.xz,footprint,-mn.xz/max(mn.y,.05),cover);}
     } else {
     surfaceGroundReadInputs(physical.xz,footprint);
     vec3 s=groundMacroSurface(physical.xz);
@@ -445,8 +460,11 @@ void main() {
       }
     }
   }
+  if(uUnderdark==1&&groundEnabled==1&&uHasCave==1&&uPaperMap==0)base=cavernFog(base,length(world-eye));
+  else {
   float fog = 1. - exp(-pow(length(world - eye) / fogDistance, 2.) * .11);
   base=mix(base,uNight==1?vec3(.018,.028,.065):vec3(.77,.85,.88),min(.62,fog));
+  }
   if(showTileBounds==1){
     vec2 edge=min(texcoord,1.-texcoord)/max(fwidth(texcoord),vec2(1e-6));
     float line=1.-smoothstep(.45,1.35,min(edge.x,edge.y));
@@ -753,6 +771,8 @@ export class Terrain3d {
   protected buildingAppearance: UrbanBuildingAppearance = { style: 'geometric', diagnostic: 'none' };
   protected buildingsVisible = true;
   private buildingGround = new UrbanBuildingGround();
+  /** Town moats dug into the ground (urbanGroundCuts.ts). */
+  private groundCuts = new UrbanGroundCuts();
   private mergedOccupation?: ForestOccupation;
   private mergedOccupationSource?: ForestOccupation;
   private mergedOccupationScene?: Building3dScene;
@@ -774,6 +794,8 @@ export class Terrain3d {
   private billboardAtlas?: { source: HTMLCanvasElement; texture: WebGLTexture };
   protected macroTexture!: WebGLTexture;
   protected caveTexture?: WebGLTexture;
+  /** Underdark section cut (refreshCavern). */
+  protected cavern?: CavernField; private cavernLayer?: HeightLayer; private cavernClearance?: number;
   private shoreRing?: { layer: object; revision: number; texture: WebGLTexture };
   /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
   protected readonly ringChanged = (): void => this.request();
@@ -796,6 +818,9 @@ export class Terrain3d {
   /** Tree streams queued in `preparation`: the view's readiness does not wait for them (trees stream in after). */
   private treeJobs = 0;
   private treeProgram?: WebGLProgram;
+  /** Underdark mushrooms (terrain3dFungi.ts): instance count, stream key, jobs in flight, revision of the cavern field. */
+  protected fungusCount = 0; protected fungusTiers: [number, number, number] = [0, 0, 0]; private fungusKey = ''; private fungusJobs = 0; private cavernRevision = 0;
+  private fungusProgram?: WebGLProgram; private fungusVao?: WebGLVertexArrayObject; private fungusBuffer?: WebGLBuffer;
   private treeVao?: WebGLVertexArrayObject;
   private treeBuffer?: WebGLBuffer;
   /** Semantic tile of a material tile: follows it through parent fallbacks and fades. */
@@ -932,7 +957,7 @@ export class Terrain3d {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.seams); gl.bufferData(gl.ARRAY_BUFFER, (surfaceVertices + 4 * side) * 3 * 4, gl.DYNAMIC_DRAW);
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
     this.macroTexture=this.uploadMacroField(this.layer);
-    this.caveTexture=this.uploadCaveMask(this.layer);
+    this.caveTexture=undefined;this.refreshCavern(true);
     this.shoreRing = undefined;
     this.empty = this.uploadMacroField();
     // A restored context comes back empty: re-upload the retained forest rasters.
@@ -950,13 +975,14 @@ export class Terrain3d {
    * ground material (the projected map, quick to compile), stands in. */
   private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
     const forest = !!this.forest && !settings?.underdark;
+    // The Underdark ground (cave floor, section cut, cave light) is compiled only into the Underdark variant.
     const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes,
-      uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank) };
+      uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank), uUnderdark: +!!settings?.underdark };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(glLandDetailUnit(this.gl) === undefined ? withoutLandDetail(fragmentShader) : fragmentShader, constants)], wait);
     const target = variant(v, false);
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) return this.lastGround = target;
-    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0 }, true);
+    const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0, uUnderdark: 0 }, true);
     if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
     // A material transition uses the lightweight preview, without an old
     // forest/material variant that may be costly or expect different inputs.
@@ -970,16 +996,29 @@ export class Terrain3d {
     if (!locations.has(name)) locations.set(name, this.gl.getUniformLocation(shader, name));
     return locations.get(name)!;
   }
-  /** Underdark rock mask of a surface layer (R8, 255 = rock, linear: the shader's rim and occlusion read its ramp). */
-  protected uploadCaveMask(layer?:HeightLayer):WebGLTexture|undefined {
-    if(!layer?.cave?.length||layer.cave.length!==layer.n*layer.n)return undefined;
-    const gl=this.gl,texture=gl.createTexture()!,mask=new Uint8Array(layer.cave.length);
-    for(let i=0;i<mask.length;i++)mask[i]=layer.cave[i];
-    gl.bindTexture(gl.TEXTURE_2D,texture);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,layer.n,layer.n,0,gl.RED,gl.UNSIGNED_BYTE,mask);gl.pixelStorei(gl.UNPACK_ALIGNMENT,4);
+  /** Underdark cavern texels (RGBA16F, linear: soft rock 0-1, roof above the base, openness, clearance; see
+   * render/underdarkCavern.ts): the shader's rim, occlusion and section cut read them. */
+  protected uploadCavern(field:CavernField):WebGLTexture {
+    const gl=this.gl,texture=gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,field.n,field.n,0,gl.RGBA,gl.FLOAT,field.texels);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     return texture;
+  }
+  /** Underdark: the section cut (roof field) and its texels, rebuilt when the layer or the roof clearance changes.
+   * The roof clamps the mesh height (surface()), so every rock mass stops at the roof of its chamber. */
+  protected refreshCavern(force = false): void {
+    const layer = this.layer, settings = this.groundSettings;
+    const clearance = settings?.underdark && layer?.cave ? (settings.cavern ?? UNDERDARK_CAVERN_DEFAULTS).roof : undefined;
+    if (!force && layer === this.cavernLayer && clearance === this.cavernClearance) return;
+    const had = !!this.cavern;
+    this.cavernLayer = layer; this.cavernClearance = clearance;
+    this.cavern = layer && clearance !== undefined ? cavernField(layer, clearance) : undefined;
+    if (this.caveTexture) this.deleteTexture(this.caveTexture);
+    this.caveTexture = this.cavern ? this.uploadCavern(this.cavern) : undefined; this.cavernRevision++;
+    this.uploadRoof(this.cavern ? cavernRoofMesh(this.cavern) : undefined);
+    if (had || this.cavern) { this.clearPatches(); this.request(); }
   }
   protected uploadMacroField(layer?:HeightLayer):WebGLTexture {
     const gl=this.gl,texture=gl.createTexture()!;
@@ -1028,7 +1067,7 @@ export class Terrain3d {
     this.layer = layer; this.water = water; this.waterVisible = waterVisible;
     this.billboardDirty = true;
     this.deleteTexture(this.macroTexture);this.macroTexture=this.uploadMacroField(layer);
-    if(this.caveTexture)this.deleteTexture(this.caveTexture);this.caveTexture=this.uploadCaveMask(layer);
+    this.refreshCavern();
     let low = Infinity, high = -Infinity, slope = 0;
     const cell = layer.width / layer.n;
     for (let i = 0; i < layer.data.length; i++) {
@@ -1051,6 +1090,17 @@ export class Terrain3d {
     // the current renderer and retained geometry usable.
     this.selectTerrainProgram(!!settings || !!this.forest);
     this.groundSettings = settings;
+    this.refreshCavern();
+    const framed = this.townFrame, sites = settings?.townSites ?? settings?.townGlow;
+    if (framed && sites && sites.length >= 3) {
+      const c = this.camera;
+      if (Math.abs(c.x - framed.x) < 1 && Math.abs(c.y - framed.y) < 1 && Math.abs(c.distance - framed.distance) < 1) {
+        const near = clamp(sites[2] * 1.6, 320, 700);
+        this.camera = { ...c, x: sites[0], y: sites[1], distance: near, pitch: this.framingPitch(sites[0], sites[1], near) };
+        this.limitCamera(); this.request();
+      }
+      this.townFrame = undefined;
+    }
     if(settings?.renderV2 && !previous?.renderV2 && !this.textureSource){
       this.deleteTexture(this.material);this.material=this.uploadTexture(new Uint8Array([0,0,0,0]));
     }
@@ -1067,6 +1117,8 @@ export class Terrain3d {
     this.lookSettings={...look};this.request();
   }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
+  /** Ground cuts (town moats): built once per set of circuits; a new set reshapes the patches. */
+  setGroundCuts(cuts: UrbanGroundCuts): void { if (cuts === this.groundCuts) return; this.groundCuts = cuts; this.clearPatches(); this.request(); }
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
     const changed = this.buildingScene !== scene || this.buildingsVisible !== visible;
@@ -1190,14 +1242,16 @@ export class Terrain3d {
 
   private clearPatches(): void {
     ++this.epoch;
-    this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
+    this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.fungusKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
     for (const patch of this.patches.values()) this.releasePatch(patch);
     this.patches.clear(); this.heightGrids.clear(); this.root = undefined; this.desired = []; this.protected.clear(); this.splits.clear();
     this.displayedGrids = [];
     this.displayedPieces = [];
     this.stitchUpdated = 0;
   }
-  private surface(x: number, y: number, metresPerPixel: number, detail = true): number {
+  /** `carved`: false skips the building footings and moat cuts, giving the natural drawn ground that those
+   * footings and structures are themselves seated on (groundAt). */
+  private surface(x: number, y: number, metresPerPixel: number, detail = true, carved = true): number {
     const layer = this.layer; if (!layer) return 0;
     const u = (x - layer.x) / layer.width, v = (y - layer.y) / layer.width;
     // The mountain field is canonical. Only the optional centimetre ground
@@ -1205,7 +1259,17 @@ export class Terrain3d {
     const footprint = this.groundSettings?.displacement ? metresPerPixel : 0;
     let height = detail && this.heightSampler ? this.heightSampler(x, y, footprint) : spline(layer.data, layer.n, u, v);
     if (!Number.isFinite(height)) height = spline(layer.data, layer.n, u, v);
-    height = this.buildingGround.constrain(x, y, height);
+    // Underdark: rock stops at the roof of its chamber (the section cut); floors stay below it.
+    if (this.cavern) {
+      // Rock rises as a steep wall from its contour to the roof and stops there: the lid rests on the walls.
+      const roof = cavernRoofAt(this.cavern, x, y), wall = cavernWallAt(this.cavern, x, y);
+      height = Math.min(height, roof);
+      if (wall > 0) height += (roof - height) * wall;
+    }
+    if (carved) {
+      height = this.buildingGround.constrain(x, y, height);
+      height = this.groundCuts.lower(x, y, height);
+    }
     if (this.waterVisible) {
       height = Math.max(0, height);
       const lake = this.water && lakeHeight(this.water, u, v);
@@ -1216,6 +1280,12 @@ export class Terrain3d {
   heightAt(x: number, y: number): number | undefined {
     if (!this.layer) return undefined;
     return this.surface(x, y, 0);
+  }
+  /** The drawn ground before building footings and moats carve it (metres, unexaggerated). Town structures seat on it:
+   * sampling heightAt instead would feed each footing back into the next rebuild and sink the town step by step. */
+  groundAt(x: number, y: number): number | undefined {
+    if (!this.layer) return undefined;
+    return this.surface(x, y, 0, true, false);
   }
   /** Select the nearest actual building face using its physical native geometry. */
   pickBuilding(x: number, y: number): string | undefined {
@@ -1429,6 +1499,7 @@ export class Terrain3d {
         let height = sample(wx, wy, step);
         if (!Number.isFinite(height)) throw new Error('Altitude 3D non finie.');
         height = this.buildingGround.constrain(wx, wy, height);
+        height = this.groundCuts.lower(wx, wy, height);
         if (this.waterVisible) {
           height = Math.max(0, height);
           const lake = this.water && lakeHeight(this.water, (wx - base.x) / base.width, (wy - base.y) / base.width);
@@ -2045,6 +2116,12 @@ export class Terrain3d {
   protected fogDistance(): number {
     return navigationFogDistance(this.camera.navigation, this.camera.distance, this.layer?.width ?? 0);
   }
+  /** Underdark display parameters, defaulted. */
+  protected cavernSettings(): UnderdarkCavern3d { return this.groundSettings?.cavern ?? UNDERDARK_CAVERN_DEFAULTS; }
+  /** `uCavern` of the ground shader: roof base, darkness, cave fog start and end (render/underdarkCavern.ts). */
+  protected cavernParameters(): [number, number, number, number] {
+    return cavernUniform(this.cavern, this.cavernSettings(), this.camera.distance, this.camera.exaggeration);
+  }
   private drawTrees(frame: FrameGeometry): void {
     const gl = this.gl, p = this.treeProgram, c = this.camera;
     if (!p || !this.treesShown() || this.groundSettings?.underdark) return;
@@ -2054,6 +2131,137 @@ export class Terrain3d {
     gl.uniform3fv(this.uniform('eye', p), frame.eye); gl.uniform3fv(this.uniform('treeLight', p), this.treeLight());
     gl.uniform1f(this.uniform('fogDistance', p), this.fogDistance()); gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
     gl.drawArraysInstanced(gl.TRIANGLES, 0, TREE_VERTICES, this.treeCount); gl.bindVertexArray(null);
+  }
+  /** Underdark mushrooms around the orbit target: rebuilt when it moves a third of the near radius, the abundance or
+   * the cavern changes; nearest first, bounded (terrain3dFungi.ts). Nothing without the Underdark. */
+  protected prepareFungi(): void {
+    const g = this.groundSettings, cavern = this.cavern, layer = this.layer, c = this.camera;
+    const abundance = g?.underdark && cavern && layer && !this.useMapShader ? this.cavernSettings().fungi : 0;
+    if (!abundance || !cavern || !layer) { this.fungusCount = 0; this.fungusKey = ''; return; }
+    const step = FUNGUS_NEAR / 3, key = [Math.round(c.x / step), Math.round(c.y / step), abundance, this.cavernRevision].join('|');
+    if (key === this.fungusKey || this.fungusJobs > 0 && !this.fullQualityCapture) return;
+    this.fungusKey = key;
+    const inputs: FungusInputs = { seed: g!.seed >>> 0, cavern, abundance, towns: g!.townSites ?? g!.townGlow, farms: g!.farmBeds, occupation: this.occupation?.data,
+      raw: (x, y) => spline(layer.data, layer.n, (x - layer.x) / layer.width, (y - layer.y) / layer.width), height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
+    const view = { x: c.x, y: c.y };
+    const install = (stream: FungusStream): void => { this.fungusCount = stream.values.length / FUNGUS_STRIDE; this.fungusTiers = stream.counts; if (this.fungusCount) this.uploadFungi(stream.values); };
+    if (this.fullQualityCapture) { install(buildFungi(inputs, view)); return; }
+    const epoch = this.epoch, current = (): boolean => !this.disposed && epoch === this.epoch && this.fungusKey === key;
+    this.fungusJobs++;
+    void this.preparation.run(buildFungiSteps(inputs, view), current, 1e15)
+      .then(stream => { install(stream); this.request(); })
+      // A cancelled stream (patches cleared, e.g. a new height sampler) is rebuilt on the next frame, not when the focus next moves.
+      .catch(error => { if (this.fungusKey === key) { this.fungusKey = ''; this.request(); } if (error?.name !== 'AbortError') console.warn('Underdark mushrooms:', error); })
+      .finally(() => { this.fungusJobs--; });
+  }
+  protected uploadFungi(values: Float32Array): void {
+    const gl = this.gl;
+    this.fungusProgram ??= program(gl, FUNGUS_3D_GLSL.vertex, FUNGUS_3D_GLSL.fragment);
+    this.fungusVao ??= gl.createVertexArray()!; this.fungusBuffer ??= gl.createBuffer()!;
+    gl.bindVertexArray(this.fungusVao); gl.bindBuffer(gl.ARRAY_BUFFER, this.fungusBuffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.DYNAMIC_DRAW);
+    for (let i = 0; i < 3; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, 4, gl.FLOAT, false, FUNGUS_STRIDE * 4, i * 16); gl.vertexAttribDivisor(i, 1); }
+    gl.bindVertexArray(null);
+  }
+  /** uFungusArea of the ground: where the modelled mushrooms stand (the painted caps give way to them), none without. */
+  protected fungusArea(): [number, number, number, number] { return this.fungusCount ? this.fungusFade() : [0, 0, 0, 0]; }
+  /** The camera of a framing view of (point, distance): in the Underdark a whole-map frame becomes the first town seen
+   * from inside its chamber, the eye under the roof where the chamber allows. */
+  framingView(x: number, y: number, distance: number): { x: number; y: number; distance: number; pitch: number } {
+    const town = this.groundSettings?.townSites ?? this.groundSettings?.townGlow, layer = this.layer, field = this.cavern;
+    this.townFrame = undefined;
+    if (this.groundSettings?.underdark && field && layer && distance > layer.width * .25) {
+      if (town && town.length >= 3) {
+        const headroom = cavernRoofAt(field, town[0], town[1]) - (this.heightAt(town[0], town[1]) ?? 0);
+        const near = Math.min(clamp(town[2] * 1.6, 320, 700), Math.max(220, .7 * headroom / Math.sin(.16) * this.camera.exaggeration));
+        return { x: town[0], y: town[1], distance: near, pitch: this.framingPitch(town[0], town[1], near) };
+      }
+      // No town known yet: the most open chamber near the centre, until the towns arrive (setGroundMaterial).
+      let best = -Infinity, bx = x, by = y;
+      const n = field.n, cell = field.width / n;
+      for (let i = 0; i < n * n; i += 3) {
+        const px = field.x + (i % n + .5) * cell, py = field.y + (Math.floor(i / n) + .5) * cell;
+        const score = field.texels[i * 4 + 2] - Math.hypot(px - x, py - y) / field.width;
+        if (score > best) { best = score; bx = px; by = py; }
+      }
+      const view = { x: bx, y: by, distance: 450, pitch: this.framingPitch(bx, by, 450) };
+      this.townFrame = { ...view };
+      return view;
+    }
+    if (this.groundSettings?.underdark && field) {
+      // A town frame in the cave: near enough that the eye stays under the roof of its chamber.
+      const headroom = cavernRoofAt(field, x, y) - (this.heightAt(x, y) ?? 0), near = Math.min(distance, Math.max(220, .7 * headroom / Math.sin(.16) * this.camera.exaggeration));
+      return { x, y, distance: near, pitch: this.framingPitch(x, y, near) };
+    }
+    return { x, y, distance, pitch: this.framingPitch(x, y, distance) };
+  }
+  /** A framing view chosen before the towns were known; replaced by the first town once they arrive, if untouched. */
+  private townFrame?: { x: number; y: number; distance: number; pitch: number };
+  /** fungusFade of the mushroom shader: the stream's centre and its fade radii. */
+  protected fungusFade(): [number, number, number, number] { return [this.camera.x, this.camera.y, FUNGUS_FAR * .8, FUNGUS_FAR]; }
+  /** uTownGlow (vec4 × 16) and its count, as the ground shader reads them. */
+  protected townGlowUniform(): { values: Float32Array; count: number } {
+    const g = this.groundSettings?.townSites ?? this.groundSettings?.townGlow ?? new Float32Array(0), values = new Float32Array(64), count = Math.min(16, g.length / 3 | 0);
+    for (let k = 0; k < count; k++) values.set(g.subarray(k * 3, k * 3 + 3), k * 4);
+    return { values, count };
+  }
+  /** The roof of the cave (the lid of the section model, cut away around the focus): one mesh, drawn once a frame. */
+  protected roofCount = 0; private roofProgram?: WebGLProgram; private roofVao?: WebGLVertexArrayObject; private roofBuffers?: [WebGLBuffer, WebGLBuffer];
+  protected uploadRoof(mesh: { vertices: Float32Array; indices: Uint32Array } | undefined): void {
+    const gl = this.gl;
+    this.roofCount = mesh?.indices.length ?? 0;
+    if (!mesh) return;
+    this.roofProgram ??= program(gl, CAVERN_ROOF_GLSL.vertex, CAVERN_ROOF_GLSL.fragment);
+    this.roofVao ??= gl.createVertexArray()!; this.roofBuffers ??= [gl.createBuffer()!, gl.createBuffer()!];
+    gl.bindVertexArray(this.roofVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.roofBuffers[0]); gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); gl.vertexAttribDivisor(0, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12); gl.vertexAttribDivisor(1, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.roofBuffers[1]); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+  }
+  /** uReveal: the cutaway around the orbit target; none while walking or flying (the vault stays overhead). */
+  protected roofReveal(): [number, number, number, number] {
+    const c = this.camera;
+    return c.navigation === 'walk' || c.navigation === 'fly' ? [c.x, c.y, 0, 1] : cavernReveal(c.x, c.y, c.distance, c.exaggeration);
+  }
+  /** Whether the cave roof is drawn this frame. */
+  protected roofShown(): boolean { return !!this.roofCount && !!this.cavern && !!this.groundSettings?.underdark && !this.groundSettings.paperMap && !this.useMapShader; }
+  /** Pitch of a framing view of (x, y) at an orbit distance: the Underdark looks across the cave from a low angle, the
+   * eye under the roof where the chamber allows (the far vault, its stalactites and the far chambers then show). */
+  framingPitch(x?: number, y?: number, distance?: number): number {
+    if (!this.groundSettings?.underdark || !this.cavern) return .82;
+    if (x === undefined || y === undefined || !distance) return .36;
+    const headroom = cavernRoofAt(this.cavern, x, y) - (this.heightAt(x, y) ?? 0);
+    return clamp(Math.asin(clamp(.75 * headroom / (distance / Math.max(this.camera.exaggeration, .2)), 0, 1)), .16, .36);
+  }
+  private drawRoof(frame: FrameGeometry): void {
+    const gl = this.gl, p = this.roofProgram, c = this.camera;
+    if (!p || !this.roofShown()) return;
+    gl.useProgram(p); gl.bindVertexArray(this.roofVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform3fv(this.uniform('eye', p), frame.eye);
+    gl.uniform4fv(this.uniform('uCavern', p), this.cavernParameters()); gl.uniform4fv(this.uniform('uReveal', p), this.roofReveal());
+    const glow = this.townGlowUniform(); gl.uniform4fv(this.uniform('uTownGlow[0]', p), glow.values); gl.uniform1i(this.uniform('uTownGlowCount', p), glow.count);
+    gl.drawElements(gl.TRIANGLES, this.roofCount, gl.UNSIGNED_INT, 0); gl.bindVertexArray(null);
+  }
+  private drawFungi(frame: FrameGeometry): void {
+    const gl = this.gl, p = this.fungusProgram, c = this.camera;
+    if (!p || !this.fungusCount || !this.groundSettings?.underdark) return;
+    gl.useProgram(p); gl.bindVertexArray(this.fungusVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform4fv(this.uniform('fungusFade', p), this.fungusFade()); gl.uniform4fv(this.uniform('uReveal', p), this.roofShown() ? this.roofReveal() : [0, 0, 0, 1]);
+    gl.uniform3fv(this.uniform('eye', p), frame.eye); gl.uniform4fv(this.uniform('uCavern', p), this.cavernParameters());
+    const glow = this.townGlowUniform(); gl.uniform4fv(this.uniform('uTownGlow[0]', p), glow.values); gl.uniform1i(this.uniform('uTownGlowCount', p), glow.count);
+    // One draw per level of detail: the attributes start at the level's first instance (no base instance in WebGL2).
+    let first = 0;
+    for (let lod = 0; lod < 3; lod++) {
+      const count = this.fungusTiers[lod]; if (!count) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.fungusBuffer!);
+      for (let i = 0; i < 3; i++) gl.vertexAttribPointer(i, 4, gl.FLOAT, false, FUNGUS_STRIDE * 4, first * FUNGUS_STRIDE * 4 + i * 16);
+      gl.uniform1i(this.uniform('fungusLod', p), lod);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, FUNGUS_LOD_VERTICES[lod], count); first += count;
+    }
+    gl.bindVertexArray(null);
   }
   protected billboardsReady(): boolean { return !this.billboardCount || !!this.billboardProgram; }
   protected raisedBlend(frame: FrameGeometry): number { return this.billboardCount && this.billboardsReady() ? terrain3dRaisedBlend(Math.max(0,-frame.forward[1])) : 0; }
@@ -2145,9 +2353,17 @@ export class Terrain3d {
   fit(x?: number, y?: number, visibleWidth?: number): void {
     if (!this.layer) return;
     this.stopWalking();
-    const layer = this.layer, span = visibleWidth ?? layer.width;
+    const layer = this.layer, span = visibleWidth ?? layer.width, town = this.groundSettings?.townSites ?? this.groundSettings?.townGlow;
+    // Underdark: open on the first town, from inside its chamber, the eye under the roof where it allows.
+    if (x === undefined && y === undefined && this.groundSettings?.underdark && this.cavern && town && town.length >= 3) {
+      // Near enough that the eye stays under the roof of the chamber at the framing pitch.
+      const headroom = cavernRoofAt(this.cavern, town[0], town[1]) - (this.heightAt(town[0], town[1]) ?? 0);
+      const distance = Math.min(clamp(town[2] * 1.6, 320, 700), Math.max(220, .7 * headroom / Math.sin(.16) * this.camera.exaggeration));
+      this.camera = { ...this.camera, navigation: 'orbit', x: town[0], y: town[1], distance, yaw: .5, pitch: this.framingPitch(town[0], town[1], distance) };
+      this.changed(); return;
+    }
     this.camera = { ...this.camera, navigation: 'orbit', x: x ?? layer.x + layer.width / 2, y: y ?? layer.y + layer.width / 2,
-      distance: Math.max(span, this.heightRange * this.camera.exaggeration) / (2 * Math.tan(FOV / 2)) * Math.max(1, this.height / this.width) * 1.18, yaw: 0, pitch: .88 };
+      distance: Math.max(span, this.heightRange * this.camera.exaggeration) / (2 * Math.tan(FOV / 2)) * Math.max(1, this.height / this.width) * 1.18, yaw: 0, pitch: this.groundSettings?.underdark && this.cavern ? .36 : .88 };
     this.changed();
   }
   /** Zooms the orbit distance. With a cursor position (CSS pixels in the canvas) the ground point under the
@@ -2198,7 +2414,23 @@ export class Terrain3d {
   }
   private changed(): void {
     this.cameraMoving();
-    this.limitCamera(); this.request(); this.onChange();
+    this.limitCamera(); this.keepEyeOutOfGround(); this.request(); this.onChange();
+  }
+  /** Orbit: the eye never sits inside the ground (a hillside, a cave wall, the rock under the Underdark roof). An eye
+   * below the surface at its own position comes back along the orbit towards the target (same target and angles, a
+   * shorter distance) to the first free position, with a small clearance. A few height lookups, on camera changes only. */
+  private keepEyeOutOfGround(): void {
+    const c = this.camera;
+    if (c.navigation === 'walk' || c.navigation === 'fly' || !this.layer || !this.options.navigation) return;
+    const target = this.heightAt(c.x, c.y) ?? 0, minimum = 2.5;
+    const free = (d: number): boolean => {
+      const h = Math.cos(c.pitch) * d, ground = this.heightAt(c.x + Math.sin(c.yaw) * h, c.y + Math.cos(c.yaw) * h);
+      return ground === undefined || target + Math.sin(c.pitch) * d / c.exaggeration >= ground + Math.max(.5, d * .002);
+    };
+    if (free(c.distance)) return;
+    let d = c.distance;
+    for (let k = 0; k < 48 && d > minimum && !free(d); k++) d *= .92;
+    c.distance = Math.max(minimum, d);
   }
   protected request(): void {
     if (!this.active || this.frame || this.disposed || this.contextLost()) return;
@@ -2259,7 +2491,7 @@ export class Terrain3d {
     const gl = this.gl, layer = this.layer!;
     const target = this.frameInteracting || this.frameQuality > 0 ? undefined : this.msaaTarget(w, h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, target?.framebuffer ?? null);
-    this.prepareBillboards(); this.prepareTrees(frame); const raisedBlend = this.raisedBlend(frame);
+    this.prepareBillboards(); this.prepareTrees(frame); this.prepareFungi(); const raisedBlend = this.raisedBlend(frame);
     gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
     const night=this.lookSettings.ambience==='night';
@@ -2306,6 +2538,8 @@ export class Terrain3d {
       gl.activeTexture(gl.TEXTURE10);gl.bindTexture(gl.TEXTURE_2D,this.shoreRing?.texture??this.empty);
       gl.uniform1i(this.uniform('uShoreRing'),10);gl.uniform3f(this.uniform('uShoreRingRect'),ring?.x??0,ring?.y??0,ring?.width??1);
       gl.uniform1i(this.uniform('uUnderdark'),settings.underdark?1:0);
+      gl.uniform4fv(this.uniform('uCavern'),this.cavernParameters()); gl.uniform4fv(this.uniform('uFungusArea'),this.fungusArea());
+      {const lamps=this.townGlowUniform();gl.uniform4fv(this.uniform('uCaveLamps[0]'),lamps.values);gl.uniform1i(this.uniform('uCaveLampCount'),lamps.count);}
       {const g=settings.townGlow??new Float32Array(0),a=new Float32Array(64);for(let k=0;k<Math.min(16,g.length/3|0);k++)a.set(g.subarray(k*3,k*3+3),k*4);gl.uniform4fv(this.uniform('uTownGlow[0]'),a);gl.uniform1i(this.uniform('uTownGlowCount'),Math.min(16,g.length/3|0));}
       {const f=settings.farmBeds??new Float32Array(128);gl.uniform4fv(this.uniform('uFarmBeds[0]'),f);let n=0;for(let k=0;k<32;k++)if(f[k*4+2]>0)n=k+1;gl.uniform1i(this.uniform('uFarmBedCount'),n);}
       const contours=settings.contours;
@@ -2332,7 +2566,7 @@ export class Terrain3d {
     for (const draw of draws) this.renderPatch(draw, frame);
     gl.bindVertexArray(null);
     const pending = this.buildings.draw(this.buildingFrame(frame));
-    this.drawTrees(frame); this.drawBillboards(frame,raisedBlend);
+    this.drawTrees(frame); this.drawRoof(frame); this.drawFungi(frame); this.drawBillboards(frame,raisedBlend);
     if (target) {
       // The first resolve of a target is checked once: a multisampled blit needs identical read/draw formats, and some
       // back ends give the alpha:false drawing buffer another format. Then the canvas stayed black; fall back to direct drawing.
@@ -2374,8 +2608,12 @@ export class Terrain3d {
     return this.msaa;
   }
   protected buildingFrame(frame: FrameGeometry): BuildingFrame {
-    return { matrix: frame.matrix, cameraX: this.camera.x, cameraY: this.camera.y, targetHeight: frame.targetHeight,
-      exaggeration: this.camera.exaggeration, focal: frame.focal, distance: this.camera.distance };
+    const c = this.camera, cave = this.cavern && this.groundSettings?.underdark && !this.groundSettings.paperMap ? this.cavernParameters() : undefined;
+    return { matrix: frame.matrix, cameraX: c.x, cameraY: c.y, targetHeight: frame.targetHeight,
+      exaggeration: c.exaggeration, focal: frame.focal, distance: c.distance,
+      // Underdark: lit by the town's lanterns, dissolving into the cave's darkness with the ground (fog in metres).
+      ...(cave ? { cave: { light: 1.05 - .45 * cave[1], fog: [cave[2] / c.exaggeration, cave[3] / c.exaggeration] as [number, number],
+        eye: [c.x + frame.eye[0], c.y + frame.eye[2], Math.max(0, frame.eye[1] / c.exaggeration)] as [number, number, number] } } : {}) };
   }
   private navigationDistance(): number {
     const c = this.camera;
@@ -2383,12 +2621,14 @@ export class Terrain3d {
     const frame = this.frameGeometry();
     const ground = this.heightAt(c.x + frame.eye[0], c.y + frame.eye[2])! * c.exaggeration;
     const clearance = frame.targetHeight + frame.eye[1] - ground;
-    return Math.min(c.distance, Math.max(2, clearance * 2));
+    // Driven by the orbit distance with a floor: an eye grazing (or touching) the ground never stalls zoom, orbit or pan.
+    return Math.min(c.distance, Math.max(2, c.distance * .3, clearance * 2));
   }
   private navigationScale(): number {
     if (!this.options.navigation) return 1;
     const distance = this.navigationDistance();
-    return groundNavigationScale(this.camera.distance, distance / 2) * distance / this.camera.distance;
+    // A wheel step always zooms at a usable rate; the minimum orbit distance (limitCamera) stops it, not a slowdown.
+    return Math.max(.35, groundNavigationScale(this.camera.distance, distance / 2) * distance / this.camera.distance);
   }
   private orbit(dx: number, dy: number): void {
     const distance = this.navigationDistance();
@@ -2522,6 +2762,7 @@ export class Terrain3d {
     target.setLook(this.lookSettings);
     if (this.layer) target.setSurface(this.layer, this.water, this.waterVisible);
     target.setHeightSampler(this.heightSampler);
+    target.setGroundCuts(this.groundCuts);
     target.setTileBoundaries(this.tileBounds);
     target.setBuildings(this.buildingScene, this.buildingAppearance, this.buildingsVisible);
     const replaced = this.buildings.replacedBuildings();

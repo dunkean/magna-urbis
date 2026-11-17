@@ -8,6 +8,7 @@ import { renderControlFields, RENDER_COMPOSITION_ROWS, RENDER_SECTION_FIELDS } f
 import { GENERATION_STAGES, validateProceduralRecipe } from '../../rust/bridge/terrainGenerationRecipe';
 import { writeSettingPath } from '../src/v2/parameterForm';
 import { HEIGHTMAP_LIBRARY } from '../src/v2/heightmapLibrary';
+import { RELIEF_TABS, reliefTab } from '../src/v2/reliefSources';
 
 const once = (id: string) => expect(stagesForControl(id), id).toHaveLength(1);
 const MAIN_CONTROLS = ['town-count', 'population', 'culture', 'sprawl', 'walls', 'moat', 'castle', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities', 'suburbs'];
@@ -69,12 +70,20 @@ describe('V2 generation stage registry', () => {
     }
     for (const row of Object.values(GENERATION_STAGE_ROWS)) expect(STAGES.some(stage => stage.id === row), row).toBe(true);
   });
-  it('shows source-specific relief rows only for their source', () => {
+  it('shows method-specific relief rows under three source tabs', () => {
+    expect(RELIEF_TABS).toEqual(['procedural', 'neural', 'heightmap']);
+    expect(reliefTab('symbolic')).toBe('heightmap');
     const ctx = (relief: StageContext['relief']): StageContext => ({ relief, classicTerrain: false, finiteRelief: false, urban: 'rust', hasTerrain: false, hasRegion: false });
     const visible = (relief: StageContext['relief']) => STAGES.filter(stage => stage.id.startsWith('relief-') && stage.when(ctx(relief))).map(stage => stage.id);
     expect(visible('neural')).toEqual(expect.arrayContaining(['relief-source', 'relief-neural-coarse', 'relief-neural-base', 'relief-neural-decoder', 'relief-climate']));
     expect(visible('neural')).not.toContain('relief-regional');
-    expect(visible('heightmap')).toEqual(['relief-source', 'relief-climate', 'relief-heightmap-fit', 'relief-refine']);
+    expect(visible('heightmap')).toEqual(['relief-source', 'relief-climate', 'relief-coast-cut', 'relief-heightmap-fit', 'relief-refine']);
+    expect(visible('symbolic')).toContain('relief-mask');
+    expect(visible('symbolic')).toContain('relief-coasts');
+    expect(visible('symbolic')).not.toContain('relief-regional');
+    expect(visible('procedural')).not.toContain('relief-mask');
+    for (const tab of RELIEF_TABS) expect(visible(tab)).toContain('relief-coast-cut');
+    expect(visible('symbolic')).toContain('relief-coast-cut');
     expect(visible('procedural')).not.toContain('relief-heightmap-fit');
   });
   it('links each row to its atlas section in the app language and maps run actions', () => {

@@ -15,14 +15,16 @@ import { mountLegendOverlay3d } from './legendOverlay3d';
 import { buildMapLabels, type MapLabelWorld, type MapLabel } from '../render/mapLabels';
 import { DEFAULT_TEXT, cityTextLabels, type TextSettings } from '../render/textLayer';
 import { PALETTES, type Palette } from '../render/styles';
-import { CityGround } from '../render/cityGround';
+import { city3dSurfaceSamplers } from '../render/city3dHeight';
 import { updateYardEnclosures } from '../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../render/city3dMeshes';
+import { UrbanGroundCuts } from './urbanGroundCuts';
 import { city3dBoardwalks } from '../render/city3dBoardwalks';
 import { city3dCanopy, cityCanopy } from '../render/cityGrove';
+import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../render/underdarkOrnaments';
 import { city3dQuays, city3dWaterways } from '../render/city3dQuays';
 import { cityWaterwayPaths } from '../render/cityWaterways';
-import { bridgeWaterHeight, cityBridgeStreets } from '../render/cityBridges';
+import { cityBridgeStreets } from '../render/cityBridges';
 /** City Bench 3D view. Reuses the Terrain Bench engine (Terrain3d: quadtree
  * relief, tiled materials, orbit camera, native building pass with 256 m sectors,
  * overview LOD, bounded GPU cache and picking). This module only adapts the city
@@ -37,13 +39,14 @@ import type { HeightLayer } from './terrainGl';
 import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { decorClimate } from './decorClimate';
-import { city3dBridges, city3dScene, city3dProjectionScene, city3dWalls, city3dDisplayKind, compactBuilding, projectionDetailMatches, rasterHeight, type City3dHeight, type City3dDisplayScene } from '../render/city3dMeshes';
+import { city3dBridges, city3dScene, city3dProjectionScene, city3dWalls, city3dDisplayKind, compactBuilding, projectionDetailMatches, type City3dHeight, type City3dDisplayScene } from '../render/city3dMeshes';
 import { building3dHeight, isBuildingProjection, type Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { NativeBuildingProjectionScene } from './urbanBuildingProjection';
 import type { Parent3dScene } from './urbanParent3d';
 import { buildCityBuildings, buildCityScene, drawCity, selectCityLod, type CityDrawOptions, type CityLayers, type CityScene } from '../render/cityCanvas';
 import { drawFarmLotPieces, farmPlacedBuildings } from '../render/farmRoofs';
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
+import { withoutUrbanPlan } from '../render/appearanceRecipe';
 import { drawRuralSemantic, drawUrbanSemantic } from '../render/semanticLayer';
 import { forestOccupation } from './forestOccupation';
 import { withLandDetail, type LandCultures } from './landDetail';
@@ -226,7 +229,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     <div class="city3d-bar" role="group" aria-label="Vue 3D">
       <label data-navigation-label>Navigation <select data-navigation><option value="orbit">Orbite</option><option value="walk">Marche</option><option value="fly">Vol libre</option></select></label>
       <label title="Fond drapé sur le relief">Sol <select data-ground><option value="map">Carte pré-rendue</option><option value="render">Rendu 3D (sol procédural)</option></select></label>
-      <label title="Rues, îlots et parcelles dessinés sur le sol en vue rapprochée"><input type="checkbox" data-plan checked>Plan</label>
+      <label title="Contours des îlots et des parcelles dessinés sur le sol (les rues suivent l’interrupteur Routes)"><input type="checkbox" data-plan checked>Plan</label>
       <label title="Textures des toits, murs, rues et places (bâtiments et constructions seulement)"><input type="checkbox" data-textured>Textures</label>
       <label title="Arbres modélisés près de la caméra (sol satellite)"><input type="checkbox" data-trees>Arbres 3D</label>
       <label title="Distance d'affichage des arbres modélisés (m)" data-tree-distance-label hidden>Distance des arbres <input type="range" data-tree-distance min="200" max="1500" step="100" value="600"></label>
@@ -284,7 +287,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     $<HTMLOptionElement>('[data-navigation] option[value="orbit"]').textContent = urbanText(['Orbite', 'Orbit', '环绕', 'Órbita', 'Órbita']);
     $<HTMLOptionElement>('[data-navigation] option[value="fly"]').textContent=urbanText(['Vol libre','Free flight','自由飞行','Vuelo libre','Voo livre']);
     $<HTMLOptionElement>('[data-navigation] option[value="walk"]').textContent = urbanText(['Marche', 'Walk', '行走', 'Caminar', 'Caminhar']);
-    label('[data-plan]', ['Plan','Plan','平面','Plano','Planta'], ['Rues, îlots et parcelles dessinés sur le sol en vue rapprochée','Streets, blocks and parcels drawn on the ground in close view','近景中绘制在地面的街道、街区与地块','Calles, manzanas y parcelas dibujadas en el suelo de cerca','Ruas, quadras e parcelas desenhadas no solo de perto']);
+    label('[data-plan]', ['Plan','Plan','平面','Plano','Planta'], ['Contours des îlots et des parcelles dessinés sur le sol (les rues suivent l’interrupteur Routes)','Block and parcel outlines drawn on the ground (streets follow the Roads switch)','绘制在地面的街区与地块轮廓（街道由道路开关控制）','Contornos de manzanas y parcelas dibujados en el suelo (las calles siguen el interruptor Carreteras)','Contornos de quadras e parcelas desenhados no solo (as ruas seguem o interruptor Estradas)']);
     label('[data-textured]', ['Textures','Textures','纹理','Texturas','Texturas'], ['Textures des toits, murs, rues et places (bâtiments et constructions seulement)','Roof, wall, street and square textures (buildings and structures only)','屋顶、墙壁、街道和广场纹理（仅建筑与构筑物）','Texturas de tejados, muros, calles y plazas (solo edificios y construcciones)','Texturas de telhados, paredes, ruas e praças (somente edifícios e construções)']);
     label('[data-trees]', ['Arbres 3D','3D trees','三维树木','Árboles 3D','Árvores 3D'], ['Arbres modélisés près de la caméra (sol satellite)','Modelled trees near the camera (satellite ground)','相机附近的建模树木（卫星地面）','Árboles modelados cerca de la cámara (suelo satélite)','Árvores modeladas perto da câmera (solo satélite)']);
     label('[data-tree-distance]', ['Distance des arbres','Tree distance','树木距离','Distancia de árboles','Distância das árvores'], ["Distance d'affichage des arbres modélisés (m)",'Render distance of the modelled trees (m)','建模树木的显示距离（米）','Distancia de dibujo de los árboles modelados (m)','Distância de exibição das árvores modeladas (m)']);
@@ -338,16 +341,19 @@ export function mountCity3d(options: City3dOptions): City3d {
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, stiltWaterAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, mapFallback: HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined, waterMaskVisible = '';
   let imageBillboards: Terrain3dBillboards | undefined;
   let bridgeWaterAt: City3dHeight | undefined;
+  let quayHeightAt: City3dHeight | undefined, quayWaterAt: City3dHeight | undefined;
   const textured = (): boolean => options.getTextured?.() ?? false;
   let texturedSeen = false;
   let plan: CityScene | undefined, planOf: [unknown, unknown] | undefined;
   let sceneOf: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, display: City3dDisplayScene | undefined, displayMs = 0, focused = false, sourceEpoch = 0;
   const details = new Map<string, PlacedBuilding>(), detailBases = new Map<string, Building3dVisual>(), converting = new Set<string>();
+  let groundCutsOf: readonly Layout[] | undefined, groundCutsOn: unknown;
   let byId = new Map<string, Building3dVisual>(), bridgesOf: [readonly Layout[] | undefined, readonly Street[] | undefined] = [undefined, undefined], bridgeStats: { count: number; first?: Point } = { count: 0 };
   let quayCount = 0;
   let wallStats: City3dWallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
   let structureInputs: unknown[] = [], structureBuildings: Building3dVisual[] = [];
   let canopyInputs: unknown[] = [], canopyBuildings: Building3dVisual[] = [];
+  let ornamentInputs: unknown[] = [], ornamentBuildings: Building3dVisual[] = [];
   let yardInputs: unknown[] = [];
   // Countryside farm buildings of the land use (farmRoofs.ts), raised like the town silhouettes; rebuilt only for a
   // new farmstead list or a new terrain.
@@ -455,10 +461,13 @@ export function mountCity3d(options: City3dOptions): City3d {
   }
   function setSurface(d: Decor): void {
     const t = terrain!, r = d.raster;
-    surfaceDecor = d; heightAt = rasterHeight(r.height, r.n, r.width); bridgeWaterAt = r.waterLevel ? rasterHeight(r.waterLevel, r.n, r.width) : undefined; sceneOf = undefined; sourceEpoch++; details.clear(); detailBases.clear();
-    const physical = new CityGround(r), levels = bridgeWaterAt;
-    bridgeWaterAt = r.waterLevel ? bridgeWaterHeight(r, (x, y) => physical.waterAt({ x, y })) : undefined;
-    stiltWaterAt = levels ? (x, y) => physical.waterAt({ x, y }) ? levels(x, y) : NaN : undefined;
+    // The natural drawn ground (before footings and moats carve it): one height for town, roads, bridges, quays and walls.
+    const samplers = city3dSurfaceSamplers(r, (x, y) => t.groundAt(x, y));
+    surfaceDecor = d; heightAt = samplers.heightAt; bridgeWaterAt = stiltWaterAt = samplers.waterAt;
+    sceneOf = undefined; sourceEpoch++; details.clear(); detailBases.clear();
+    // Every displayed structure shares the terrain's unexaggerated surface.
+    // Quay water also samples the wet edge of its bank band, outside the mask.
+    quayHeightAt = quayWaterAt = heightAt;
     waterMask = undefined; waterPaths = undefined; openWater = undefined; image = undefined; mapFallback = undefined; planOf = undefined;
     imageBillboards = undefined;
     const surface = options.getSurface?.();
@@ -521,7 +530,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     t.setTileLoader(loadTile); t.invalidateTiles();
   }
   function groundResourceKey(configured: Terrain3dGroundSettings | undefined): string {
-    const {ambience:_ambience,waterLook:_waterLook,...resources}=configured??{};
+    const {ambience:_ambience,waterLook:_waterLook,townGlow:_townGlow,...resources}=configured??{};
     return JSON.stringify([ground,refinement,resources]);
   }
   const tileWaterMask = new TileWaterMask(), waterCells = new WaterCellPainter();
@@ -685,8 +694,9 @@ export function mountCity3d(options: City3dOptions): City3d {
       if(!groundTile){groundTile=document.createElement('canvas');groundTile.width=groundTile.height=size;}
       return groundTile.getContext('2d')!;
     };
-    const roads = planOverlay && !tile.preview ? groundRegionalStreets().filter(road => tileRoadVisible(road, box, mpp)) : undefined;
     const planOptions = options.getPlanOptions?.();
+    // Roads follow only the Roads switch (the plan layers' streets flag); the Urban plan switch never hides them.
+    const roads = !tile.preview && planOptions?.layers?.streets !== false ? groundRegionalStreets().filter(road => tileRoadVisible(road, box, mpp)) : undefined;
     if (roads?.length) {
       const roadLook=planOptions?.roadLook??(planOptions?.groundBlend?'natural':'ink');
       const target = groundRoadLook(roadLook)?groundContext():inkContext(); target.save(); target.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
@@ -706,8 +716,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     const footprintScene = planOptions?.buildingsVisible ? options.getScene() : undefined;
     let footprints = footprintScene && footprintPlans.get(footprintScene);
     if (footprintScene && !footprints) { footprints = buildCityBuildings(footprintScene); footprintPlans.set(footprintScene, footprints); }
-    const city = (planOverlay ? cityPlan() : undefined) ?? (footprints ? emptyFootprintPlan : undefined);
-    const planLayers = { ...planOptions?.layers ?? PLAN_LAYERS, lotEnclosureMeshes: planOptions?.layers?.lotEnclosureMeshes !== false }, lod = selectCityLod(mpp);
+    const city = cityPlan() ?? (footprints ? emptyFootprintPlan : undefined);
+    // The Urban plan switch hides only the plan drawing (withoutUrbanPlan); streets, walls and lamps stay.
+    const requestedLayers = planOptions?.layers ?? PLAN_LAYERS;
+    const planLayers = { ...(planOverlay ? requestedLayers : withoutUrbanPlan(requestedLayers)), lotEnclosureMeshes: planOptions?.layers?.lotEnclosureMeshes !== false }, lod = selectCityLod(mpp);
     const planInk = city && cityTileHasInk(city, box, planLayers, lod, footprints);
     if (city && planInk && (planOptions?.opacity ?? 1) > 0) {
       if(satellite){
@@ -722,7 +734,7 @@ export function mountCity3d(options: City3dOptions): City3d {
       const inkLayers=satellite?{...planLayers,blocks:thematic&&planLayers.blocks,domains:thematic&&planLayers.domains,parcels:thematic&&planLayers.parcels,gardens:thematic&&planLayers.gardens,places:thematic&&planLayers.places,streets:planLayers.streets&&planOptions?.roadLook==='ink',enclosures:false,lotEnclosures:false}:planLayers;
       if (materialCanals()) inkLayers.waterways = false;
       drawCity(target, city, { viewport: box, mpp, dpr: 1, lod,
-        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: inkLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, waterColor: planOptions?.waterColor, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
+        colors: planOptions?.colors, view: planOptions?.view ?? 'parcels', labels: false, palette: planOptions?.palette ?? 'terrain', width: planOptions?.width ?? 0.6, layers: inkLayers, buildings: footprints, buildingsVisible: planOptions?.buildingsVisible ?? false, appearance: { ...(planOptions?.appearance ?? { style: 'cartographic', diagnostic: 'none' }), ...(proceduralGround && options.getLook?.().underdark ? { lightsOn: false } : {}) }, textured: textured(), roadLook: planOptions?.roadLook, roadEmphasis: planOptions?.roadEmphasis, waterColor: planOptions?.waterColor, streetPalette: planOptions?.streetPalette, night: planOptions?.night, groundBlend: planOptions?.groundBlend ?? false, onTexturesReady: () => terrain?.invalidateTiles() });
       target.restore();
     }
     const scene = semantic && semantic.urban !== 'off' ? cityPlan() : undefined;
@@ -799,6 +811,9 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (farmsteads !== farmInputs[0] || heightAt !== farmInputs[1] || placeholders !== farmInputs[2]) { farmInputs = [farmsteads, heightAt, placeholders]; farmBuildings = undefined; force = true; }
     const scene = options.getProjection?.() ?? options.getScene(), layouts = options.getLayouts?.(), regional = options.getRegionalStreets?.();
     if (layouts !== bridgesOf[0] || regional !== bridgesOf[1]) { bridgesOf = [layouts, regional]; force = true; }
+    // Moats dug into the 3D ground, once per set of circuits (a flat plan digs nothing).
+    const cutsOf = flat ? undefined : layouts;
+    if (cutsOf !== groundCutsOf || t !== groundCutsOn) { groundCutsOf = cutsOf; groundCutsOn = t; t.setGroundCuts(new UrbanGroundCuts((cutsOf ?? []).flatMap(l => l.enclosures ?? []))); }
     if (scene !== sceneOf) {
       byId = new Map(scene?.buildings.map(b => [b.id, b]));
       // Reconcile before city3dScene: a detail without its exact base plan goes.
@@ -806,12 +821,12 @@ export function mountCity3d(options: City3dOptions): City3d {
       force = true; sceneOf = scene; sourceEpoch++;
     }
     const waterColor = planOptions?.waterColor, canalMaterial = materialCanals();
-    const nextStructureInputs = [layouts, regional, heightAt, bridgeWaterAt, waterColor, canalMaterial];
+    const nextStructureInputs = [layouts, regional, heightAt, bridgeWaterAt, waterColor, canalMaterial, options.getHeightSampler?.(), options.getSurface?.()?.height.data];
     if (!flat && nextStructureInputs.some((input, i) => input !== structureInputs[i])) force = true;
     if (force && flat) {
       clearTimeout(detailTimer); pendingSwaps.clear(); display = undefined; displayMs = 0;
       bridgeStats = { count: 0 }; wallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 }; quayCount = 0;
-      structureInputs = []; canopyInputs = [];
+      structureInputs = []; canopyInputs = []; ornamentInputs = [];
     } else if (force) {
       // Swaps queued for the previous display must not be reinjected by id.
       clearTimeout(detailTimer); pendingSwaps.clear();
@@ -825,12 +840,13 @@ export function mountCity3d(options: City3dOptions): City3d {
         const bridges = city3dBridges(bridgeStreets, heightAt, bridgeWaterAt);
         bridgeStats = { count: bridges.length, first: bridges[0] && center(bridges[0]) };
         const wallStarted = performance.now();
-        const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], heightAt, String(li), l.culture));
+        // heightAt is the undug ground (Terrain3d.groundAt): moat water and gate bridges are not dug a second time.
+        const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], heightAt, String(li), l.culture, waterColor));
         const enclosures = new Set(walls.map(w => w.id.split(':').slice(1, 3).join(':'))), gate = walls.find(w => w.id.includes(':gate:') && !w.variant_id.endsWith(':water'));
         wallStats = { count: enclosures.size, pieces: walls.length, ms: Math.round(performance.now() - wallStarted),
           triangles: walls.reduce((n, w) => n + w.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
           first: walls[0] && center(walls[0]), gate: gate && center(gate) };
-        const quays = [...city3dQuays(layouts ?? []), ...city3dWaterways(layouts ?? [], waterColor, !canalMaterial)], boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
+        const quays = [...city3dQuays(layouts ?? [], quayHeightAt, quayWaterAt), ...city3dWaterways(layouts ?? [], waterColor, !canalMaterial)], boardwalks = city3dBoardwalks(bridgeStreets, heightAt, bridgeWaterAt); quayCount = quays.length + boardwalks.length;
         structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
       }
       const yardPlan = yardsShown ? cityPlan() : undefined;
@@ -841,12 +857,15 @@ export function mountCity3d(options: City3dOptions): City3d {
       // Town grove, tree platforms and their walkways (cityCanopy.ts): the same derivation as the 2D plan.
       const canopySource = scene && !('projection' in scene) ? scene.buildings : undefined, nextCanopyInputs = [layouts, canopySource, heightAt];
       if (nextCanopyInputs.some((input, i) => input !== canopyInputs[i])) { canopyInputs = nextCanopyInputs; canopyBuildings = city3dCanopy(cityCanopy(layouts, canopySource), heightAt); }
+      // Underdark ornaments (underdarkOrnaments.ts): the same derivation as the 2D plan, on the shown buildings' heights.
+      const nextOrnamentInputs = [layouts, scene, heightAt, display];
+      if (nextOrnamentInputs.some((input, i) => input !== ornamentInputs[i])) { ornamentInputs = nextOrnamentInputs; ornamentBuildings = city3dUnderdarkOrnaments(underdarkOrnaments(layouts, scene?.buildings), heightAt, display?.buildings); }
       // Farm buildings and the stand-in houses of places still waiting for their plan stand as meshes like every
       // other building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain
       // under its own footprint.
       farmBuildings ??= farmsteads?.length || placeholders?.length ? city3dScene({ schema_version: '1', generator_version: 'silhouette',
         buildings: [...farmsteads?.length ? farmPlacedBuildings(farmsteads, heightAt ?? (() => 0)) : [], ...placeholders ?? []], refusals: [], open_spaces: [] }, { heightAt }).buildings : [];
-      const extra = [...structureBuildings, ...yardMeshes, ...canopyBuildings, ...farmBuildings];
+      const extra = [...structureBuildings, ...yardMeshes, ...canopyBuildings, ...ornamentBuildings, ...farmBuildings];
       if (extra.length) display = display ? { ...display, buildings: [...display.buildings, ...extra],
         ...(display.occupationBuildings ? { occupationBuildings: [...display.occupationBuildings, ...extra] } : {}) }
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
@@ -857,7 +876,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const roofSnow = snowGround?.renderV2 === 1 ? { season: snowGround.v2Season ?? .5, climateZone: snowGround.climateZone, climate: snowGround.climate, calendar: snowGround.v2Calendar } : undefined;
     // A cadastral drape includes the real footprints and ground boundary ink only.
     // Suppress the entire volume batch, including walls, quays and canopy platforms.
-    t.setBuildings(display, { ambience: appearance?.ambience, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roofSnow, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, !flat && (options.getBuildingsVisible?.() ?? true));
+    t.setBuildings(display, { ambience: appearance?.ambience, lightsOn: appearance?.lightsOn, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roofSnow, textured: textured() && diagnostic !== 'uses' && diagnostic !== 'height' }, !flat && (options.getBuildingsVisible?.() ?? true));
     ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && (!options.details || scene.projection === 'native-parent-window-3d-1');
     if (!flat && options.details) { applyServiceDetails(); driveDetails(); }
     placeMarker(); updateInfo();
@@ -1083,7 +1102,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const forest = proceduralGround || ground === 'map' || !softwareMaterial ? groundForest() : undefined;
     t.setForest(forest?.field, forest?.occupation, { seed: seedHash(d.meta.seed), climate: decorClimate(d.meta), lighting: configured?.lighting ?? DEFAULT_TERRAIN_LIGHTING });
     const { labels: _tileLabels, ...tilePlanOptions } = options.getPlanOptions?.() ?? {};
-    const {ambience:_planAmbience,...planAppearance}=tilePlanOptions.appearance??{};
+    const {ambience:_planAmbience,lightsOn:_planLights,...planAppearance}=tilePlanOptions.appearance??{};
     const nextPlanKey = JSON.stringify([planOverlay, {...tilePlanOptions,...(procedural?{appearance:planAppearance}:{})},procedural?look.waterLook:undefined]);
     if (planKey !== nextPlanKey) { planKey = nextPlanKey; t.invalidateTiles(); }
     const semantic = options.getSemantic?.(), nextSemanticKey = semantic ? JSON.stringify([semantic.rural, semantic.urban, semantic.opacity, semantic.classes]) : '';
@@ -1093,7 +1112,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const regional = options.getRegionalStreets?.();
     if (regional !== tileRoadsOf) { tileRoadsOf = regional; t.invalidateTiles(); }
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
-    if ((planOverlay || !!semantic && semantic.urban !== 'off') && (!planOf ? layouts?.length : planOf[0] !== layouts || planOf[1] !== partitions)) { cityPlan(); t.invalidateTiles(); lap('plan'); }
+    if (!planOf ? layouts?.length : planOf[0] !== layouts || planOf[1] !== partitions) { cityPlan(); t.invalidateTiles(); lap('plan'); }
     if (textured() !== texturedSeen) { texturedSeen = textured(); t.invalidateTiles(); } // the appearance below carries the flag
     $<HTMLInputElement>('[data-textured]').checked = texturedSeen;
     syncBuildings(); lap('buildings'); syncText();
@@ -1150,7 +1169,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     focus(point: Point, radius = 150): void {
       const t = terrain; if (!t) return;
       const span = Math.max(120, 2.4 * radius), distance = span / (2 * Math.tan(TERRAIN_3D_FOV / 2));
-      t.setCamera({ ...t.getCamera(), navigation: 'orbit', x: point.x, y: point.y, distance, pitch: 0.82 }); updateInfo();
+      t.setCamera({ ...t.getCamera(), navigation: 'orbit', ...t.framingView(point.x, point.y, distance) }); updateInfo();
     },
     getCamera: () => terrain?.getCamera(),
     setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; updateInfo(); },

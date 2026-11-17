@@ -35,6 +35,18 @@ describe('retained relief dependencies', () => {
     expect(() => validateProceduralRecipe({ coastAfter: 'surface' })).not.toThrow();
     expect(() => validateProceduralRecipe({ coastAfter: 'prepare' } as never)).toThrow();
   });
+  it('invalidates prepared coasts for surface, neural and traced-layout changes', () => {
+    const neural = { ...base, source: 'neural' as const, islandMode: 'traced:16:00' as const };
+    const before = proceduralSignatures(neural);
+    const coast = proceduralSignatures({ ...neural, coastMask: 64 });
+    expect(coast.get('initialize')).toBe(before.get('initialize'));
+    expect(coast.get('coasts')).not.toBe(before.get('coasts'));
+    expect(proceduralSignatures({ ...neural, islandMode: 'traced:16:01' }).get('coasts')).not.toBe(before.get('coasts'));
+    expect(proceduralSignatures({ ...neural, fidelity: .2 }).get('coasts')).not.toBe(before.get('coasts'));
+    const imported = { ...base, sketch: { version: 1 as const, resolution: 64, processing: 'surface' as const, heights: [1, 2] } };
+    expect(proceduralSignatures({ ...imported, sketch: { ...imported.sketch, heights: [2, 1] } }).get('coasts'))
+      .not.toBe(proceduralSignatures(imported).get('coasts'));
+  });
   it('keeps checkpoint fields independent from the renderer and each new execution', () => {
     const cache = new TerrainFieldCheckpoints(), source = Float32Array.of(1, 2, 3, 4);
     cache.put('wind', 'a', source); source[0] = 100;

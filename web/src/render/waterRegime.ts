@@ -52,8 +52,27 @@ export function waterClimate(s: WaterSeason): WaterClimate {
 /** True when the regime changes anything on the map. */
 export const waterRegimeActive = (c: WaterClimate): boolean => c.aridity > 0 || c.ice > 0 || c.sediment > .05;
 
-/** State of a river vertex of relative size `q` (0 smallest drawn stream, 1 the map's trunk). A river is calm
- * water whatever its slope: the regime carries dryness and ice only. */
+/** Seconds in a mean year. */
+const YEAR_S = 31_557_600;
+/** Mean annual discharge (m³/s) of a course vertex: its runoff-weighted catchment `area` (m², counted in units of the
+ * sea-level runoff: the `area` the water budget carries per vertex) times the sea-level runoff `r0` (mm/yr,
+ * `VectorWater.runoff.r0`). A desert trunk of 123 km² under 1.4 mm/yr carries 5.5 L/s. */
+export const meanDischarge = (area: number, r0: number): number => Math.max(0, area) * Math.max(0, r0) * 1e-3 / YEAR_S;
+/** Discharge scale of the regime (m³/s, log): size 0 at 10 L/s (a brook), 1 at 10 m³/s (a river that crosses a
+ * desert). The zone's aridity then sets the perennial threshold on it (`riverState`): about 8 m³/s in a desert,
+ * 0.4 m³/s in a steppe, 0.13 m³/s in a mediterranean zone; humid zones (aridity 0) keep every course running. */
+const REGIME_LOW = .01, REGIME_HIGH = 10;
+export const dischargeSize = (discharge: number): number => discharge > 0 ? clamp01(Math.log(discharge / REGIME_LOW) / Math.log(REGIME_HIGH / REGIME_LOW)) : 0;
+/** Runoff (mm/yr) at which the mean flow fills the bed the floods shaped. The beds are sized from the catchment alone
+ * (`channelWidth`); the water inside takes `threadShare` of that width: hydraulic geometry, width as the square root of
+ * the discharge. Every humid preset runs at 210 mm/yr (continental) or more: their courses stay full, as before. */
+export const BANKFULL_RUNOFF = 200;
+/** Share of the bed width the running water fills under the sea-level runoff `r0` (mm/yr): 1 in humid climates,
+ * 0.70 mediterranean (97 mm), 0.50 steppe (50 mm), 0.25 savanna (12 mm), 0.08 desert (1.4 mm). */
+export const threadShare = (r0: number): number => Math.min(1, Math.sqrt(Math.max(0, r0) / BANKFULL_RUNOFF));
+
+/** State of a river vertex of size `q` (0 a brook of 10 L/s or less, 1 a river of 10 m³/s: `dischargeSize`). A river
+ * is calm water whatever its slope: the regime carries dryness and ice only. */
 export interface RiverState { dry: number; ice: number }
 export function riverState(c: WaterClimate, q: number): RiverState {
   let dry = 0;

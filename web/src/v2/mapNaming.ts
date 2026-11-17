@@ -55,7 +55,7 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
   const main = settlements?.find(place => place.main);
   const ordered = main ? [main, ...settlements!.filter(place => !place.main)] : settlements;
   const world: World = { ...source,
-    options: { ...source.options, language: settings.naming?.profile ?? settings.options.language ?? 'auto', nameSource:settings.naming?.source ?? settings.options.nameSource, culture: settings.options.culture },
+    options: { ...source.options, language: (settings.naming?.toponymCulture ? resolveToponymProfile(settings.naming.toponymCulture).id : settings.naming?.profile) ?? settings.options.language ?? 'auto', nameSource:settings.naming?.source ?? settings.options.nameSource, culture: settings.options.culture },
     terrain: cloneV2TerrainForStage(source.terrain), urban: namingUrban(source.urban), settlements,
     roads:source.roads?.every(road=>(road as {nameKey?:string}).nameKey) ? source.roads : source.roads?.map(road=>({...road})),
     landuse:source.landuse ? {...source.landuse,areas:source.landuse.areas.map(area=>({...area})),farmsteads:source.landuse.farmsteads.map(farm=>({...farm}))} : undefined,
@@ -109,7 +109,7 @@ export function renameMap(source: World, settings: V2Settings, language: Languag
   const previous=source.names?.bank ?? {};
   const bank={...previous};
   const citySources=new Map(settlements?.map(s=>[s.key,s.options?.nameSource]));
-  const migrating=source.names?.algorithmVersion==='2'&&!source.names.bank&&!settings.naming?.profile&&!settings.naming?.source&&!settings.naming?.region&&!settings.naming?.local&&!settings.naming?.features;
+  const migrating=source.names?.algorithmVersion==='2'&&!source.names.bank&&!settings.naming?.toponymCulture&&!settings.naming?.profile&&!settings.naming?.source&&!settings.naming?.region&&!settings.naming?.local&&!settings.naming?.features;
   for(const entry of world.names.entries) {
     const city=entry.cityKey ?? (entry.sub?.startsWith('settlement:') ? entry.sub.slice(11) : 'main');
     const natural=['river','lake','sea','forest','hill','farm'].includes(entry.kind)&&!entry.id.startsWith('settlement:');

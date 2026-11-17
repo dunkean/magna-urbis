@@ -14,7 +14,9 @@ import type { LanduseForestTone } from './landuseForestTone';
 import type { AppearanceInput, RenderCapabilities, RenderTarget } from './appearanceRecipe';
 import type { UrbanBuildingStyle } from './urbanBuildingStyle';
 import type { ResolvedDisplayQuality } from './displayQuality';
+import { UNDERDARK_CAVERN_LIMITS, type UnderdarkCavern3d } from './underdarkCavern';
 import type { ContourDetail } from './cityContours';
+import { CROWN_DETAILS, DEFAULT_CROWN_DETAIL, type CrownDetail } from './crownClumpAtlas';
 
 /** Base looks of the ground; light presets reuse these renderers. */
 export type StyleId = 'minimal' | 'atlas' | 'cadastre' | 'topographic' | 'satellite' | 'satellite-2' | 'parchment' | 'illustration';
@@ -41,6 +43,10 @@ export type Ambience = 'day' | 'night';
 export const STYLE_IDS: readonly StyleId[] = ['minimal', 'atlas', 'cadastre', 'topographic', 'satellite', 'satellite-2', 'parchment', 'illustration'];
 export const PRESET_IDS: readonly PresetId[] = STYLE_IDS.flatMap(id => id === 'satellite' || id === 'parchment' ? [id, `${id}-light` as PresetId] : [id]);
 export const VEGETATION_LOOKS: readonly VegetationLook[] = ['none', 'symbols', 'painted', 'procedural-canopy'];
+/** Close-zoom detail of the procedural crowns: the leaf-clump relief of the elven town crowns (render/crownClumpAtlas.ts). */
+export { CROWN_DETAILS, DEFAULT_CROWN_DETAIL, type CrownDetail } from './crownClumpAtlas';
+/** The crown detail every page draws: the recipe's, else the default. Presets leave it unset (the default). */
+export const crownDetailOf = (c: Pick<CompositionRecipe, 'vegetation'> | undefined): CrownDetail => c?.vegetation.crownDetail ?? DEFAULT_CROWN_DETAIL;
 export const SEMANTIC_LOOKS: readonly SemanticLook[] = ['off', 'subtle', 'categorical', 'outlines'];
 export const SEMANTIC_DEPTHS: readonly SemanticDepth[] = ['surface', 'readable'];
 export const NETWORK_LOOKS: readonly NetworkLook[] = ['inherit', 'ink', 'natural', 'wash'];
@@ -67,7 +73,8 @@ export const COAST_WAVES_DEFAULT = true;
 
 /** Global effects: they apply on top of any style. */
 export interface RenderEffects { ambience: Ambience; /** 0-1 annual cycle. */ season: number; relief: boolean; lighting: TerrainLighting;
-  /** Edits of the zone's year; an absent field keeps the zone's value. */ calendar?: SeasonCalendar }
+  /** Edits of the zone's year; an absent field keeps the zone's value. */ calendar?: SeasonCalendar;
+  /** 3D Underdark display (render/underdarkCavern.ts); an absent field keeps its default. */ underdark?: Partial<UnderdarkCavern3d> }
 
 /** The persisted recipe. Every field is explicit: a preset writes all of them. */
 export interface CompositionRecipe {
@@ -77,7 +84,8 @@ export interface CompositionRecipe {
   quality?: ResolvedDisplayQuality;
   ground: { look: StyleId; /** Concrete style, one of GROUND_VARIANTS[look]. */ variant: TerrainStyle; contours: boolean;
     /** `fixed` (absent): the V1 set, traced once, thin and dense from the start; `zoom`: re-selected per zoom band. */ contourDetail?: ContourDetail };
-  vegetation: { look: VegetationLook; /** Forest class of the land-use plan: dark marked green or the ground colour. */ forestTone: LanduseForestTone };
+  vegetation: { look: VegetationLook; /** Forest class of the land-use plan: dark marked green or the ground colour. */ forestTone: LanduseForestTone;
+    /** Close-zoom detail of the procedural crowns; absent means DEFAULT_CROWN_DETAIL. */ crownDetail?: CrownDetail };
   landuse: {
     rural: SemanticLook; urban: SemanticLook; /** 0–1, on the semantic layer only. */ opacity: number; depth: SemanticDepth;
     /** Rural classes shown by the semantic layer; absent = shown. */ classes?: Partial<Record<LandKind, boolean>>;
@@ -120,18 +128,11 @@ export function presetComposition(id: PresetId): CompositionRecipe {
   const base = id === 'satellite-light' ? 'satellite' : id === 'parchment-light' ? 'parchment' : id;
   const p = PRESETS[base];
   return { preset: id, quality: id === base ? 'full' : 'light', ground: { look: p.ground, variant: GROUND_VARIANTS[p.ground][0], contours: p.contours }, vegetation: { look: p.vegetation, forestTone: 'marked' },
-    landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth, ...(id === 'topographic' ? { classes: Object.fromEntries(LAND_KINDS.map(kind => [kind, kind === 'field'])) } : {}) }, networks: { roads: { visible: true, look: p.network, emphasis: 1, surface: base === 'satellite' || base === 'satellite-2' ? 'rendered' : 'plan' }, water: { visible: true, look: p.network === 'wash' ? 'ink' : p.network } },
+    landuse: { rural: p.rural, urban: p.urban, opacity: .4, depth: p.depth, ...(id === 'topographic' ? { classes: Object.fromEntries(LAND_KINDS.map(kind => [kind, kind === 'field'])) } : {}) }, networks: { roads: { visible: true, look: p.network, emphasis: 1, surface: base === 'satellite' || base === 'satellite-2' ? 'rendered' : 'plan' }, water: { visible: true, look: base === 'satellite-2' ? 'natural' : p.network === 'wash' ? 'ink' : p.network } },
     buildings: { visible: true, look: p.building, parcels: p.parcels, blocks: p.blocks ?? true, districts: false }, text: structuredClone(p.text), annotations: { legend: false, cartouche: false },
     effects: { ambience: 'day', season: .5, relief: id !== 'topographic' && id !== 'minimal', lighting: { ...DEFAULT_TERRAIN_LIGHTING } } };
 }
 
-/** Underdark worlds are lit by their towns: material grounds (satellite looks) take the night ambience, so the
- * shared night machinery lights the settlements (city lamps, night streets) over the dark cave floor. Map grounds
- * keep their underdark palette (render/biomes.ts) instead of the night one. */
-export function underdarkComposition(c: CompositionRecipe, biome: string | undefined): CompositionRecipe {
-  if (biome !== 'underdark' || c.effects.ambience === 'night' || styleTraits(c.ground.variant).family === 'map') return c;
-  return { ...c, effects: { ...c.effects, ambience: 'night' } };
-}
 /** Change only the display tier, preserving every pass and any advanced customization. */
 export function withCompositionQuality(c: CompositionRecipe, quality: ResolvedDisplayQuality): CompositionRecipe {
   const base = c.preset === 'satellite-light' ? 'satellite' : c.preset === 'parchment-light' ? 'parchment' : c.preset;
@@ -156,6 +157,7 @@ export interface ResolvedComposition {
     /** The vector overlay draws the vegetation classes (forest, meadow, marsh, commons). */ readonly cartographic: boolean;
     /** Painted brushes on the vector overlay. */ readonly painted: boolean;
     /** An Illustrated ground paints its forest brushes: its own form of the `painted` look. */ readonly groundForests: boolean;
+    /** Close-zoom detail of the procedural broadleaf and orchard crowns (crownDetailOf: the default when unset). */ readonly crownDetail: CrownDetail;
   };
   readonly landuse: { readonly rural: SemanticLook; readonly urban: SemanticLook; readonly opacity: number; readonly depth: SemanticDepth; readonly classes: Readonly<Record<LandKind, boolean>> };
   readonly networks: { readonly roads: { readonly visible: boolean; readonly look: RoadLook; readonly emphasis: number }; readonly water: { readonly visible: boolean; readonly look: 'ink' | 'natural'; readonly waves: boolean } };
@@ -169,7 +171,7 @@ const BUILDING_2D: Readonly<Record<BuildingLook, { style: UrbanBuildingStyle; pa
   footprints: { style: 'silhouette', painted: false, meshes: 'none' }, 'cartographic-roofs': { style: 'cartographic', painted: false, meshes: 'simple' },
   'simple-volumes': { style: 'geometric', painted: false, meshes: 'simple' }, 'detailed-volumes': { style: 'cartographic', painted: true, meshes: 'detailed' },
 };
-const effectiveVariant = (c: CompositionRecipe): TerrainStyle => c.ground.look !== 'minimal' && c.effects.ambience === 'night' && styleTraits(c.ground.variant).family === 'map' ? 'night' : c.ground.variant;
+const effectiveVariant = (c: CompositionRecipe, underdark = false): TerrainStyle => !underdark && c.ground.look !== 'minimal' && c.effects.ambience === 'night' && styleTraits(c.ground.variant).family === 'map' ? 'night' : c.ground.variant;
 const networkLook = (look: NetworkLook, traits: StyleTraits): RoadLook => look === 'inherit' ? traits.family === 'material' ? 'natural' : 'ink' : look;
 const waterLook = (look: NetworkLook, traits: StyleTraits): 'ink' | 'natural' => { const resolved = networkLook(look, traits); return resolved === 'wash' ? 'ink' : resolved === 'rendered' ? 'natural' : resolved; };
 /** The road look actually drawn: the painted surface on a material ground when the recipe asks for it, else the plan look. */
@@ -184,15 +186,15 @@ const overlayPainted = (look: VegetationLook, traits: StyleTraits): boolean => l
 const vectorVegetation = (look: VegetationLook, traits: StyleTraits): boolean => look === 'symbols' || overlayPainted(look, traits);
 
 /** The low-level appearance a recipe stands for. Advanced fields not driven by the recipe stay as they are. */
-export function applyComposition(a: AppearanceInput, c: CompositionRecipe): AppearanceInput {
-  const variant = effectiveVariant(c), traits = styleTraits(variant), building = BUILDING_2D[c.buildings.look];
+export function applyComposition(a: AppearanceInput, c: CompositionRecipe, underdark = false): AppearanceInput {
+  const variant = effectiveVariant(c, underdark), traits = styleTraits(variant), building = BUILDING_2D[c.buildings.look];
   const roads = roadLookOf(c.networks.roads, traits);
   const { enabled: _enabled, ...forest } = a.forest ?? {};
   const { ground: _ground, ...city } = a.city ?? {};
   // The map overlay follows the ambience on any ground: day-coloured fields on a night ground would float above it.
   // Parchment woods are dense hand-drawn crowns (canopy.ts) over a soft wash, in the ink of the sheet.
   const parchmentTrees = variant === 'parchment' ? { vegetation: 'canopy' as const } : {};
-  return { ...a, ...parchmentTrees, style: isMapStyle(variant) ? variant : c.effects.ambience === 'night' ? 'night' : traits.paperMap ? 'parchment' : a.style, terrainStyle: variant, renderer: 'bench', contours: c.ground.contours,
+  return { ...a, ...parchmentTrees, style: isMapStyle(variant) ? variant : !underdark && c.effects.ambience === 'night' ? 'night' : traits.paperMap ? 'parchment' : a.style, terrainStyle: variant, renderer: 'bench', contours: c.ground.contours,
     terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, ...a.terrainLayers, relief: c.effects.relief, water: c.networks.water.visible },
     // The land-use painter is the physical look of the fields on a map ground: the semantic layer never switches it off.
     landuse: variant !== 'topographic', painted: overlayPainted(c.vegetation.look, traits), forest:c.vegetation.look === 'procedural-canopy' ? forest : { ...forest, enabled: false },
@@ -213,20 +215,20 @@ function limitationsOf(c: CompositionRecipe, traits: StyleTraits, target: Render
 }
 
 /** The composition of one target. Callers without a recipe retain the neutral pass configuration. */
-export function resolveComposition(recipe: CompositionRecipe | undefined, traits: StyleTraits, target: RenderTarget, capabilities: RenderCapabilities): ResolvedComposition {
+export function resolveComposition(recipe: CompositionRecipe | undefined, traits: StyleTraits, target: RenderTarget, capabilities: RenderCapabilities, underdark = false): ResolvedComposition {
   const c = recipe ?? presetComposition('parchment'), classes = Object.fromEntries(LAND_KINDS.map(kind => [kind, c.landuse.classes?.[kind] !== false])) as Record<LandKind, boolean>;
   const look = c.vegetation.look;
   const buildingLook: BuildingLook = target !== 'view3d'
     ? c.ground.variant === 'minimal' || c.ground.variant === 'cadastre' || c.ground.variant === 'topographic' ? 'footprints' : 'detailed-volumes'
     // Cadastre is a ground diagram in perspective too; other map tiers retain their 3D architecture.
     : c.ground.variant === 'cadastre' ? 'footprints' : c.buildings.look === 'footprints' ? 'detailed-volumes' : c.buildings.look;
-  return Object.freeze({ recipe: c, variant: recipe ? effectiveVariant(c) : c.ground.variant,
-    vegetation: recipe ? { look, forestTone: c.vegetation.forestTone, procedural: look === 'procedural-canopy', cartographic: vectorVegetation(look, traits), painted: overlayPainted(look, traits), groundForests: look === 'painted' }
-      : { look, forestTone: c.vegetation.forestTone, procedural: traits.ground3d, cartographic: traits.cartographicVegetation, painted: false, groundForests: true },
+  return Object.freeze({ recipe: c, variant: recipe ? effectiveVariant(c, underdark) : c.ground.variant,
+    vegetation: recipe ? { look, forestTone: c.vegetation.forestTone, procedural: look === 'procedural-canopy', cartographic: vectorVegetation(look, traits), painted: overlayPainted(look, traits), groundForests: look === 'painted', crownDetail: crownDetailOf(c) }
+      : { look, forestTone: c.vegetation.forestTone, procedural: traits.ground3d, cartographic: traits.cartographicVegetation, painted: false, groundForests: true, crownDetail: crownDetailOf(c) },
     landuse: { rural: recipe ? c.landuse.rural : 'off', urban: recipe ? c.landuse.urban : 'off', opacity: c.landuse.opacity, depth: c.landuse.depth, classes },
     networks: { roads: { visible: c.networks.roads.visible, look: roadLookOf(c.networks.roads, traits), emphasis: c.networks.roads.emphasis }, water: { visible: c.networks.water.visible, look: waterLook(c.networks.water.look, traits), waves: c.networks.water.waves ?? COAST_WAVES_DEFAULT } },
     buildings: { visible: c.buildings.visible, look: buildingLook, meshes: recipe ? BUILDING_2D[buildingLook].meshes : 'detailed', parcels: c.buildings.parcels, blocks: c.buildings.blocks, districts: c.buildings.districts },
-    text: c.text, ambience: c.ground.look === 'minimal' ? 'day' : c.effects.ambience, limitations: Object.freeze(recipe ? limitationsOf(c, traits, target, capabilities) : []) });
+    text: c.text, ambience: !underdark && c.ground.look === 'minimal' ? 'day' : c.effects.ambience, limitations: Object.freeze(recipe ? limitationsOf(c, traits, target, capabilities) : []) });
 }
 
 /** One manual change: the variant follows the look, the preset becomes 'custom', the other passes stay. */
@@ -252,6 +254,14 @@ function validateEffects(value: unknown): void {
   if (!record(lighting)) throw new Error('appearance.composition.effects.lighting: expected an object.');
   if (typeof lighting.enabled !== 'boolean') throw new Error('appearance.composition.effects.lighting.enabled: expected a boolean.');
   for (const [key, min, max] of [['azimuth', 0, 360], ['elevation', 5, 90], ['strength', 0, 3], ['exaggeration', 0, 10]] as const) inRange(lighting[key], min, max, `effects.lighting.${key}`);
+  if (value.underdark !== undefined) {
+    if (!record(value.underdark)) throw new Error('appearance.composition.effects.underdark: expected an object.');
+    for (const [key, v] of Object.entries(value.underdark)) {
+      const range = UNDERDARK_CAVERN_LIMITS[key as keyof typeof UNDERDARK_CAVERN_LIMITS];
+      if (!range) throw new Error(`appearance.composition.effects.underdark.${key}: unknown field.`);
+      if (v !== undefined && v !== null) inRange(v, range[0], range[1], `effects.underdark.${key}`);
+    }
+  }
   if (value.calendar === undefined) return;
   if (!record(value.calendar)) throw new Error('appearance.composition.effects.calendar: expected an object.');
   const calendar = value.calendar;
@@ -271,6 +281,7 @@ export function validateComposition(value: unknown): asserts value is Compositio
   if (typeof ground.variant !== 'string' || !isTerrainStyle(ground.variant)) throw new Error('appearance.composition.ground.variant: unknown style.');
   if (!record(vegetation)) throw new Error('appearance.composition.vegetation: expected an object.');
   oneOf(vegetation.look, VEGETATION_LOOKS, 'vegetation.look'); oneOf(vegetation.forestTone, ['ground', 'marked'], 'vegetation.forestTone');
+  if (vegetation.crownDetail !== undefined) oneOf(vegetation.crownDetail, CROWN_DETAILS, 'vegetation.crownDetail');
   if (!record(landuse)) throw new Error('appearance.composition.landuse: expected an object.');
   oneOf(landuse.rural, SEMANTIC_LOOKS, 'landuse.rural'); oneOf(landuse.urban, SEMANTIC_LOOKS, 'landuse.urban'); oneOf(landuse.depth, SEMANTIC_DEPTHS, 'landuse.depth');
   if (typeof landuse.opacity !== 'number' || !(landuse.opacity >= 0 && landuse.opacity <= 1)) throw new Error('appearance.composition.landuse.opacity: expected a number in 0–1.');

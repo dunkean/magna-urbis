@@ -32,10 +32,12 @@ import { groundCoverActive } from '../render/materialLook';
 import { MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { Terrain3d, paddedMaterial, fullPatchIndices, patchClipKey, clippedPatchIndices,
   type FrameGeometry, type Patch, type PatchDraw, type Terrain3dOptions, type Terrain3dTile, type Terrain3dTileContent } from './terrain3d';
-import { SOFT_LAYER_FROM, UrbanBuildingPass, type Batch, type BuildingFrame, type Sector } from './urbanBuilding3d';
+import { SOFT_LAYER_FROM, caveUniform, UrbanBuildingPass, type Batch, type BuildingFrame, type Sector } from './urbanBuilding3d';
 import type { ForestTextures, HeightLayer } from './terrainGl';
 import * as WGSL from './terrain3dWgsl.generated';
 import { TREE_STRIDE, TREE_VERTICES } from './terrain3dTrees';
+import { halfFloats, type CavernField } from '../render/underdarkCavern';
+import { FUNGUS_LOD_VERTICES } from './terrain3dFungi';
 
 type ParamsLayout = { size: number; fields: Record<string, { offset: number; type: string; count: number }> };
 const COMPONENTS: Record<string, number> = { float: 1, int: 1, uint: 1, bool: 1, vec2: 2, ivec2: 2, uvec2: 2, vec3: 3, ivec3: 3, uvec3: 3, vec4: 4, ivec4: 4, uvec4: 4, mat4: 16 };
@@ -110,6 +112,7 @@ const BILLBOARD_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: 48, stepMode:
 const TREE_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: TREE_STRIDE * 4, stepMode: 'instance', attributes: [
   { shaderLocation: 0, offset: 0, format: 'float32x4' }, { shaderLocation: 1, offset: 16, format: 'float32x4' }, { shaderLocation: 2, offset: 32, format: 'float32x4' },
 ] }];
+const ROOF_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: 20, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' }] }];
 const BUILDING_BUFFERS: Record<'color' | 'tex', GPUVertexBufferLayout[]> = {
   color: [{ arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' },
     { shaderLocation: 4, offset: 36, format: 'float32' }] }],
@@ -139,7 +142,8 @@ export interface GpuImage { texture: GPUTexture; view: GPUTextureView }
 const image = (texture: WebGLTexture): GpuImage => texture as GpuImage;
 type Entry = { pipeline?: GPURenderPipeline; failed?: boolean };
 // Natural water is a runtime parameter (uNaturalWater), not a pipeline: Satellite and Satellite-2 share one ground.
-const groundKey = (ground: number, v2: number, forest: number, brushes: number): string => `ground.${ground}.${v2}.${forest}.${brushes}`;
+// The Underdark ground is its own pipeline (override uUnderdark): ordinary maps compile none of it.
+const groundKey = (ground: number, v2: number, forest: number, brushes: number, underdark = 0): string => `ground.${ground}.${v2}.${forest}.${brushes}.${underdark}`;
 const PREVIEW_GROUND = groundKey(0, 0, 0, 0);
 
 /** Device-wide objects of the 3D view: modules, layouts, samplers, pipelines. */
@@ -219,6 +223,20 @@ class Gpu3d {
     const depthStencil = (write: boolean): GPUDepthStencilState => ({ format: DEPTH, depthWriteEnabled: write, depthCompare: write ? 'less-equal' : 'always' });
     if (key === 'sky') return { label: key, layout: this.pipelineLayouts.sky, vertex: { module: this.modules.skyVs, entryPoint: 'main' },
       fragment: { module: this.modules.skyFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(false), multisample };
+    // Underdark mushrooms: their modules are created with their first pipeline, so ordinary maps compile none of it.
+    // The cave roof (Underdark): one mesh, created with its first pipeline.
+    if (key === 'roof') {
+      this.modules.roofVs ??= this.device.createShaderModule({ label: 'roofVs', code: WGSL.roofVs });
+      this.modules.roofFs ??= this.device.createShaderModule({ label: 'roofFs', code: WGSL.roofFs });
+      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.roofVs, entryPoint: 'main', buffers: ROOF_BUFFERS },
+        fragment: { module: this.modules.roofFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+    }
+    if (key === 'fungus') {
+      this.modules.fungusVs ??= this.device.createShaderModule({ label: 'fungusVs', code: WGSL.fungusVs });
+      this.modules.fungusFs ??= this.device.createShaderModule({ label: 'fungusFs', code: WGSL.fungusFs });
+      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.fungusVs, entryPoint: 'main', buffers: TREE_BUFFERS },
+        fragment: { module: this.modules.fungusFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+    }
     if (key === 'tree') return { label: key, layout: this.pipelineLayouts.tree,
       vertex: { module: this.modules.treeVs, entryPoint: 'main', buffers: TREE_BUFFERS },
       fragment: { module: this.modules.treeFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
@@ -233,10 +251,10 @@ class Gpu3d {
     const vertex: GPUVertexState = { module: this.modules.terrainVs, entryPoint: 'main', buffers: PATCH_BUFFERS };
     if (key === 'map') return { label: key, layout: this.pipelineLayouts.terrain, vertex,
       fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
-    const [ground, v2, forest, brushes] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
+    const [ground, v2, forest, brushes, underdark] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
     return { label: key, layout: this.pipelineLayouts.terrain, vertex, depthStencil: depthStencil(true), multisample,
       fragment: { module: this.modules.groundFs, entryPoint: 'main', targets: target,
-        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes } } };
+        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes, [o.uUnderdark]: underdark } } };
   }
   private mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
   /** Fills mip levels 1.. of every layer of a 2D (array) texture from level 0. */
@@ -323,6 +341,10 @@ class Terrain3dGpu extends Terrain3d {
   private gpuBillboardBuffer?: GPUBuffer;
   private readonly treeParams = new Params(WGSL.WGSL3D_PARAMS.tree);
   private gpuTreeBuffer?: GPUBuffer;
+  private fungusParams?: Params;
+  private roofParams?: Params;
+  private gpuRoof?: { vertices: GPUBuffer; indices: GPUBuffer };
+  private gpuFungusBuffer?: GPUBuffer;
   private gpuBillboardAtlas?: { source: HTMLCanvasElement; texture: WebGLTexture };
   private fullIndices!: { buffer: GPUBuffer; count: number };
   private patchIndexCache = new Map<string, { buffer: GPUBuffer; count: number }>();
@@ -345,7 +367,7 @@ class Terrain3dGpu extends Terrain3d {
   }
   private groundKeyNow(): string {
     const settings = this.groundSettings;
-    return groundKey(+!!settings, settings?.renderV2 ?? 0, +!!this.forest, +!!settings?.forestBrushes);
+    return groundKey(+!!settings, settings?.renderV2 ?? 0, +(!!this.forest && !settings?.underdark), +!!settings?.forestBrushes, +!!settings?.underdark);
   }
   private pipeline(key: string): GPURenderPipeline | undefined { return this.gpu.pipeline(key, this.samples); }
   private readonly redraw = (): void => this.request();
@@ -369,7 +391,7 @@ class Terrain3dGpu extends Terrain3d {
     this.brushes = { image: this.arrayImage(1, 1, 1, [new Uint8Array([255, 128])]), full: false };
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
     this.macroTexture = this.uploadMacroField(this.layer);
-    this.caveTexture = this.uploadCaveMask(this.layer);
+    this.refreshCavern(true);
     this.buildings = new UrbanBuildingPassGpu(gpu, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
     this.selectTerrainProgram(false);
@@ -418,11 +440,8 @@ class Terrain3dGpu extends Terrain3d {
     return cached;
   }
 
-  protected override uploadCaveMask(layer?: HeightLayer): WebGLTexture | undefined {
-    if (!layer?.cave?.length || layer.cave.length !== layer.n * layer.n) return undefined;
-    const mask = new Uint8Array(layer.cave.length);
-    mask.set(layer.cave);
-    return this.image(layer.n, layer.n, 'r8unorm', mask, 1);
+  protected override uploadCavern(field: CavernField): WebGLTexture {
+    return this.image(field.n, field.n, 'rgba16float', halfFloats(field.texels), 8);
   }
   protected override uploadMacroField(layer?: HeightLayer): WebGLTexture {
     const n = layer?.n ?? 1;
@@ -479,6 +498,54 @@ class Terrain3dGpu extends Terrain3d {
     this.device.queue.writeBuffer(this.gpuTreeBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
     this.pipeline('tree');
   }
+  protected override uploadFungi(values: Float32Array): void {
+    this.gpuFungusBuffer?.destroy(); this.gpuFungusBuffer = undefined;
+    if (!values.length) return;
+    this.gpuFungusBuffer = this.device.createBuffer({ label: 'underdark mushrooms', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    this.device.queue.writeBuffer(this.gpuFungusBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
+    this.pipeline('fungus');
+  }
+  protected override uploadRoof(mesh: { vertices: Float32Array; indices: Uint32Array } | undefined): void {
+    if (this.gpuRoof) { this.garbage.push(this.gpuRoof.vertices, this.gpuRoof.indices); this.gpuRoof = undefined; }
+    this.roofCount = mesh?.indices.length ?? 0;
+    if (!mesh) return;
+    const make = (data: Float32Array | Uint32Array, usage: number, label: string): GPUBuffer => {
+      const buffer = this.device.createBuffer({ label, size: data.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
+      this.device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength); return buffer;
+    };
+    this.gpuRoof = { vertices: make(mesh.vertices, GPUBufferUsage.VERTEX, 'cave roof'), indices: make(mesh.indices, GPUBufferUsage.INDEX, 'cave roof indices') };
+    this.pipeline('roof');
+  }
+  private recordRoof(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
+    if (!this.roofShown() || !this.gpuRoof) return;
+    const pipeline = this.pipeline('roof'); if (!pipeline) return;
+    const p = this.roofParams ??= new Params(WGSL.WGSL3D_PARAMS.roof), c = this.camera, glow = this.townGlowUniform();
+    p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
+    p.setArray('eye', frame.eye); p.setArray('uCavern', this.cavernParameters()); p.setArray('uReveal', this.roofReveal());
+    p.setArray('uTownGlow', glow.values); p.set('uTownGlowCount', glow.count);
+    const slot = this.params.alloc(p.bytes);
+    pass.setPipeline(pipeline); pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [
+      { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
+    pass.setVertexBuffer(0, this.gpuRoof.vertices); pass.setIndexBuffer(this.gpuRoof.indices, 'uint32'); pass.drawIndexed(this.roofCount);
+  }
+  private recordFungi(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
+    if (!this.fungusCount || !this.gpuFungusBuffer || !this.groundSettings?.underdark) return;
+    const pipeline = this.pipeline('fungus'); if (!pipeline) return;
+    const p = this.fungusParams ??= new Params(WGSL.WGSL3D_PARAMS.fungus), c = this.camera, glow = this.townGlowUniform();
+    p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
+    p.setArray('fungusFade', this.fungusFade()); p.setArray('uReveal', this.roofShown() ? this.roofReveal() : [0, 0, 0, 1]); p.setArray('eye', frame.eye); p.setArray('uCavern', this.cavernParameters());
+    p.setArray('uTownGlow', glow.values); p.set('uTownGlowCount', glow.count);
+    pass.setPipeline(pipeline); pass.setVertexBuffer(0, this.gpuFungusBuffer);
+    let first = 0;
+    for (let lod = 0; lod < 3; lod++) {
+      const count = this.fungusTiers[lod]; if (!count) continue;
+      p.set('fungusLod', lod);
+      const slot = this.params.alloc(p.bytes);
+      pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [
+        { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
+      pass.draw(FUNGUS_LOD_VERTICES[lod], count, 0, first); first += count;
+    }
+  }
   private recordTrees(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
     if (!this.treesShown() || !this.gpuTreeBuffer || this.groundSettings?.underdark) return;
     const pipeline = this.pipeline('tree'); if (!pipeline) return;
@@ -517,7 +584,7 @@ class Terrain3dGpu extends Terrain3d {
   private terrainPipeline(): GPURenderPipeline | undefined {
     if (this.useMapShader) return this.pipeline('map');
     const settings = this.groundSettings, forest = !!this.forest && !settings?.underdark;
-    const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes));
+    const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes, +!!settings?.underdark));
     this.mark('groundVariant', target ? 'ready' : 'pending');
     if (target) { this.lastGroundPipelines.set(this.samples, target); return target; }
     return settings ? this.pipeline(PREVIEW_GROUND) : this.lastGroundPipelines.get(this.samples) ?? this.pipeline(PREVIEW_GROUND);
@@ -526,7 +593,7 @@ class Terrain3dGpu extends Terrain3d {
   async prepareVariant(): Promise<void> {
     const settings = this.groundSettings;
     const key = this.useMapShader ? 'map'
-      : groundKey(+!!settings, settings?.renderV2 ?? 0, +!!this.forest, +!!settings?.forestBrushes);
+      : this.groundKeyNow();
     // The view opens on the multisampled ground (frames at rest); the single-sample one follows in the background.
     await this.gpu.settled(key, SAMPLES);
     this.gpu.pipeline(key, 1);
@@ -544,7 +611,7 @@ class Terrain3dGpu extends Terrain3d {
 
   protected override renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
     const device = this.device, gpu = this.gpu, layer = this.layer!, c = this.camera, settings = this.groundSettings;
-    this.prepareBillboards(); this.prepareTrees(frame); const raisedBlend=this.raisedBlend(frame);
+    this.prepareBillboards(); this.prepareTrees(frame); this.prepareFungi(); const raisedBlend=this.raisedBlend(frame);
     const targets = this.ensureTargets(w, h);
     this.params.begin(); this.seamPool.begin();
     const encoder = device.createCommandEncoder({ label: 'terrain 3d' });
@@ -614,7 +681,7 @@ class Terrain3dGpu extends Terrain3d {
     p.set('uOccupationN', applied?.data.n ?? 1);
     p.set('uPaperMap', settings?.paperMap ? 1 : 0);
     // Underdark: the cave mask in the forest beach slot (terrain3d.ts), forest off.
-    p.set('uUnderdark', settings?.underdark ? 1 : 0); p.set('uHasCave', settings?.underdark && this.caveTexture ? 1 : 0);
+    p.set('uHasCave', settings?.underdark && this.caveTexture ? 1 : 0); p.setArray('uCavern', this.cavernParameters()); p.setArray('uFungusArea', this.fungusArea()); { const lamps = this.townGlowUniform(); p.setArray('uCaveLamps', lamps.values); p.set('uCaveLampCount', lamps.count); }
     { const g = settings?.townGlow ?? new Float32Array(0), a = new Float32Array(64); for (let k = 0; k < Math.min(16, g.length / 3 | 0); k++) a.set(g.subarray(k * 3, k * 3 + 3), k * 4); p.setArray('uTownGlow', a); p.set('uTownGlowCount', Math.min(16, g.length / 3 | 0)); }
     { const f = settings?.farmBeds ?? new Float32Array(128); p.setArray('uFarmBeds', f); let n = 0; for (let k = 0; k < 32; k++) if (f[k * 4 + 2] > 0) n = k + 1; p.set('uFarmBedCount', n); }
     if (settings?.underdark) {
@@ -664,7 +731,7 @@ class Terrain3dGpu extends Terrain3d {
     buildings.target = { pass, params: this.params, samples: this.samples };
     let pending: boolean;
     try { pending = buildings.draw(this.buildingFrame(frame)); } finally { buildings.target = undefined; }
-    this.recordTrees(pass, frame);
+    this.recordTrees(pass, frame); this.recordRoof(pass, frame); this.recordFungi(pass, frame);
     pending = this.recordBillboards(pass,frame,raisedBlend) || pending;
     pass.end();
     this.params.flush(); this.seamPool.flush();
@@ -718,7 +785,7 @@ class Terrain3dGpu extends Terrain3d {
     this.releaseForest(this.forest);
     if (this.occupation) this.deleteTexture(this.occupation.texture);
     if (this.landDetail) this.deleteTexture(this.landDetail.texture);
-    this.gpuBillboardBuffer?.destroy(); if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
+    this.gpuFungusBuffer?.destroy(); this.gpuRoof?.vertices.destroy(); this.gpuRoof?.indices.destroy(); this.gpuBillboardBuffer?.destroy(); if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
     for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
     for (const texture of [this.material, this.macroTexture, this.caveTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);
     this.fullIndices.buffer.destroy();
@@ -770,7 +837,7 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
     const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }), normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
     pass.setPipeline(pipeline);
     p.setArray('matrix', frame.matrix); p.set('exaggeration', frame.exaggeration); p.set('useTex', this.atlases ? 2 : 0); p.set('softFrom', SOFT_LAYER_FROM);
-    p.set('uNight',+this.night);
+    p.set('uNight',frame.cave||!this.night?0:this.lightsOn?1:2); p.setArray('uCave',caveUniform(frame,this.lightsOn)); p.setArray('uCaveEye',frame.cave?.eye??[0,0,0]);
     let group: GPUBindGroup | undefined, groupBuffer: GPUBuffer | undefined;
     for (const sector of shown) {
       p.set('offset', sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);

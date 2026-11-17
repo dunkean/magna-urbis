@@ -9,7 +9,7 @@ export function defaultSettings(): V2Settings {
     // Explicit defaults belong to new recipes; absent fields in saved recipes keep their historical defaults.
     terrain: { motifSize: 10000, hydrology: { engine: 'vector' } },
     appearance: { style: 'parchment', composition: presetComposition('satellite') },
-    runtime: { backend: 'rust', compute: 'auto', source: 'procedural' } };
+    runtime: { backend: 'rust', autoBackend: true, compute: 'auto', source: 'procedural' } };
 }
 
 /** Preserve the optional automatic countryside recommendation used by historical recipes. */

@@ -112,7 +112,9 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
   const bridgeZone = new Uint8Array(count);
   const terrain: TerrainLayer = {
     height, slope, water: r.water, flow: createGrid(n, n, cell), seaLevel: 0, seaFraction: seaCount / count,
-    coastline: [], lakes: [], rivers: [], receiver: new Int32Array(count).fill(-1), filled: r.height,
+    // The drawn water (sea, lakes, river banks), the domains the towns are built against: the land use is cut by
+    // it. Without it the fields were decided on the coarse water raster only and ran over the drawn rivers.
+    coastline: [], lakes: [], rivers: [], waterGeometry: r.geometry?.water, receiver: new Int32Array(count).fill(-1), filled: r.height,
     downSide: 'S', seaSide: null,
   };
   const world: World = {

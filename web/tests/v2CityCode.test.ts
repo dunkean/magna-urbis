@@ -8,7 +8,7 @@ import { urbanEffectiveValues } from '../src/v2/urbanControls';
 import { urbanSeed, rerollUrbanSeeds } from '../src/v2/urbanSeeds';
 import { rerollSeed, seedRoot, stepSeed } from '../../rust/bridge/generationSeed';
 import defaults from '../src/v2/cityCodeDefaults.json';
-import { CULTURES } from '../src/gen/options';
+import { CULTURES, layoutFortification } from '../src/gen/options';
 import type { V2Settings } from '../src/v2/contracts';
 import { presetComposition } from '../src/render/composition';
 import { applySceneClock, DEFAULT_SCENE } from '../src/v2/sceneClock';
@@ -32,6 +32,25 @@ describe('V2 compact generation codes', () => {
     expect(urbanEffectiveValues(decoded, { kind: 'block', key: 'east', id: '4', quarter: '1' })).toEqual(urbanEffectiveValues(settings, { kind: 'block', key: 'east', id: '4', quarter: '1' }));
     expect(encodeCityCode(decoded)).toBe(code);
     expect(settings).toEqual(before);
+  });
+  it('carries the moat setting, as a default and per town', () => {
+    const settings = base();
+    settings.urban = { layout: { moat: 'none' }, local: { east: { layout: { moat: 'wet' } } } } as V2Settings['urban'];
+    const decoded = restored(settings);
+    expect(decoded.urban).toEqual(settings.urban);
+    expect((urbanEffectiveValues(decoded).layout as { moat?: string } | undefined)?.moat).toBe('none');
+    expect((urbanEffectiveValues(decoded, { kind: 'settlement', key: 'east' }).layout as { moat?: string } | undefined)?.moat).toBe('wet');
+  });
+  it('carries the fortification style, for the region and per town, as the native style override', () => {
+    const settings = base();
+    settings.options.wallStyle = 'palisade';
+    settings.local = { ...settings.local, east: { ...(settings.local?.east ?? {}), wallStyle: 'bastioned' } };
+    const decoded = restored(settings);
+    expect(decoded.options.wallStyle).toBe('palisade');
+    expect(decoded.local.east?.wallStyle).toBe('bastioned');
+    expect(layoutFortification({ walls: 'auto', wallStyle: 'palisade' })).toEqual({ fortification: 'culture', fortificationStyle: 'palisade' });
+    expect(layoutFortification({ walls: 'none', wallStyle: 'palisade', moat: 'no' })).toEqual({ fortification: 'none', moat: 'none' });
+    expect(layoutFortification({ walls: 'single' })).toEqual({ fortification: 'wall' });
   });
   it('recomputes solar values from the portable clock rather than storing derived floating-point controls', () => {
     const settings=base();applySceneClock(settings,DEFAULT_SCENE);
@@ -66,6 +85,14 @@ describe('V2 compact generation codes', () => {
     // The relief before the coast keeps its draw.
     expect(terrain(decoded).seed).toBe(terrain(base()).seed);
   });
+  it('carries whether the culture was picked by hand or follows the environment', () => {
+    for (const followCulture of [false, true]) {
+      const settings = base(); settings.options.culture = 'vietnamese-citadel'; settings.region = { demography: { followCulture } };
+      const decoded = restored(settings);
+      expect(decoded.options.culture).toBe('vietnamese-citadel');
+      expect(decoded.region?.demography?.followCulture).toBe(followCulture);
+    }
+  });
   it('stores advanced changes and local edits while keeping the input untouched', () => {
     const settings = base(); settings.options.population = 17300; settings.options.walls = 'none';
     settings.terrain!.hydrology = { engine: 'vector', density: 0, enabled: false, balance: false };
@@ -73,7 +100,8 @@ describe('V2 compact generation codes', () => {
     settings.region = { roads: null, placement: { mode: 'list', list: [{ ...regionSpec('east', 400), position: { x: 102.123456789, y: 205.54321 } }] } };
     settings.local.east = { culture: 'dwarven', population: 150 };
     settings.urban = { layout: { density: 1.25 }, local: { east: { parcels: { density: 0 } } } };
-    settings.naming = { title: 'Vallée des rêves', places: { east: 'Le gué' } };
+    // Settlement renames are project edits, absent from MU3 codes (tests/v2ToponymOverrides.test.ts).
+    settings.naming = { title: 'Vallée des rêves' };
     const before = structuredClone(settings), mods = [{ settlement: 'main', target: 'house/1', patch: { height: 7.25, deleted: false } }];
     const code = encodeCityCode(settings, mods), decoded = decodeCityCode(code);
     expect(code.length).toBeGreaterThan(encodeCityCode(base()).length);

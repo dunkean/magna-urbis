@@ -13,6 +13,11 @@ registerMessages({
   'Choose the engine for each process. Available hardware and the last execution are shown separately.': { en: 'Choose the engine for each process. Available hardware and the last execution are shown separately.', fr: 'Choisissez le moteur de chaque traitement. Le matériel disponible et la dernière exécution sont présentés séparément.' },
 });
 
+/** Mode tokens that leave an active map selection untouched (it stays on until the user ends it). */
+export function stickySelection(token: string, selecting: boolean): boolean {
+  return selecting && (token === 'busy' || token === 'family' || token === 'selection');
+}
+
 /** One place for activation, one contextual dock. Existing tools keep ownership of their edits. */
 export function mountEditingTools(api: { canEdit(): boolean }): { sync(): void } {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -47,6 +52,9 @@ export function mountEditingTools(api: { canEdit(): boolean }): { sync(): void }
   $('#labels-open').onclick = () => { if (!api.canEdit()) return; window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: mode === 'labels' ? 'navigate' : 'labels' })); };
   window.addEventListener('v2-edit-mode', event => {
     const token = (event as CustomEvent<string>).detail;
+    // "Select on map" is sticky: a pick (which opens the Cities tab), a tab change or the regeneration it
+    // triggers keep it on. Only Escape, a second click on the button or another tool end it.
+    if (stickySelection(token, inspect.checked)) return;
     show(['busy', 'family', '3d'].includes(token) ? 'navigate' : token);
   });
   // Tools also stop themselves (second click, Escape). Reflect that in the shared state.

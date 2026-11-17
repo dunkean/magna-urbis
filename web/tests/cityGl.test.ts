@@ -6,6 +6,7 @@ import {
   STROKE_STRIDE, triangulatePolygons, visibleRanges,
 } from '../src/render/cityGlBuild';
 import { DEFAULT_LAYERS, buildingColors, planColors, streetColors } from '../src/render/cityGlStyle';
+import { withoutUrbanPlan } from '../src/render/appearanceRecipe';
 import type { Layout, Partition, Shape } from '../../rust/bridge/urban';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
 
@@ -132,5 +133,22 @@ describe('cityGl scene, picking and styles', () => {
     expect(far.fill[p0 * 4 + 3]).toBe(0);
     expect(near.fill[p0 * 4 + 3]).toBe(255);
     expect(Array.from(near.fill.slice((p0 + 1) * 4, (p0 + 1) * 4 + 3))).toEqual([0xa8, 0xbc, 0x89]); // garden
+  });
+
+  it('draws no lot or block outline for a culture without lot limits (myconid colony: catalogue plotLines false)', () => {
+    const mesh = cityGlPlanMesh(scene), state = { view: 'buildings' as const, palette: 'parchment' as const, layers: DEFAULT_LAYERS, buildingsVisible: true, diagnostic: 'none', lod: 'close' as const };
+    expect(planColors(scene, mesh, state).draws).toMatchObject({ parcelLines: true, blockLines: true });
+    const open = { ...scene, enclosureProfiles: [{ plot: 0, field: 0, material: 'fence', fieldMaterial: 'hedge', front: 0, side: 0, back: 0, hideLotLines: true } as const] };
+    const colony = planColors(open, mesh, state);
+    expect(colony.draws).toMatchObject({ parcelLines: false, blockLines: false, blocks: true, streetCasing: true });
+  });
+
+  it('draws no parcel, block or lot line with the Urban plan off, and keeps the streets', () => {
+    const mesh = cityGlPlanMesh(scene);
+    for (const view of ['buildings', 'parcels'] as const) {
+      const off = planColors(scene, mesh, { view, palette: 'terrain', layers: withoutUrbanPlan(DEFAULT_LAYERS), buildingsVisible: true, diagnostic: 'none', lod: 'close' });
+      // The garden stays as ground (a real object), unoutlined; built lots and blocks lose wash and outline.
+      expect(off.draws, view).toMatchObject({ parcelLines: false, blocks: false, blockLines: false, streetCasing: true });
+    }
   });
 });

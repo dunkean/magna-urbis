@@ -2,7 +2,7 @@ import type { View } from '../render/view';
 import { screenToWorld, worldToScreen } from '../render/view';
 import { sampleGrid, type Grid } from '../gen/core/grid';
 import { registerMessages, setText, numberLocale } from './i18n';
-import { formatDistance, getDistanceUnit, unitFactor, onUnitsChange } from './units';
+import { formatDistance, getDistanceUnit, onUnitsChange } from './units';
 import './measureTool.css';
 
 registerMessages({
@@ -173,20 +173,19 @@ export function mountMeasureTool(api: MeasureToolApi): { deactivate(): void } {
   vertices.addEventListener('pointerup', release);
   vertices.addEventListener('pointercancel', release);
 
-  // X / Y / Z readout under the cursor (display unit, 2 decimals).
+  // Coordinates stay in metres: XY to the metre, altitude to a tenth.
   api.readout.classList.add('cursor-readout'); api.readout.dataset.l10nKeep = '';
   api.readout.innerHTML = '<span>X <b data-axis="x">—</b></span><span>Y <b data-axis="y">—</b></span><span>Z <b data-axis="z">—</b></span>';
   const cells = { x: api.readout.querySelector('[data-axis="x"]')!, y: api.readout.querySelector('[data-axis="y"]')!, z: api.readout.querySelector('[data-axis="z"]')! };
   let last: Point | undefined;
   function showReadout(p?: Point): void {
     last = p;
-    const unit = getDistanceUnit(), factor = unitFactor(unit);
-    const n = (metres: number): string => `${(metres / factor).toLocaleString(numberLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${unit}`;
+    const n = (metres: number, decimals = 0): string => `${metres.toLocaleString(numberLocale(), { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} m`;
     const height = api.getHeight();
     const ok = !!p && inside(p);
     cells.x.textContent = ok ? n(p!.x) : '—';
     cells.y.textContent = ok ? n(p!.y) : '—';
-    cells.z.textContent = ok && height ? n(sampleGrid(height, p!.x, p!.y)) : '—';
+    cells.z.textContent = ok && height ? n(sampleGrid(height, p!.x, p!.y), 1) : '—';
   }
   map.addEventListener('pointermove', e => {
     const p = toWorld(local(e));

@@ -5,10 +5,11 @@
  * within the render distance of the eye are built; trees grow out of their painted crown between 2/3 of it and it,
  * so the far view stays exactly the painted forest. Colours follow the crown palette approximately (season,
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
+import { ForestClearingRoom } from '../render/forestClearance';
 import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/forestRoom';
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
-import { FOREST_CLUMP_GLSL, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { FOREST_CLUMP_GLSL, FOREST_FIELD, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
 /** Render distance of the near trees (m), adjustable: full trees within `near` (2/3 of it), none beyond `far`. Beyond,
  * the painted crowns are the forest's far level of detail. */
@@ -74,6 +75,15 @@ const rhoOf = (tau: number): number => .5 + .4 * Math.max(0, (tau - .55) / .45);
 const lookupCrown = (x: number): number => { const u = clamp(x) * 16, k = Math.min(Math.floor(u), 15); return mix(CROWN_CDF[k], CROWN_CDF[k + 1], u - k); };
 const radiusOf = (height: number, needle: number, dry: number): number => mix((.24 * height + 1) * (1 + .45 * dry), .07 * height + .55, needle);
 const heightGate = (h: number): number => sstep(2, 6, h);
+/** Lone field tree, as the shader's forestFieldTree: one seeded point per FOREST_FIELD.cell, kept with probability
+ * FOREST_FIELD.tree (times the natural potential), rooted in the lattice cell holding it on the nearest level. */
+function fieldTree(i: number, j: number, level: number, s: number, centreLevel: number, cover: number, height: number, crownSeed: number): boolean {
+  if (level !== Math.min(Math.floor(centreLevel + .5), 5)) return false;
+  const cx = Math.floor((i + .5) * s / FOREST_FIELD.cell), cy = Math.floor((j + .5) * s / FOREST_FIELD.cell), h = forestHash(cx, cy, 733, crownSeed);
+  if (u8(h, 16) >= FOREST_FIELD.tree * Math.min(cover * 3, 1) * heightGate(height)) return false;
+  const tx = (cx + .1 + .8 * u8(h, 0)) * FOREST_FIELD.cell, ty = (cy + .1 + .8 * u8(h, 8)) * FOREST_FIELD.cell;
+  return Math.floor(tx / s) === i && Math.floor(ty / s) === j;
+}
 
 /** Bilinear RGBA8 sample (0..255 per channel) of a square raster with texel centres at x+(i+.5)·width/n, clamped. */
 function bilinear(rgba: Uint8Array, n: number, x0: number, y0: number, width: number, x: number, y: number, out: Float64Array): boolean {
@@ -143,6 +153,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     if (zone) { cover = clamp(cover * zone[0]); needle = mix(needle, zone[1], zone[2]); }
     return { cover, height: px[1] / 255 * 50 * (zone && inputs.zone === 6 ? .35 : 1), needle };
   };
+  const clearingRoom = occ?.clearings?.length ? new ForestClearingRoom(occ.clearings) : undefined;
   const occCell = occ ? occ.width / occ.n : 1;
   // Exact ways: no trunk stands on a road or a street, whatever the raster resolution (crowns may still overhang an earth way).
   const wayRoom = occ?.ways?.length ? wayRoomOf(occ.ways) : undefined;
@@ -150,6 +161,19 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     if (!occ || !bilinear(occ.rgba, occ.n, occ.x, occ.y, occ.width, x, y, px)) return undefined;
     const i = clamp(Math.floor((x - occ.x) / occ.width * occ.n), 0, occ.n - 1), j = clamp(Math.floor((y - occ.y) / occ.width * occ.n), 0, occ.n - 1);
     return [(px[0] - 128) / 16 * occCell, (px[1] - 128) / 16 * occCell, occ.rgba[(j * occ.n + i) * 4 + 2]];
+  };
+  // Field and commons shares of the classed texels of the 2x2 footprint, as the shader's forestOpenShares: wood and
+  // unclassified texels do not count, so the rules follow the smooth open distance along a wood edge, not the class
+  // texels. Commons are unworked: their crowns follow the natural stand.
+  const shares = (x: number, y: number): [number, number] => {
+    if (!occ) return [0, 0];
+    const gx = (x - occ.x) / occ.width * occ.n - .5, gy = (y - occ.y) / occ.width * occ.n - .5, i0 = Math.floor(gx), j0 = Math.floor(gy), fx = gx - i0, fy = gy - j0;
+    let fieldShare = 0, wildShare = 0, classed = 0;
+    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+      const cls = occ.rgba[(clamp(j0 + dy, 0, occ.n - 1) * occ.n + clamp(i0 + dx, 0, occ.n - 1)) * 4 + 2], w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
+      if (cls > 0) { classed += w; if (cls === 1) fieldShare += w; else if (cls === 6) wildShare += w; }
+    }
+    return classed > 0 ? [fieldShare / classed, wildShare / classed] : [0, 0];
   };
   const bankRange = 48 + 3 * field.width / field.n, bankDensity = field.bankDensity ?? 1;
   const bankDens = (w: number): number => { const c = .55 + .35 * sstep(8, 36, w); return 1 - Math.pow(1 - c, Math.max(bankDensity, 0)); };
@@ -226,6 +250,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         const d = (dj * detail!.n + di) * 4, radius = 2.3 + .4 * u8(h, 16), height = 6 + 1.2 * u8(h2, 16);
         const a = .5 * Math.atan2(detail!.rgba[d + 2] / 255 * 2 - 1, detail!.rgba[d + 1] / 255 * 2 - 1);
         if (Math.cos(a) * ca + Math.sin(a) * sa <= .9999 || detail!.rgba[d + 3] / 255 * 6 <= radius * 1.2) continue;
+        if (clearingRoom && !clearingRoom.keeps(x, y, radius)) continue;
         if (heightGate(fieldAt(x, y)?.height ?? 0) <= .5 || inputs.water(x, y) >= .05) continue;
         const z = inputs.height(x, y); if (z === undefined || z <= 0) continue;
         const tint = u8(Math.imul(h2, 0x9e3779b9) >>> 0, 0), tone = .86 + .28 * tint;
@@ -273,15 +298,18 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         if (wayRoom && !wayRoom.keeps(cx, cy, .5)) continue;
         const centre = fieldAt(cx, cy); if (!centre) continue;
         let { cover, needle } = centre; const height = centre.height;
-        let open = -1e3, forced = -1e3, allow = 0, hedge = 0, openGallery = .5, occupied = false, tilledPlot = false;
+        let open = -1e3, forced = -1e3, allow = 0, hedge = 0, openGallery = .5, occupied = false, tilledPlot = false, field = false;
         const o = occAt(cx, cy);
         if (o) {
           open = o[0]; forced = o[1]; const cls = o[2];
           tilledPlot = cls === 5;   // kitchen and market-garden plots root no crown
+          const [fieldShare, wildShare] = shares(cx, cy);
+          field = fieldShare > .5;   // cultivated fields: edge hedge and lone field trees only (forestCrown)
           allow = (cls === 6 ? .12 : cls === 3 ? .05 : cls === 2 ? .02 : cls === 7 ? .03 : 0) * heightGate(height);
           hedge = (cls >= 1 && cls <= 3 ? .6 : 0) * sstep(3, 8, height) * (1 - dry);
-          if (cls === 7 || cls === 8 || cls === 9 || cls === 11) openGallery = 0;
+          if (field || cls === 7 || cls === 8 || cls === 9 || cls === 11) openGallery = 0;
           occupied = cls === 4 || cls === 8 || cls === 9 || cls === 11 || cls === 12;
+          if (wildShare > .5) open = -1e3;   // commons: the natural stand
         }
         if (forced > 0) cover = Math.max(cover, .25 * heightGate(height));
         let kappa = kappaOf(height, needle);
@@ -304,13 +332,15 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         const beyond = open + (u8(Math.imul(h, 0x165667b1) >>> 0, 8) - .5) * radius;
         let alive: boolean, edge: number;
         if (beyond > 0) {
-          const stray = .18 * (1 - sstep(0, 4 * radius, open)) * Math.min(cover * 3, 1);
-          alive = !tilledPlot && u8(Math.imul(h2, 0x27d4eb2d) >>> 0, 24) < Math.max(allow + (open < 5 ? hedge : 0) + stray, openGallery * gal); edge = 1;
+          const stray = field ? 0 : .18 * (1 - sstep(0, 4 * radius, open)) * Math.min(cover * 3, 1);
+          alive = !tilledPlot && u8(Math.imul(h2, 0x27d4eb2d) >>> 0, 24) < Math.max(allow + (open < (field ? FOREST_FIELD.hedge : 5) ? hedge : 0) + stray, openGallery * gal); edge = 1;
+          if (field && !alive) alive = fieldTree(i, j, level, s, centreLevel, cover, height, crownSeed);
         } else { alive = u8(h, 16) < q && threshold < share; edge = 1 - sstep(0, .1, share - threshold); }
         if (!alive || inputs.water(cx, cy) >= (inputs.renderV2 > 0 ? .05 : .5)) continue;
         if (inputs.renderV2 > 0 && u8(forestHash(i, j, level * 2 + 37, crownSeed), 0) < beachAt(cx, cy)) continue;
         const isNeedle = u8(h2, 8) < needle, larch = isNeedle && u8(Math.imul(h, 0x27d4eb2d) >>> 0, 16) < larchShare, emergent = kind[1] * sstep(.9, .97, u8(h2, 24));
         const r = Math.min(rho * s * (.8 + .4 * u8(h, 24)) * (1 + .1 * edge) * (beyond > 0 ? .75 : 1) * (1 + .6 * emergent + .3 * krumm), 1.14 * s);
+        if (clearingRoom && !clearingRoom.keeps(cx, cy, r)) continue;
         const th = height * (mix(.82, .66, kind[1]) + mix(.36, .6, kind[1]) * u8(h2, 16)) * (1 + .45 * emergent);
         const depth = r * (isNeedle ? mix(3.2, 1.1, krumm) : mix(.55, .22, kind[2]));
         if (th < 1.5 || r < .4) continue;

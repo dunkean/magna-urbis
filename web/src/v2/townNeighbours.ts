@@ -136,9 +136,21 @@ export function neighbourClaimsOf(world: World, settings: V2Settings, key: strin
   const seats = townSeats(world, settings).sort(compareTowns), index = seats.findIndex(seat => seat.key === key);
   if (index < 0) return [];
   const seat = seats[index];
-  return seats.slice(0, index).flatMap(other => {
+  const earlier = seats.slice(0, index).flatMap(other => {
     const claim = fresh?.get(other.key) ?? other.claim;
     return claim && claimReaches(claim, seat.center, seat.population) ? [claim] : [];
+  });
+  return [...earlier, ...reservedNeighbours(world, settings, seats, index)];
+}
+/** The places after a town (canonical order) within the land it can grow to: claims without land whose `reserve`
+ * asks the engine to keep a core sized to their own population free (`urban/neighbours.rs`, `reserve_cores`). */
+function reservedNeighbours(world: World, settings: V2Settings, seats: readonly TownSeat[], index: number): Claim[] {
+  const seat = seats[index], bound = landBound(seat, false);
+  return seats.slice(index + 1).flatMap(other => {
+    if (Math.hypot(other.center.x - seat.center.x, other.center.y - seat.center.y) > bound + other.radius) return [];
+    const place = world.settlements?.find(s => s.key === other.key);
+    const culture = settings.local[other.key]?.culture ?? String(world.stats['v2.culture:' + other.key] ?? place?.culture ?? '');
+    return [{ key: other.key, land: [], streets: [], reserve: { population: other.population, culture, center: other.center, radius: other.radius } }];
   });
 }
 

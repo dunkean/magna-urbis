@@ -72,7 +72,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   assert.equal(await page.locator('.toolbar-row .city-display-options').count(),0);
   await page.locator('#map-advanced-open').click();
-  await page.locator('[data-render-pass=buildings] > .render-pass-options > summary').click();
+  assert(await page.locator('[data-render-pass=buildings] > .render-pass-options').isVisible());
   for(const mode of ['footprints','simple-volumes','detailed-volumes','ink','color','texture']){await page.locator(`[data-city-display="${mode}"]`).click();assert.equal(await page.locator(`[data-city-display="${mode}"]`).getAttribute('aria-pressed'),'true');}
   await page.keyboard.press('Escape');
   await page.locator('#family-tab-cities').click();

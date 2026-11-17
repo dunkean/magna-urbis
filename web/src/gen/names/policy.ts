@@ -1,8 +1,11 @@
 import type { NameEntry, NameSource, NamingPolicy, NamingSettings } from './types';
+import { resolveToponymProfile } from './profiles';
 
 export function namingPolicy(naming: NamingSettings | undefined, city?: string, feature?: string, quarter?: string): NamingPolicy {
   return { profile:naming?.profile, source:naming?.source, ...(city ? naming?.local?.[city] : naming?.region),
-    ...(quarter ? naming?.features?.[quarter] : {}), ...(feature ? naming?.features?.[feature] : {}) };
+    ...(quarter ? naming?.features?.[quarter] : {}), ...(feature ? naming?.features?.[feature] : {}),
+    // A map-wide culture temporarily supersedes advanced scoped profiles without deleting them.
+    ...(naming?.toponymCulture ? { profile:resolveToponymProfile(naming.toponymCulture).id } : {}) };
 }
 export function namePolicyKey(naming: NamingSettings | undefined, entry: NameEntry, city?: string,source:NameSource='auto'): string {
   const natural = ['river','lake','sea','hill','forest','farm'].includes(entry.kind) && !entry.id.startsWith('settlement:');

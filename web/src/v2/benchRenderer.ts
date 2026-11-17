@@ -1,4 +1,4 @@
-import { underdarkFarmBeds } from '../../../rust/bridge/terrainRenderUnderdark';
+import { underdarkSceneLook } from '../render/underdarkLighting';
 import { rasterizeSvg as imageOf } from '../render/svgRaster';
 import { RetainedBudget } from '../render/retainedBudget';
 import { retainTerrainDisplayPreparation } from './displayPrep';
@@ -72,6 +72,7 @@ import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
 import { isResourceDiagnostic } from '../render/displayDiagnostics';
 import { resourceOverlayBody, type ResourceSource } from './resourceLayer';
+import { reportDrawnLabels } from './drawnLabels';
 import { getDisplayQuality, initializeDisplayQuality, noteDisplayNavigation, reportDisplayRenderer, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
 
 let brushes: Promise<BrushImages | null> | undefined;
@@ -129,6 +130,25 @@ const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index
   if (recording) return parsed[kind === 'thin' ? 'recThin' : 'recIndex'] ??= recordedContourPath(set[kind]);
   return parsed[kind] ??= new Path2D(set[kind]);
 };
+
+/** Street roles that cross water above it (bridges, fords, causeways, piers, boardwalks). */
+const CROSSING_ROLES = new Set(['bridge', 'ford', 'causeway', 'pier', 'boardwalk', 'walkway']);
+/** The union of the river capsules (`riverSegments` layout, 9 floats a segment, full widths) as one non-zero path. */
+function riverCapsules(rivers: Float32Array): Path2D {
+  const path = new Path2D();
+  for (let i = 0; i + 9 <= rivers.length; i += 9) {
+    const x0 = rivers[i], y0 = rivers[i + 1], x1 = rivers[i + 2], y1 = rivers[i + 3], r0 = rivers[i + 4] / 2, r1 = rivers[i + 5] / 2;
+    const l = Math.hypot(x1 - x0, y1 - y0);
+    if (l > 1e-6) {
+      // The same winding as the end discs: the union keeps every overlap filled.
+      const nx = -(y1 - y0) / l, ny = (x1 - x0) / l;
+      path.moveTo(x0 - nx * r0, y0 - ny * r0); path.lineTo(x1 - nx * r1, y1 - ny * r1); path.lineTo(x1 + nx * r1, y1 + ny * r1); path.lineTo(x0 + nx * r0, y0 + ny * r0); path.closePath();
+    }
+    if (r0 > 0) { path.moveTo(x0 + r0, y0); path.arc(x0, y0, r0, 0, Math.PI * 2); }
+    if (r1 > 0) { path.moveTo(x1 + r1, y1); path.arc(x1, y1, r1, 0, Math.PI * 2); }
+  }
+  return path;
+}
 
 export class BenchRenderer {
   private retained = new RetainedBudget();
@@ -402,7 +422,7 @@ export class BenchRenderer {
     if (this.gpuActive) {
       const source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
       this.terrainSvg = ''; this.base = undefined; this.fantasy = undefined; this.fantasyImages = undefined;
-      this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,coastWaves:r.composition.networks.water.waves,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, underdark: world.options.biome === 'underdark', townGlow: world.options.biome === 'underdark' ? Float32Array.from((world.settlements ?? []).slice(0, 16).flatMap(s => [s.center.x, s.center.y, Math.max(120, (s.radius ?? 200) * 1.6)])) : undefined, farmBeds: world.options.biome === 'underdark' ? underdarkFarmBeds(world.landuse?.farmsteads, world.settlements) : undefined, v2Season: r.ground.season, v2Calendar: r.ground.calendar,
+      this.gpu!.setLook({ style, colors, lighting, layers, groundCover:r.composition.vegetation.procedural, ambience:r.composition.ambience,waterLook:r.composition.networks.water.look,coastWaves:r.composition.networks.water.waves,crownDetail:r.composition.vegetation.crownDetail,waterStyle:r.composition.networks.water.look==='ink'?r.palette.mapStyle:undefined, independentCanopy: true, mapWidth: t.width, climate: climateOf(effective as TerrainSettings), climateZone: effective.climateZone, ...underdarkSceneLook(world.options.biome, r.composition.ambience, world.settlements, world.landuse?.farmsteads), v2Season: r.ground.season, v2Calendar: r.ground.calendar,
         globalMin: t.globalMinHeight, globalMax: t.globalMaxHeight, contours: false, contourStep: effective.relief === 'mountains' ? 40 : effective.relief === 'flat' ? 2 : 10,
         flatRelief: effective.relief === 'flat', refine: effective.refine??true, sourceCell: t.width / source.n, seed: seedHash(world.seed), detail: effective.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
         floor: source.floor ?? 0, frame: layers.frame, background: terrainStyle(style,colors).palette.paper });
@@ -511,15 +531,17 @@ export class BenchRenderer {
   }
   /** GPU water/overlay textures, plus the vector water and hydrology diagnostics (rasterized per view). */
   private async waterPass(): Promise<void> {
-    this.dropBackground();
+    this.dropBackground(); this.cityWater = undefined;
     const t = this.native!, r = this.resolved!, style = r.ground.style, colors = r.palette.colors, layers = this.layers(), water = this.waterDisplay();
     const ink = r.composition.networks.water.look === 'ink', visible = layers.water && r.composition.networks.water.visible;
     const vectorDisplay = { ...water, style: ink ? r.palette.mapStyle : 'render3d' as const };
     if (this.gpuActive) {
       if (t.water) {
         // The painted compositor (natural water) reads the seasonal regime from the segment colour.
-        const material = !ink && water.overlay === 'none';
-        this.gpu!.setWater(visible ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers: riverSegments(t.water, { ...water, material }), regime: material } : undefined);
+        const material = !ink && water.overlay === 'none', rivers = visible ? riverSegments(t.water, { ...water, material, thread: true }) : undefined;
+        this.gpu!.setWater(rivers ? { lake: water.showLakes ? t.water.lakeField.values : undefined, n: t.water.hydro.n, rivers, regime: material } : undefined);
+        // Natural water only: ink styles draw their water as vectors in the overlay, which the town keeps.
+        this.cityWater = rivers && !ink && !isFantasyStyle(style) ? rivers : undefined;
         this.gpu!.setOverlay(vectorOverlayPixels(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined));
       } else if (t.hydrology) {
         this.gpu!.setWater(visible ? { lake: water.showLakes ? t.hydrology.waterField : undefined, shore: 'exact', n: t.hydrology.resolution, rivers: hydrologySegments(t.hydrology, hydrologyWaterColour(style, colors)) } : undefined);
@@ -630,7 +652,7 @@ export class BenchRenderer {
     this.stats.cartographyUpdate = 'rebuilt';
     const state=this;
     const palette={...biomePalette(r.palette.mapStyle,world.options.biome),frameKind:'none' as const,...(layers.decor===false?{grid:null}:{})};
-    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.world!) } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, groundCaverns: () => this.gpuActive && this.resolved?.ground.traits.family === 'material', terrain: () => this.landBackdrop(), scene: built, mask, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
+    this.cartography = createCanvasRenderer(this.overlay, shown, palette, { colors: r.palette.colors, separateText: true, textSources: () => this.city?.scenes(), ...cityCountrysideCanvasOptions(r, world.mapSize), buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.world!) } as never)?.map(shape => shape.outer) ?? [], transparentBackground: true, groundCaverns: () => this.gpuActive && this.resolved?.ground.traits.family === 'material', terrain: () => this.landBackdrop(), scene: built, mask, urbanPlan: () => this.resolved?.city.plan !== false, roadLook: r.composition.networks.roads.look, roadStyle: () => { const c = this.resolved!.composition; return { look: c.networks.roads.look, emphasis: c.networks.roads.emphasis, night: c.ambience === 'night', colors: this.resolved!.palette.colors }; },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: { key: () => `${this.semantic?.key ?? ''}|c${this.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.resolved?.composition.recipe))}:${this.contourRevision}|w${this.waterAboveLand() ? JSON.stringify([this.resolved!.keys.water, mapSeasonKey(), this.vectorView?.region]) : ''}`, draw: (ctx, rect, mpp, quality) => { this.paintRural(ctx, rect, mpp, quality === 'light'); this.cutWater(ctx, rect); }, legend: () => this.semanticLegend() },
       invalidate: () => this.invalidate(), brushes, vegetation: r.vegetation.symbols, get dpr() { return state.dpr; } });
@@ -754,7 +776,58 @@ export class BenchRenderer {
     const s = this.semantic;
     return s ? [...ruralSemanticLegend(this.world?.landuse, s.classes, s.rural), ...urbanSemanticLegend(this.city?.scenes() ?? [], s.urban)] : [];
   }
-  private cityHooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame) };
+  /** The rivers of the GPU ground (the segments given to its water layer): the town plan keeps its ground and streets off them. */
+  private cityWater?: Float32Array;
+  private cityHooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame), water: () => this.cityWater,
+    waterAbove: (ctx, box, over) => this.waterAbove(ctx, box, over) };
+  /** How the ground under the town was laid in the frame being drawn, when it is in the same canvas (exports and captures);
+   * absent in the live view, where the GPU ground is its own layer under the overlay. */
+  private groundRedraw?: (ctx: CanvasRenderingContext2D) => void;
+  private cityWaterPath?: { source: Float32Array; path: Path2D };
+  private crossingHolesOf?: { world: World; scenes: readonly CityScene[]; path: Path2D };
+  /** The whole map with a hole per bridge, ford or causeway deck (regional bridges and the towns' crossings), for an
+   * even-odd clip. */
+  private crossingHoles(): Path2D {
+    const world = this.world!, scenes = this.city?.scenes() ?? [];
+    if (this.crossingHolesOf?.world === world && this.crossingHolesOf.scenes === scenes) return this.crossingHolesOf.path;
+    const size = world.mapSize, path = new Path2D();
+    path.rect(-size, -size, 3 * size, 3 * size);
+    const deck = (a: { x: number; y: number }, b: { x: number; y: number }, width: number): void => {
+      const l = Math.hypot(b.x - a.x, b.y - a.y);
+      if (l < 1e-6) return;
+      const h = width / 2 + 1, nx = -(b.y - a.y) / l * h, ny = (b.x - a.x) / l * h, ux = (b.x - a.x) / l * 2, uy = (b.y - a.y) / l * 2;
+      path.moveTo(a.x - ux + nx, a.y - uy + ny); path.lineTo(b.x + ux + nx, b.y + uy + ny); path.lineTo(b.x + ux - nx, b.y + uy - ny); path.lineTo(a.x - ux - nx, a.y - uy - ny); path.closePath();
+    };
+    for (const bridge of world.bridges ?? []) deck(bridge.a, bridge.b, bridge.width);
+    for (const scene of scenes) for (const s of scene.streets) {
+      if (!CROSSING_ROLES.has(s.role) || s.street.path.length < 2) continue;
+      deck(s.street.path[0], s.street.path[s.street.path.length - 1], s.width);
+    }
+    this.crossingHolesOf = { world, scenes, path };
+    return path;
+  }
+  /** Puts the river back over the town ground and streets (Canvas 2D town): the ground is redrawn inside the river
+   * capsules when it lies in this canvas, else the town's own pixels there are cleared to show the GPU ground below. */
+  private waterAbove(ctx: CanvasRenderingContext2D, box: { minX: number; minY: number; maxX: number; maxY: number }, over?: () => void): void {
+    const rivers = this.cityWater;
+    if (!rivers || typeof Path2D === 'undefined') return;
+    if (this.cityWaterPath?.source !== rivers) this.cityWaterPath = { source: rivers, path: riverCapsules(rivers) };
+    const path = this.cityWaterPath.path;
+    ctx.save();
+    // Only around the town being drawn.
+    ctx.beginPath(); ctx.rect(box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY); ctx.clip();
+    ctx.clip(path);
+    // Bridges and fords stay above the water: their decks are cut out of it (regional decks drawn under the town, the
+    // town's own crossings drawn after this).
+    ctx.clip(this.crossingHoles(), 'evenodd');
+    ctx.save();
+    if (this.groundRedraw) { ctx.globalAlpha = 1; this.groundRedraw(ctx); }
+    else { ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(path); }
+    ctx.restore();
+    // What stands above the water (the quays) is drawn again inside it, nowhere else.
+    over?.();
+    ctx.restore();
+  }
   /** Native city plans/houses: rebuilt per city products only; the city appearance is read per frame (draw). */
   private async cityPass(): Promise<void> {
     const v = this.scene!.revisions, key = JSON.stringify([v.cities, v.settlements, v.terrain]), shared = this.shared;
@@ -1001,7 +1074,13 @@ export class BenchRenderer {
     ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.exportLayers.background !== false && !(live && this.gpuActive)) { ctx.fillStyle = this.paper; ctx.fillRect(0, 0, w, h); }
-    if (this.gpuActive && !live) { this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture(); ctx.drawImage(terrainRendererCanvas(this.gpu!, this.gpuCanvas), 0, 0, w, h); }
+    this.groundRedraw = undefined;
+    if (this.gpuActive && !live) {
+      this.gpu!.setView(view, w, h); this.gpu!.redrawForCapture();
+      const ground = terrainRendererCanvas(this.gpu!, this.gpuCanvas);
+      ctx.drawImage(ground, 0, 0, w, h);
+      this.groundRedraw = c => { c.setTransform(dpr, 0, 0, dpr, 0, 0); c.drawImage(ground, 0, 0, w, h); };
+    }
     ctx.save(); ctx.translate(w / 2 - view.cx * view.scale, h / 2 - view.cy * view.scale); ctx.scale(view.scale, view.scale);
     if (this.base) ctx.drawImage(this.base, 0, 0, size, size);
     // Only while the active ground is Illustrated: a style switch must never keep the previous painting.
@@ -1034,7 +1113,7 @@ export class BenchRenderer {
     if (live) t = noteLivePart('fantasy', t);
     if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, { ...this.exportLayers, labels: false }, this.cityHooks);
     if (live) t = noteLivePart('city', t);
-    if (this.cartography) { ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.cartography.drawText(ctx, view, w, h, this.liveMoving || performance.now() < this.movingUntil); ctx.restore(); }
+    if (this.cartography) { ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.cartography.drawText(ctx, view, w, h, this.liveMoving || performance.now() < this.movingUntil); ctx.restore(); reportDrawnLabels(this.cartography.lastPlaced().map(p => p.label.id)); }
     if (live) noteLivePart('text', t);
     return canvas;
   }

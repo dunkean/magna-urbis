@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { TerrainCache, type TerrainStore } from '../src/v2/cache';
 import { defaultSettings, adaptedExtent } from '../src/v2/settings';
 import { terrainCacheKey, retainedTerrainMatchesSettings, generateTerrain, planRegion, generateTown, generateTowns } from '../src/v2/engine';
@@ -28,6 +28,16 @@ function settings(): V2Settings {
 const OLD_BENCH_KEY = '["mu-v2-bench-terrain-2026-10-28.2","procedural","magna-urbis-v2",1200,"flat","none","none",0,"auto",{"backend":"typescript","compute":"cpu","erosion":1,"resolution":512,"source":"procedural"},null,[8,8,"256:3226455237:1318026841",120,0]]';
 
 describe('V2 retained generation pipeline', () => {
+  it('keeps metre heightmap imports usable by the classic TypeScript engine', async () => {
+    const s = settings(), image = s.options.importedHeight!;
+    s.terrain = { sketch: { version: 1, resolution: 8, processing: 'surface', heights: Array.from(image.elevations!) } };
+    delete s.options.importedHeight;
+    const world = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    expect(world.options.importedHeight?.elevations).toEqual(image.elevations);
+    expect(world.stats['v2.terrainKey']).toBe(terrainCacheKey(s));
+    expect(s.options.importedHeight).toBeUndefined();
+  });
+
   it('replays an independent urban seed without changing the retained terrain, sites or regional roads', async () => {
     const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     const region = await planRegion(terrain, s), original = structuredClone(region);
@@ -102,6 +112,21 @@ describe('V2 retained generation pipeline', () => {
     b.runtime!.source = transport.runtime!.source = 'neural-wasm';
     b.runtime!.neuralAssets = './neural/'; transport.runtime!.neuralAssets = 'https://models.example.test/custom-neural/';
     expect(terrainCacheKey(transport)).not.toBe(terrainCacheKey(b));
+  });
+  it('a village after a relief run with a fallback neural source still matches the retained terrain', () => {
+    const relief = defaultSettings(); relief.generation = 'neural'; relief.extent = 4000; delete relief.options.importedHeight;
+    relief.runtime = { backend: 'native', compute: 'auto', source: 'neural-python', localServer: 'http://127.0.0.1:8791', pythonServer: 'http://127.0.0.1:8793' };
+    const world = { seed: relief.options.seed, mapSize: 4000, stats: { 'v2.terrainKey': terrainCacheKey({ ...relief, extent: 4000 }) } } as never;
+    for (const runtime of [
+      { backend: 'rust', compute: 'gpu', source: 'neural-wasm', autoBackend: true },
+      { backend: 'native', compute: 'auto', source: 'neural' },
+      { backend: 'native', compute: 'cpu', source: 'neural-wasm', localServer: 'http://127.0.0.1:18791' },
+    ] as V2Settings['runtime'][]) {
+      const village = structuredClone(relief); village.runtime = runtime;
+      expect(retainedTerrainMatchesSettings(world, village)).toBe(true);
+    }
+    const changed = structuredClone(relief); changed.options.relief = 'mountains';
+    expect(retainedTerrainMatchesSettings(world, changed)).toBe(false);
   });
   it('restores persistent terrain across cache instances and protects cached arrays from callers', async () => {
     const store = new RetainedStore(), first = new TerrainCache(store), s = settings();
@@ -191,6 +216,9 @@ describe('V2 retained generation pipeline', () => {
     await expect(generateTerrain(s)).rejects.toThrow('modèle neuronal');
   });
   it('continues a coherent saved .2 project without changing historical keys, terrain or complete geometry', async () => {
+    // The classic TypeScript engine is a local/desktop choice now: a web-profile load converts it to Rust in the browser.
+    vi.stubGlobal('window', { location: { hostname: 'localhost', protocol: 'http:', search: '?profile=local' } });
+    onTestFinished(() => { vi.unstubAllGlobals(); });
     const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     const region = await planRegion(terrain, s);
     region.stats['v2.terrainKey'] = OLD_BENCH_KEY; region.stats['v2.engine'] = 'mu-v2-bench-terrain-2026-10-28.2';

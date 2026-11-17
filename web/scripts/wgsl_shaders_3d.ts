@@ -25,6 +25,8 @@ import { TERRAIN_3D_GLSL } from '../src/ui/terrain3d';
 import { BUILDING_3D_GLSL } from '../src/ui/urbanBuilding3d';
 import { BILLBOARD_3D_GLSL } from '../src/ui/terrain3dBillboards';
 import { TREE_3D_GLSL } from '../src/ui/terrain3dTrees';
+import { FUNGUS_3D_GLSL } from '../src/ui/terrain3dFungi';
+import { CAVERN_ROOF_GLSL } from '../src/render/underdarkCavern';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
@@ -34,7 +36,8 @@ const output = join(root, 'web/src/ui/terrain3dWgsl.generated.ts');
 
 /** Ground switches turned into WGSL overrides (pipeline constants by id). */
 // uNaturalWater stays a runtime parameter: Satellite and Satellite-2 share their ground pipelines.
-const OVERRIDES = ['groundEnabled', 'uRenderV2', 'uForest', 'uForestBrushes'] as const;
+// uUnderdark: the Underdark ground (cave floor, section cut, cave light) is a pipeline of its own.
+const OVERRIDES = ['groundEnabled', 'uRenderV2', 'uForest', 'uForestBrushes', 'uUnderdark'] as const;
 
 type SamplerKind = 'nearest' | 'linear' | 'aniso' | 'repeat';
 /** Shared samplers: 1 non-filtering, 2 filtering (trilinear, clamped), 3 anisotropic (clamped), 4 anisotropic repeating. */
@@ -226,6 +229,8 @@ function main(): void {
     building: { sources: [b.colorVertex, b.colorFragment, b.texVertex, b.texFragment], blockName: 'BuildingParams' },
     billboard: { sources: [BILLBOARD_3D_GLSL.vertex, BILLBOARD_3D_GLSL.fragment], blockName: 'BillboardParams' },
     tree: { sources: [TREE_3D_GLSL.vertex, TREE_3D_GLSL.fragment], blockName: 'TreeParams' },
+    fungus: { sources: [FUNGUS_3D_GLSL.vertex, FUNGUS_3D_GLSL.fragment], blockName: 'FungusParams' },
+    roof: { sources: [CAVERN_ROOF_GLSL.vertex, CAVERN_ROOF_GLSL.fragment], blockName: 'RoofParams' },
   };
   const blocks = Object.fromEntries(Object.entries(programs).map(([name, p]) => [name, paramsBlock(p.sources)]));
   const jobs: Job[] = [
@@ -242,6 +247,10 @@ function main(): void {
     { key: 'billboardFs', stage: 'frag', source: BILLBOARD_3D_GLSL.fragment, program: 'billboard' },
     { key: 'treeVs', stage: 'vert', source: TREE_3D_GLSL.vertex, program: 'tree' },
     { key: 'treeFs', stage: 'frag', source: TREE_3D_GLSL.fragment, program: 'tree' },
+    { key: 'fungusVs', stage: 'vert', source: FUNGUS_3D_GLSL.vertex, program: 'fungus' },
+    { key: 'fungusFs', stage: 'frag', source: FUNGUS_3D_GLSL.fragment, program: 'fungus' },
+    { key: 'roofVs', stage: 'vert', source: CAVERN_ROOF_GLSL.vertex, program: 'roof' },
+    { key: 'roofFs', stage: 'frag', source: CAVERN_ROOF_GLSL.fragment, program: 'roof' },
   ];
   const work = mkdtempSync(join(tmpdir(), 'glsl-wgsl-3d-'));
   try {
@@ -254,7 +263,8 @@ function main(): void {
       args.push(job.stage, input, join(work, `${job.key}.wgsl`));
     }
     const jobsCount = Math.max(1, Math.min(22, cpus().length - 2));
-    execFileSync('cargo', ['build', '--release', '--quiet', '-j', String(jobsCount)], { cwd: tool, stdio: 'inherit', env: { ...process.env, CARGO_TARGET_DIR: targetDir } });
+    // --skip-build reuses the existing translator (web-only sessions must not build Rust).
+    if (!process.argv.includes('--skip-build')) execFileSync('cargo', ['build', '--release', '--quiet', '-j', String(jobsCount)], { cwd: tool, stdio: 'inherit', env: { ...process.env, CARGO_TARGET_DIR: targetDir } });
     const exe = join(targetDir, 'release', process.platform === 'win32' ? 'glsl-wgsl.exe' : 'glsl-wgsl');
     try { execFileSync(exe, args, { stdio: 'inherit' }); }
     catch { throw new Error(`naga failed; the rewritten GLSL is kept in ${work}`); }

@@ -13,7 +13,7 @@ registerMessages(Object.fromEntries(Object.entries({
   'Automatic from the region': 'Automatique selon la région', 'Automatic': 'Automatique', 'Manual': 'Manuel',
   'Restore automatic distribution': 'Rétablir la répartition automatique',
   'Density follows climate, relief and culture. Edit any value to override it; ↶ restores automatic calculation.': 'La densité suit le climat, le relief et la culture. Modifiez une valeur pour l’imposer ; ↶ rétablit le calcul automatique.',
-  'Changing population or density recalculates the distribution. Editing a settlement count fixes only that class; ↶ restores its automatic count.': 'Changer la population ou la densité recalcule la répartition. Modifier un effectif impose seulement cette catégorie ; ↶ rétablit son calcul automatique.',
+  'The places make the population: adding or removing a place changes it. Changing population or density resizes the places without changing their number. Editing a count fixes only that class; ↶ restores its automatic count. Even harsh regions keep a few places.': 'Les lieux font la population : ajouter ou retirer un lieu la modifie. Changer la population ou la densité redimensionne les lieux sans changer leur nombre. Modifier un effectif impose seulement cette catégorie ; ↶ rétablit son calcul automatique. Même les régions rudes gardent quelques lieux.',
   '{area} km² · largest settlement: {population} inhabitants': '{area} km² · plus grand lieu : {population} habitants',
   'Allocated: {population} inhabitants. The requested population does not fit the selected counts.': 'Répartition : {population} habitants. La population demandée ne tient pas dans les effectifs choisis.',
   'Manual list active. Editing these controls returns to regional distribution.': 'Liste manuelle active. Modifier ces réglages réactive la répartition régionale.',
@@ -25,7 +25,7 @@ registerMessages(Object.fromEntries(Object.entries({
 export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSettings(): V2Settings; getWorld(): World | undefined; changed(): void; syncForms(): void }) {
   const root = document.createElement('section'); root.className = 'regional-population'; host.append(root);
   const controls: { key: keyof RegionalDemography | PopulationClass; input: HTMLInputElement; reset: HTMLButtonElement; row: HTMLElement; count: boolean }[] = [];
-  const hint = document.createElement('p'); hint.className = 'hint'; setText(hint, 'Changing population or density recalculates the distribution. Editing a settlement count fixes only that class; ↶ restores its automatic count.');
+  const hint = document.createElement('p'); hint.className = 'hint'; setText(hint, 'The places make the population: adding or removing a place changes it. Changing population or density resizes the places without changing their number. Editing a count fixes only that class; ↶ restores its automatic count. Even harsh regions keep a few places.');
   function update(key: string, value: number | undefined, count: boolean): void {
     editRegionalPopulation(api.getSettings(), key as RegionalPopulationField, value);
     api.changed(); api.syncForms(); sync();

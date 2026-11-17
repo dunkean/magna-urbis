@@ -6,7 +6,8 @@ import { cultureEnclosure, type CultureEnclosure } from './hedges';
 import { yardRuns, yardStyle } from './yardStyle';
 
 /** `cluster` groups several footprints (farmstead house and outbuildings) into one yard; default one per parcel. */
-export interface YardHouse { parcel_id: string; footprint: readonly Shape[]; cluster?: string; farm?: boolean; enclosure?: 'wall' | 'fence' | 'hedge' | 'none'; programme?: { farmstead?: { farm?: boolean; enclosure?: string } } }
+/** `farmstead.ring`: the wall or hedge of a closed-court or round compound (farmsteads.rs), round its house and bodies inside the lot. */
+export interface YardHouse { parcel_id: string; footprint: readonly Shape[]; cluster?: string; farm?: boolean; enclosure?: 'wall' | 'fence' | 'hedge' | 'none'; programme?: { farmstead?: { farm?: boolean; enclosure?: string; layout?: string; ring?: readonly Point[] } } }
 const KINDS = ['wall', 'fence', 'hedge', 'none'];
 export interface Yard { parcel: number; shape: Shape }
 /** `culture` and `height` carry the culture's look (tint, wall height) to the 3D meshes. */
@@ -181,7 +182,7 @@ function insetRing(ring: readonly Point[], d: number): Point[] | undefined {
 }
 
 /** One parcel with houses. `unit` is the decision key: a row of lots on one street, empty in the country where each house decides. */
-interface Lot { pi: number; id: string; points: Point[]; size: number; farm: boolean; enclosure?: string; profile: Profile; u: Point; entry?: Point; unit: string; frontOpen: boolean }
+interface Lot { pi: number; id: string; points: Point[]; size: number; farm: boolean; enclosure?: string; profile: Profile; u: Point; entry?: Point; unit: string; frontOpen: boolean; /** a compound's own wall or hedge ring */ ring?: Point[] }
 /** A straight piece of fence; `link` continues the previous piece of the same run. */
 interface Piece { a: Point; b: Point; side: LotEnclosure['side']; yard: number; link: boolean; lane: number }
 
@@ -214,6 +215,11 @@ export function buildYardEnclosures(scene: CityScene, houses: readonly YardHouse
     const hint = house.programme?.farmstead; // a farmstead is one cluster: its own farm flag and enclosure kind win
     lot.farm ||= !!house.farm || !!hint?.farm;
     const kind = house.enclosure ?? hint?.enclosure; if (kind && KINDS.includes(kind)) lot.enclosure = kind;
+    // A closed court or round compound walls or hedges its own court, not the whole lot.
+    if ((hint?.layout === 'closed' || hint?.layout === 'round') && (kind === 'wall' || kind === 'hedge') && hint.ring && hint.ring.length >= 3) {
+      const ring = hint.ring.filter(q => Number.isFinite(q.x) && Number.isFinite(q.y));
+      if (ring.length >= 3) lot.ring = ring;
+    }
     for (const s of house.footprint) {
       const ring = s.outer.filter(q => Number.isFinite(q.x) && Number.isFinite(q.y)); if (ring.length < 3) continue;
       footprints.push({ outer: ring, holes: [] }); lot.points.push(...ring); lot.size += area(ring);
@@ -237,12 +243,14 @@ export function buildYardEnclosures(scene: CityScene, houses: readonly YardHouse
   const wallAt = (p: Point): boolean => { for (const i of footprintBins.query(boxOf([p], .6))) { const r = footprints[i].outer; for (let k = 0; k < r.length; k++) if (distance(p, r[k], r[(k + 1) % r.length]) < .6) return true; } return false; };
   // ---- inset cultures: each closed lot on its own ring, out of the shared graph; house walls interrupt it as they do a limit
   for (const pi of [...closed]) {
-    const lot = lots.get(pi)!, p = scene.parcels[pi], want = lot.profile.inset; if (want <= 0) continue;
+    const lot = lots.get(pi)!, p = scene.parcels[pi], want = lot.profile.inset; if (want <= 0 && !lot.ring) continue;
     closed.delete(pi);
     const whole = ringsOf(p).map(s => s.outer).sort((x, y) => area(y) - area(x))[0], center = mean(lot.points);
     const rough = simplifyChain([...whole, whole[0]], TOLERANCE, () => false).slice(0, -1);
     let ring: Point[] | undefined;
-    for (const d of [want, want / 2]) { if (d < MIN_INSET || rough.length < 3) continue; const r = insetRing(rough, d); if (r && area(r) >= MIN_YARD && 2 * area(r) / perimeter(r) >= MIN_WIDTH && polygonContains(r, center)) { ring = r; break; } }
+    // A compound's own ring (Rust, clipped to the lot) comes first; else the culture's inset of the limit.
+    if (lot.ring && area(lot.ring) >= MIN_YARD && 2 * area(lot.ring) / perimeter(lot.ring) >= MIN_WIDTH) ring = lot.ring;
+    else for (const d of [want, want / 2]) { if (d < MIN_INSET || rough.length < 3) continue; const r = insetRing(rough, d); if (r && area(r) >= MIN_YARD && 2 * area(r) / perimeter(r) >= MIN_WIDTH && polygonContains(r, center)) { ring = r; break; } }
     if (!ring) { note(p.zone, 'insetSkipped'); continue; } // a lot too narrow for a ring of its own stays unfenced
     result.yards.push({ parcel: pi, shape: { outer: ring, holes: [] } }); note(p.zone, 'yard');
     const n = ring.length, width = lot.farm ? 3.5 : area(ring) > 600 && draw(lot.id, 6) < .5 ? 2.6 : 1.3, target = lot.entry ?? center;

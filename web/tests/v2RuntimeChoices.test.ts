@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
 import { normalizeRuntime, runtimeChoiceStates, runtimeSummary, runtimeValues, setRuntimeChoice } from '../src/v2/runtimeChoices';
 
 const all = { checked: true, webgpu: true, native: true, python: true };
 const none = { checked: true, webgpu: false, native: false, python: false };
+// Native and Classic engines are local-profile choices (the web profile only offers WebGPU and CPU: runtimeFallback.test.ts).
+const local = { hostname: 'localhost', protocol: 'http:', search: '?profile=local' };
+beforeEach(() => { vi.stubGlobal('window', { location: local }); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('runtime choices', () => {
   it('classic engine forces procedural CPU and disables GPU/neural', () => {
@@ -51,7 +55,7 @@ describe('runtime choices', () => {
   });
   it('overrides default to "follow engine" and the summary reads well', () => {
     const s = defaultSettings(); const v = runtimeValues(s);
-    expect(v).toMatchObject({ engine: 'rust', compute: 'auto', sampling: '', generationCompute: '', hydrology: 'auto', urban: '' });
+    expect(v).toMatchObject({ engine: 'auto', compute: 'auto', sampling: '', generationCompute: '', hydrology: 'auto', urban: '' });
     setRuntimeChoice(s, 'urban', 'native'); expect(s.urban!.backend).toBe('native'); setRuntimeChoice(s, 'urban', ''); expect(s.urban!.backend).toBeUndefined();
     s.generation = 'neural'; normalizeRuntime(s); expect(runtimeSummary(s, true)).toBe('Rust · GPU · neural browser');
   });

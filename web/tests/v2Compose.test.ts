@@ -6,6 +6,7 @@ import { TerrainCache, V2_ENGINE_VERSION, type TerrainStore } from '../src/v2/ca
 import { generateNaturalCover } from '../../rust/bridge/landuseNative';
 import { Rng } from '../src/gen/core/rng';
 import { parseProject, serializeProject } from '../src/v2/project';
+import { regionalPopulation } from '../src/v2/regionalPopulation';
 import type { V2Project, V2Settings } from '../src/v2/contracts';
 import type { TerrainLayer, World } from '../src/gen/types';
 
@@ -21,8 +22,9 @@ function recipe(seed: string): V2Settings {
   settings.extent = 1200;
   settings.settlementCount = 1;
   settings.options = { ...settings.options, seed, size: 'hamlet', population: 80, biome: 'forest', coast: 'S', river: 'none', relief: 'flat',
-    walls: 'none', castle: 'no', importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0),
-      elevations: Float32Array.from({ length: 64 }, (_, i) => Math.floor(i / 8) > 5 ? -8 : 25 + (i % 8) * .1) } };
+    // 16² is the smallest import every engine accepts (sourceDefinition): the tests switch to Rust/native runtimes.
+    walls: 'none', castle: 'no', importedHeight: { w: 16, h: 16, rgba: new Uint8Array(0),
+      elevations: Float32Array.from({ length: 256 }, (_, i) => Math.floor(i / 16) > 11 ? -8 : 25 + (i % 16) * .05) } };
   return settings;
 }
 function expectExactArray(actual: ArrayBufferView, expected: ArrayBufferView) {
@@ -148,7 +150,8 @@ describe('V2 project composition', () => {
     expect(result.mods).toHaveLength(0);
     expect(String(result.world!.stats['v2.compositionNotice'])).toContain('2 modification');
     const region = await planRegion(result.world!, result.settings);
-    expect(region.settlements).toHaveLength(2);
+    // The harsh-map floor keeps a few places on this small desert map.
+    expect(region.settlements).toHaveLength(regionalPopulation(result.settings).places.length);
   });
 
   it('preserves the effective urban backend when the imported terrain changes the implicit runtime', async () => {

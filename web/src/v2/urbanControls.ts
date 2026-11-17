@@ -2,18 +2,20 @@ import { organizeUrbanForm } from './advancedPanel';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import type { V2Settings, V2UrbanControls } from './contracts';
 import type { HouseMix } from '../../../rust/bridge/urbanArchitecture';
-import { SITE_ARCHETYPES } from '../gen/options';
+import { SITE_ARCHETYPES, layoutFortification } from '../gen/options';
 import { siteArchetypeNames } from './regionControls';
 import { defaultParcelConfig } from '../../../rust/bridge/urbanConfig';
 import type { CatalogueBundle, HouseConfig } from '../../../rust/bridge/housesContract';
 import type { Options } from '../gen/types';
 import { bindTree, registerMessages, setDynamicText, setText, translate, getLanguage, onLanguageChange } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterForm } from './parameterForm';
-import { houseControlDefaults, workshopControlDefaults, morphologyTemplate, urbanCatalogue, urbanChoiceNames, urbanControlFields, urbanField, urbanFieldNames, urbanName, urbanSectionNames, URBAN_ZONES, type UrbanParameterField } from './urbanControlSchema';
+import { houseControlDefaults, workshopControlDefaults, morphologyTemplate, urbanCatalogue, urbanChoiceNames, urbanControlFields, urbanField, urbanFieldNames, urbanName, urbanSectionNames, URBAN_ZONES, ROOF_SYSTEM_NAMES, catalogueIdName, type UrbanParameterField, type UrbanControlSection } from './urbanControlSchema';
+import { massingRoofs } from '../../../rust/bridge/urbanHouseEdits';
+import { editorMessages } from './localeEditor';
 import './urbanControls.css';
 import { mountMixEditor, mountStyleSheetEditor, type UrbanZone } from './styleMixEditor';
 import type { StyleFacet, StyleMix } from '../../../rust/bridge/urbanConfig';
-import { CITY_ARCHITECTURES, DEFAULT_CITY_ARCHITECTURE, type CityArchitecture } from '../render/cityContract';
+import { CITY_ARCHITECTURES, DEFAULT_CITY_ARCHITECTURE, cityArchitectureOf, type CityArchitecture } from '../render/cityContract';
 import { mergeHouseEdits, type HouseEditConfig } from '../../../rust/bridge/urbanHouseEdits';
 import { culturalChoice } from '../../../rust/bridge/culturalChoices';
 import { resetUrbanChildren, urbanParentControls } from './generationEdits';
@@ -92,7 +94,7 @@ export function urbanScopeValues(settings: V2Settings, scope: UrbanControlScope 
 function nativeDefaults(settings: V2Settings, key?: string, place?: Partial<Options>): Record<string, unknown> {
   const options = { ...settings.options, ...place, ...(key ? settings.local[key] : {}) };
   return { through: 'buildings', architecture: DEFAULT_CITY_ARCHITECTURE, layout: mergeUrbanControlValues(defaultLayoutConfig(), { culture: options.culture, density: 1 / (options.sprawl ?? 1), radiusScale: Math.sqrt(options.sprawl ?? 1),
-    fortification: options.walls === 'none' || options.walls === 'no' ? 'none' : options.walls === 'auto' ? 'culture' : 'wall', suburbs: options.suburbs === 'some' ? 'few' : options.suburbs,
+    ...layoutFortification(options), suburbs: options.suburbs === 'some' ? 'few' : options.suburbs,
     ...(options.castle === 'yes' || Number(options.castles) > 0 ? { monument: 'castle' } : {}), ...(options.cathedral === 'yes' ? { monument: 'cathedral' } : {}), ...(options.palace === 'yes' ? { monument: 'palace' } : {}),
     ...(options.cultureMix ? { mixCulture: options.cultureMix.id, mixMode: options.cultureMix.mode, mixShare: options.cultureMix.t } : {}),
   }), parcels: mergeUrbanControlValues(defaultParcelConfig(), { culture: options.culture }), houses: {} };
@@ -151,6 +153,10 @@ export function writeUrbanControl(settings: V2Settings, scope: UrbanControlScope
     if (scope.kind === 'quarter') { delete root.buildingCulture; if (value === undefined) delete root.tissue; else root.tissue = 'culture'; }
     if (scope.kind === 'block') { if (value === undefined) delete root.operator; else root.operator = 'culture'; }
   }
+  // A house type and a roof belong to the old culture's pack; the new culture picks its own.
+  if (path === 'culture' && scope.kind === 'building') { delete root.recipe; delete root.pack; if (isObject(root.overrides)) { delete root.overrides.roof; delete root.overrides.variant; } }
+  // A pinned house type is a model of the building's current pack.
+  if (path === 'recipe' && scope.kind === 'building' && value !== undefined) root.pack = readSettingPath(inherited, 'pack');
   if (path === 'role' && (scope.kind === 'parcel' || scope.kind === 'block')) { delete root.function; delete root.households; delete root.houseConfig; }
   if (path === 'function' && scope.kind === 'parcel') delete root.role;
   const keys = path.split('.'), arrayAt = keys.findIndex(k => /^\d+$/.test(k));
@@ -197,7 +203,6 @@ const textMessages: Record<string, string> = {
   'Retry loading building choices': 'Réessayer de charger les modèles',
   'Area purpose': 'Fonction du quartier', 'Parcel use': 'Usage de la parcelle',
   'Building type': 'Type de bâtiment',
-  'Only types declared for this culture, building engine and available area are offered.': 'Seuls les types déclarés pour cette culture, ce moteur de bâtiments et la surface disponible sont proposés.',
   'Changes the use of this parcel and regenerates its buildings.': 'Change l’usage de cette parcelle et régénère ses bâtiments.',
   'Automatic uses population, culture and nearby activities to choose a suitable use.': 'Le mode automatique choisit un usage selon la population, la culture et les activités voisines.',
   'Local random seed': 'Graine aléatoire locale', 'Original seed': 'Graine d’origine',
@@ -227,24 +232,70 @@ const textMessages: Record<string, string> = {
   'More local choices take priority. Reroll keeps the selected style.': 'Les choix les plus locaux sont prioritaires. Une nouvelle variation conserve le style choisi.',
   'Site archetypes by settlement identifier': 'Archétypes de site par identifiant de lieu', 'Settlement identifier': 'Identifiant de lieu', 'Add site rule': 'Ajouter une règle de site', 'Remove site rule': 'Supprimer une règle de site',
 };
-registerMessages(Object.fromEntries([...Object.entries(textMessages).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(urbanFieldNames).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(urbanSectionNames).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(urbanChoiceNames).map(([en, fr]) => [en, { en, fr }] as const)]));
-function section(root: HTMLElement, title: string, open = false): HTMLDetailsElement {
-  const details = document.createElement('details'); details.className = 'urban-control-section'; details.open = open;
-  const summary = document.createElement('summary'); setText(summary, title); details.append(summary); root.append(details); return details;
+registerMessages(editorMessages);
+registerMessages(Object.fromEntries([...Object.entries(textMessages).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(urbanFieldNames).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(urbanSectionNames).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(urbanChoiceNames).map(([en, fr]) => [en, { en, fr }] as const), ...Object.values(ROOF_SYSTEM_NAMES).map(([en, fr]) => [en, { en, fr }] as const)]));
+/** A titled block. Urban forms only show inside the advanced views (organizeUrbanForm), which have no further disclosure level. */
+function section(root: HTMLElement, title: string): HTMLElement {
+  const block = document.createElement('section'); block.className = 'urban-control-section';
+  const heading = document.createElement('h4'); heading.className = 'urban-section-title'; setText(heading, title); block.append(heading); root.append(block); return block;
+}
+/** Localized catalogue names; the raw ids stay the option values only. */
+export function catalogueChoiceLabel(catalogue: Pick<CatalogueBundle['catalogue'], 'packs' | 'recipes' | 'materials'>, path: string, id: string): string {
+  const language = getLanguage(), key = path.split('.').at(-1)!;
+  if (key === 'pack') { const label = catalogue.packs.find(p => p.id === id)?.label; return housePackLabel(id, label ?? catalogueIdName(id), language); }
+  if (key === 'recipe') { const label = catalogue.recipes.find(r => r.id === id)?.label; return houseArchetypeLabel(id, label ?? catalogueIdName(id), language); }
+  if (key === 'roof') return translate(ROOF_SYSTEM_NAMES[id]?.[0] ?? catalogueIdName(id));
+  const material = catalogue.materials.find(m => m.id === id)?.label;
+  return material ? houseMaterialLabel(id, material, language) : urbanChoiceNames[id] ? translate(urbanChoiceNames[id][0]) : catalogueIdName(id);
 }
 function message(root: HTMLElement, source: string): HTMLElement { const p = document.createElement('small'); setText(p, source); root.append(p); return p; }
 function button(root: HTMLElement, source: string, onClick: () => void): HTMLButtonElement { const b = document.createElement('button'); b.type = 'button'; setText(b, source); b.onclick = onClick; root.append(b); return b; }
-function localFields(scope: UrbanControlScope): UrbanParameterField[] {
-  const houseFields = () => urbanControlFields().filter(f => f.section === 'house' || f.section === 'workshop').map(f => ({ ...f, path: f.path.replace('houses.house_config.', scope.kind === 'building' ? '' : 'houseConfig.') }));
-  if (scope.kind === 'quarter') return [...Object.entries({ culture: '', tissue: 'culture', zone: '', density: 1, role: '', wealth: .5, deleted: false, salt: 1 }).map(([key, value]) => ({ ...urbanField(key, value, 'quarter'), ...(key === 'culture' ? { help: 'Culture sets streets, parcels and buildings. Regenerate replaces descendant overrides.' } : key === 'tissue' ? { help: 'Street pattern changes interior streets; boundary roads stay in place.' } : {}) })), { ...urbanField('culture', '', 'house'), path: 'buildingCulture', label: 'Separate building culture', help: 'Optional: override architecture only. Culture above controls the whole area.' }, ...houseFields()];
-  if (scope.kind === 'block') return [urbanField('culture', '', 'parcel'), urbanField('density', 1, 'parcel'), urbanField('operator', 'culture', 'parcel'), urbanField('role', '', 'parcel'), urbanField('salt', 1, 'parcel'), ...houseFields()];
-  if (scope.kind === 'parcel') return [...Object.entries({ role: '', function: '', households: 1, deleted: '', salt: 1 }).map(([key, value]) => {
-    const field = urbanField(key, value, 'parcel');
-    if (key === 'deleted') { field.type = 'select'; field.options = [{ value: 'merge', label: 'Merge into neighbours' }, { value: 'garden', label: 'Keep as a garden' }]; }
-    if (key === 'role') field.help = 'Only types declared for this culture, building engine and available area are offered.';
-    return field;
-  }), { ...urbanField('culture', '', 'house'), label: 'Culture' }, ...houseFields()];
-  if (scope.kind === 'building') return [{ ...urbanField('culture', '', 'house'), label: 'Culture' }, urbanField('seed', '', 'house'), ...houseFields()];
+/** Each editor level shows its few working choices first (quarter = culture, street plan, growth zone, density;
+ * block = culture, density, parcelling; parcel = content and culture; house = culture, house type, roof, floors),
+ * then an Advanced section with every other parameter the engine applies at that level: the house model fields
+ * (pack, era, variant, materials, plan, courtyard, overhang, pitch…) read by the lot's building requests, plus
+ * the level's own (district purpose and wealth, block building type, households, fence). The dice owns the seed. */
+export function localFields(scope: UrbanControlScope): UrbanParameterField[] {
+  const culture = (section: UrbanControlSection, help: string): UrbanParameterField => ({ ...urbanField('culture', '', section), help });
+  const advanced = (field: UrbanParameterField): UrbanParameterField => ({ ...field, section: 'advanced' });
+  // House model fields, at `houseConfig.*` below the settlement and directly on a building; main fields are not repeated.
+  const houseFields = (prefix: string, skip: readonly string[] = []) => urbanControlFields()
+    .filter(f => f.section === 'house' && !skip.includes(f.path.replace('houses.house_config.', '')))
+    .map(f => advanced({ ...f, path: f.path.replace('houses.house_config.', prefix) }));
+  const fence: UrbanParameterField = { path: 'enclosure', section: 'advanced', label: 'Fence', type: 'select', optional: true,
+    options: [{ value: 'none', label: 'No fence' }, { value: 'fence', label: 'Wooden fence' }, { value: 'hedge', label: 'Hedge' }, { value: 'wall', label: 'Stone wall' }],
+    help: 'Boundary of this lot and its house yard. Applied on Regenerate.' };
+  if (scope.kind === 'quarter') return [
+    culture('quarter', 'Culture sets streets, parcels and buildings. Regenerate replaces descendant overrides.'),
+    { ...urbanField('tissue', 'culture', 'quarter'), label: 'Urban plan', help: 'Street pattern changes interior streets; boundary roads stay in place.' },
+    { ...urbanField('zone', '', 'quarter'), options: urbanField('zone', '', 'quarter').options!.filter(o => o.value !== 'auto'), help: 'Core: narrow deep lots, continuous frontage, high coverage and the tallest buildings. Outer zones: wider lots with gardens and lower houses.' },
+    { ...urbanField('density', 1, 'quarter'), help: 'Lot size and coverage in this quarter, around its zone: above 1 smaller lots and more built, below 1 larger lots and gardens.' },
+    advanced(urbanField('role', '', 'quarter')),
+    advanced({ ...urbanField('wealth', .5, 'quarter'), max: 1 }),
+    advanced({ ...urbanField('culture', '', 'house'), path: 'buildingCulture', label: 'Separate building culture', help: 'Optional: override architecture only. Culture above controls the whole area.' }),
+    ...houseFields('houseConfig.'),
+  ];
+  if (scope.kind === 'block') return [
+    culture('block', 'Culture of the lots and buildings of this block.'),
+    { ...urbanField('density', 1, 'block'), help: 'More or fewer lots in this block.' },
+    { ...urbanField('operator', 'culture', 'block'), help: 'How the block is cut into lots.' },
+    advanced({ ...urbanField('role', '', 'parcel'), help: 'Building type of every lot of this block; a lot’s own content wins.' }),
+    ...houseFields('houseConfig.'),
+  ];
+  if (scope.kind === 'parcel') return [
+    { ...urbanField('role', '', 'parcel'), label: 'Parcel content', help: 'Any building type can be chosen; this culture’s types come first. Regenerate rebuilds the lot with the chosen use.' },
+    culture('parcel', 'Architecture of the buildings of this lot.'),
+    { ...fence, section: 'parcel' },
+    advanced({ ...urbanField('households', 1, 'parcel'), step: 1, help: 'Households lodged on this lot (housing only).' }),
+    ...houseFields('houseConfig.'),
+  ];
+  if (scope.kind === 'building') return [
+    culture('building', 'Architecture of this building. Changing it resets the house type and roof.'),
+    { ...urbanField('recipe', '', 'building'), path: 'recipe', label: 'House type', type: 'select', options: [], help: 'Building models of this culture’s architectural pack.' },
+    { ...urbanField('roof', '', 'building'), path: 'overrides.roof', type: 'select', options: Object.entries(ROOF_SYSTEM_NAMES).filter(([id]) => id !== 'RF-CONICAL').map(([value, [label]]) => ({ value, label })) },
+    { ...urbanField('floors', null, 'building'), path: 'overrides.floors', min: 1, max: 40 },
+    ...houseFields('', ['recipe', 'overrides.roof', 'overrides.floors']),
+  ];
   return urbanControlFields();
 }
 
@@ -313,7 +364,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   for (const [key, names] of Object.entries(urbanSectionNames)) {
     if (parts?.sections && !parts.sections.includes(key)) continue;
     const members = fields.filter(f => f.section === key); if (!members.length) continue;
-    const details = section(root, names[0], !global || key === 'layout');
+    const details = section(root, names[0]); details.dataset.section = key;
     if (key === 'house' && global) {
       const label = document.createElement('label'); label.className = 'urban-model-switch'; modelEnabled = document.createElement('input'); modelEnabled.type = 'checkbox'; modelEnabled.dataset.houseModel = '';
       const span = document.createElement('span'); setText(span, 'Use a pinned native house model'); label.append(modelEnabled, span); details.append(label);
@@ -349,7 +400,8 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     const form = mountParameterForm(body, decorated, {
       getValue: effective, isMixed, automaticChoice: resolvedChoice, setValue: set,
       choices: path => path === 'role' && (scope.kind === 'parcel' || scope.kind === 'block') ? compatibleBuildingTypes({
-        culture: String(effective('culture') ?? getSettings().options.culture),
+        culture: String(effective('culture') ?? getSettings().options.culture), fallbackCulture: getSettings().options.culture,
+        current: readSettingPath(inherited(), 'role') as string | undefined,
         area: Number(effective(scope.kind === 'block' && effective('operator') === 'wholeBlock' ? 'blockArea' : 'area')),
         architecture: getSettings().urban?.architecture, pack: String(effective('houseConfig.pack') ?? ''),
         mode: String(effective('historicalMode') ?? 'inspired'), period: String(effective('period') ?? ''), navigableAccess: effective('navigableAccess') === true,
@@ -363,7 +415,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     const field = root.querySelector<HTMLElement>('[data-field-path="households"]');
     if (field) { const role = String(effective('role') ?? 'auto'); field.hidden = role !== 'auto' && !role.startsWith('dwelling'); }
   });
-  if (extra('catalogue')) mountCatalogue();
+  if (extra('catalogue') && (global || scope.kind === 'building')) mountCatalogue();
   function sync(): void { root.inert = !!parts?.disabled?.(); effectiveCache = scopes().map(s => memoEffectiveValues(getSettings(), s)); effects.forEach(effect => effect()); forms.forEach(form => form.sync()); }
   function mountPhaseControls(): void {
     const box = section(root, 'Cultural rules by growth zone');
@@ -381,7 +433,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     const editor = mountStyleSheetEditor(root, {
       getMix: (facet, zone) => effective(mixPath(facet, zone)) as StyleMix | undefined,
       setMix: (facet, zone, mix) => set(mixPath(facet, zone), mix),
-      defaultCulture: () => getSettings().options.culture, path: 'layout.styleSheet',
+      defaultCulture: () => getSettings().options.culture, path: 'layout.styleSheet', flat: true,
     });
     effects.push(editor.sync);
   }
@@ -417,8 +469,9 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     button(box, 'Reset field', () => set('layout.siteArchetypes', undefined));
   }
   function mountCatalogue(): void {
-    const box = section(root, 'Building templates and materials');
-    message(box, 'Culture selects suitable building templates and materials automatically. Override them below only for a specific architecture.');
+    // Local scopes only read the catalogue to name the house types and roofs of one building.
+    const box = global ? section(root, 'Building templates and materials') : root;
+    if (global) message(box, 'Culture selects suitable building templates and materials automatically. Override them below only for a specific architecture.');
     const status = message(box, 'Loading building choices…');
     const load = button(box, 'Retry loading building choices', () => {
       load.disabled = true; root.setAttribute('aria-busy', 'true'); setText(status, 'Loading building choices…'); load.hidden = true;
@@ -460,12 +513,13 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
       const current = input.value;
       const automatic = document.createElement('option'); automatic.value = ''; setText(automatic, 'From culture');
       input.replaceChildren(automatic);
-      for (const suggestion of [...new Set(suggestions.filter(Boolean))]) {
-        const label = path === 'pack' ? catalogue.packs.find(p => p.id === suggestion)?.label : path === 'recipe' ? catalogue.recipes.find(r => r.id === suggestion)?.label : catalogue.materials.find(m => m.id === suggestion)?.label;
-        const localized = label ? path === 'pack' ? housePackLabel(suggestion,label,getLanguage()) : path === 'recipe' ? houseArchetypeLabel(suggestion,label,getLanguage()) : houseMaterialLabel(suggestion,label,getLanguage()) : undefined;
-        const option = new Option(localized ? `${localized} · ${suggestion}` : suggestion, suggestion); option.dataset.l10nKeep = ''; input.append(option);
+      // City volumes apply only the roofs urban/massing.rs can raise on a retained footprint.
+      const offered = path.endsWith('roof') && scope.kind === 'building' && cityArchitectureOf(getSettings().urban?.architecture) === 'silhouette'
+        ? Object.keys(massingRoofs).filter(id => id !== 'RF-CONICAL') : suggestions;
+      for (const suggestion of [...new Set(offered.filter(Boolean))]) {
+        const option = new Option(catalogueChoiceLabel(catalogue, path, suggestion), suggestion); option.dataset.l10nKeep = ''; input.append(option);
       }
-      if (current && !Array.from(input.options).some(o => o.value === current)) input.append(new Option(current, current));
+      if (current && !Array.from(input.options).some(o => o.value === current)) { const option = new Option(catalogueChoiceLabel(catalogue, path, current), current); option.dataset.l10nKeep = ''; input.append(option); }
       input.value = current;
 
     }

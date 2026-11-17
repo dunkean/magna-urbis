@@ -49,8 +49,8 @@ try {
   await advanced.locator('[data-render-pass=ground]').waitFor();
   assert.equal(await advanced.locator('.render-pass-card').count(), 11);
   await page.screenshot({ path: fileURLToPath(new URL('render-advanced-overview.png', out)) });
-  await advanced.locator('[data-render-pass=ground] > details > summary').click();
-  await advanced.locator('[data-render-pass=buildings] > details > summary').click();
+  // One page: component settings are open in their cards, no disclosure to click.
+  assert.equal(await advanced.locator('details').count(), 0, 'no disclosure inside the advanced render view');
   assert(await advanced.locator('[data-setting-path="appearance.composition.ground.look"]').isVisible());
   assert(await advanced.locator('[data-setting-path="appearance.textured"]').isVisible());
   assert.equal(await page.locator('.toolbar-row [data-city-display]').count(), 0);
@@ -67,7 +67,7 @@ try {
   assert.equal(await page.locator('.toolbar-row [data-textured]:visible,.toolbar-row [data-plan]:visible').count(), 0);
   assert(await page.locator('.toolbar-row #road-display').isVisible());
   await page.locator('#map-advanced-open').click();
-  assert(await advanced.locator('[data-render-pass=ground] > details').evaluate(el => el.open));
+  assert(await advanced.locator('[data-render-pass=ground] > .render-pass-options').isVisible());
   assert(await advanced.locator('[data-ground]').isVisible());
   await advanced.locator('[data-ground]').selectOption('map');
   await page.keyboard.press('Escape');

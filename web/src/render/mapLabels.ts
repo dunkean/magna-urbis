@@ -82,6 +82,8 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     // Underdark caverns reuse the hill entry but have no summit: no triangle.
     if (e.parts?.role === 'terrain.cavern') st = { ...st, symbol: undefined };
+    // Underdark tunnels reuse the hill entry and are lettered along their passage like a road.
+    if (e.parts?.role?.startsWith('terrain.tunnel.') && styles.road) st = { ...styles.road, symbol: undefined };
     if (e.manual || e.forceVisible) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
     out.push({ id: e.id, kind: e.kind==='building'&&(e.detail??1)<.2?'landmark':e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail, manual: e.manual || e.forceVisible || undefined, author: e.manual || e.forceVisible || undefined, scope: e.cityKey ?? 'main' });
   }

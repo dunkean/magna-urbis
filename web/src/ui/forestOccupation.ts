@@ -1,4 +1,5 @@
-import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { forestClearingRaster } from '../render/forestClearance';
+import type { ForestClearing, ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { Polygon } from '../gen/core/geom';
 import { offsetRibbon } from '../gen/core/geom';
 import { visitSegmentCells } from '../gen/core/grid';
@@ -14,6 +15,10 @@ import { measureDisplayProduct, productRevision } from '../render/displayProduct
  * stands on both sides are untouched and their crowns close over it. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6, marsh: 10 };
 const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, COVERED_WAY = 12, RANGE = 8, MIN_HALF = .6;
+/** Class 13: Underdark fungus beds (land use 'garden' with cultivation 'fungal'), the cultivated floor of cave
+ * settlements. No plot, row or parcel is drawn for them on the surface ground: the Underdark ground and its mushroom
+ * layer read this class (its bilinear share over the 2x2 texels gives an organic patch) for dense low mushrooms. */
+export const FUNGUS_BED = 13;
 
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
@@ -82,15 +87,25 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
   for (const shape of shapes) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));
   const n = Math.min(1536, Math.ceil(side / cell) + RANGE * 2), x = Math.floor(x0 / cell) * cell - RANGE * cell, y = Math.floor(y0 / cell) * cell - RANGE * cell;
-  const open = new Uint8Array(n * n), forest = new Uint8Array(n * n), cls = new Uint8Array(n * n);
+  const cls = new Uint8Array(n * n), dOpen = new Float32Array(n * n).fill(-RANGE), dForest = new Float32Array(n * n).fill(-RANGE);
   if (source) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const sx = Math.floor((x + (i + .5) * cell - source.x) / source.width * source.n), sy = Math.floor((y + (j + .5) * cell - source.y) / source.width * source.n);
+    const gx = (x + (i + .5) * cell - source.x) / source.width * source.n, gy = (y + (j + .5) * cell - source.y) / source.width * source.n;
+    const sx = Math.floor(gx), sy = Math.floor(gy);
     if (sx < 0 || sy < 0 || sx >= source.n || sy >= source.n) continue;
     const at = (sy * source.n + sx) * 4, index = j * n + i;
-    if (!source.rgba[at + 3]) continue;
-    cls[index] = source.rgba[at + 2]; open[index] = source.rgba[at] > 128 ? 1 : 0; forest[index] = source.rgba[at + 1] > 128 ? 1 : 0;
+    cls[index] = source.rgba[at + 2];
+    // Reproject distances bilinearly, in metres. Thresholding them and running another cell distance transform
+    // destroyed the polygon edge whenever accepted buildings caused the occupation grid to be resized.
+    const bx = Math.floor(gx - .5), by = Math.floor(gy - .5), fx = gx - .5 - bx, fy = gy - .5 - by;
+    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+      const k = (Math.max(0, Math.min(source.n - 1, by + dy)) * source.n + Math.max(0, Math.min(source.n - 1, bx + dx))) * 4;
+      const weight = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * source.width / source.n / cell;
+      if (!dx && !dy) { dOpen[index] = 0; dForest[index] = 0; }
+      dOpen[index] += (source.rgba[k] - 128) / 16 * weight;
+      dForest[index] += (source.rgba[k + 1] - 128) / 16 * weight;
+    }
   }
-  const occupied = (from: number, to: number): void => { cls.fill(OCCUPIED, from, to); open.fill(1, from, to); forest.fill(0, from, to); };
+  const occupied = (from: number, to: number): void => { cls.fill(OCCUPIED, from, to); };
   for (const shape of shapes) {
     const rings = [shape.outer, ...shape.holes];
     fillRings(rings, x, y, cell, n, occupied);
@@ -114,15 +129,18 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
       }
     }
   }
-  const dOpen = signedDistance(open, n), dForest = signedDistance(forest, n), rgba = new Uint8Array(n * n * 4);
+  const cleared = source?.clearings?.length ? forestClearingRaster(source.clearings, x, y, cell, n) : undefined;
+  // Conservative class cells still exclude roots from thin walls; the visible ground follows actual polygons.
+  const built = forestClearingRaster(shapes, x, y, cell, n), rgba = new Uint8Array(n * n * 4);
   let hash = 0x811c9dc5;
   for (let i = 0; i < n * n; i++) {
     const at = i * 4;
+    dOpen[i] = Math.max(dOpen[i], built[i] / cell); dForest[i] = Math.min(dForest[i], -built[i] / cell);
     rgba[at] = Math.max(0, Math.min(255, Math.round(128 + 16 * dOpen[i]))); rgba[at + 1] = Math.max(0, Math.min(255, Math.round(128 + 16 * dForest[i])));
-    rgba[at + 2] = cls[i]; rgba[at + 3] = open[i] || forest[i] ? 255 : 0;
-    hash = Math.imul(hash ^ cls[i] ^ rgba[at], 0x01000193);
+    rgba[at + 2] = cls[i]; rgba[at + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - 16 * cleared[i] / cell))) : 255;
+    hash = Math.imul(hash ^ cls[i] ^ rgba[at] ^ rgba[at + 3], 0x01000193);
   }
-  return { x, y, width: n * cell, n, rgba, detail: source?.detail, ways: source?.ways, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
+  return { x, y, width: n * cell, n, rgba, detail: source?.detail, ways: source?.ways, clearings: source?.clearings, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
 }
 
 /**
@@ -132,10 +150,10 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
  * raster covers only the occupied square, in the landuse/terrain frame (m).
  * Deterministic: same layer, same bytes.
  */
-export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2, corridors: readonly ForestCorridor[] = []): ForestOccupation | undefined {
+export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2, corridors: readonly ForestCorridor[] = [], clearings: readonly ForestClearing[] = []): ForestOccupation | undefined {
   const shapes: { rings: Polygon[]; cls: number; forest: boolean }[] = [];
   for (const area of landuse.areas) {
-    const cls = CLASS[area.kind] ?? 0;
+    const cls = area.cultivation === 'fungal' ? FUNGUS_BED : CLASS[area.kind] ?? 0;
     if (cls || area.kind === 'forest') shapes.push({ rings: [area.poly, ...area.holes ?? []], cls, forest: !cls });
   }
   for (const ring of landuse.reserve) shapes.push({ rings: [ring], cls: BUILT, forest: false });
@@ -143,6 +161,7 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     if (path.length < 2) continue;
     shapes.push({ rings: [offsetRibbon(path, 12)], cls: CLEARANCE, forest: false });
   }
+  for (const shape of clearings) shapes.push({ rings: [shape.outer, ...shape.holes ?? []], cls: CLEARING, forest: false });
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const s of shapes) for (const p of s.rings[0]) {
     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
@@ -156,13 +175,15 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   // Built reserves override fields and woods drawn below them.
   for (const s of shapes.sort((a, b) => Number(a.cls === BUILT) - Number(b.cls === BUILT))) {
     fillRings(s.rings, x, y, cell, n, (from, to) => {
-      cls.fill(s.cls, from, to); open.fill(s.forest ? 0 : 1, from, to); forest.fill(s.forest ? 1 : 0, from, to);
+      cls.fill(s.cls, from, to);
+      // Towns and defensive clearings contribute their polygon distance below, never a distance to filled cells.
+      if (s.cls !== BUILT && s.cls !== CLEARING) { open.fill(s.forest ? 0 : 1, from, to); forest.fill(s.forest ? 1 : 0, from, to); }
     });
   }
   // Forest clearings (farmsteads, road corridors) open only wild or wooded ground: fields and plots keep their class.
   // They never widen the raster: corridors outside the rural land use stay with the forest field.
   const clearing = (rings: Polygon[]): void => fillRings(rings, x, y, cell, n, (from, to) => {
-    for (let i = from; i < to; i++) if (!cls[i] || forest[i]) { cls[i] = CLEARING; open[i] = 1; forest[i] = 0; }
+    for (let i = from; i < to; i++) if (cls[i] !== BUILT && (!cls[i] || forest[i])) { cls[i] = CLEARING; open[i] = 1; forest[i] = 0; }
   });
   for (const ring of farmClearings(landuse)) clearing([ring]);
   // Corridors are distance fields, not rasterized ribbons: a road a few texels wide filled cell by cell left a
@@ -170,17 +191,30 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   // inside) to the nearest corridor capsule; it is merged into the open/forest fields below.
   const ways = [...corridors, ...landuse.forestCorridors ?? []];
   const corridor = corridorDistance(ways.filter(way => !way.covered), x, y, cell, n);
-  if (corridor) for (let i = 0; i < n * n; i++) if (corridor[i] > 0 && (!cls[i] || forest[i])) cls[i] = CLEARING;
+  if (corridor) for (let i = 0; i < n * n; i++) if (corridor[i] > 0 && cls[i] !== BUILT && (!cls[i] || forest[i])) cls[i] = CLEARING;
   // Covered ways only mark their own strip: the open and forest fields keep the stands whole on both sides.
   const covered = corridorDistance(ways.filter(way => way.covered), x, y, cell, n);
-  if (covered) for (let i = 0; i < n * n; i++) if (covered[i] > 0 && (!cls[i] || forest[i]) && cls[i] !== CLEARING) cls[i] = COVERED_WAY;
+  if (covered) for (let i = 0; i < n * n; i++) if (covered[i] > 0 && cls[i] !== BUILT && (!cls[i] || forest[i]) && cls[i] !== CLEARING) cls[i] = COVERED_WAY;
   // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
   // cell open, as for thin building walls, rather than dropping the whole lane.
   for (const path of landuse.ways ?? []) for (let i = 1; i < path.length; i++) {
     visitSegmentCells({ w: n, h: n, cell }, { x: path[i - 1].x - x, y: path[i - 1].y - y },
       { x: path[i].x - x, y: path[i].y - y }, at => { cls[at] = CLEARANCE; open[at] = 1; forest[at] = 0; });
   }
+  // Defensive clearings override reserves, fields and circulation alike.
+  for (const shape of clearings) fillRings([shape.outer, ...shape.holes ?? []], x, y, cell, n, (from, to) => {
+    cls.fill(CLEARING, from, to);
+  });
+  const cleared = clearings.length ? forestClearingRaster(clearings, x, y, cell, n) : undefined;
   const dOpen = signedDistance(open, n), dForest = signedDistance(forest, n);
+  const groundPolygons = [...landuse.reserve.map(outer => ({ outer })), ...clearings];
+  if (groundPolygons.length) {
+    const ground = forestClearingRaster(groundPolygons, x, y, cell, n);
+    for (let i = 0; i < n * n; i++) {
+      const d = ground[i] / cell;
+      dOpen[i] = Math.max(dOpen[i], d); dForest[i] = Math.min(dForest[i], -d);
+    }
+  }
   // Union with the corridors: open grows to max(open, corridor), forest shrinks to min(forest, -corridor).
   // Every ground a corridor crosses is open afterwards (fields and plots already were), so the union is exact.
   if (corridor) for (let i = 0; i < n * n; i++) {
@@ -192,11 +226,11 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
   const rgba = new Uint8Array(n * n * 4);
   const enc = (d: number): number => Math.max(0, Math.min(255, Math.round(128 + 16 * d)));
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
-    rgba[o] = enc(dOpen[i]); rgba[o + 1] = enc(dForest[i]); rgba[o + 2] = cls[i]; rgba[o + 3] = open[i] || forest[i] ? 255 : 0;
+    rgba[o] = enc(dOpen[i]); rgba[o + 1] = enc(dForest[i]); rgba[o + 2] = cls[i]; rgba[o + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - 16 * cleared[i] / cell))) : 255;
   }
   let hash = 0x811c9dc5;
   for (const word of new Uint32Array(rgba.buffer)) hash = Math.imul(hash ^ word, 0x01000193);
-  return { x, y, width: n * cell, n, rgba, key: `occ:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
+  return { x, y, width: n * cell, n, rgba, clearings, key: `occ:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
 }
 
 /** Signed distance (texels, positive inside) of each texel centre to the union of the corridor capsules, with the

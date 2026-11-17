@@ -10,7 +10,8 @@ vi.mock('../../rust/bridge/terrainForest', async importOriginal => ({
   ...await importOriginal<typeof import('../../rust/bridge/terrainForest')>(),
   buildForestField: vi.fn(async () => ({ x: 0, y: 0, width: 100, n: 2, rgba: new Uint8Array(16), key: 'display-forest' })),
 }));
-const world = () => ({ seed: 'forest-import', mapSize: 100, roads: [], settlements: [],
+// World.options is required: appearance now reads the retained world's biome (underdark looks).
+const world = () => ({ seed: 'forest-import', mapSize: 100, roads: [], settlements: [], options: {},
   terrain: { height: { w: 2, h: 2, cell: 50, data: new Float32Array([3, 6, 9, 12]) }, water: new Uint8Array(4), rivers: [], lakes: [] } }) as unknown as World;
 const settings = () => ({ ...defaultSettings(), appearance: { style: 'parchment' as const, composition: presetComposition('satellite') } });
 beforeEach(() => vi.mocked(buildForestField).mockClear());

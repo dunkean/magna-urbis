@@ -245,6 +245,11 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       await bindings.displaySettled?.();
       if (!bindings.getWorld()?.settlements?.length) throw new Error('The region has no placed town');
     },
+    /** Generates the recipe as loaded (a shared #city= code with its edits), without reloading it. */
+    async generateLoaded(places?: 'all' | 'main'): Promise<void> {
+      await bindings.run(places);
+      await bindings.displaySettled?.();
+    },
     /** Waits until the background build of small places is done (then the display settles), before a shot. */
     async smallPlacesSettled(): Promise<void> {
       await bindings.smallPlacesSettled?.();

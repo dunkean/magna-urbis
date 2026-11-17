@@ -29,13 +29,18 @@ try{
   const initialCodeLength=(await page.evaluate(()=>window.__v2Test.code())).length;
   const countIds=['city','town','village','hamlet','farmstead'];
   const countsBefore=Object.fromEntries(await Promise.all(countIds.map(async id=>[id,Number(await page.locator(`#region-${id}`).inputValue())])));
+  let populationBefore=Number(await page.locator('#region-population').inputValue());
   for(const increment of [1,2]){
     await page.locator('#region-town').fill(String(countsBefore.town+increment));await page.locator('#region-town').dispatchEvent('change');
     for(const id of countIds)assert.equal(Number(await page.locator(`#region-${id}`).inputValue()),countsBefore[id]+(id==='town'?increment:0),`editing towns keeps ${id} independent`);
+    const population=Number(await page.locator('#region-population').inputValue());
+    assert(population>populationBefore,'adding a town adds its inhabitants');populationBefore=population;
   }
   await page.getByRole('button',{name:'Restore automatic distribution',exact:true}).click();
-  await page.locator('#region-population').fill('10000');await page.locator('#region-population').dispatchEvent('change');
+  // Places first, then a typed population that resizes them without changing their number.
   await page.locator('#region-town').fill('2');await page.locator('#region-town').dispatchEvent('change');
+  await page.locator('#region-population').fill('10000');await page.locator('#region-population').dispatchEvent('change');
+  assert.equal(await page.locator('#region-town').inputValue(),'2','a typed population keeps the places');
   await page.locator('#region-isolatedDensity').fill('0.5');await page.locator('#region-isolatedDensity').dispatchEvent('change');
   const manual=await recipe();assert.equal(manual.region.demography.population,10000);assert.equal(manual.region.demography.counts.town,2);assert.equal(manual.region.demography.isolatedDensity,.5);
   const changed=structuredClone(manual);changed.terrain.relief='mountains';await apply(changed);
@@ -50,7 +55,7 @@ try{
     assert.equal((await recipe()).region?.placement?.list,undefined);
     scenarios.push({culture,...summary});await page.screenshot({path:`${out}/${culture}.png`});
   }
-  assert(scenarios[0].population>50000);assert(scenarios[0].isolated>0);assert(scenarios[1].largest>500000);assert(scenarios[2].population<20);
+  assert(scenarios[0].population>50000);assert(scenarios[0].isolated>0);assert(scenarios[1].largest>500000);assert(scenarios[2].population<scenarios[0].population/50,"harsh map keeps the floor, far below temperate");
   // Import a retained small scene to check the local reroll entry point.
   execFileSync(process.execPath,['--import','./scripts/shaderModuleStubs.mjs','--import','tsx','scripts/v2_workbench_layout_fixture.ts'],{windowsHide:true});
   await page.locator('#import-open').click();await page.locator('#project-file').setInputFiles('out/workbench-layout/fixture.json');await page.locator('#import-dialog').waitFor({state:'hidden'});

@@ -75,7 +75,7 @@ export interface RFrame {
   type: 'frame'; gen: number; seq: number; ver: number; view: View; w: number; h: number; dpr: number;
   bitmap?: ImageBitmap; mini?: ImageBitmap;
   ms: number; band: number; scale: number;
-  labels: { kind: string; text: string; size: number }[];
+  labels: { id?: string; kind: string; text: string; size: number }[];
   stats?: FrameStats;
 }
 export interface RBrushStatus { type: 'brushStatus'; ready: boolean }

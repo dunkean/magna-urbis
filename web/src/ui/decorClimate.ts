@@ -4,7 +4,10 @@ import type { DecorMeta } from './decor';
 
 /** The land-use biome of a retained map. */
 export function decorBiome(meta: Pick<DecorMeta, 'query' | 'tags'>): BiomeName {
-  return climateZoneBiome[new URLSearchParams(meta.query).get('climate') ?? meta.tags.climate ?? 'temperate'] ?? 'temperate';
+  const query = new URLSearchParams(meta.query);
+  // Underground environments cannot be reconstructed from their surface climate.
+  if ((query.get('biome') ?? meta.tags.biome) === 'underdark') return 'underdark';
+  return climateZoneBiome[query.get('climate') ?? meta.tags.climate ?? 'temperate'] ?? 'temperate';
 }
 
 /** The retained recipe owns the climate, including custom numerical values. */

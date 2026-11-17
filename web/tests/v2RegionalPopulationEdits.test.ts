@@ -14,21 +14,31 @@ describe('regional population controls', () => {
     editRegionalPopulation(s,'village',undefined);
     expect(s.region?.demography?.counts).toEqual({hamlet:0});
   });
-  it('recomputes distribution and density when population replaces old fixed counts', () => {
+  it('resizes the places when population changes, keeping their number and the fixed counts', () => {
     const s=defaultSettings();s.extent=40000;s.options.culture='european-organic';
     s.terrain!.climate='temperate';s.terrain!.relief='flat';
-    s.region={demography:{density:2,counts:{city:0,town:0,village:100,hamlet:55,farmstead:150},isolatedCount:300,followCulture:false},placement:{mode:'counts',counts:{village:100}}};
+    s.region={demography:{density:2,counts:{village:3},followCulture:false}};
+    const before=regionalPopulation(s);
     editRegionalPopulation(s,'population',10000);
     const small=regionalPopulation(s);
-    expect(s.region.demography).toEqual({population:10000,followCulture:false});
-    expect(s.region.placement?.counts).toBeUndefined();
-    expect(small.places).toHaveLength(5);expect(small.density).toBe(10000/1600);
+    expect(s.region.demography).toEqual({population:10000,counts:{village:3},followCulture:false});
+    expect(small.places).toHaveLength(before.places.length);expect(small.density).toBe(10000/1600);
     editRegionalPopulation(s,'population',100000);
     const large=regionalPopulation(s);
-    expect(large.counts).not.toEqual(small.counts);
+    expect(large.places).toHaveLength(before.places.length);expect(large.counts.village).toBe(3);
     expect(large.allocatedPopulation).toBe(100000);expect(large.density).toBe(100000/1600);
-    expect(large.isolatedCount).toBe(10);
     expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(large);
+  });
+  it('adds the inhabitants of an added place to a typed population', () => {
+    const s=defaultSettings();s.extent=10000;s.options.culture='european-organic';
+    s.terrain!.climate='temperate';s.terrain!.relief='flat';
+    editRegionalPopulation(s,'population',7000);
+    const before=regionalPopulation(s);
+    editRegionalPopulation(s,'town',before.counts.town+1);
+    expect(s.region?.demography?.population).toBe(7000+before.classSizes.town);
+    expect(regionalPopulation(s).places).toHaveLength(before.places.length+1);
+    editRegionalPopulation(s,'town',undefined);
+    expect(s.region?.demography?.population).toBe(7000);
   });
   it('uses the most recently edited density instead of keeping the previous explicit population', () => {
     const s=defaultSettings();s.extent=10000;

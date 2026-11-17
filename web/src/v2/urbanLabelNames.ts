@@ -221,7 +221,7 @@ export const urbanExtraFieldNames: Record<string, readonly [string, string]> = {
   "plannedWall": ["Planned wall", "Mur planifié"],
   "heightsCastle": ["Heights castle", "Château des hauteurs"],
   "wallExtension": ["Wall extension", "Extension des murs"],
-  "lagoonCanals": ["Lagoon canals", "Canaux de lagune"],
+  "lagoonCanals": ["Canal density (empty: culture)", "Densité des canaux (vide : culture)"],
   "naturalCampApproaches": ["Natural camp approaches", "Accès naturels du camp"],
   "campRingWobble": ["Camp ring wobble", "Ondulation de l’anneau du camp"],
   "streetFrontage": ["Street frontage", "Façade sur rue"],

@@ -1,7 +1,7 @@
 import type { Options, World } from '../gen/types';
 import type { V2Settings, V2Project } from './contracts';
 import { V2_ENGINE_VERSION } from './cache';
-import { CULTURES, SITE_ARCHETYPES } from '../gen/options';
+import { CULTURES, SITE_ARCHETYPES, WALL_STYLES } from '../gen/options';
 import { normalizeRuntime } from './runtimeChoices';
 import { validateTerrainSettings, migrateTerrainClimate, TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX } from './terrainSettings';
 import { validateRegionSettings } from './regionSettings';
@@ -42,6 +42,7 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   checkEnum(o.nameSource,['auto','geographic','invented','mixed'],'source des noms');
   checkEnum(o.workflow, ['environment', 'automatic', 'list'], 'parcours');
   for (const key of ['moat', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities']) checkEnum(o[key], ['auto', 'yes', 'no'], key);
+  checkEnum(o.wallStyle, WALL_STYLES, 'style de fortification');
   for (const key of ['suburbs', 'shantytowns']) checkEnum(o[key], ['auto', 'none', 'some', 'many'], key);
   checkEnum(o.castles, ['auto', '0', '1', '2', '3'], 'châteaux');
   checkEnum(o.lakes, ['auto', 'none', 'some'], 'lacs');
@@ -83,6 +84,7 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (!isRecord(value.runtime)) throw new Error('Configuration du moteur invalide.');
     checkEnum(value.runtime.compute, ['auto', 'cpu', 'gpu'], 'calcul');
     checkEnum(value.runtime.backend, ['typescript', 'rust', 'native'], 'moteur');
+    if (value.runtime.autoBackend !== undefined && typeof value.runtime.autoBackend !== 'boolean') throw new Error('Configuration du moteur invalide.');
     checkEnum(value.runtime.source, ['procedural', 'procedural-phasor', 'neural-wasm', 'neural-python', 'neural'], 'source de relief');
     if (!value.runtime.compute || !value.runtime.backend || !value.runtime.source) throw new Error('Configuration du moteur incomplète.');
     if (value.runtime.resolution !== undefined) finite(value.runtime.resolution, 'résolution moteur', 64, 1024);
@@ -98,6 +100,7 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
   if (value.scene !== undefined) validateSceneClock(value.scene);
   if (value.naming !== undefined) {
     if (!isRecord(value.naming)) throw new Error('Nommage invalide.');
+    checkEnum(value.naming.toponymCulture, CULTURES, 'culture des toponymes');
     checkEnum(value.naming.mode, ['cultural', 'localized'], 'mode des toponymes');
     checkEnum(value.naming.displayLanguage, ['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'], 'langue d’affichage des toponymes');
     checkEnum(value.naming.mapLanguage,['ui','fr','en','ja','ar','es','pt','zh','ru'],'langue de la carte');

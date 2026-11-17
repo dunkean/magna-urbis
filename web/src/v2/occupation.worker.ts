@@ -34,7 +34,7 @@ ctx.onmessage = ({ data }: MessageEvent<DisplayPrepRequest>) => {
         case 'horizon': result = reliefHorizonChannel(data.input.relief, data.input.azimuth, data.input.resolution); break;
         case 'register': occupation.register(data.input.revision, data.input.packed); break;
         case 'release': occupation.release(data.input.revision); break;
-        case 'occupation': result = occupation.occupation(data.input.landuseRevision, data.input.revision, data.input.corridors); break;
+        case 'occupation': result = occupation.occupation(data.input.landuseRevision, data.input.revision, data.input.corridors, data.input.clearings); break;
         case 'detail': result = occupation.detail(data.input.landuseRevision, data.input.cultures); break;
         case 'merge': result = occupation.merge(data.input.shapes, data.input.source, data.input.retained); break;
         // Forest retains its beach/base caches for slider edits; never detach those cached planes.

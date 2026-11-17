@@ -13,6 +13,7 @@ import type { Enclosure, Point, Shape } from '../../../rust/bridge/urban';
 import type { Box, CityLod, CityPalette, CityScene } from './cityCanvas';
 import { META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
 import { earcut } from './cityGlEarcut';
+import { moatSpans, moatSpanShape } from './city3dMoat';
 import { nightRoof } from './cityNight';
 
 // ---------------------------------------------------------------- geometry
@@ -172,6 +173,8 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
   }
   const polys: WallPoly[] = [], add = (cat: Cat, shape: Shape | undefined, fam: Family = family): void => { if ((shape?.outer?.length ?? 0) >= 3) polys.push({ cat, family: fam, shape: shape! }); };
   for (const d of e.ditch ?? []) add(d.kind === 'wet' ? 'ditchWet' : 'ditchDry', d.shape);
+  // The moat runs on under each gate street (the bridge is the street drawn over it), in 2D as in the dug 3D ground.
+  for (const span of moatSpans(e.gatehouses ?? [], e.ditch ?? [])) add(span.wet ? 'ditchWet' : 'ditchDry', moatSpanShape(span));
   for (const w of e.outworks ?? []) add(w.kind === 'glacis' ? 'glacis' : w.kind === 'citadel' ? 'citadel'
     : w.kind === 'river-chain' ? 'chain' : ['bridge-tower', 'facing-tower'].includes(w.kind) ? 'tower'
       : w.kind === 'bridge-gatehouse' ? 'gatehouse' : 'work', w.shape);

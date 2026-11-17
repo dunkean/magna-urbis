@@ -1,4 +1,4 @@
-import { underdarkFarmBeds } from '../../../rust/bridge/terrainRenderUnderdark';
+import { underdarkSceneLook } from '../render/underdarkLighting';
 import { cityGroundSettings, cityGroundLook } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
 import { decorWater3d } from '../ui/decorWater3d';
@@ -30,6 +30,7 @@ import { getLanguage, onLanguageChange } from './i18n';
 import { getDistanceUnit } from './units';
 import { mapPresentation } from './mapPresentation';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
+import { drawTunnelPortals } from '../render/caveTunnels';
 import { placeholderPlacedBuildings } from '../render/farmRoofs';
 import { provideFurniture3d, refreshFurniture3d } from '../ui/legendOverlay3d';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
@@ -137,7 +138,7 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
       const cells = document.createElement('canvas'); cells.width = cells.height = raster.n; cells.getContext('2d')!.putImageData(pixels, 0, 0);
       ctx.imageSmoothingEnabled = false; ctx.drawImage(cells, 0, 0, side, side); ctx.imageSmoothingEnabled = true;
       const out = ctx.getImageData(0, 0, side, side);
-      paintSeaCover(out.data, sea.data, rgba);
+      paintSeaCover(out.data, sea.data, rgba, sea.n);
       ctx.putImageData(out, 0, 0);
     }
     const firstLake = world.terrain.coastline.length, lastLake = firstLake + world.terrain.lakes.length, redrawn = active && !ink && regimeDisplay?.riverMode === 'vector' && !!vector?.rivers;
@@ -185,9 +186,8 @@ export function v2CityViewPatch(previous: City3dViewSettings, value: City3dViewS
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {
   const config = effectiveTerrainSettings(settings, world.mapSize), r = v2Resolved3d(settings, world), native = renderScene(world, settings).nativeTerrain;
-  return cityGroundSettings(r, ground, { seed: world.seed, climate: config.climateValues!, climateZone: config.climateZone, underdark: world.options.biome === 'underdark',
-    townGlow: world.options.biome === 'underdark' ? Float32Array.from((world.settlements ?? []).slice(0, 16).flatMap(s => [s.center.x, s.center.y, Math.max(120, (s.radius ?? 200) * 1.6)])) : undefined,
-    farmBeds: world.options.biome === 'underdark' ? underdarkFarmBeds(world.landuse?.farmsteads, world.settlements) : undefined,
+  return cityGroundSettings(r, ground, { seed: world.seed, climate: config.climateValues!, climateZone: config.climateZone,
+    ...underdarkSceneLook(world.options.biome, r.composition.ambience, world.settlements, world.landuse?.farmsteads),
     sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell, relief: config.relief });
 }
 export function createV2Terrain3dSampler(world: World, settings: V2Settings, ground: City3dGround): ReturnType<typeof createTerrainSurfaceSampler> {
@@ -332,7 +332,11 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getSiteGround: (box, mpp) => {
       const sites = activitySitesOf(options.getWorld());
       const hit = sites.some(s => s.installations?.some(g => typeof g === 'object' && g.points.some(p => p.x >= box.minX - 20 && p.x <= box.maxX + 20 && p.y >= box.minY - 20 && p.y <= box.maxY + 20)));
-      return hit ? (ctx, natural) => { drawInstallations(ctx, sites, box, mpp, natural); } : undefined;
+      // Dug road tunnels: framed dark openings at both mouths, in the rock face (render/caveTunnels.ts).
+      const terrain = options.getWorld()?.terrain;
+      const portals = terrain?.caverns?.tunnels?.filter(t => t.kind === 'dug' && t.path.some(p => p.x >= box.minX - 60 && p.x <= box.maxX + 60 && p.y >= box.minY - 60 && p.y <= box.maxY + 60));
+      if (!hit && !portals?.length) return undefined;
+      return (ctx, natural) => { if (hit) drawInstallations(ctx, sites, box, mpp, natural); if (portals?.length) drawTunnelPortals(ctx, portals, terrain!.height.cell, mpp); };
     },
     getPlaceholderBuildings: () => placeholderPlacedBuildings(options.getWorld()),
     getBuildingsVisible: () => { const b = v2Resolved3d(options.getSettings()).composition.buildings; return b.visible && b.meshes !== 'none'; }, getScene: () => scene, getSelected: options.getSelected, onSelect: options.onSelect, getBackground: options.getBackground, getBackgroundImage: options.getBackgroundImage,
@@ -370,7 +374,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       if (patch) options.onAppearancePatch(patch);
     },
     getPlanOptions: () => city3dPlanOptions(v2Resolved3d(options.getSettings(), options.getWorld())),
-    getBuildingAppearance: () => { const r = v2Resolved3d(options.getSettings()); return { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: r.composition.ambience }; },
+    getBuildingAppearance: () => city3dPlanOptions(v2Resolved3d(options.getSettings(), options.getWorld())).appearance,
     getTextured: options.getTextured, setTextured: options.setTextured, onCamera: options.onCamera, details: service });
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
     prepare: async () => { update(); const world = options.getWorld(), settings = options.getSettings(); if (world) await v2DisplayForestAsync(world, settings, v2Resolved3d(settings, world)); await view.prepare(); },

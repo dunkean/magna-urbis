@@ -171,6 +171,19 @@ describe('house yards', () => {
     const hedge = buildYardEnclosures(f.scene, farm.map(h => ({ ...h, enclosure: 'hedge' as const })));
     expect(hedge.enclosures.length).toBeGreaterThan(0); expect(hedge.enclosures.every(e => e.material === 'hedge')).toBe(true);
   });
+  it('a closed-court or round compound walls its own court (farmstead ring), not the whole lot', () => {
+    const f = fixture('yoruba'), ring = rect(2, 4, 16, 20).outer;
+    const compound = [{ parcel_id: 'p0', footprint: [rect(5, 6, 10, 5), rect(5, 16, 3, 3), rect(12, 16, 3, 3)],
+      programme: { farmstead: { farm: true, enclosure: 'wall', layout: 'closed', ring } } }];
+    const r = buildYardEnclosures(f.scene, compound);
+    expect(r.yards).toHaveLength(1); expect(r.yards[0].shape.outer).toEqual(ring);
+    expect(r.gates).toHaveLength(1); // one entrance, toward the street
+    expect(Math.min(r.gates[0].a.y, r.gates[0].b.y)).toBeLessThan(4.01);
+    for (const [a, b] of edges(r)) for (const q of [a, b]) expect(q.y).toBeLessThanOrEqual(24.01); // never on the far lot limit (y = 50)
+    // any other farm type keeps the lot limits
+    const plain = buildYardEnclosures(f.scene, compound.map(h => ({ ...h, programme: { farmstead: { ...h.programme.farmstead, layout: 'scattered' } } })));
+    expect(plain.yards.some(y => y.shape.outer.some(q => q.y > 49))).toBe(true);
+  });
   it('culture data decides who fences: waterborne, elven and camp cultures have no yards', () => {
     for (const c of ['stilt-town', 'merfolk-tidal', 'lizardfolk-swamp', 'venetian-lagoon', 'pnw-plank-village', 'elven', 'nomad-camp']) {
       expect(cultureEnclosure(c).plot).toBe(0);

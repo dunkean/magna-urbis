@@ -118,7 +118,7 @@ export class MinimalRenderer {
       }
       // Names are already part of the product. Never invoke name generation or presentation engines.
       const names = new Map(world.names?.entries.filter(e => e.id.startsWith('settlement:')).map(e => [e.id.slice(11), e.text]));
-      this.places = (world.settlements ?? []).map(place => ({ ...place.center, name: names.get(place.key) ?? place.name ?? (place.main ? world.names?.town : '') ?? '', population: place.population }))
+      this.places = (world.settlements ?? []).map(place => ({ ...(place.core ?? place.center), name: names.get(place.key) ?? place.name ?? (place.main ? world.names?.town : '') ?? '', population: place.population }))
         .filter(place => !!place.name).sort((a, b) => b.population - a.population);
       if (!this.places.length && world.names?.town && world.site) this.places = [{ ...world.site.center, name: world.names.town, population: 1 }];
       this.textLayout.labels = []; readiness?.mark('fields-ready');

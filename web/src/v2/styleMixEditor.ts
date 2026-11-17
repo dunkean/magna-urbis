@@ -111,26 +111,30 @@ export interface StyleSheetEditorOptions {
   defaultCulture(): string;
   /** `data-setting-path` prefix of the sheet (V2: `layout.styleSheet`). */
   path?: string;
+  /** V2 advanced view: facets and growth zones are titled blocks shown at once, not nested disclosures. */
+  flat?: boolean;
 }
-export interface StyleSheetEditor extends MixEditor { root: HTMLDetailsElement }
+export interface StyleSheetEditor extends MixEditor { root: HTMLElement }
 
 /** "Hybrid city" section: per facet, a whole-place mix and an expandable per-zone override. */
 export function mountStyleSheetEditor(parent: HTMLElement, o: StyleSheetEditorOptions): StyleSheetEditor {
-  const root = document.createElement('details'); root.className = 'urban-control-section urban-style-sheet';
-  const summary = document.createElement('summary'); setText(summary, 'Hybrid city'); root.append(summary); parent.append(root);
+  // Disclosure or titled block: `flat` swaps the element pair, the content and its handlers are the same.
+  const block = (tag: 'h4' | 'h5'): [HTMLElement, HTMLElement] => o.flat ? [document.createElement('section'), Object.assign(document.createElement(tag), { className: 'urban-section-title' })] : [document.createElement('details'), document.createElement('summary')];
+  const [root, summary] = block('h4'); root.className = 'urban-control-section urban-style-sheet';
+  setText(summary, 'Hybrid city'); root.append(summary); parent.append(root);
   const intro = document.createElement('small'); setText(intro, 'Each facet of the town draws from a weighted mix of cultures. An empty facet follows the place’s own culture.'); root.append(intro);
   const editors: MixEditor[] = [], facetStates: (() => void)[] = [];
   for (const facet of STYLE_FACETS) {
     const text = STYLE_FACET_TEXT[facet];
-    const box = document.createElement('details'); box.className = 'urban-control-section urban-style-facet'; box.dataset.styleFacet = facet;
-    const title = document.createElement('summary'); setText(title, text.title[0]); box.append(title);
+    const [box, title] = block('h4'); box.className = 'urban-control-section urban-style-facet'; box.dataset.styleFacet = facet;
+    setText(title, text.title[0]); box.append(title);
     const hint = document.createElement('small'); setText(hint, text.hint[0]); box.append(hint);
     const whole = document.createElement('div'); whole.className = 'urban-style-mix'; box.append(whole);
     const caption = document.createElement('h4'); setText(caption, 'Whole place'); whole.append(caption);
     const base = o.path ? `${o.path}.${facet}` : undefined;
     editors.push(mountMixEditor(whole, { get: () => o.getMix(facet), set: mix => o.setMix(facet, undefined, mix), defaultCulture: o.defaultCulture, slider: true, spreadText: 'explicit', path: base && `${base}.city` }));
-    const zones = document.createElement('details'); zones.className = 'urban-style-zones';
-    const zonesTitle = document.createElement('summary'); setText(zonesTitle, 'By growth zone'); zones.append(zonesTitle);
+    const [zones, zonesTitle] = block('h5'); zones.className = 'urban-style-zones';
+    setText(zonesTitle, 'By growth zone'); zones.append(zonesTitle);
     const zonesHint = document.createElement('small'); setText(zonesHint, 'An empty zone uses the whole-place mix.'); zones.append(zonesHint);
     for (const zone of URBAN_ZONES) {
       const area = document.createElement('div'); area.className = 'urban-style-mix'; area.dataset.styleZone = zone;
@@ -143,7 +147,7 @@ export function mountStyleSheetEditor(parent: HTMLElement, o: StyleSheetEditorOp
     facetStates.push(() => {
       const zoned = URBAN_ZONES.some(zone => usable(o.getMix(facet, zone)));
       box.classList.toggle('urban-style-set', zoned || usable(o.getMix(facet)));
-      if (!shown && (zoned || usable(o.getMix(facet)))) { box.open = true; zones.open ||= zoned; shown = true; }
+      if (!shown && (zoned || usable(o.getMix(facet))) && box instanceof HTMLDetailsElement && zones instanceof HTMLDetailsElement) { box.open = true; zones.open ||= zoned; shown = true; }
     });
     root.append(box);
   }

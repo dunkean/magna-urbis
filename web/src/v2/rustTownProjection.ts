@@ -2,6 +2,7 @@
 // (rustUrban.ts) and the page, which rebuilds it from the transferred town packs (urbanPack.ts) instead of receiving a clone.
 import type { UrbanLayer, UrbanBuilding, UrbanZone, StreetRole } from '../gen/types';
 import type { RustTownSnapshot } from './rustUrban';
+import { harbourPlatform } from '../render/harbourStyle';
 
 /** The last projection of each snapshot (urban layer, population, culture): a worker/page hop sends the urban layers that
  * share its arrays (naming copies included) without those arrays, and the receiver projects them again (urbanPack.ts). */
@@ -79,6 +80,7 @@ function projectTown(snapshot: RustTownSnapshot, population: number, culture: st
     backLand: [...parcels.filter(p => ['garden', 'common', 'reserve', 'residual', 'court'].includes(p.use)).map(p => p.shape),
       ...(snapshot.scene?.open_spaces.flatMap(space => space.surface) ?? [])],
     ruralReserve: (layout.enclosures ?? []).flatMap(w => w.reserve ?? []),
-    quays: layout.structure?.quays?.map(quay => [...quay.shape.outer, quay.shape.outer[0]]),
+    // The legacy scene keeps the platforms only; boats and the other harbour furniture are drawn from the layout (harbourStyle.ts).
+    quays: layout.structure?.quays?.filter(quay => harbourPlatform(quay.kind)).map(quay => [...quay.shape.outer, quay.shape.outer[0]]),
   };
 }

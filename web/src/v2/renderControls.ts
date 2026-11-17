@@ -128,12 +128,14 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   const levels = {} as Record<RenderSection, SectionLevels>;
   const conditionalPaths = [...fantasyFields, ...forestFields].map(field => field.path.replace('appearance.', ''));
   for (const key of ['ground', 'relief', 'vegetation', 'landuse', 'water', 'roads', 'buildings', 'ambience', 'text', 'general'] as const) {
-    const level = levels[key] = splitSectionLevels(panel.bodies[key], text);
+    // The V2 shows these sections inside its advanced render view: fine controls stay open in place.
+    const level = levels[key] = splitSectionLevels(panel.bodies[key], text, true);
     mountCompositionSection(level, key, mountIn, text);
     mountIn(level.advanced, byPath(...RENDER_SECTION_FIELDS[key].filter(path => !conditionalPaths.includes(path))));
   }
   const conditional = (label: string, fields: ParameterField[]) => {
-    const group = document.createElement('details'), summary = document.createElement('summary'); setText(summary, label); group.append(summary);
+    // A titled block shown only when the style uses it (sync), never a collapsible group.
+    const group = document.createElement('div'), summary = document.createElement('h5'); group.className = 'v2-render-conditional'; summary.className = 'v2-render-subhead'; setText(summary, label); group.append(summary);
     const body = document.createElement('div'); group.append(body); levels.vegetation.advanced.append(group);
     forms.push(mountParameterForm(body, fields, { getValue: valueOf, setValue: (path, value) => { writeAppearanceControl(bindings.getSettings(), path, value); bindings.onChange(); sync(); } }));
     return group;

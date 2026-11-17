@@ -1,6 +1,6 @@
 /** Settings › compute and rendering backends. Shows what this machine can do and what each
  * generation actually used; unavailable choices stay visible, disabled, with the reason. */
-import { detectPlatform, loopbackServer, type PlatformCapabilities } from './platform';
+import { detectPlatform, loopbackServer, runtimeOptions, type PlatformCapabilities } from './platform';
 import { getRenderMode, setRenderMode, onRenderMode, type RenderMode, type RenderStats } from '../render/renderMode';
 import { registerMessages, setText, translate, onLanguageChange } from './i18n';
 import type { World } from '../gen/types';
@@ -8,10 +8,12 @@ import { executionOverview } from './executionOverview';
 import { iconImg, type IconId } from './stageIcons';
 import type { V2Settings } from './contracts';
 import { runtimeChoiceStates, runtimeValues, setRuntimeChoice, type RuntimeKey } from './runtimeChoices';
+import { getDistanceUnit, setDistanceUnit, onUnitsChange, type DistanceUnit } from './units';
 
 export type ThreadsMode = 'auto' | 'on' | 'off' | 'pool';
 export interface BackendStatus {
   checked: boolean;
+  servicesChecked?: boolean;
   webgpu: boolean; adapter?: string;
   isolated: boolean; sharedMemory: boolean; cores: number;
   threads: ThreadsMode;
@@ -19,14 +21,18 @@ export interface BackendStatus {
   wasmThreads?: unknown;
   native: { available: boolean; server: string; capabilities: string[]; error?: string };
   python: { available: boolean; server: string; loaded: boolean; message?: string; error?: string };
+  /** Native neural service (:8792), probed in the local profile and on desktop only. */
+  nativeNeural?: { available: boolean; server: string; error?: string };
   render: { mode: RenderMode; path?: 'gpu' | 'cpu'; reason?: string };
 }
 const copy = (en: string, fr: string) => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
+  preferences: copy('Preferences', 'Préférences'), units: copy('Units', 'Unités'),
+  metric: copy('Metric (m / km)', 'Métrique (m / km)'), imperial: copy('Imperial (ft / mi)', 'Impérial (ft / mi)'), yards: copy('Yards (yd / mi)', 'Yards (yd / mi)'),
   browser: copy('Compute in this browser', 'Calcul dans ce navigateur'), local: copy('Local services', 'Services locaux'), drawing: copy('Map rendering', 'Rendu de la carte'),
   wasm: copy('Rust / WASM', 'Rust / WASM'), webgpu: copy('WebGPU', 'WebGPU'), native: copy('Native Rust engine', 'Moteur Rust natif'), python: copy('Python neural server', 'Serveur neuronal Python'),
   render: copy('Render path', 'Chemin de rendu'), available: copy('Available', 'Disponible'), unavailable: copy('Unavailable', 'Indisponible'), online: copy('Online', 'En ligne'), offline: copy('Offline', 'Hors ligne'),
-  checking: copy('Checking…', 'Vérification…'), active: copy('Active', 'Actif'),
+  checking: copy('Checking…', 'Vérification…'), notChecked: copy('Not checked', 'Non vérifié'), active: copy('Active', 'Actif'),
   threads: copy('Threads', 'Threads'), reload: copy('Reload to apply', 'Recharger pour appliquer'),
   single: copy('Single thread', 'Un seul thread'), multi: copy('Threads (shared memory)', 'Threads (mémoire partagée)'), pool: copy('Worker pool', 'Pool de workers'), auto: copy('Automatic', 'Automatique'),
   isolation: copy('Needs cross-origin isolation (COOP / COEP headers or the coi service worker). This page is not isolated.', 'Nécessite l’isolation cross-origin (en-têtes COOP / COEP ou service worker coi). Cette page n’est pas isolée.'),
@@ -36,7 +42,7 @@ const T = {
   noPython: copy('No Python/CUDA neural service answered on this address (npm run neural:python).', 'Aucun service neuronal Python/CUDA ne répond à cette adresse (npm run neural:python).'),
   execution: copy('Next execution', 'Prochaine exécution'), engine: copy('Engine', 'Moteur'), compute: copy('Compute', 'Calcul'), neuralRuntime: copy('Neural runtime', 'Runtime neuronal'),
   advanced: copy('Advanced overrides', 'Forçages avancés'), follow: copy('Follow engine', 'Suivre le moteur'),
-  engRust: copy('Rust · in the browser', 'Rust · dans le navigateur'), engNative: copy('Rust · native service', 'Rust · service natif'), engTs: copy('TypeScript · classic', 'TypeScript · classique'),
+  engAuto: copy('Automatic · native when reachable', 'Automatique · natif si joignable'), engRust: copy('Rust · in the browser', 'Rust · dans le navigateur'), engNative: copy('Rust · native service', 'Rust · service natif'), engTs: copy('TypeScript · classic', 'TypeScript · classique'),
   cAuto: copy('Automatic · best available', 'Automatique · meilleur disponible'), cCpu: copy('CPU', 'CPU'), cGpu: copy('GPU', 'GPU'),
   nAuto: copy('Follow engine (browser / native)', 'Suivre le moteur (navigateur / natif)'), nPython: copy('Python / PyTorch server', 'Serveur Python / PyTorch'),
   sampling: copy('Terrain sampling', 'Échantillonnage du relief'), sCpu: copy('CPU · Rust reference', 'CPU · référence Rust'), sGpu: copy('GPU · FP32', 'GPU · FP32'),
@@ -92,18 +98,22 @@ const listeners = new Set<(status: BackendStatus) => void>();
 export const backendStatus = (): BackendStatus => status;
 export const onBackendStatus = (listener: (status: BackendStatus) => void): (() => void) => { listeners.add(listener); return () => listeners.delete(listener); };
 
-export interface SettingsPanelBindings { localServer(): string; pythonServer(): string; log(message: string): void; getSettings?(): V2Settings; getWorld?(): World | undefined; onRuntimeChange?(): void; busy?(): boolean }
+export interface SettingsPanelBindings { localServer(): string; pythonServer(): string; log(message: string): void; getSettings?(): V2Settings; getWorld?(): World | undefined; getRuntimeStatus?(): string | undefined; onRuntimeChange?(): void; busy?(): boolean }
 /** Probes are read-only: GET /status on the loopback services, a WebGPU adapter request. */
 export async function refreshBackends(bindings: SettingsPanelBindings): Promise<BackendStatus> {
   let caps: PlatformCapabilities;
   const localServer = loopbackServer(bindings.localServer()), pythonServer = loopbackServer(bindings.pythonServer());
-  caps = await detectPlatform({ profile: 'local', localServer, pythonServer, onProgress: event => bindings.log(event.message) });
+  const settings = bindings.getSettings?.();
+  // The local profile always probes Python: automatic neural relief uses it when the native neural service is not usable.
+  const local = runtimeOptions().profile === 'local', probePython = local || settings?.runtime?.source === 'neural-python';
+  caps = await detectPlatform({ profile: local ? 'local' : 'web', probePython, localServer, pythonServer, neuralServer: settings?.runtime?.neuralServer, onProgress: event => bindings.log(event.message) });
   const stats = (window as unknown as { magnaRenderStats?: RenderStats }).magnaRenderStats;
-  status = { ...status, checked: true, webgpu: caps.webgpu, adapter: caps.adapterName,
+  status = { ...status, checked: true, servicesChecked: local || probePython, webgpu: caps.webgpu, adapter: caps.adapterName,
     isolated: typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated, sharedMemory: typeof SharedArrayBuffer !== 'undefined',
     wasmThreads: (window as unknown as { magnaWasmThreads?: unknown }).magnaWasmThreads,
     native: { available: caps.local.available, server: caps.local.server, capabilities: caps.local.capabilities, error: caps.local.error },
     python: { available: caps.python.available, server: caps.python.server, loaded: caps.python.loaded, message: caps.python.message, error: caps.python.error },
+    nativeNeural: local ? { ...caps.nativeNeural } : undefined,
     render: { mode: getRenderMode(), path: stats?.path, reason: stats?.reason } };
   listeners.forEach(listener => listener(status));
   return status;
@@ -128,23 +138,32 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
       for (const [value, label, disabledReason] of options) { const option = document.createElement('option'); option.value = value; setText(option, label); option.disabled = !!disabledReason; if (disabledReason) option.title = translate(disabledReason); element.append(option); }
       element.value = current; element.onchange = () => onChange(element.value); return element;
     };
+    section(T.preferences);
+    const units = document.createElement('div'); units.className = 'backend-control';
+    const unitsLabel = document.createElement('label'); unitsLabel.htmlFor = 'units-select'; setText(unitsLabel, T.units);
+    units.append(unitsLabel, select('units-select', getDistanceUnit(), [
+      ['m', T.metric, undefined], ['ft', T.imperial, undefined], ['yd', T.yards, undefined],
+    ], value => setDistanceUnit(value as DistanceUnit))); host.append(units);
     section(T.execution);
     if (bindings.getSettings) {
       const settings = bindings.getSettings(), values = runtimeValues(settings);
-      const states = runtimeChoiceStates(settings, { checked: s.checked, webgpu: s.webgpu, native: s.native.available, python: s.python.available });
+      const states = runtimeChoiceStates(settings, { checked: s.checked, servicesChecked: s.servicesChecked, webgpu: s.webgpu, native: s.native.available, python: s.python.available });
       const busy = bindings.busy?.() ?? false;
       const choice = (parent: HTMLElement, key: RuntimeKey, label: string, options: [string, string][]) => {
         const wrap = document.createElement('div'); wrap.className = 'backend-control'; wrap.dataset.runtimeChoice = key;
         const id = `exec-${key}`, name = document.createElement('label'); name.htmlFor = id; setText(name, label);
-        const element = select(id, values[key], options.map(([value, text]) => [value, text, states[key][value]?.enabled === false ? states[key][value].reason : undefined] as [string, string, string | undefined]), value => { setRuntimeChoice(bindings.getSettings!(), key, value); bindings.onRuntimeChange?.(); render(); });
+        const element = select(id, values[key], options.map(([value, text]) => [value, text, states[key][value]?.enabled === false ? states[key][value].reason : undefined] as [string, string, string | undefined]), value => { setRuntimeChoice(bindings.getSettings!(), key, value, { checked: s.checked, servicesChecked: s.servicesChecked, webgpu: s.webgpu, native: s.native.available, python: s.python.available, nativeNeural: s.nativeNeural?.available }); bindings.onRuntimeChange?.(); render(); });
         element.disabled = busy; wrap.append(name, element); parent.append(wrap);
         const reason = states[key][values[key]];
         if (reason?.enabled === false && reason.reason) { const note = document.createElement('small'); note.className = 'backend-choice-note'; setText(note, reason.reason); wrap.append(note); }
       };
       const exec = document.createElement('div'); exec.className = 'backend-execution'; exec.id = 'settings-execution'; host.append(exec);
-      choice(exec, 'engine', T.engine, [['rust', T.engRust], ['native', T.engNative], ['typescript', T.engTs]]);
-      choice(exec, 'compute', T.compute, [['auto', T.cAuto], ['cpu', T.cCpu], ['gpu', T.cGpu]]);
-      choice(exec, 'urban', T.city, [['', T.follow], ['typescript', T.uTs], ['rust', T.uRust], ['native', T.uNative]]);
+      const local = runtimeOptions().profile === 'local';
+      choice(exec, 'engine', T.engine, local ? [['auto', T.engAuto], ['rust', T.engRust], ['native', T.engNative], ['typescript', T.engTs]] : [['auto', T.engAuto], ['gpu', T.webgpu], ['cpu', T.cCpu]]);
+      const runtimeStatus = bindings.getRuntimeStatus?.();
+      if (runtimeStatus) { const note = document.createElement('small'); note.className = 'backend-choice-note'; note.setAttribute('role', 'status'); setText(note, runtimeStatus); exec.append(note); }
+      if (local) choice(exec, 'compute', T.compute, [['auto', T.cAuto], ['cpu', T.cCpu], ['gpu', T.cGpu]]);
+      if (local) choice(exec, 'urban', T.city, [['', T.follow], ['typescript', T.uTs], ['rust', T.uRust], ['native', T.uNative]]);
       if (settings.generation === 'neural') choice(exec, 'neural', T.neuralRuntime, [['auto', T.nAuto], ['python', T.nPython]]);
       const adv = document.createElement('details'); adv.className = 'backend-advanced'; adv.open = advancedOpen; adv.ontoggle = () => { advancedOpen = adv.open; };
       const summary = document.createElement('summary'); setText(summary, T.advanced); adv.append(summary); exec.append(adv);
@@ -185,11 +204,11 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
     row(s.threads === 'pool' ? 'backend-pool' : s.threads === 'on' ? 'backend-wasm-threads' : 'backend-wasm-single', T.wasm, 'ok', T.available,
       [translate(T.cores).replace('{n}', String(s.cores)), s.isolated ? 'crossOriginIsolated' : 'not isolated', published].filter(Boolean).join(' · '), threads);
     row('backend-webgpu', T.webgpu, s.checked ? s.webgpu ? 'ok' : 'off' : 'wait', s.checked ? s.webgpu ? T.available : T.unavailable : T.checking, s.webgpu ? s.adapter ?? 'WebGPU' : s.checked ? translate(T.noGpu) : '…');
-    section(T.local);
-    row('backend-native', T.native, s.checked ? s.native.available ? 'ok' : 'off' : 'wait', s.checked ? s.native.available ? T.online : T.offline : T.checking,
-      s.native.available ? `${s.native.server} · ${s.native.capabilities.slice(0, 6).join(', ')}` : `${s.native.server} · ${translate(T.noNative)}`);
-    row('backend-python', T.python, s.checked ? s.python.available ? 'ok' : 'off' : 'wait', s.checked ? s.python.available ? T.online : T.offline : T.checking,
-      s.python.available ? `${s.python.server} · ${s.python.message ?? (s.python.loaded ? 'models loaded' : 'CUDA')}` : `${s.python.server} · ${translate(T.noPython)}`);
+    if (runtimeOptions().profile === 'local' || bindings.getSettings?.().runtime?.source === 'neural-python') section(T.local);
+    if (runtimeOptions().profile === 'local') row('backend-native', T.native, s.servicesChecked ? s.native.available ? 'ok' : 'off' : 'wait', s.servicesChecked ? s.native.available ? T.online : T.offline : T.notChecked,
+      s.native.available ? `${s.native.server} · ${s.native.capabilities.slice(0, 6).join(', ')}` : s.servicesChecked ? `${s.native.server} · ${translate(T.noNative)}` : s.native.server);
+    if (bindings.getSettings?.().runtime?.source === 'neural-python') row('backend-python', T.python, s.servicesChecked ? s.python.available ? 'ok' : 'off' : 'wait', s.servicesChecked ? s.python.available ? T.online : T.offline : T.notChecked,
+      s.python.available ? `${s.python.server} · ${translate(s.python.message ?? (s.python.loaded ? 'models loaded' : 'CUDA'))}` : s.servicesChecked ? `${s.python.server} · ${translate(T.noPython)}` : s.python.server);
     section(T.drawing);
     const renderControl = document.createElement('div'); renderControl.className = 'backend-control';
     const renderLabel = document.createElement('label'); renderLabel.htmlFor = 'settings-render-mode'; setText(renderLabel, T.render);
@@ -202,6 +221,7 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
     const again = document.createElement('button'); again.type = 'button'; again.className = 'small'; setText(again, T.refresh); again.onclick = () => void refreshBackends(bindings).then(render); host.append(again);
   };
   onBackendStatus(render); onRenderMode(render); onLanguageChange(render);
+  onUnitsChange(() => { const select = host.querySelector<HTMLSelectElement>('#units-select'); if (select) select.value = getDistanceUnit(); });
   render(); return { render };
 }
 /** Header caption: the most capable available path, e.g. "Rust local · GPU". */

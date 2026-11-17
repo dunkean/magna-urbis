@@ -57,6 +57,13 @@ const sample = (): any[] => [{
 }];
 
 describe('parcel pack', () => {
+  it('transports planned residents separately from household counts', () => {
+    const input = sample(); input[0].programme.allocations[0].residents = 2;
+    const result = materializePartitions(decodeParcelPack(encode(input)));
+    expect(result[0].programme!.allocations[0].residents).toBe(2);
+    expect(result[0].programme!.allocations[0].households).toBe(2.5);
+    expect(result[0].programme!.allocations[1].residents).toBeUndefined();
+  });
   it('materialises the engine JSON exactly: keys, key order, absent optionals, numbers', () => {
     const expected = sample();
     const pack = decodeParcelPack(encode(expected, { id: 7, ms: 12.5, urbanSource: { version: 1, session: 's' } }));

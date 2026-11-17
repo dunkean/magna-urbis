@@ -1,5 +1,8 @@
 /** Naming and importance controls share the same catalog in all eight interface languages. */
 const rows = [
+  ['Toponym culture','Cultura de los topónimos','Cultura dos topónimos','地名文化','ثقافة أسماء الأماكن','Культура топонимов','地名の文化'],
+  ['Each place’s own culture','La cultura propia de cada lugar','A cultura própria de cada lugar','各地点自身的文化','ثقافة كل مكان الخاصة','Собственная культура каждого места','各地点固有の文化'],
+  ['Applies to all generated names, overriding advanced name profiles. Hand-edited names stay unchanged.','Se aplica a todos los nombres generados y sustituye los perfiles avanzados. Los nombres editados a mano se conservan.','Aplica-se a todos os nomes gerados, substituindo os perfis avançados. Os nomes editados à mão são preservados.','应用于所有生成的名称，覆盖高级名称风格。手动编辑的名称保持不变。','تنطبق على جميع الأسماء المولدة وتتجاوز أنماط الأسماء المتقدمة. تبقى الأسماء المعدلة يدويًا دون تغيير.','Применяется ко всем сгенерированным названиям, переопределяя расширенные профили. Названия, изменённые вручную, сохраняются.','すべての生成名に適用され、詳細な名前プロファイルより優先されます。手動で編集した名前は保持されます。'],
   ['Names are independent of building styles.','Los nombres son independientes del estilo de los edificios.','Os nomes são independentes do estilo das construções.','名称与建筑风格相互独立。','الأسماء مستقلة عن أنماط المباني.','Названия не зависят от стиля зданий.','名前は建築様式とは独立しています。'],
   ['Naming scope','Ámbito de los nombres','Âmbito dos nomes','命名范围','نطاق التسمية','Область именования','命名の範囲'],
   ['Name profile','Perfil de nombres','Perfil dos nomes','名称风格','نمط الأسماء','Профиль названий','名前のプロファイル'],

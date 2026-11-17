@@ -11,7 +11,9 @@ import { ROOF_PLANE_LIGHT_GLSL } from '../render/roofPlaneLight';
 
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
-export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
+export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number;
+  /** Underdark 3D (render/underdarkCavern.ts): the town lantern light level, the cave fog start and end (m), and the eye (x, y, height above the ground). */
+  cave?: { light: number; fog: [number, number]; eye: [number, number, number] } }
 /** `stride`: floats per vertex, 10: position, normal, uv in tiles + material layer (textured) or colour, then the
  * vertex's ground: the display exaggeration lifts a building's base with the relief, never its own height. */
 export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** Snow overlays need their own depth bias in both backends. */ snow?: boolean; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
@@ -34,8 +36,19 @@ ${ROOF_PLANE_LIGHT_GLSL}
 vec3 buildingNight(vec3 color,vec3 p,bool lit){
   if(uNight==0)return color;
   color=moonlight(color);
-  if(!lit)return color;
+  if(!lit||uNight==2)return color;
   return mix(color,vec3(1.,.61,.22),.93*(1.-smoothstep(.45,1.2,length(fwidth(p)))));
+}
+// Underdark: no sky. The town's own lanterns light it (warm, dimmed by the darkness), its lit openings glow, and
+// far buildings dissolve into the cave's darkness like the ground. uCave: on, light, fog start and end (m); uCaveEye: x, z, height.
+uniform vec4 uCave; uniform vec3 uCaveEye;
+vec3 buildingCave(vec3 color,vec3 p,bool lit,vec3 N){
+  if(uCave.x<.5)return color;
+  // No sky: roofs (faces turned up) get only the lanterns' side light, darker than the walls.
+  color*=vec3(1.,.84,.66)*uCave.y*mix(1.,.5,smoothstep(.45,.8,normalize(N).y));
+  if(lit&&uCave.x<1.5)color=mix(color,vec3(1.,.64,.28),.9*(1.-smoothstep(.45,1.2,length(fwidth(p)))));
+  vec2 d=p.xz-uCaveEye.xy;
+  return mix(color,vec3(.005,.005,.007),smoothstep(uCave.z,uCave.w,sqrt(dot(d,d)+uCaveEye.z*uCaveEye.z)));
 }
 `;
 /** Procedural grain of roof covers and wall materials for the flat-colour program: only the material's own units
@@ -163,7 +176,7 @@ ${coverLight}
 void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
-  float light=coverLight(buildingLight(N,N),cls,N);color=vec4(buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit),1.);}`;
+  float light=coverLight(buildingLight(N,N),cls,N);color=vec4(buildingCave(buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit),facadePosition,lit,N),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -217,7 +230,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=buildingLight(N,normalize(n));color=vec4(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),1.);
+  float light=buildingLight(N,normalize(n));color=vec4(buildingCave(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),facadePosition,litWindow>.5,N),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));
@@ -305,8 +318,11 @@ function faceUv(p: readonly number[], normal: readonly number[], layer: number):
 /** Native instances, with lazy material/sector buffers and a roof overview LOD.
  * Off-screen sectors require no roof traversal or GPU buffers. Plan (x,y),
  * altitude z become GL (x,z,y), before display exaggeration. */
+/** `uCave` of the building shaders: off, or on with the lantern light level and the fog range (m). */
+export const caveUniform = (frame: BuildingFrame, lightsOn = true): [number, number, number, number] => frame.cave ? [lightsOn ? 1 : 2, lightsOn ? frame.cave.light : .08, frame.cave.fog[0], frame.cave.fog[1]] : [0, 1, 1e9, 2e9];
 export class UrbanBuildingPass {
   protected night = false;
+  protected lightsOn = false;
   protected sectors: Sector[] = [];
   private colorProgram?: WebGLProgram;
   /** Draw calls and sectors of the last draw (render stats). */
@@ -327,7 +343,8 @@ export class UrbanBuildingPass {
 
   setScene(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance): void {
     this.night=appearance.ambience==='night';
-    appearance={...appearance,ambience:undefined};
+    this.lightsOn=appearance.lightsOn??this.night;
+    appearance={...appearance,ambience:undefined,lightsOn:undefined};
     const key = JSON.stringify(appearance) + roofSeasonKey();
     if (this.source === scene && this.appearanceKey === key) return;
     this.clear(); this.source = scene; this.appearance = { ...appearance }; this.appearanceKey = key;
@@ -384,8 +401,8 @@ export class UrbanBuildingPass {
       const tone = Math.round((h >>> 0) / 0xffffffff * 15) / 15;
       const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
       const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
-      // Walls and bridges follow the relief whole; a building keeps its real height above its ground.
-      const ground = /^city3d-(wall|bridge)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
+      // Terrain structures follow the relief whole; a building keeps its real height above its ground.
+      const ground = /^city3d-(wall|bridge|quay|harbour)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
       const paintFace = (face: BuildingTriangle, snow = 0): void => {
         const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(raw ?? '');
         const id = tm ? raw.slice(0, tm.index) : raw;
@@ -526,7 +543,8 @@ export class UrbanBuildingPass {
       gl.activeTexture(gl.TEXTURE0);
     }
     gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix); gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
-    gl.uniform1i(gl.getUniformLocation(p,'uNight'),+this.night);
+    gl.uniform1i(gl.getUniformLocation(p,'uNight'),frame.cave||!this.night?0:this.lightsOn?1:2);
+    gl.uniform4fv(gl.getUniformLocation(p,'uCave'),caveUniform(frame,this.lightsOn)); gl.uniform3fv(gl.getUniformLocation(p,'uCaveEye'),frame.cave?.eye??[0,0,0]);
     for (const sector of shown) {
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
       gl.uniform2f(gl.getUniformLocation(p,'sectorOrigin'),sector.origin[0],sector.origin[1]);

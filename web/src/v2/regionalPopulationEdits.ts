@@ -1,26 +1,33 @@
 import type { V2Settings } from './contracts';
-import { POPULATION_CLASSES, type PopulationClass } from './regionalPopulation';
+import { POPULATION_CLASSES, regionalPopulation, type PopulationClass } from './regionalPopulation';
 
 export type RegionalPopulationField = PopulationClass | 'population' | 'density' | 'isolatedCount' | 'isolatedDensity';
 
-/** A parent budget change recomputes its distribution; a class edit pins that class alone. */
+/** The list of places is primary. A class edit pins that class and changes the population by the
+ * inhabitants of the places added or removed; a population or density edit resizes the places and
+ * keeps their number. */
 export function editRegionalPopulation(settings: V2Settings, key: RegionalPopulationField, value: number | undefined): void {
   const region = settings.region ??= {}, d = region.demography ??= {};
   if (region.placement?.mode === 'list' || !region.placement?.mode && region.placement?.list?.length) {
     region.placement.mode = 'auto'; delete region.placement.list;
   }
   if (POPULATION_CLASSES.includes(key as PopulationClass)) {
-    const id = key as PopulationClass, counts = d.counts ??= {};
+    const id = key as PopulationClass, counts = d.counts ??= {}, before = regionalPopulation(settings);
     if (value === undefined) {
       delete counts[id]; if (region.placement?.counts) delete region.placement.counts[id];
       if (!Object.keys(counts).length) delete d.counts;
     } else counts[id] = value;
+    // A typed population or density follows the places: without one, the plan derives it itself.
+    if (d.population !== undefined || d.density !== undefined) {
+      const after = regionalPopulation({ ...settings, region: { ...region, demography: { ...d, population: undefined, density: undefined } } });
+      const delta = (after.counts[id] - before.counts[id]) * before.classSizes[id];
+      if (d.population !== undefined) d.population = Math.max(0, d.population + delta);
+      else if (before.areaKm2) d.density = Math.max(0, d.density! + delta / before.areaKm2);
+    }
     return;
   }
   if (value !== undefined && (key === 'population' || key === 'density')) {
-    delete d.counts; delete d.isolatedCount;
-    if (region.placement) { delete region.placement.counts; region.placement.mode = 'auto'; }
-    // Population and density describe the same budget. The most recently edited value wins.
+    // Population and density describe the same total. The most recently edited value wins.
     delete d[key === 'population' ? 'density' : 'population'];
   }
   if (value !== undefined && key === 'isolatedDensity') delete d.isolatedCount;

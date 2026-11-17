@@ -45,15 +45,13 @@ try {
     controls.access.set('runtime.source', 'procedural');
     controls.access.set('extent', 10000);
     const procedural = capture();
-    for (const group of root.querySelectorAll('details.terrain-control-group')) group.open = true;
     const incision = root.querySelector('[data-field-path="terrain.erosionTuning.incision"]');
-    const advanced = incision?.closest('details.terrain-super-advanced');
-    const expertBefore = { present: !!incision, insideAdvanced: !!advanced, advancedOpen: advanced?.open,
+    // Expert fields sit in their titled block, visible at once: the advanced view has no disclosure level.
+    const advanced = incision?.closest('.terrain-super-advanced');
+    const expert = { present: !!incision, insideAdvanced: !!advanced, inDisclosure: !!incision?.closest('details'),
       visible: !!incision?.checkVisibility(),
       outsideAdvanced: [...root.querySelectorAll('[data-field-path="terrain.erosionTuning.incision"]')]
         .some(node => !node.closest('.terrain-super-advanced')) };
-    if (advanced) advanced.open = true;
-    const expertAfter = { advancedOpen: advanced?.open, visible: !!incision?.checkVisibility() };
 
     controls.access.set('runtime.source', 'neural-python');
     controls.access.set('terrain.baseModel', 'residual8k');
@@ -61,7 +59,7 @@ try {
     const residual8k = capture();
     residual8k.model = controls.access.get('terrain.baseModel');
     controls.dispose();
-    return { neural, oldNeuralControlsAbsent, procedural, expertBefore, expertAfter, residual8k };
+    return { neural, oldNeuralControlsAbsent, procedural, expert, residual8k };
   }, modules);
 
   assert.equal(result.neural.source, 'neural-wasm');
@@ -76,9 +74,7 @@ try {
   assert.equal(result.procedural.width, 10000);
   assert.equal(Number(result.procedural.spacingInput.min), 1);
   assert.match(result.procedural.definition, /334 × 334 · 29\.94 m/);
-  assert.deepEqual(result.expertBefore, { present: true, insideAdvanced: true, advancedOpen: false,
-    visible: false, outsideAdvanced: false });
-  assert.deepEqual(result.expertAfter, { advancedOpen: true, visible: true });
+  assert.deepEqual(result.expert, { present: true, insideAdvanced: true, inDisclosure: false, visible: true, outsideAdvanced: false });
 
   assert.equal(result.residual8k.source, 'neural-python');
   assert.equal(result.residual8k.model, 'residual8k');

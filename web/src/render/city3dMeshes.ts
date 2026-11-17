@@ -1,4 +1,6 @@
 import { wetBridgeSpans } from './cityBridges';
+import { mushroomDwellingCap } from './city3dMushroom';
+import { moatBridges, moatFaces } from './city3dMoat';
 /** City 3D display volumes. The City Bench scene holds three kinds of buildings:
  * silhouettes (footprint only), compact plans (native volumes, levels and
  * cartographic ridges, no roof mesh) and detailed native buildings (roof mesh).
@@ -36,7 +38,8 @@ const PATTERNS: MaterialPattern[] = ['tile', 'thatch', 'wood', 'stone', 'earth',
 export const CITY3D_MATERIALS: HouseMaterial[] = PATTERNS.map(pattern => ({ id: `city3d:${pattern}`, label: pattern, roles: [], pattern, origin: 'city3d', source_ref: null }));
 // Layered ids `city3d:cover:<massing cover>`, `city3d:wall:<massing wall>`, `city3d:road:<surface>` keep the original massing
 // material for the textured view (urbanBuilding3d.ts); their display pattern is the pattern the flat render always used.
-const MESH_ROAD_PATTERNS: Record<string, MaterialPattern> = { bridge: 'stone', timber: 'wood' };
+// `quay`: harbour decks are plain paving (a stone pattern stretched over a whole deck read as 30 m slabs).
+const MESH_ROAD_PATTERNS: Record<string, MaterialPattern> = { bridge: 'stone', timber: 'wood', quay: 'plain' };
 const WALL_ID: Record<MaterialPattern, string> = { tile: 'wall:brick', thatch: 'cover:thatch', wood: 'wall:timber', stone: 'wall:stone', earth: 'wall:earth', fabric: 'wall:hide', snow: 'cover:snow', plain: 'wall:plaster' };
 const COVER_ID: Record<MaterialPattern, string> = { tile: 'cover:tile', thatch: 'cover:thatch', wood: 'cover:shingle', stone: 'cover:slate', earth: 'cover:earth', fabric: 'cover:felt', snow: 'cover:snow', plain: 'cover:plaster' };
 const mat = (pattern: MaterialPattern): string => `city3d:${WALL_ID[pattern]}`;
@@ -566,7 +569,9 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         const form = v.detail?.form, organic = form === 'tree' || form === 'mushroom';
         // Crowns and trunks get forest-green display materials (urbanBuilding3d.ts paints them).
         const greens = form === 'tree', crown = greens ? 'city3d:tree:crown@5f8247' : materials.cladding;
-        for (const face of volumeRoof(v, i, j)) {
+        // Myconid dwellings: a cap of the Underdark mushroom family instead of the dome (city3dMushroom.ts).
+        if (form === 'mushroom') mushroomDwellingCap(roof, v.shape.outer, base, v.eave_m, Math.max(0, v.rise_m), `${building.id}:${i}:${j}`, materials.cladding, !!programme?.landmark);
+        else for (const face of volumeRoof(v, i, j)) {
           const points = face.points.map(p => ({ ...p, z: p.z + base }));
           if (face.holes?.length) for (const triangle of surfaceTriangles([{ outer: points, holes: face.holes }])) roof.face(triangle.map(p => ({ ...p, z: points[0].z })), crown);
           else roof.face(points, crown);
@@ -576,7 +581,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         for (const gable of v.gables ?? []) roof.gable(gable.map(p => ({ ...p, z: p.z + base })), wallId, centre);
         const bodyShape = organic ? { outer: scaledRing(v.shape.outer, form === 'tree' ? 0.22 : 0.3), holes: [] } : v.shape;
         if (organic) {
-          flatRoof(roof, [v.shape], base + v.eave_m, crown);
+          if (form !== 'mushroom') flatRoof(roof, [v.shape], base + v.eave_m, crown);
           volumeDetails(roof, { ...v, shape: bodyShape, detail: { ...v.detail, overhang_m: 0.1 } }, base, greens ? 'city3d:tree:trunk@4b5a36' : body, `${building.id}:${i}:${j}`);
         } else if (form === 'battered') {
           const bottom = v.shape.outer, top = scaledRing(bottom, 0.92);
@@ -705,9 +710,29 @@ export function rasterHeight(data: Float32Array, n: number, width: number): City
 }
 
 // ---------------------------------------------------------------- bridges
+/** Deck top over the water surface reached by the camber (m), and the steepest end grade the camber may take. */
+const BRIDGE_CLEARANCE = 1.5, BRIDGE_GRADE = 0.08;
+/** Camber (rise of the parabola at mid-span above the abutment line) of a bridge deck from `za` to `zb`: a shallow
+ * default crown, raised so the deck top clears the water surface by BRIDGE_CLEARANCE in the inner span, but never
+ * steeper than BRIDGE_GRADE at the ends. Near the banks the deck simply continues the road. */
+export function bridgeCamber(path: readonly Point[], span: number, za: number, zb: number, waterAt?: City3dHeight): number {
+  const gentle = Math.min(2, span / 80), cap = Math.max(gentle, span * BRIDGE_GRADE / 4);
+  let need = gentle, along = 0;
+  if (waterAt && span > 0) for (let i = 1; i < path.length; i++) {
+    const p = path[i - 1], q = path[i], len = Math.hypot(q.x - p.x, q.y - p.y), steps = Math.max(1, Math.ceil(len / 4));
+    for (let k = 0; k <= steps; k++) {
+      const t = (along + len * k / steps) / span, bow = 4 * t * (1 - t), w = waterAt(p.x + (q.x - p.x) * k / steps, p.y + (q.y - p.y) * k / steps);
+      // Inner span only (bow >= 0.5): the abutments meet their banks whatever the water does next to them.
+      if (bow >= 0.5 && Number.isFinite(w)) need = Math.max(need, (w + BRIDGE_CLEARANCE - (za + (zb - za) * t)) / bow);
+    }
+    along += len;
+  }
+  return Math.min(cap, need);
+}
+
 /** Bridge and causeway streets as decks over the water: the plan drapes
  * streets into the ground texture, which hides them under the water surface.
- * The 0.9 m deck joins each bank with a shallow crown and piers every ~14 m. These are
+ * The 0.9 m deck joins each bank at the road's height (bridgeCamber) and stands on piers every ~14 m. These are
  * city volumes for the 3D view only, not authoritative architecture. */
 export function city3dBridges(streets: readonly { path: Point[]; widths: number[]; role: string }[], heightAt?: City3dHeight, waterAt?: City3dHeight): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
@@ -716,20 +741,13 @@ export function city3dBridges(streets: readonly { path: Point[]; widths: number[
     if ((street.role !== 'bridge' && street.role !== 'causeway') || street.path.length < 2) return;
     const a = street.path[0], b = street.path[street.path.length - 1];
     const span = street.path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - street.path[i].x, p.y - street.path[i].y), 0);
-    // Water level next to each landing (first/last wet sample), not the span's maximum:
-    // a span along a sloping river would otherwise start at its upstream water level.
-    const wetLevels: number[] = [];
-    if (waterAt) for (let i = 1; i < street.path.length; i++) {
-      const p = street.path[i - 1], q = street.path[i], steps = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 8));
-      for (let k = i === 1 ? 0 : 1; k <= steps; k++) { const z = waterAt(p.x + (q.x - p.x) * k / steps, p.y + (q.y - p.y) * k / steps); if (Number.isFinite(z)) wetLevels.push(z); }
-    }
-    const waterA = wetLevels.length ? wetLevels[0] : -Infinity, waterB = wetLevels.length ? wetLevels[wetLevels.length - 1] : -Infinity;
-    // Local surface under the deck (ground or water): the deck stays 0.12-15 m above it.
+    // Local surface under the deck (ground or water): the deck never sinks into it.
     const surface = (v: Point): number => { const w = waterAt?.(v.x, v.y); return Math.max(h(v), Number.isFinite(w) ? w as number : -Infinity); };
-    // Landings meet their own bank. A shallow crown supplies clearance without
-    // lifting the lower abutment to the height of the opposite hillside.
-    const za = Math.max(h(a), waterA) + 0.12, zb = Math.max(h(b), waterB) + 0.12;
-    const crown = street.role === 'bridge' ? Math.min(2, span / 80) : 0;
+    // Each landing continues its own road: the deck end sits on the drawn ground under the road's end, never on
+    // a water sample farther along the river, and is never lifted. Between the abutments the deck is the straight
+    // line between its two ends plus a gentle camber, so it stays a road over the water, not an aqueduct.
+    const za = h(a) + 0.12, zb = h(b) + 0.12;
+    const crown = street.role === 'bridge' ? bridgeCamber(street.path, span, za, zb, waterAt) : 0;
     const deck = Math.max(za, zb) + crown;
     const width = Math.max(3, ...street.widths.filter(Number.isFinite)) + 0.8;
     // Narrow bridges are timber decks (as in the textured 2D plan), wider ones stone paving.
@@ -743,8 +761,7 @@ export function city3dBridges(streets: readonly { path: Point[]; widths: number[
       const shape = { outer: quad, holes: [] }, start = along;
       const level = (v: Point): number => {
         const t = Math.max(0, Math.min(1, (start + Math.max(0, Math.min(len, ((v.x-p.x)*(q.x-p.x)+(v.y-p.y)*(q.y-p.y))/len))) / span));
-        const ground = surface(v);
-        return Math.min(ground + 15, Math.max(ground + 0.12, za + (zb-za)*t + crown*4*t*(1-t)));
+        return Math.max(surface(v) + 0.12, za + (zb-za)*t + crown*4*t*(1-t));
       };
       const prism = (id: string, s: typeof shape, low: (p: Point) => number, high: (p: Point) => number): void => {
         const mesh = new WallMesh(), k = Math.max(1, Math.ceil(len/8));
@@ -792,8 +809,8 @@ export function city3dBridges(streets: readonly { path: Point[]; widths: number[
  * the plan only paints them on the ground texture. Every face is draped on the
  * relief (bottom below the ground, top at ground + height at each vertex), so long
  * curtains follow slopes without stepping. Curtains are cut into pieces of at most
- * WALL_CHUNK m so the building pass culls them by sector. Ditches and glacis stay
- * on the plan texture; gate passages and water-gate spans leave the curtain open.
+ * WALL_CHUNK m so the building pass culls them by sector. Moats are dug into the
+ * terrain (ui/urbanGroundCuts.ts), with their water and gate bridges here (city3dMoat.ts); the glacis stays on the plan texture; gate passages and water-gate spans leave the curtain open.
  * Display only, never authoritative geometry. */
 const WALL_STEP = 8, WALL_CHUNK = 80;
 const WALL_PATTERN: Record<string, MaterialPattern> = { timber: 'wood', 'timber-earth': 'wood', thorn: 'thatch', stone: 'stone', brick: 'earth', 'rammed-earth': 'earth', 'earth-stone': 'stone' };
@@ -841,6 +858,8 @@ class WallMesh {
     for (const p of this.roof.vertices.slice(before)) { this.bottom = Math.min(this.bottom, p.z); this.top = Math.max(this.top, p.z); }
   }
   get empty(): boolean { return !this.roof.faces.length; }
+  /** One raw face (moat sheets, see city3dMoat.ts). */
+  add(points: Vertex3[], material: string): void { this.face(points, material); }
 }
 const centroid = (ring: readonly Point[]): Point => { let x = 0, y = 0; for (const p of ring) { x += p.x; y += p.y; } return ring.length ? { x: x / ring.length, y: y / ring.length } : { x: 0, y: 0 }; };
 
@@ -1058,13 +1077,13 @@ CITY3D_MATERIALS.push({ id: 'city3d:yard:hedge', label: 'hedge', roles: [], patt
 /** Curtains, towers, gatehouses, bastions, outworks and lean-tos of every
  * enclosure. Stone curtains carry a wall walk and merlons; palisades are a
  * timber line (on an earth bank for `gord`); hedges stay on the plan. */
-export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w', culture = ''): PlacedBuilding[] {
+export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w', culture = '', waterColor?: string): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   const g = (p: Point): number => (heightAt ? heightAt(p.x, p.y) : 0) || 0;
   const push = (b: PlacedBuilding | undefined): void => {
     if (!b) return;
     const paint = (id: string): string => {
-      const m = /^city3d:(wall|cover):(.+)$/.exec(id); if (!m || !culture) return id;
+      const m = /^city3d:(wall|cover):(.+)$/.exec(id); if (!m || !culture || m[2].includes('@')) return id;
       const p = buildingTint(culture, m[2], m[2], 0.5, m[2] === 'stone' || m[2] === 'earth' ? 'defence' : 'dwelling');
       return tinted(id, hex6(m[1] === 'cover' ? p.roof : p.wall));
     };
@@ -1173,6 +1192,21 @@ export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dH
       mesh.prism(w.shape, p => g(p) - 1, p => g(p) + height, side, top);
       push(wallPiece(`${id}:${w.kind}:${wi}`, `${style}:${w.kind}`, mesh, pattern));
     });
+    // Moat: the terrain digs the ground (ui/urbanGroundCuts.ts); a wet moat's water lies in it, see city3dMoat.ts.
+    (e.ditch ?? []).forEach((d, di) => {
+      if (!d.shape?.outer || d.shape.outer.length < 3) return;
+      const mesh = new WallMesh();
+      moatFaces(d, g, (pts, material) => mesh.add(pts, material), waterColor);
+      if (mesh.empty) return;
+      mesh.footprint.push({ outer: d.shape.outer, holes: [] });
+      push(wallPiece(`${id}:ditch:${di}`, `${style}:ditch:${d.kind}`, mesh, 'earth'));
+    });
+    // Bridges over the dug moat at the land gates, standing on the undug ground.
+    {
+      const mesh = new WallMesh();
+      if (moatBridges(gatehouses, e.ditch ?? [], g, (shape, zb, zt, s, cap, under) => mesh.prism(shape, zb, zt, s, cap, under), wall ? side : wood, wall ? top : wood))
+        push(wallPiece(`${id}:moat-bridge`, `${style}:moat-bridge`, mesh, wall ? pattern : 'wood'));
+    }
     // Lean-tos against the outer face: low walls under a pitched roof.
     (e.attached ?? []).forEach((a, ai) => {
       if (!a.shape?.outer || a.shape.outer.length < 3) return;

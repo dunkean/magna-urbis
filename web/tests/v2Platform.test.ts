@@ -45,12 +45,13 @@ describe('V2 execution capability boundaries', () => {
       ? { service: 'magna-urbis-local', backend: 'rust-native', capabilities: ['urban.programme', 42] }
       : { backend: 'python-cuda', loaded: false, state: 'loading', message: 'Chargement des poids CUDA' } })));
     const events: unknown[] = [];
-    const caps = await detectPlatform({ profile: 'local', onProgress: value => events.push(value) });
+    // The optional Python/CUDA service is probed only on request (probePython), never by a plain local detection.
+    const caps = await detectPlatform({ profile: 'local', probePython: true, onProgress: value => events.push(value) });
     expect(caps.local.available).toBe(true); expect(caps.local.capabilities).toEqual(['urban.programme']);
     expect(caps.python.available).toBe(true); expect(caps.python.loaded).toBe(false); expect(caps.python.backend).toBe('python-cuda');
     expect(events).toContainEqual({ phase: 'loading', source: 'python', message: 'Chargement des poids CUDA' });
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ backend: 'unrelated' }) })));
-    const invalid = await detectPlatform({ profile: 'local' });
+    const invalid = await detectPlatform({ profile: 'local', probePython: true });
     expect(invalid.local.available).toBe(false); expect(invalid.python.available).toBe(false);
   });
   it('does not silently turn a forced GPU request into CPU', () => {

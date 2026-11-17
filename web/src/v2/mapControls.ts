@@ -3,7 +3,8 @@ import type { V2Settings } from './contracts';
 import { registerMessages, setText, translate } from './i18n';
 import { mountParameterForm } from './parameterForm';
 import { TOPONYM_PROFILES, resolveToponymProfile } from '../gen/names/profiles';
-import { varyNames } from '../gen/names/policy';
+import { namingPolicy, varyNames } from '../gen/names/policy';
+import { CULTURE_LABELS } from '../gen/options';
 import { LANGUAGES } from './languages';
 import type { NamingPolicy } from '../gen/names/types';
 
@@ -18,6 +19,9 @@ const T = {
   localized: copy('Generic terms in interface language', 'Éléments génériques dans la langue de l’interface'),
   presentationHint: copy('Cultural names; generic terms follow the interface language.', 'Noms culturels ; les éléments génériques suivent la langue de l’interface.'),
   export: copy('Choose format and export…', 'Choisir le format et exporter…'),
+  culture: copy('Toponym culture', 'Culture des toponymes'),
+  ownCulture: copy('Each place’s own culture', 'Culture propre à chaque lieu'),
+  cultureHint: copy('Applies to all generated names, overriding advanced name profiles. Hand-edited names stay unchanged.', 'S’applique à tous les noms générés et remplace les profils de noms avancés. Les noms modifiés à la main sont conservés.'),
 };
 
 /** Explicit display labels; the stored naming profile remains its raw id. */
@@ -86,6 +90,18 @@ export function mountMapControls(namingHost: HTMLElement, exportHost: HTMLElemen
   const scope=document.createElement('select'),scopeLabel=document.createElement('label');
   scope.id='map-naming-scope';scopeLabel.className='parameter-field';
   const scopeCaption=document.createElement('span');setText(scopeCaption,copy('Naming scope','Portée des réglages de noms'));scopeLabel.append(scopeCaption,scope);namingHost.prepend(scopeLabel);
+  const cultureHost = document.createElement('div'); namingHost.prepend(cultureHost);
+  const cultureForm = mountParameterForm(cultureHost, [
+    { path:'toponymCulture', id:'map-toponym-culture', type:'select', label:T.culture, optional:true,
+      emptyLabel:T.ownCulture, options:CULTURE_LABELS.map(([value,label])=>({value,label})), help:T.cultureHint },
+  ], {
+    getValue:()=>b.getSettings().naming?.toponymCulture,
+    setValue:(_path,value)=>{
+      const s=b.getSettings();s.naming??={};
+      if(value)s.naming.toponymCulture=String(value);else delete s.naming.toponymCulture;
+      sync();b.onNames();
+    }, disabled:b.busy,
+  });
   const policy=():NamingPolicy=>{const n=b.getSettings().naming;if(scope.value==='region')return n?.region ?? {};if(scope.value.startsWith('city:'))return n?.local?.[scope.value.slice(5)] ?? {};return n ?? {};};
   const writePolicy=():NamingPolicy=>{const s=b.getSettings();s.naming??={};if(scope.value==='region')return s.naming.region??={};if(scope.value.startsWith('city:')){s.naming.local??={};return s.naming.local[scope.value.slice(5)]??={};}return s.naming;};
   const form = mountParameterForm(formHost, [
@@ -126,9 +142,11 @@ export function mountMapControls(namingHost: HTMLElement, exportHost: HTMLElemen
     const scopeValue=scope.value||'all';scope.replaceChildren(new Option(translate(copy('Common defaults','Réglages communs')),'all'),new Option(translate(copy('Regional landscape','Paysage régional')),'region'));
     for(const place of b.getWorld()?.settlements??[])scope.add(new Option(place.name??place.key,`city:${place.key}`));
     scope.value=Array.from(scope.options).some(o=>o.value===scopeValue)?scopeValue:'all';scope.disabled=b.busy();
-    form.sync();
+    form.sync();cultureForm.sync();
+    formHost.querySelector<HTMLSelectElement>('#map-naming-profile')!.disabled=b.busy()||!!b.getSettings().naming?.toponymCulture;
+    formHost.querySelector<HTMLSelectElement>('#map-naming-profile')!.closest<HTMLElement>('label')!.hidden=!!b.getSettings().naming?.toponymCulture;
     const cityKey=scope.value.startsWith('city:')?scope.value.slice(5):'main',place=b.getWorld()?.settlements?.find(s=>s.key===cityKey);
-    const selected=resolveToponymProfile(place?.culture??b.getSettings().options.culture,policy().profile??b.getSettings().naming?.profile);
+    const selected=resolveToponymProfile(place?.culture??b.getSettings().options.culture,b.getSettings().naming?.toponymCulture ? namingPolicy(b.getSettings().naming).profile : policy().profile??b.getSettings().naming?.profile);
     setText(sourceHint,selected.country?copy('Geographic names come from a modern country corpus. Invented names follow the selected cultural palette.','Les noms géographiques viennent d’un corpus national moderne. Les noms inventés suivent la palette culturelle choisie.'):copy('This profile uses an invented cultural palette. No geographic corpus or original script is supplied for this profile.','Ce profil utilise une palette culturelle inventée. Aucun corpus géographique ni écriture originale n’est fourni pour ce profil.'));
     regenerate.disabled=b.busy()||!b.getWorld();
     const settlements = b.getWorld()?.settlements ?? [], nextKeys = JSON.stringify(settlements.map(place => place.key));

@@ -8,6 +8,7 @@ import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import { pieceVolumes, readMassing } from './cityMassing';
 import type { TreeDwelling } from './cityTrees';
 import { roofPlaneLight } from './roofPlaneLight';
+import { leafClumps } from './crownClumpAtlas';
 import { mapCrownSeason, mapGroundSnow, mapSeasonKey } from './seasonPalette';
 
 /** Culture data: trunk spacing of the grove between the buildings (m), share of giant trees carrying a platform,
@@ -346,14 +347,8 @@ const rgbOf = (hex: string): Rgb => { const v = parseInt(hex, 16); return [(v >>
 const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const scaleRgb = (a: Rgb, k: number): Rgb => [a[0] * k, a[1] * k, a[2] * k];
 const smooth = (a: number, b: number, x: number): number => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-/** Smooth value noise on the integer lattice. */
-function valueNoise(x: number, y: number, seed: number): number {
-  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-  const a = hash2(i, j, seed), b = hash2(i + 1, j, seed), c = hash2(i, j + 1, seed), d = hash2(i + 1, j + 1, seed);
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-}
-/** Leaf clump relief across a lobe of unit radius: a few clumps per radius and a finer second octave. */
-const clumps = (u: number, v: number, seed: number): number => 0.68 * valueNoise(u * 3.4 + 7, v * 3.4 + 3, seed) + 0.32 * valueNoise(u * 7.9 + 1, v * 7.9 + 5, seed + 17);
+/** Leaf clump relief across a lobe of unit radius, shared with the procedural crowns of the terrain (crownClumpAtlas.ts). */
+const clumps = leafClumps;
 
 function buildCrownSprites(key: string, night: boolean, groundSnow: number): CrownSprites | undefined {
   const season = mapCrownSeason(), leaf = Math.max(0, Math.min(1, season.leaf)), deciduous = 1 - Math.max(0, Math.min(1, season.evergreen));

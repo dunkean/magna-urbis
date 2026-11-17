@@ -7,6 +7,17 @@ import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
+// Static audit mode deliberately runs before any server/browser setup.
+if (process.argv.includes('--runtime')) {
+  const { checkRuntimeMessages, formatRuntimeMessageFailures } = await import('./v2_runtime_message_check.mjs');
+  const { tsImport } = await import('tsx/esm/api');
+  const { runtimeMessagePairs } = await tsImport('../src/v2/runtimeMessages.ts', import.meta.url);
+  const report = checkRuntimeMessages(runtimeMessagePairs());
+  console.log(JSON.stringify(report.counts, null, 2));
+  if (report.missing.length) console.error(formatRuntimeMessageFailures(report.missing));
+  process.exit(report.missing.length ? 1 : 0);
+}
+
 const web=fileURLToPath(new URL('..',import.meta.url)),out=resolve(web,'out/v2-localization');
 process.env.CI='true';
 await mkdir(out,{recursive:true});

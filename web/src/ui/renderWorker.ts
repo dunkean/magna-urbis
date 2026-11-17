@@ -173,7 +173,7 @@ function onView(v: RView): void {
     out.push(mini);
     miniDirty = false; miniSize = v.mini;
   }
-  const labels = renderer.lastPlaced().map((p) => ({ kind: p.label.kind, text: p.label.text, size: p.size }));
+  const labels = renderer.lastPlaced().map((p) => ({ id: p.label.id, kind: p.label.kind, text: p.label.text, size: p.size }));
   post({ type: 'frame', gen: worldGen, seq: v.seq, ver, view: v.view, w: v.w, h: v.h, dpr: v.dpr, bitmap, mini,
     ms: performance.now() - frameStart, band: st.band, scale: st.scale, labels, stats: st }, out);
 }

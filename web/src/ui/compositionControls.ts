@@ -1,7 +1,8 @@
 import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zones';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
-import { COAST_WAVES_DEFAULT, STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
+import { COAST_WAVES_DEFAULT, DEFAULT_CROWN_DETAIL, STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
+import { UNDERDARK_CAVERN_DEFAULTS } from '../render/underdarkCavern';
 import { TEXT_GROUPS, NAME_LEVELS, nameLevelValue, DEFAULT_TEXT, type TextGroup, type NameLevel } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
 import { writeSettingPath, type ParameterField } from './parameterForm';
@@ -69,6 +70,13 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   choice('composition.effects.ambience', 'Ambience', 'Ambiance', [['day', 'Day', 'Jour'], ['night', 'Night', 'Nuit']]),
   number('composition.effects.season', 'Season (annual cycle)', 'Saison (cycle annuel)', 0, 1, .01),
   ...SEASON_CALENDAR_FIELDS.map(f => ({ ...number(`composition.effects.calendar.${f.key}`, f.en, f.fr, f.min, f.max, f.step), optional: true, placeholder: copy('Zone default', 'Selon la zone') })),
+  // 3D Underdark (render/underdarkCavern.ts): the cave cut at its roof like a section model, its darkness, its mushrooms.
+  { ...number('composition.effects.underdark.roof', 'Underdark 3D: roof height (m)', 'Outreterre 3D : hauteur de la voûte (m)', 10, 150, 5), defaultValue: UNDERDARK_CAVERN_DEFAULTS.roof,
+    help: copy('The rock walls rise to this height above a medium chamber and are cut there (about half in passages, twice in great chambers).', 'Les parois rocheuses montent à cette hauteur au-dessus d’une salle moyenne et y sont coupées (environ la moitié dans les passages, le double dans les grandes salles).') },
+  { ...number('composition.effects.underdark.darkness', 'Underdark 3D: darkness', 'Outreterre 3D : obscurité', 0, 1, .05), defaultValue: UNDERDARK_CAVERN_DEFAULTS.darkness,
+    help: copy('Dimmer ambient light and a nearer fade of the far cave into darkness; town lanterns and glowing fungi stay lit.', 'Lumière ambiante plus faible et fondu plus proche de la caverne lointaine dans l’obscurité ; lanternes des villes et champignons luminescents restent allumés.') },
+  { ...number('composition.effects.underdark.fungi', 'Underdark 3D: mushrooms', 'Outreterre 3D : champignons', 0, 2, .1), defaultValue: UNDERDARK_CAVERN_DEFAULTS.fungi,
+    help: copy('Abundance of the modelled mushrooms; 0 hides them.', 'Abondance des champignons modélisés ; 0 les masque.') },
   flag('composition.effects.relief', 'Shaded relief', 'Relief ombré'),
   flag('composition.effects.lighting.enabled', 'Terrain shading', 'Ombrage du relief'),
   number('composition.effects.lighting.azimuth', 'Light azimuth (°)', 'Azimut de la lumière (°)', 0, 360, 1),
@@ -77,6 +85,8 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
   number('composition.effects.lighting.exaggeration', 'Shading relief multiplier', 'Multiplicateur du relief ombré', 0, 10, .1),
   choice('composition.vegetation.look', 'Vegetation', 'Végétation', [['none', 'No vegetation', 'Aucune végétation'], ['symbols', 'Map symbols', 'Symboles cartographiques'], ['painted', 'Painted', 'Peinte'], ['procedural-canopy', 'Procedural canopy', 'Canopée procédurale']]),
   choice('composition.vegetation.forestTone', 'Land-use forest colour', 'Couleur de la forêt (occupation du sol)', [['marked', 'Dark marked green (like the render)', 'Vert foncé marqué (comme le rendu)'], ['ground', 'Ground colour', 'Couleur du fond']]),
+  { ...choice('composition.vegetation.crownDetail', 'Crown detail', 'Détail des houppiers', [['plain', 'Off', 'Désactivé'], ['clumps', 'On', 'Activé'], ['clumps-fine', 'Fine grain', 'Grain fin']]), defaultValue: DEFAULT_CROWN_DETAIL,
+    help: copy('Close zoom, 2D map: broadleaf and orchard crowns of the procedural canopy take the leaf-clump relief of the elven town trees.', 'Zoom rapproché, carte 2D : les houppiers feuillus et les vergers de la canopée procédurale prennent le relief en touffes des arbres des villes elfiques.') },
   choice('composition.landuse.rural', 'Rural land use', 'Occupation rurale', semanticEntries), choice('composition.landuse.urban', 'Urban land use', 'Occupation de la ville', semanticEntries),
   number('composition.landuse.opacity', 'Land-use opacity', 'Opacité de l’occupation', 0, 1, .05),
   choice('composition.landuse.depth', 'Land-use legibility', 'Lisibilité de l’occupation', [['surface', 'Surface', 'Surface'], ['readable', 'Readable', 'Lisible']]),
@@ -104,9 +114,9 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   general: ['composition.annotations.legend', 'composition.annotations.cartouche'],
   relief: ['composition.ground.contours', 'composition.ground.contourDetail'],
   ground: ['composition.preset', 'composition.ground.look', 'composition.ground.variant'],
-  vegetation: ['composition.vegetation.look', 'composition.vegetation.forestTone'],
+  vegetation: ['composition.vegetation.look', 'composition.vegetation.crownDetail', 'composition.vegetation.forestTone'],
   landuse: [],
-  ambience: ['composition.effects.ambience', 'composition.effects.season', ...SEASON_CALENDAR_FIELDS.map(f => `composition.effects.calendar.${f.key}`), 'composition.effects.relief', 'composition.effects.lighting.enabled', 'composition.effects.lighting.azimuth', 'composition.effects.lighting.elevation', 'composition.effects.lighting.strength', 'composition.effects.lighting.exaggeration'],
+  ambience: ['composition.effects.ambience', 'composition.effects.underdark.roof', 'composition.effects.underdark.darkness', 'composition.effects.underdark.fungi', 'composition.effects.season',...SEASON_CALENDAR_FIELDS.map(f => `composition.effects.calendar.${f.key}`), 'composition.effects.relief', 'composition.effects.lighting.enabled', 'composition.effects.lighting.azimuth', 'composition.effects.lighting.elevation', 'composition.effects.lighting.strength', 'composition.effects.lighting.exaggeration'],
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.visible', 'composition.networks.water.look', 'composition.networks.water.waves'],
   buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
@@ -196,7 +206,7 @@ const potentialLabels: Record<string, readonly [string, string]> = {
 };
 export const diagnosticFields = [choice('diagnostic', 'Diagnostic overlay', 'Couche de diagnostic', DIAGNOSTICS.map(({ id }) => [id, ...diagnosticLabels[id]] as const)),
   choice('resourcePotential', 'Resource shown', 'Ressource affichée', POTENTIAL_IDS.map(id => [id, ...potentialLabels[id]] as const))];
-const perspectiveFields = [flag('city.plan', 'Urban plan', 'Plan urbain'),
+const perspectiveFields = [{ ...flag('city.plan', 'Urban plan', 'Plan urbain'), help: copy('Shows or hides the town plan drawing: block and parcel outlines, quarters and domains. Roads, walls, buildings and lights keep their own switches.', 'Affiche ou masque le dessin du plan de ville : contours des îlots et des parcelles, quartiers et domaines. Routes, remparts, bâtiments et lumières gardent leurs propres interrupteurs.') },
   choice('city.colors', 'Building colours in 3D', 'Couleurs des bâtiments en 3D', [['materials', 'Materials', 'Matériaux'], ['uses', 'Uses', 'Usages']]),
   number('city.exaggeration', 'Vertical exaggeration in 3D', 'Exagération verticale en 3D', .2, 3, .1),
   choice('city.refinement', 'Surface refinement in 3D', 'Raffinement de surface en 3D', [['source', 'Source heights', 'Altitudes source'], ['noise', 'Multiscale detail', 'Détail multi-échelle']])];

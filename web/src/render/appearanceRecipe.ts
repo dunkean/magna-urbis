@@ -46,10 +46,12 @@ export interface AppearanceInput {
 /** Defaults that come from the project, not from the appearance. */
 export interface AppearanceBase { mapStyle: MapStyle; contours?: boolean; landuse?: boolean; labels?: boolean; legend?: boolean; forest?: Partial<ForestSettings> }
 /** What the retained products can show. Absent means absent: nothing is approximated. */
-export interface RenderCapabilities { nativeCities: boolean; paintedTextures?: boolean; nativeTerrain?: boolean; vectorWater?: boolean; hydrology?: boolean; parcels?: boolean; buildings?: boolean; ruralLanduse?: boolean; urbanLanduse?: boolean; limitations?: readonly import('./composition').Limitation[] }
+export interface RenderCapabilities { biome?: string; nativeCities: boolean; paintedTextures?: boolean; nativeTerrain?: boolean; vectorWater?: boolean; hydrology?: boolean; parcels?: boolean; buildings?: boolean; ruralLanduse?: boolean; urbanLanduse?: boolean; limitations?: readonly import('./composition').Limitation[] }
 export interface ResolveFlags {
   /** Stage preview: a metre-scale field is invisible in a finished style, so inspect its elevation without changing the saved recipe. */
   preview?: boolean;
+  /** Physical environment, independent of the selected day/night period. */
+  biome?: string;
 }
 
 export interface GroundComponent {
@@ -104,6 +106,7 @@ export interface PassKeys {
 export interface ResolvedAppearance {
   readonly quality: ResolvedDisplayQuality;
   readonly target: RenderTarget;
+  readonly underdark: boolean;
   readonly path: RenderPath;
   /** Selected style (terrain style, else map style). */
   readonly styleId: TerrainStyle;
@@ -126,6 +129,15 @@ export const DEFAULT_CITY_LAYERS: Readonly<CityLayers> = Object.freeze({ reserve
 export const DEFAULT_CITY = { view: 'buildings', palette: 'parchment', buildingStyle: 'cartographic', diagnostic: 'none', opacity: .8, width: .6, plan: true, colors: 'materials', exaggeration: 1, refinement: 'noise', groundBlend: 'classic', trees3d: false, treeDistance: 600 } as const;
 /** Previous 3D defaults, used while `unifiedDefaults` is off. */
 const LEGACY_3D_CITY = { view: 'parcels', palette: 'terrain', opacity: 1 } as const;
+/** The Urban plan switch hides the abstract plan graphics only: lot, block and square outlines (`planLines`), the
+ * translucent block and lot washes (`blocks`, `parcels`), quarters, domains, reserve and allocation tints, centres,
+ * and the frontage / axis / access diagrams. */
+export const URBAN_PLAN_LAYERS = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'parcels', 'planLines', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
+/** Physical objects stay whatever the Urban plan switch: streets, town walls, lot fences, hedges, walls and gates
+ * with their yard ground, gardens and paved squares (as ground, unoutlined), waterways; buildings, trees, water,
+ * bridges and lights are not city layers at all. */
+export const URBAN_PHYSICAL_LAYERS = ['streets', 'enclosures', 'lotEnclosures', 'parcelOverlay', 'gardens', 'places', 'waterways'] as const satisfies readonly (keyof CityLayers)[];
+export const withoutUrbanPlan = <L extends CityLayers>(layers: L): L => ({ ...layers, ...Object.fromEntries(URBAN_PLAN_LAYERS.map(key => [key, false])) });
 const LEGACY_3D_LAYERS: Readonly<CityLayers> = Object.freeze({ ...DEFAULT_CITY_LAYERS, domains: false });
 const TERRAIN_COLOR_KEYS = ['paper', 'groundLow', 'groundHigh', 'contour', 'waterShore', 'waterDeep', 'river'] as const;
 const WATER_COLOR_KEYS = new Set<string>(['waterShore', 'waterDeep', 'river']);
@@ -149,7 +161,8 @@ function applicable(colors: RenderColors | undefined, traits: StyleTraits): Rend
 }
 
 export function resolveAppearance(appearance: AppearanceInput | undefined, base: AppearanceBase, capabilities: RenderCapabilities, target: RenderTarget, flags: ResolveFlags = {}): ResolvedAppearance {
-  const a = appearance?.composition ? applyComposition(appearance, appearance.composition) : appearance, preview = !!flags.preview;
+  const underdark = (flags.biome ?? capabilities.biome) === 'underdark';
+  const a = appearance?.composition ? applyComposition(appearance, appearance.composition, underdark) : appearance, preview = !!flags.preview;
   const mapStyle = a?.style ?? base.mapStyle, styleId = a?.terrainStyle ?? mapStyle, traits = styleTraits(styleId);
   const diagnostic: DiagnosticId | 'none' = preview ? 'elevation' : a?.diagnostic ?? 'none';
   const groundStyle: TerrainStyle = diagnostic === 'elevation' ? 'copernicus' : styleId, groundTraits = styleTraits(groundStyle);
@@ -165,7 +178,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   // Previously the classic 2D canvas drew classic vegetation symbols by default; export and composite used the canopy.
   const symbols = a?.vegetation ?? (!unified && target === 'view2d' && path === 'classic' ? 'classic' : 'canopy');
   const forest = { ...a?.forest };
-  const composition = resolveComposition(appearance?.composition, traits, target, capabilities);
+  const composition = resolveComposition(appearance?.composition, traits, target, capabilities, underdark);
   const vegetation: VegetationComponent = { representation: composition.vegetation.procedural ? 'material' : symbols, symbols, forest,
     forestSettings: { ...DEFAULT_FOREST_SETTINGS, ...base.forest, ...forest }, fantasy: { ...DEFAULT_FANTASY_OPTIONS, followLanduse: false, ...a?.fantasy, forests: composition.vegetation.groundForests } };
   const terrainColors = a?.colors && Object.fromEntries(TERRAIN_COLOR_KEYS.map(token => [token, a.colors![token]])) as RenderColors;
@@ -183,8 +196,8 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     opacity: c?.opacity ?? (legacy3d ? LEGACY_3D_CITY.opacity : DEFAULT_CITY.opacity), width: c?.width ?? DEFAULT_CITY.width, ground: c?.ground ?? (traits.ground3d ? styleId as CityGround : 'map'), plan: c?.plan ?? DEFAULT_CITY.plan,
     colors: c?.colors ?? (c?.diagnostic === 'uses' ? 'uses' : DEFAULT_CITY.colors), exaggeration: c?.exaggeration ?? DEFAULT_CITY.exaggeration, refinement: c?.refinement ?? DEFAULT_CITY.refinement, trees3d: c?.trees3d ?? DEFAULT_CITY.trees3d, treeDistance: c?.treeDistance ?? DEFAULT_CITY.treeDistance };
 
-  // The shared Plan switch controls the same urban overlays in 2D, 3D and export.
-  if (!city.plan) city.layers={...city.layers,reserve:false,allocated:false,centers:false,domains:false,quarters:false,blocks:false,streets:false,enclosures:false,parcelOverlay:false,parcels:false,gardens:false,places:false,fronts:false,axes:false,access:false};
+  // The shared Urban plan switch hides the same plan drawing in 2D, 3D and export (withoutUrbanPlan).
+  if (!city.plan) city.layers = withoutUrbanPlan(city.layers);
 
   if (target !== 'view3d') {
     city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';
@@ -210,7 +223,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   }
 
   const keys: PassKeys = {
-    terrainLook: key(ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.calendar, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look,composition.networks.water.waves),
+    terrainLook: key(underdark, ground.style, pick(palette.applicableColors, ['paper', 'contour', 'groundLow', 'groundHigh', 'waterShore', 'waterDeep', 'river']), ground.lighting, ground.season, ground.calendar, ground.layers.relief, ground.layers.hypsometry, ground.layers.frame, ground.contours,composition.ambience,composition.networks.water.look,composition.networks.water.waves,composition.vegetation.crownDetail),
     terrainBase: key(ground.style, ground.layers.relief, groundTraits.fantasy ? vegetation.fantasy : 0),
     water: key(ground.style, ground.season, ground.calendar, pick(palette.applicableColors, ['waterShore', 'waterDeep', 'river']), ground.layers.water, ground.lakes, ground.oxbows, composition.networks.water, diagnostic, diagnostic === 'res-potential' ? a?.resourcePotential ?? 'arable' : null),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
@@ -218,9 +231,9 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
     roads: key(composition.networks.roads.emphasis),
     semantic: key(composition.landuse),
-    city: key(city, houseColors,composition.ambience),
+    city: key(underdark,city, houseColors,composition.ambience),
   };
-  const result: ResolvedAppearance = { target, quality: target === 'export' ? 'full' : appearance?.composition?.quality ?? 'full', path, styleId, traits, ground: Object.freeze(ground), vegetation: Object.freeze(vegetation), palette: Object.freeze(palette),
+  const result: ResolvedAppearance = { target, underdark, quality: target === 'export' ? 'full' : appearance?.composition?.quality ?? 'full', path, styleId, traits, ground: Object.freeze(ground), vegetation: Object.freeze(vegetation), palette: Object.freeze(palette),
     cartography: Object.freeze(cartography), city: Object.freeze(city), composition, diagnostic, resourcePotential: a?.resourcePotential ?? 'arable', incompatibilities: Object.freeze(incompatibilities), keys: Object.freeze(keys) };
   return Object.freeze(result);
 }

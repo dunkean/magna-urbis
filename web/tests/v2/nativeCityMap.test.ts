@@ -4,7 +4,7 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { CityDrawOptions, CityScene } from '../../src/render/cityCanvas';
 import type { BuildingRenderMetrics } from '../../src/render/urbanBuildingLod';
 import { createNativeCityMap } from '../../src/v2/nativeCityMap';
-import { resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
+import { resolveAppearance, URBAN_PLAN_LAYERS, type AppearanceInput } from '../../src/render/appearanceRecipe';
 const resolved = (a: AppearanceInput) => resolveAppearance(a, { mapStyle: a.style }, { nativeCities: true }, 'view2d');
 
 const draw = vi.hoisted(() => vi.fn());
@@ -102,7 +102,8 @@ describe('V2 retained native city map', () => {
     expect(target.images).toHaveLength(1); expect(target.images[0].alpha).toBe(.125);
     expect(target.globalAlpha).toBe(.5); expect(target.transform).toEqual([2, 0, 0, 2, 0, 0]);
     expect(surface.transforms).toContainEqual([20, 0, 0, 20, 200, 0]);
-    expect(draw.mock.calls[0][2].layers).toEqual(Object.fromEntries(Object.keys(draw.mock.calls[0][2].layers).map(key => [key, false])));
+    // Urban plan off hides the plan drawing only; physical layers (streets, enclosures...) follow their own switches.
+    for (const key of URBAN_PLAN_LAYERS) expect(draw.mock.calls[0][2].layers[key], key).toBe(false);
     map.dispose();
   });
 

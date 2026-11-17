@@ -13,3 +13,18 @@ describe('retained lagoon water',()=>{
     expect(Math.min(...bridge.volumes[0].roof_mesh.vertices.map(p=>p.z))).toBeGreaterThan(Math.max(...water.volumes[0].roof_mesh.vertices.map(p=>p.z)));
   });
 });
+
+import { townWaterColour } from '../src/render/townWater';
+import { hydrologyWaterColour } from '../../rust/bridge/hydrologyRender';
+import type { ResolvedAppearance } from '../src/render/appearanceRecipe';
+
+describe('one water for towns', () => {
+  const look = (water: 'ink' | 'natural', river?: string) => ({
+    composition: { networks: { water: { look: water } } }, palette: { mapStyle: 'parchment', colors: river ? { river } : {} },
+  }) as unknown as ResolvedAppearance;
+  it('takes the rivers colour of the same look', () => {
+    expect(townWaterColour(look('ink'))).toBe(hydrologyWaterColour('parchment', {}));
+    expect(townWaterColour(look('natural'))).toBe(hydrologyWaterColour('render3d', {}));
+    expect(townWaterColour(look('natural', '#405060'))).toBe('#405060');
+  });
+});

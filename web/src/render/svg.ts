@@ -1,6 +1,7 @@
 import type { TextSettings } from './textLayer';
 import { cavernDisplayWorld } from './cavernDisplay';
 import { cavernPathD, cavernWallsSvg, cavernFungalRoomsSvg } from './caverns';
+import { caveTunnelsSvg } from './caveTunnels';
 import type { World, LandKind } from '../gen/types';
 import { renderView } from '../gen/settlements/merge';
 import { Vec2, offsetRibbon } from '../gen/core/geom';
@@ -164,7 +165,7 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   } else if (layers.city !== false) parts.push(siteLayer(world, pal, u, !!opts.debug, false));
 
   if (t.caverns && landuse) parts.push(cavernFungalRoomsSvg(world, pal));
-  if (t.caverns) { parts.push('</g>'); if (layers.terrain !== false) parts.push(cavernWallsSvg(world, pal, raster)); }
+  if (t.caverns) { parts.push('</g>'); if (layers.terrain !== false) parts.push(cavernWallsSvg(world, pal, raster), caveTunnelsSvg(t.caverns.tunnels, t.height.cell)); }
   parts.push('</g>');
   if (layers.labels !== false && (opts.labels ?? world.options.labels !== false)) parts.push(labelsSvg(world, pal, opts.measure, !!(opts.legend ?? world.options.legend), opts.text));
   if (layers.decor !== false) parts.push(decor(world, pal, u));

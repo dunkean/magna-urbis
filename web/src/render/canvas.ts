@@ -6,6 +6,7 @@ import { DEFAULT_TEXT, textPlacement, drawMapLabels, cityTextLabels, type TextSe
 import { cavernDisplayWorld } from './cavernDisplay';
 import { drawRuralDetails } from './ruralDetails';
 import { cavernWallFill, cavernRockPixels, CAVERN_RIM } from './caverns';
+import { drawCaveTunnels } from './caveTunnels';
 import { isUnderdarkBiome, biomeName } from '../gen/biomes';
 import { ParchmentSymbols, SYMBOL_CELLS } from './parchmentSymbols';
 import { groundRoadLook } from './composition';
@@ -78,6 +79,8 @@ export interface CanvasRendererDeps {
   roadLook?: import('./composition').RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;
+  /** The Urban plan switch, read per frame (it joins the raster tile keys, no rebuild): false hides the abstract plan marks (the dashed site reserve outline). */
+  urbanPlan?: () => boolean;
   /** Path2D constructor (default: RecPath2D, a native Path2D that both vector engines can draw). */
   Path2D?: new () => Path2D;
   /** Offscreen canvas factory (default: OffscreenCanvas / document canvas). Return null if unavailable. */
@@ -941,7 +944,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const start = now(), dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const cssW = canvas.width / dpr, cssH = canvas.height / dpr, rect = viewRect(view, cssW, cssH);
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
-    const key = `${scale}|${dpr}|${activeLight}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const key = `${scale}|${dpr}|${activeLight}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     if (retainedFailed === key) return undefined;
     const r0 = retained;
     if (!r0 || r0.stale || r0.key !== key || !covers(r0.rect, rect)) {
@@ -997,7 +1000,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const budget = rasterBudget(rect, scale);
     layerTilesFit = activeLight && scale < 1 || layerTilesFitView(rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
-    const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${live ? 'live' : 'exact'}|${engine}|${activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(view);
     const buildTile = (request: typeof requests[number]): CanvasImageSource => {
@@ -1193,7 +1196,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
   function drawCachedMap(target: CanvasLike, box: Rect4): boolean {
     const ctx = target.getContext('2d'); if (!ctx) return false;
-    const semantic = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const semantic = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     const light = displayQualityFor(true) === 'light', density = target.width / (box.maxX - box.minX);
     // Coarse first; a finer cached quadrant replaces it without doubling translucent ink.
     const tiles = [...mapPyramid].filter(([, t]) => t.semantic === semantic && t.light === light && t.density <= density * 2
@@ -2157,7 +2160,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // 6. bridges
     if (world.bridges?.length) drawBridges(ctx, world, pal, rect, sc);
     // site marker (placeholder until an urban layer exists)
-    if (!world.urban && world.site) drawSiteMarker(ctx, world, pal, sc, false);
+    if (!world.urban && world.site && deps.urbanPlan?.() !== false) drawSiteMarker(ctx, world, pal, sc, false);
     if (cavernFloor) {
       if (luOn && world.options.biome === 'underdark-caverns' && world.terrain.caverns?.fungalRooms?.length) {
         const rooms = exactCavernPath('fungalRooms');
@@ -2183,6 +2186,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         }
         ctx.restore(); ctx.globalAlpha = 1;
       }
+      // Typed tunnels (lava tubes, river passages) over the floor they opened.
+      drawCaveTunnels(ctx, world.terrain.caverns?.tunnels, world.terrain.height.cell);
     }
 
     ctx.restore();

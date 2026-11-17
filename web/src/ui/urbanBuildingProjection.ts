@@ -27,6 +27,9 @@ export function buildingOccupationSurfaces(building: PlacedBuilding | NativeBuil
     : [building.footprint, building.circulation, ...(building.structural_features ?? []).map(f => f.surface)];
 }
 export function buildingGroundConstraints(building: PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual): readonly { readonly footprint: Surface; readonly height_m: number }[] {
+  // Harbour bottoms and bridge deck undersides are not land footings. Cutting
+  // banks/roads to them exposes the quay's land face or disconnects an abutment.
+  if (building.recipe_id === 'city3d-quay' || building.recipe_id === 'city3d-bridge') return [];
   return 'projection' in building ? building.ground_constraints
     : [{ footprint: building.footprint, height_m: building.ground_z_m },
       ...(building.structural_foundations ?? []).map(f => ({ footprint: f.footprint, height_m: f.z_max_m }))];

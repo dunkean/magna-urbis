@@ -6,14 +6,13 @@ import { styleTraits } from '../render/terrainStyle';
 import { readSettingPath } from './parameterForm';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { mountNameVisibilityControls } from './nameVisibilityControls';
+import { mountSectionIndex } from './sectionIndex';
 
 registerMessages({
   'Shaders & layers': { en: 'Shaders & layers', fr: 'Shaders et couches' },
   'Mix existing style components without adding render passes.': { en: 'Mix existing style components without adding render passes.', fr: 'Assemblez les composants des styles existants, sans ajouter de passe de rendu.' },
   'Use a style for this component': { en: 'Use a style for this component', fr: 'Appliquer un style à ce composant' },
   'Current settings': { en: 'Current settings', fr: 'Réglages actuels' },
-  'Detailed settings': { en: 'Detailed settings', fr: 'Réglages détaillés' },
-  'Component settings': { en: 'Component settings', fr: 'Réglages du composant' },
   'Ground shader': { en: 'Ground shader', fr: 'Shader du sol' },
   'Relief shading': { en: 'Relief shading', fr: 'Ombrage du relief' },
   'Water': { en: 'Water', fr: 'Eau' }, 'Vegetation': { en: 'Vegetation', fr: 'Végétation' },
@@ -45,6 +44,25 @@ const passes: Pass[] = [
   { name: 'Land use', path: 'appearance.composition.landuse.rural', fields: ['appearance.composition.landuse.rural', 'appearance.composition.landuse.urban'] },
 ];
 
+/** Sections of the render view, in reading order. Each gathers its components (switch, style mix, settings) and the
+ * display rows that refine them: one page, every control visible, no disclosure inside the advanced view. */
+const THEMES: readonly { id: string; title: string; passes: readonly string[]; stages: readonly string[] }[] = [
+  { id: 'ground', title: 'Ground and relief', passes: ['Ground shader', 'Relief shading', 'Contours'], stages: ['display-terrain', 'display-relief'] },
+  { id: 'vegetation', title: 'Vegetation and land use', passes: ['Vegetation', 'Land use'], stages: ['display-vegetation', 'display-landuse'] },
+  { id: 'water', title: 'Water', passes: ['Water'], stages: ['display-water'] },
+  { id: 'roads', title: 'Roads', passes: ['Roads'], stages: ['display-roads'] },
+  { id: 'buildings', title: 'Buildings and urban plan', passes: ['Urban plan', 'Buildings'], stages: ['display-buildings'] },
+  { id: 'text', title: 'Text and labels', passes: ['Texts'], stages: ['display-text', 'display-labels'] },
+  { id: 'effects', title: 'Lighting and effects', passes: ['Lighting'], stages: ['display-ambience'] },
+];
+registerMessages({
+  'Ground and relief': { en: 'Ground and relief', fr: 'Sol et relief' },
+  'Vegetation and land use': { en: 'Vegetation and land use', fr: 'Végétation et occupation du sol' },
+  'Buildings and urban plan': { en: 'Buildings and urban plan', fr: 'Bâtiments et plan urbain' },
+  'Text and labels': { en: 'Text and labels', fr: 'Textes et étiquettes' },
+  'Lighting and effects': { en: 'Lighting and effects', fr: 'Lumière et effets' },
+});
+
 /** Settings-only UI: no frame listener, no generated geometry, no new graphics pass. */
 export function mountRenderPassControls(panel: HTMLElement, api: { getSettings(): V2Settings; onChange(): void }) {
   const grid = panel.querySelector<HTMLElement>(':scope > .advanced-grid')!;
@@ -54,6 +72,17 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
   const hint = document.createElement('p'); hint.className = 'hint'; setText(hint, 'Mix existing style components without adding render passes.');
   introduction.append(title, context, hint); panel.querySelector('header')!.after(introduction);
   const names = mountNameVisibilityControls(panel, api);
+  // Theme sections, created first so the live controls can be moved straight into them.
+  const themes = new Map<string, { section: HTMLElement; heading: HTMLElement; body: HTMLElement }>();
+  const theme = (id: string, label: string, translated = true) => {
+    const section = document.createElement('section'); section.className = 'render-theme'; section.id = `render-theme-${id}`;
+    const heading = document.createElement('h3'); heading.id = `${section.id}-title`; section.setAttribute('aria-labelledby', heading.id);
+    if (translated) setText(heading, label); else heading.textContent = label;
+    const body = document.createElement('div'); body.className = 'render-theme-grid'; section.append(heading, body);
+    const entry = { section, heading, body }; themes.set(id, entry); return entry;
+  };
+  for (const { id, title } of THEMES) theme(id, title);
+  const themeOfPass = (name: string) => themes.get(THEMES.find(t => t.passes.includes(name))?.id ?? 'ground')!;
   const cards: { pass: Pass; card: HTMLElement; status: HTMLElement; source?: HTMLSelectElement }[] = [];
   const homes: { field: HTMLElement; slot: HTMLElement; placeholder: HTMLElement }[] = [];
   const field = (path: string) => document.querySelector<HTMLElement>(`[data-setting-path="${path}"]`)?.closest<HTMLElement>('.parameter-field');
@@ -104,29 +133,40 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
         api.onChange(); source!.value = ''; sync();
       };
     }
-    const options = document.createElement('details'); options.className = 'render-pass-options';
-    const optionsTitle = document.createElement('summary'); setText(optionsTitle, 'Component settings'); options.append(optionsTitle);
+    // The component's own settings, shown in the card under a rule (no "Component settings" disclosure).
+    const options = document.createElement('div'); options.className = 'render-pass-options';
     for (const path of pass.fields ?? []) { const input = field(path); if (input && input !== shared) options.append(input); }
     if (pass.component === 'ground') options.append(document.getElementById('view3d-advanced-controls')!);
     if (pass.component === 'buildings') {
       const icons = grid.querySelector('.city-rendering-settings'); if (icons) {icons.querySelector('h3')?.remove();icons.classList.remove('advanced-card');options.append(icons);}
       const textures = field('appearance.textured'); if (textures) options.append(textures);
     }
-    if (options.children.length > 1) card.append(options);
-    cards.push({ pass, card, status, source }); grid.append(card);
+    if (options.children.length) card.append(options);
+    cards.push({ pass, card, status, source }); themeOfPass(pass.name).body.append(card);
   }
-  const details = document.createElement('details'); details.className = 'render-fine-settings';
   // These legacy switches are overridden by the composition's Vegetation and Building look controls.
   for (const path of ['appearance.forest.enabled', 'appearance.city.painted']) field(path)?.remove();
-  const summary = document.createElement('summary'); setText(summary, 'Detailed settings'); details.append(summary);
-  const fineGrid = document.createElement('div'); fineGrid.className = 'advanced-grid'; details.append(fineGrid); panel.append(details);
+  // Display rows join their theme as cards; a row no theme lists gets its own section, after the others.
   const fine: { stage: string; wrapper: HTMLElement }[] = [];
   for (const row of Array.from(grid.querySelectorAll<HTMLElement>(':scope > .stage-row'))) {
-    const wrapper = document.createElement('details'); wrapper.className = 'advanced-card render-fine-group';
-    const heading = document.createElement('summary'); heading.textContent = row.querySelector('.stage-title')?.textContent ?? '';
-    row.querySelector('.stage-head')?.remove(); wrapper.append(heading, row); fineGrid.append(wrapper);
-    fine.push({ stage: row.dataset.stage ?? '', wrapper });
+    const stage = row.dataset.stage ?? '';
+    const wrapper = document.createElement('section'); wrapper.className = 'advanced-card render-fine-group'; wrapper.dataset.renderStage = stage;
+    const name = row.querySelector<HTMLElement>('.stage-name'), heading = document.createElement('h4');
+    if (name?.dataset.i18n) setText(heading, name.dataset.i18n); else heading.textContent = row.querySelector('.stage-title')?.textContent ?? '';
+    row.querySelector('.stage-head')?.remove(); wrapper.append(heading, row);
+    const home = THEMES.find(t => t.stages.includes(stage));
+    (home ? themes.get(home.id)! : theme(stage, name?.dataset.i18n ?? heading.textContent ?? stage, !!name?.dataset.i18n)).body.append(wrapper);
+    fine.push({ stage, wrapper });
   }
+  // The names card belongs with the text settings.
+  const namesCard = panel.querySelector<HTMLElement>(':scope > .name-visibility-controls');
+  if (namesCard) themes.get('text')!.body.prepend(namesCard);
+  grid.classList.add('render-themes');
+  grid.append(...[...themes.values()].map(t => t.section));
+  const header = panel.querySelector<HTMLElement>(':scope > header')!;
+  const index = mountSectionIndex(panel, () => [...themes.values()], () => header.offsetHeight);
+  index.nav.classList.add('render-index');
+  header.append(index.nav);
   function relocate(open: boolean) {
     for (const home of homes) {
       if (open && !home.placeholder.isConnected) {
@@ -139,7 +179,7 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
   new MutationObserver(() => sync()).observe(document.getElementById('view3d')!, { attributes: true, attributeFilter: ['aria-pressed'] });
   onLanguageChange(sync);
   function sync() {
-    names.sync();
+    names.sync(); index.sync();
     if(!panel.matches(':popover-open'))return;
     const appearance=renderControlValues(api.getSettings()),recipe=appearance.composition!;
     const mode = document.getElementById('view3d')?.getAttribute('aria-pressed') === 'true' ? '3D' : '2D';

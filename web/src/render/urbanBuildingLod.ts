@@ -8,7 +8,7 @@ import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { roofSnowPatches, snowRoofTint } from './roofSnow';
 import { planShade } from './cityBuildingPalette';
 import { massingFootprint, readMassing, planRoof, roofLight } from './cityMassing';
-import { drawNightBuildings, nightRoof, nightWindowReach } from './cityNight';
+import { caveRoof, drawNightBuildings, nightRoof, nightWindowReach } from './cityNight';
 import { drawRuinPlan, ruinFootprint } from './cityRuins';
 
 export interface BuildingViewport { minX: number; minY: number; maxX: number; maxY: number }
@@ -572,7 +572,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     const raster = this.options.raster && !this.rasterUnavailable && options.metresPerPixel >= this.options.rasterThresholdMpp
       ? this.drawRaster(ctx, options) : undefined;
     const result = raster ?? this.drawVector(ctx, options);
-    if (options.appearance.ambience === 'night' && options.appearance.diagnostic === 'none') {
+    if ((options.appearance.lightsOn ?? options.appearance.ambience === 'night') && options.appearance.diagnostic === 'none') {
       // Light the destination after the opaque roof tiles, so screen blends with streets too.
       // Query beyond the viewport for windows whose pool reaches in; never bake pools into tiles.
       const v = options.viewport, pad = nightWindowReach(options.metresPerPixel);
@@ -611,7 +611,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       metrics.lod[lod]++;
       const paint = buildingPaint(building.materials ?? building.volumes?.[0]?.materials, building.function, visualHeight(building), options.appearance, undefined, catalogue);
       const landmark = painted && isLandmark(building);
-      const color = options.appearance.style === 'silhouette' || options.appearance.diagnostic !== 'none' ? paint.roof : snowHex(paint.roof, mapGroundSnow(building.ground_z_m) * .72, 0, night, ink);
+      const color = options.appearance.style === 'silhouette' || options.appearance.diagnostic !== 'none' ? paint.roof : options.appearance.cave ? caveRoof(paint.roof) : snowHex(paint.roof, mapGroundSnow(building.ground_z_m) * .72, 0, night, ink);
       const group = fills.get(color) ?? []; group.push(geometry.outline); fills.set(color, group);
       if (painted) {
         const height = visualHeight(building);

@@ -1,0 +1,5 @@
+/* Section index of the advanced views: anchors to always-open sections. */
+.section-index ul{display:flex;flex-wrap:wrap;gap:5px 6px;margin:0;padding:0;list-style:none}
+.section-index button{font-size:11px;line-height:1.2;padding:4px 10px;border:1px solid var(--line);border-radius:13px;background:#ffffff05;color:var(--muted);white-space:nowrap}
+.section-index button:hover:not(:disabled),.section-index button:focus-visible{color:var(--gold);border-color:#dcb86f66;background:#dcb86f12}
+:is(.relief-theme,.render-theme)>:is(h3,header) h3:focus,:is(.relief-theme,.render-theme)>h3:focus{outline:none}

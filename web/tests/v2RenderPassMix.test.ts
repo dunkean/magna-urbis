@@ -15,8 +15,9 @@ describe('mixing existing display components', () => {
       mixRenderStyle(settings, component, preset);
       expect(() => validateSettings(settings), `${component}: ${preset}`).not.toThrow();
       expect(terrainCacheKey(settings)).toBe(key);
-      const { appearance: _appearance, ...generation } = settings;
-      expect(generation).toEqual(original);
+      // New recipes carry a default appearance (settings.ts): compare the generation inputs on both sides.
+      const { appearance: _appearance, ...generation } = settings, { appearance: _original, ...originalGeneration } = original;
+      expect(generation).toEqual(originalGeneration);
     }
   });
 
@@ -37,11 +38,14 @@ describe('mixing existing display components', () => {
     const settings = defaultSettings();
     expect(resolveSettingsAppearance(settings, undefined, 'view3d').city.textured).toBe(false);
     writeAppearanceControl(settings, 'appearance.city.layers.fronts', true);
+    const streets = resolveSettingsAppearance(settings, undefined, 'view2d').city.layers.streets;
     writeAppearanceControl(settings, 'appearance.city.plan', false);
     for (const target of ['view2d', 'view3d', 'export'] as const) {
       const result = resolveSettingsAppearance(settings, undefined, target);
       expect(result.city.plan).toBe(false);
-      for (const name of ['parcels', 'quarters', 'blocks', 'streets', 'fronts', 'access'] as const) expect(result.city.layers[name]).toBe(false);
+      for (const name of ['parcels', 'quarters', 'blocks', 'fronts', 'access'] as const) expect(result.city.layers[name]).toBe(false);
+      // Streets are physical objects (URBAN_PHYSICAL_LAYERS): the plan switch no longer hides them.
+      expect(result.city.layers.streets).toBe(streets);
     }
     expect(settings.appearance!.city!.layers!.fronts).toBe(true);
     writeAppearanceControl(settings, 'appearance.city.plan', true);

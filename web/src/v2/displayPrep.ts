@@ -1,6 +1,6 @@
 import type { TerrainLayer, LandUseLayer, World } from '../gen/types';
 import type { TerrainData } from '../../../rust/bridge/terrain';
-import type { ForestField, ForestFieldInput, ForestSettings, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
+import type { ForestClearing, ForestField, ForestFieldInput, ForestSettings, ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import type { LandCultures } from '../ui/landDetail';
 import { retainShoreRing, retainReliefField, setReliefHorizonBaker, type ForestBeachLayer, type ShoreRingGrid, type ReliefField, type ReliefHeights } from '../../../rust/bridge/terrainForestBeach';
 import { lakeDistances, retainLakeDistances, retainPlanningWaterDistances, type WaterSurface } from '../render/terrainWater';
@@ -19,7 +19,7 @@ interface DisplayJobs {
   horizon: { input: { relief: ReliefHeights; azimuth: number; resolution: number }; output: Uint16Array };
   register: { input: { revision: number; packed: PackedOccupationLanduse }; output: void };
   release: { input: { revision: number }; output: void };
-  occupation: { input: { landuseRevision: number; revision: number; corridors: ForestCorridor[] }; output: ForestOccupation | undefined };
+  occupation: { input: { landuseRevision: number; revision: number; corridors: ForestCorridor[]; clearings?: readonly ForestClearing[] }; output: ForestOccupation | undefined };
   detail: { input: { landuseRevision: number; cultures?: LandCultures }; output: LandDetail | undefined };
   merge: { input: { retained?: WorkerOccupation; source?: Omit<ForestOccupation, 'detail'>; shapes: Float64Array }; output: ForestOccupation };
   forest: { input: { input: ForestFieldInput; settings: ForestSettings; runtime?: ExecutionRuntime }; output: ForestField };

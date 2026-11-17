@@ -6,11 +6,13 @@ import { slopeGrid } from '../gen/core/grid';
 import { forCellsNearPolyline } from '../gen/core/field';
 import { vectorizeRegions } from '../../../rust/bridge/landuseNative';
 import { marchingSquares } from '../gen/terrain/contour';
+import { parseCaveTunnels } from '../gen/terrain/caveTunnels';
 import { pointInRing } from '../gen/geo/poly';
 import { lakeShores, riverWidths } from '../ui/vectorWaterRender';
 import { lakeSample } from '../ui/lakeGeometry';
 import { waterRings } from '../../../rust/bridge/urbanGeography';
 import { channelWidth } from '../ui/riverVectors';
+import { shoreRegions } from './shoreline';
 
 export interface V2TerrainLayer extends TerrainLayer {
   v2ModificationBase?: { n: number; height: Float32Array };
@@ -29,6 +31,19 @@ export function assertUrbanPhysicalCapability(world: World, backend: 'typescript
   }
 }
 const at = (x: number, y: number, n: number, width: number): number => Math.max(0, Math.min(n - 1, Math.floor(y / width * n))) * n + Math.max(0, Math.min(n - 1, Math.floor(x / width * n)));
+/** Where a vector course that joins no river ends: its last vertex lies on the shore, on the land cell beside the
+ * water as often as on the water, so the sea and the lakes are looked for in its 3 x 3 cells (sea first). */
+export function vectorMouth(vector: { hydro: { n: number; sea: ArrayLike<number> }; lake: ArrayLike<number> }, end: { x: number; y: number }, width: number): 'sea' | 'lake' | 'edge' {
+  const n = vector.hydro.n, c = at(end.x, end.y, n, width), cx = c % n, cy = Math.floor(c / n);
+  let lake = false;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x = cx + dx, y = cy + dy;
+    if (x < 0 || y < 0 || x >= n || y >= n) continue;
+    if (vector.hydro.sea[y * n + x]) return 'sea';
+    lake ||= !!vector.lake[y * n + x];
+  }
+  return lake ? 'lake' : 'edge';
+}
 function polygons(mask: Uint8Array, n: number, cell: number): { outer: Polygon; holes: Polygon[] }[] {
   if (!mask.some(Boolean)) return [];
   return vectorizeRegions(Float32Array.from(mask), n, n, cell, cell * cell * .1, { x0: 0, y0: 0, x1: n - 1, y1: n - 1 });
@@ -108,10 +123,9 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
       const path = Array.from({ length: line.points.length / 2 }, (_, j) => ({ x: line.points[j * 2], y: line.points[j * 2 + 1] }));
       if (path.length < 2) continue;
       const widths = riverWidths(vector, line, network.oxbows.includes(line) ? 1 : 0), max = Math.max(...widths);
-      const mouthCell = at(path.at(-1)!.x, path.at(-1)!.y, vector.hydro.n, width);
       rivers.push({ path, width: widths, id: line.id ?? rivers.length, area: [...line.area], main: max >= 12,
         cls: riverClass(max), host: line.joins !== undefined && line.joins >= 0 ? line.joins : undefined,
-        mouth: line.joins !== undefined && line.joins >= 0 ? 'river' : vector.hydro.sea[mouthCell] ? 'sea' : vector.lake[mouthCell] ? 'lake' : 'edge' });
+        mouth: line.joins !== undefined && line.joins >= 0 ? 'river' : vectorMouth(vector, path.at(-1)!, width) });
     }
   } else if (vector) {
     // Grid mode draws the already routed D8 graph. Chain its edges, without fitting new vector meanders.
@@ -157,7 +171,9 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
     const radius = Math.max(cell * .6, river.width[j - 1] / 2, river.width[j] / 2);
     forCellsNearPolyline([river.path[j - 1], river.path[j]], n, n, cell, radius, i => { if (!water[i]) water[i] = 3; });
   }
-  const seaRegions = polygons(sea, n, cell);
+  // One coastline for the town engine and both maps: the zero line of the display field's spline (v2/shoreline.ts).
+  const shore = data.field, traced = seaCells && shore && !cave.length && !(shore.floor > 0) && shore.data.length === shore.n ** 2;
+  const seaRegions = traced ? shoreRegions(shore, width, sea, n) : polygons(sea, n, cell);
   let lakes: Polygon[];
   if (vector) {
     // Consume the renderer's retained shoreline, including islands and small lakes.
@@ -186,8 +202,9 @@ export function projectEngineTerrain(data: TerrainData): V2TerrainLayer {
     const rock = soft ? Float32Array.from(soft.cave!, v => v / 255) : Float32Array.from(solid);
     const regions = (field: Float32Array, pad: number) => !field.some(v => v > .5) ? [] : soft ? isoRegions(field, fn, fcell, pad)
       : vectorizeRegions(field, fn, fn, fcell, fcell * fcell * .1, { x0: 0, y0: 0, x1: fn - 1, y1: fn - 1 });
+    const tunnels = parseCaveTunnels(data.field?.tunnels);
     terrain.caverns = { floor: regions(rock.map(v => 1 - v), 0), solid: regions(rock, 1), mask: solid,
-      clearance: new Float32Array(length), chambers: [] };
+      clearance: new Float32Array(length), chambers: [], ...(tunnels.length ? { tunnels } : {}) };
   }
   return terrain;
 }

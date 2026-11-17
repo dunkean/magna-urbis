@@ -66,14 +66,25 @@ describe('neighbouring towns', () => {
     const world = { settlements: [place('big', 5000, 0), place('mid', 800, 700), place('small', 300, 900)], stats: {},
       debug: { v2RustCities: { big: layouts(claim('big', 0, 0, 400)), mid: layouts(claim('mid', 700, 0, 150)), small: layouts(claim('small', 900, 0, 80)) } } } as unknown as World;
     const settings = { local: {}, options: {} } as unknown as V2Settings;
-    expect(neighbourClaimsOf(world, settings, 'big')).toEqual([]);
-    expect(neighbourClaimsOf(world, settings, 'mid').map(c => c.key)).toEqual(['big']);
-    expect(neighbourClaimsOf(world, settings, 'small').map(c => c.key)).toEqual(['big', 'mid']);
+    const earlier = (key: string, s = settings) => neighbourClaimsOf(world, s, key).filter(c => !c.reserve).map(c => c.key);
+    expect(earlier('big')).toEqual([]);
+    expect(earlier('mid')).toEqual(['big']);
+    expect(earlier('small')).toEqual(['big', 'mid']);
     const fresh = claim('mid', 700, 0, 60);
     expect(neighbourClaimsOf(world, settings, 'small', new Map([['mid', fresh]]))[1]).toBe(fresh);
     // A local population override reorders the towns.
     const bigger = { ...settings, local: { small: { population: 9000 } } } as unknown as V2Settings;
-    expect(neighbourClaimsOf(world, bigger, 'small')).toEqual([]);
+    expect(earlier('small', bigger)).toEqual([]);
+  });
+  it('asks a town to keep a core free for each later place within the land it can grow to', () => {
+    const place = (key: string, population: number, x: number) => ({ key, population, culture: 'japanese-contemporary', center: { x, y: 0 }, radius: extentRadius(population) });
+    const world = { settlements: [place('big', 5000, 0), place('near', 150, 700), place('far', 150, 20000)], stats: {}, debug: {} } as unknown as World;
+    const settings = { local: {}, options: {} } as unknown as V2Settings;
+    const claims = neighbourClaimsOf(world, settings, 'big');
+    expect(claims.map(c => c.key)).toEqual(['near']);
+    expect(claims[0]).toMatchObject({ land: [], streets: [], reserve: { population: 150, culture: 'japanese-contemporary', center: { x: 700, y: 0 } } });
+    // The later place reserves nothing on itself, and holds no claim from a town that is not built yet.
+    expect(neighbourClaimsOf(world, settings, 'near')).toEqual([]);
   });
 });
 

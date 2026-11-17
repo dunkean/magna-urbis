@@ -15,7 +15,7 @@ import { stepSeed } from '../../../rust/bridge/generationSeed';
 import { effectiveTerrainSettings } from './terrainSettings';
 import type { ResourcePayload } from '../../../rust/bridge/resources';
 import { chooseIsolatedSites, regionalPopulation } from './regionalPopulation';
-import { retryNativeStage } from './runtimeChoices';
+import { engineIdentityOf, retryNativeStage } from './runtimeChoices';
 
 export interface RustRegionSnapshot {placement:SettlementOutput;roads:RoadOutput|null}
 let retainedEngine: { runtimeKey: string; terrainKey: string; engine: SettlementEngine } | undefined;
@@ -43,8 +43,9 @@ async function regionalRaster(world:World,resolution:number,settings:V2Settings)
   return resampleRegionalRaster(raster,resolution);
 }
 const runtimeOf=(settings:V2Settings)=>({profile:settings.runtime?.backend==='native'?'local':'web',server:settings.runtime?.backend==='native'?loopbackServer(settings.runtime.localServer??'http://127.0.0.1:8791'):'http://127.0.0.1:8791'} as const);
-async function engineFor(runtime:ReturnType<typeof runtimeOf>):Promise<NonNullable<typeof retainedEngine>>{
-  const runtimeKey=JSON.stringify(runtime);
+/** `engine`: the engine build (engineIdentityOf): a rebuilt or restarted-as-new engine gets a new handle and the raster again. */
+async function engineFor(runtime:ReturnType<typeof runtimeOf>,engine:string):Promise<NonNullable<typeof retainedEngine>>{
+  const runtimeKey=JSON.stringify([runtime,engine]);
   if(!retainedEngine||retainedEngine.runtimeKey!==runtimeKey){
     retainedEngine?.engine.dispose?.();retainedEngine=undefined;
     retainedEngine={runtimeKey,terrainKey:'',engine:await(await import('../../../rust/bridge/settlementEngine')).createSettlementEngine(runtime)};
@@ -56,12 +57,13 @@ let retainedResources:{key:string;payload:ResourcePayload}|undefined;
 export async function regionResources(world:World,settings:V2Settings):Promise<ResourcePayload|undefined>{
   if(!settings.runtime?.backend||settings.runtime.backend==='typescript')return undefined;
   const {resolution}=effectiveRegion(settings),runtime=runtimeOf(settings);
-  const terrainKey=JSON.stringify([world.stats['v2.terrainKey']??null,world.stats['v2.waterEditRevision']??0,world.mapSize,resolution]),key=JSON.stringify([runtime,terrainKey,settings.options.seed]);
+  const identity=engineIdentityOf(settings),terrainKey=JSON.stringify([world.stats['v2.terrainKey']??null,world.stats['v2.waterEditRevision']??0,world.mapSize,resolution]),key=JSON.stringify([runtime,identity,terrainKey,settings.options.seed]);
   if(retainedResources?.key===key)return retainedResources.payload;
-  const engine=await engineFor(runtime);
+  const engine=await engineFor(runtime,identity);
   const raster=engine.terrainKey===terrainKey&&world.stats['v2.terrainKey']!==undefined?undefined:await regionalRaster(world,resolution,settings);
   const response=await engine.engine.run({id:1,seed:stepSeed(settings.options.seed,'settle-sites'),...(raster?{raster}:{}),roads:null,resources:true,runtime});
-  if('error'in response)throw new Error(response.error);
+  // A failed run may leave the engine without this terrain: the next run sends the raster again.
+  if('error'in response){engine.terrainKey='';throw new Error(response.error);}
   engine.terrainKey=terrainKey;
   if(!response.resources)throw new Error('The engine returned no resource payload.');
   retainedResources={key,payload:response.resources};return response.resources;
@@ -89,22 +91,24 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
   onProgress?.({stage:'sites',label:roadsOnly?'Routing roads between retained sites…':'Rust · evaluating regional settlement sites…',completed:0,total:3});
   if(roadsOnly&&!world.settlements?.length)throw new Error('Place settlements before routing their roads.');
   const terrainKey = JSON.stringify([world.stats['v2.terrainKey'] ?? null, world.stats['v2.waterEditRevision'] ?? 0, world.mapSize, resolution]);
-  const engine = await engineFor(runtime);
+  const engine = await engineFor(runtime, engineIdentityOf(settings));
   // The worker serializes requests. A route-only change reuses both the sampled raster and the native/WASM handle.
   const raster = engine.terrainKey === terrainKey && world.stats['v2.terrainKey'] !== undefined ? undefined : await regionalRaster(world, resolution, settings);
   const placeSeed = stepSeed(settings.options.seed, 'settle-sites'), roadSeed = stepSeed(settings.options.seed, 'settle-roads');
   // Reroute: the retained settlements, then the retained activity sites' access points.
   const retainedActivities=(world.debug?.v2RustRegion as RustRegionSnapshot|undefined)?.placement.activities??[];
   const retainedSites=():RoadSite[]=>[...world.settlements!.map(s=>({key:s.key,population:s.population,culture:s.culture,center:s.center,radius:s.radius})),...roadSitesOf({settlements:[],warnings:[],requested:0,usableKm2:0,ms:0,activities:retainedActivities})];
+  // A failed run may leave the engine without this terrain: the next run sends the raster again.
+  const failed=(error:string):Error=>{engine.terrainKey='';return new Error(error);};
   let response=await engine.engine.run({id:1,seed:roadsOnly?roadSeed:placeSeed,...(raster?{raster}:{}),...(roadsOnly?{sites:retainedSites()}:{place:placement}),roads:roadsOnly?roads:null,runtime});
-  if('error'in response)throw new Error(response.error);
+  if('error'in response)throw failed(response.error);
   if (!roadsOnly) {
     const placed = response.settlements;
     if (!placed) throw new Error('Missing retained settlement placement.');
     placed.activities = chooseIsolatedSites(placed.activities ?? [], populationPlan.isolatedCount, settings.options.seed);
     const routed = await engine.engine.run({ id: 2, seed: roadSeed,
       sites: roadSitesOf(placed), roads, runtime });
-    if ('error' in routed) throw new Error(routed.error);
+    if ('error' in routed) throw failed(routed.error);
     response = { ...routed, settlements: placed };
   }
   if (!roadsOnly && response.settlements) response.settlements.activities = chooseIsolatedSites(response.settlements.activities ?? [], populationPlan.isolatedCount, settings.options.seed);
@@ -137,6 +141,13 @@ export async function planRustRegion(world:World,settings:V2Settings,onProgress?
   }
   world.roads=(response.roads?.segments??[]).map(s=>({path:s.path,width:s.width,kind:s.class==='highway'||s.class==='main'?'major':s.class==='local'?'minor':'track'}));
   world.bridges=(response.roads?.segments??[]).flatMap(s=>s.crossings.filter(c=>c.kind==='bridge').map(c=>({a:c.path[0],b:c.path[c.path.length-1],width:s.width})));
+  // Dug road tunnels join the natural ones: the names and the 2D tunnel strokes read them there (replaced on every run).
+  const caverns=world.terrain.caverns;
+  if(caverns){
+    const dug=(response.roads?.segments??[]).flatMap(s=>(s.tunnels??[]).filter(t=>t.path.length>=2).map(t=>({kind:'dug' as const,path:t.path,halfWidth:s.width/2+1})));
+    const tunnels=[...(caverns.tunnels??[]).filter(t=>t.kind!=='dug'),...dug];
+    if(tunnels.length)caverns.tunnels=tunnels;else delete caverns.tunnels;
+  }
   world.debug={...world.debug,v2RustRegion:{placement:output,roads:response.roads} satisfies RustRegionSnapshot,v2BaseBridges:structuredClone(world.bridges),v2TownBridges:{}};
   const warnings=[...output.warnings,...(response.roads?.warnings??[])];
   Object.assign(world.stats,{'v2.regionPopulation':world.settlements?.reduce((n,p)=>n+p.population,0)??0,'v2.requestedRegionPopulation':populationPlan.population,'v2.requestedIsolatedSites':populationPlan.isolatedCount});

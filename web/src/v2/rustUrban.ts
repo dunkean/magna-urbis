@@ -6,7 +6,7 @@ import type { Claim, Layout, Partition, UrbanResponse, Street, UrbanEngine } fro
 import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint } from './townNeighbours';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
-import { settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
+import { CAVE_ROCK_DEPTH, settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
 import { cityRasterSide, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
 import type { RustRegionSnapshot } from './region';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
@@ -14,10 +14,12 @@ import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import type { V2Settings, V2TownStage, ProgressCallback, V2UrbanControls, V2UrbanSettings } from './contracts';
 import { forCellsNearPolyline } from '../gen/core/field';
+import { layoutFortification } from '../gen/options';
 import { differenceS } from '../gen/geo/bool';
 import { ribbon } from '../gen/geo/offset';
 import { pointInRing } from '../gen/geo/poly';
 import { streetSeedConfig, urbanSeed } from './urbanSeeds';
+import { engineIdentityOf } from './runtimeChoices';
 import type { CityGroundRaster } from '../render/cityGround';
 import { cityArchitectureOf } from '../render/cityContract';
 import { siteVisualScene, type CityPlacementRequest } from '../ui/urbanSilhouettes';
@@ -130,7 +132,8 @@ export function rustSettlementRaster(world: World): SettlementRaster {
   const rock = planning?.rock ?? (projectedRock ? Uint8Array.from(terrain.water, v => v === 4 ? 1 : 0) : undefined);
   const height = planning?.height ?? grid.data, waterMask = planning?.water ?? (projectedRock ? Uint8Array.from(terrain.water, v => v === 4 ? 2 : v) : terrain.water);
   const waterLevel = planning?.waterLevel ?? new Float32Array(n * n), riverWidth = planning?.riverWidth ?? new Float32Array(n * n), riverIds = planning?.riverIds ?? new Int32Array(n * n).fill(-1);
-  if (!planning) for (let i = 0; i < waterLevel.length; i++) if (terrain.water[i]) waterLevel[i] = terrain.water[i] === 1 ? terrain.seaLevel : Math.max(grid.data[i], terrain.filled[i]);
+  if (!planning) for (let i = 0; i < waterLevel.length; i++) if (terrain.water[i]) waterLevel[i] = terrain.water[i] === 1 ? terrain.seaLevel
+    : terrain.water[i] === 4 ? grid.data[i] - CAVE_ROCK_DEPTH : Math.max(grid.data[i], terrain.filled[i]);
   if (!planning) for (const [index, river] of terrain.rivers.entries()) for (let j = 1; j < river.path.length; j++) {
     const width = Math.max(river.width[j - 1] ?? 1, river.width[j] ?? 1);
     forCellsNearPolyline([river.path[j - 1], river.path[j]], n, n, cell, Math.max(cell * .8, width / 2), i => {
@@ -195,7 +198,7 @@ export function resolveRustUrbanControls(settings: V2Settings, key: string, opti
   if (options.plan) throw new Error('Le plan personnalisé TypeScript ne peut pas être traduit fidèlement vers Rust. Utilisez les paramètres Rust layout.phaseOverrides, ou le moteur urbain TypeScript.');
   const layout = normalizeLayoutConfig(merge<LayoutConfig>(defaultLayoutConfig(), {
     culture: options.culture, density: 1 / (options.sprawl ?? 1), radiusScale: Math.sqrt(options.sprawl ?? 1),
-    fortification: options.walls === 'none' || options.walls === 'no' ? 'none' : options.walls === 'auto' ? 'culture' : 'wall',
+    ...layoutFortification(options),
     suburbs: options.suburbs === 'some' ? 'few' : options.suburbs,
     ...(options.castle === 'yes' || Number(options.castles) > 0 ? { monument: 'castle' } : {}),
     ...(options.cathedral === 'yes' ? { monument: 'cathedral' } : {}),
@@ -284,7 +287,8 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
   const seed = urbanSeed(settings, key, 'composition'), streetSeed = urbanSeed(settings, key, 'streets');
   // A town is regenerated when the claims of its neighbours change; a town without neighbours keeps its key and payload.
   const neighbours = [...(neighbourClaims ?? neighbourClaimsOf(world, settings, key))];
-  const compositionKey = townCompositionFingerprint([world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, seed, place.center, options.population, options.culture, config.layout], roads,
+  // The engine build is part of the key: a rebuilt engine recomposes the town instead of reusing the old binary's plan.
+  const compositionKey = townCompositionFingerprint(['household-mix-1', world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, engineIdentityOf(settings, backend), seed, place.center, options.population, options.culture, config.layout], roads,
     neighbours.length ? [neighbourFingerprint(neighbours)] : []);
   const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
   const previousComposition = previous?.compositionKey === compositionKey ? previous.compositionLayouts
@@ -620,6 +624,21 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
         const block = siteBlock(snapshot.layouts, site), role = block === undefined ? undefined : resolved.parcels.overrides?.blocks?.[block]?.role;
         if (role && role !== 'auto' && !role.startsWith('open.')) forcedTypes.set(site.parcel_id, role);
       }
+    }
+    // A lot's fence edit reaches its house yard (`YardHouse.enclosure`, cityLotEnclosures.ts); the engine never sets it.
+    const fences = resolved.parcels.overrides?.parcels ?? {};
+    type Fenced = PlacementBatch['buildings'][number] & { enclosure?: string };
+    if (snapshot.scene && (Object.values(fences).some(edit => edit.enclosure) || snapshot.scene.buildings.some(building => (building as Fenced).enclosure))) {
+      snapshot.scene = { ...snapshot.scene, buildings: snapshot.scene.buildings.map(building => {
+        const kind = fences[building.parcel_id]?.enclosure, own = (building as Fenced).enclosure;
+        if (kind === own) return building;
+        const next: Fenced = { ...building }; if (kind) next.enclosure = kind; else delete next.enclosure; return next;
+      }) };
+    }
+    // A forced use the lot cannot carry (size, slope, no model) leaves it open: name the cause (main.ts words it).
+    for (const [parcel, role] of forcedTypes) {
+      const open = snapshot.scene!.open_spaces.find(space => space.parcel_id === parcel && space.deficit);
+      if (open) throw new Error(`forced_use_refused:${open.deficit!.cause}:${role}`);
     }
     if (forcedTypes.size) requireHouseEditSuccess(snapshot.scene!, [...forcedTypes.keys()].map(parcel_id => ({ id: `${parcel_id}/building`, parcel_id })));
     if (snapshot.capacityKey !== buildingKey) {

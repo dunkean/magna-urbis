@@ -2,6 +2,8 @@
  * Same 2D engine as City Bench: WebGL2 cityGl (render/cityGlView.ts) draws the plans and city volumes
  * whenever the shared rule allows it (cityContract.cityGlBlockReason); Canvas 2D drawCity paints the
  * overlay (labels, glyphs, diagnostics, native house plans) and the whole frame otherwise. */
+import { drawCityWaterways } from '../render/cityWaterways';
+import { townWaterColour } from '../render/townWater';
 import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
@@ -42,7 +44,13 @@ export interface NativeCityMapStats {
   houses: BuildingRenderMetrics[];
 }
 /** Painted by each city plan between its streets and its buildings; `mpp` is world units per screen pixel. */
-export interface NativeCityHooks { beforeBuildings?(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: Box; mpp: number }): void }
+export interface NativeCityHooks {
+  beforeBuildings?(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: Box; mpp: number }): void;
+  /** The rivers the map draws under the towns (`riverSegments` layout): town ground and streets stay off them. */
+  water?(): Float32Array | undefined;
+  /** Canvas 2D town: puts the map's water back over the town ground and streets, before quays and bridges. */
+  waterAbove?(ctx: CanvasRenderingContext2D, box: Box, over?: () => void): void;
+}
 export interface NativeCityMap {
   draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks): NativeCityMapStats;
   /** The city plans (activity sites included), for the semantic district layer. */
@@ -262,7 +270,8 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
       for (const entry of entries) if (entry.large) { const shown = largeTownBuildings(entry, viewport, mpp); if (shown !== entry.buildings) { entry.buildings = shown; swapped = true; } }
       if (swapped && glScene) gl?.setBuildings(mergeCityBuildings(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings }))));
       const palette = city.palette, buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
-      const requestedLayers = city.plan ? city.layers : EMPTY_LAYERS;
+      // Urban plan off is already folded into city.layers (withoutUrbanPlan): streets, walls and lamps stay.
+      const requestedLayers = city.layers;
       const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
         streets: appearance.composition.networks.roads.visible && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
       const painted = city.painted, textured = city.textured;
@@ -280,7 +289,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
           else {
             glFrame = gl!.draw(ctx, Math.round(w * dpr), Math.round(h * dpr), cityGlDrawOptions({ viewport, mpp, lod, view: city.view, palette, layers,
               buildingStyle: buildingAppearance.style, painted, buildingsVisible, diagnostic: buildingAppearance.diagnostic,
-              refusedParcels: buildingAppearance.diagnostic === 'access' ? new Set(entries.flatMap(entry => [...entry.refused])) : undefined, textured, colors: appearance.palette.colors }));
+              refusedParcels: buildingAppearance.diagnostic === 'access' ? new Set(entries.flatMap(entry => [...entry.refused])) : undefined, textured, colors: appearance.palette.colors, water: hooks?.water?.() }));
             if (!glFrame) reason = 'gl-unavailable';
           }
         }
@@ -291,6 +300,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
             page: { buildings: entry.buildings, farBuildings: entry.large?.base, buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses), onTexturesReady: invalidate,
             refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
             beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? (hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp })) : undefined,
+            waterAbove: hooks?.waterAbove ? ((hookCtx, box, over) => hooks.waterAbove!(hookCtx, box, over)) : undefined,
             renderer: entry.houses && { draw(houseCtx, options) {
               const metrics = entry.houses!.draw(houseCtx, { ...options, painted });
               stats.houses.push(metrics); stats.visibleBuildings += metrics.visibleBuildings;
@@ -298,7 +308,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
               return metrics;
             } } } }));
           finishCityFrame(ctx, entry.plan, entry.canopyBuildings, { viewport, mpp, view: city.view, palette,
-            visible: buildingsVisible, diagnostic: buildingAppearance.diagnostic, night: appearance.composition.ambience === 'night', streets: layers.streets });
+            visible: buildingsVisible, diagnostic: buildingAppearance.diagnostic, night: !!buildingAppearance.lightsOn, streets: layers.streets });
           stats.frames.push(frame); stats.pending ||= frame.pending;
           if (!entry.houses || city.view !== 'buildings' || buildingAppearance.style === 'silhouette') stats.visibleBuildings += frame.buildings;
           // City volumes drawn by WebGL2: counted from the plan bins (drawCity painted none of them).
@@ -309,6 +319,14 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
         target.save();
         try { target.setTransform(1, 0, 0, 1, 0, 0); target.globalAlpha *= opacity; target.drawImage(layer!, 0, 0); }
         finally { target.restore(); }
+        // Canal water is water, not plan ink: at full strength, as the rivers under the plan (townWater.ts).
+        if (layers.waterways !== false && (layers.streets || layers.waterways)) {
+          target.save();
+          try {
+            target.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
+            for (const entry of entries) drawCityWaterways(target, entry.plan.layouts, mpp, townWaterColour(appearance));
+          } finally { target.restore(); }
+        }
       }
       if (stats.pending) invalidate();
       stats.ms = performance.now() - started;

@@ -9,6 +9,14 @@ import { labelCandidates, settlementKeyOf, type LabelCandidate, type LabelEdit }
 import { TOPONYM_PROFILES } from '../gen/names/profiles';
 import { varyNames } from '../gen/names/policy';
 import { nameProfileLabels } from './mapControls';
+import { presentName } from '../gen/names/displayNames';
+import type { NamePresentation } from '../gen/names/types';
+import { lineIcon } from './editorIcons';
+import { drawnLabelIds, onDrawnLabelsChange } from './drawnLabels';
+import { mountParameterForm } from './parameterForm';
+import { CULTURE_LABELS } from '../gen/options';
+import { editorButtonIcon } from './editorIcons';
+import { hasToponymOverride, renameToponym, resetToponymName, setToponymHidden, TOPONYM_MAX_LENGTH, type ToponymTarget } from './toponymOverrides';
 
 const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en, fr } }); return en; };
 const T = {
@@ -34,7 +42,18 @@ const T = {
   none: copy('No name matches.', 'Aucun nom ne correspond.'),
   nothing: copy('Nothing selected.', 'Aucune sélection.'),
   browse: copy('Browse place names', 'Parcourir les toponymes'),
-  browseHint: copy('Select a name to locate and edit it. Show keeps it visible at every zoom, Hide removes it, and Automatic restores its default behaviour.', 'Sélectionnez un nom pour le localiser et le modifier. Afficher le conserve à tous les zooms, Masquer le retire et Automatique rétablit son comportement par défaut.'),
+  browseHint: copy('Type in a field to rename the place everywhere. The eye shows what the map draws now (dimmed: not drawn at this view); click it to show or hide the name. The arrow restores the generated name and automatic visibility. A typed name is shown as written in every map language.', 'Écrivez dans un champ pour renommer le lieu partout. L’œil montre ce que la carte dessine maintenant (atténué : non dessiné dans cette vue) ; cliquez dessus pour afficher ou masquer le nom. La flèche rétablit le nom généré et la visibilité automatique. Un nom saisi s’affiche tel quel dans toutes les langues de la carte.'),
+  shownEye: copy('Shown on the map now · click to hide it', 'Affiché sur la carte · cliquer pour le masquer'),
+  hiddenEye: copy('Hidden by you · click to show it at every zoom', 'Masqué par vous · cliquer pour l’afficher à tous les zooms'),
+  undrawnEye: copy('Not drawn at this view (off screen, zoom level or overlapping names) · click to always show it', 'Non dessiné dans cette vue (hors écran, niveau de zoom ou noms qui se chevauchent) · cliquer pour toujours l’afficher'),
+  restoreName: copy('Restore the generated name and automatic visibility', 'Rétablir le nom généré et la visibilité automatique'),
+  restoreNamed: copy('Restore the generated name ({name}) and automatic visibility', 'Rétablir le nom généré ({name}) et la visibilité automatique'),
+  unnamed: copy('Unnamed · type a name', 'Sans nom · saisir un nom'),
+  culture: copy('Toponym culture', 'Culture des toponymes'),
+  ownCulture: copy('Each place’s own culture', 'Culture propre à chaque lieu'),
+  pick: copy('Pick on map', 'Choisir sur la carte'),
+  picking: copy('Click a name or a named place on the map. Esc stops.', 'Cliquez sur un nom ou un lieu nommé de la carte. Échap pour arrêter.'),
+  select: copy('Select', 'Sélectionner'),
   automatic: copy('Automatic', 'Automatique'),
   visibility: copy('Name visibility', 'Visibilité du nom'),
   allStates: copy('All visibility choices', 'Toutes les visibilités'),
@@ -61,8 +80,11 @@ const KIND_NAMES: Record<string, string> = {
   castle: copy('Castle', 'Château'), church: copy('Place of worship', 'Lieu de culte'), square: copy('Square', 'Place'), building: copy('Building', 'Bâtiment'),
   parcel: copy('Parcel', 'Parcelle'), river: copy('River', 'Rivière'), lake: copy('Lake', 'Lac'), sea: copy('Sea', 'Mer'), forest: copy('Forest', 'Forêt'),
   hill: copy('Hill', 'Colline'), free: copy('Free label', 'Label libre'),
+  cavern: copy('Cavern', 'Caverne'), tunnel: copy('Tunnel', 'Tunnel'),
 };
-const kindName = (c: LabelCandidate): string => translate(c.id.startsWith('free:') ? KIND_NAMES.free : KIND_NAMES[c.kind] ?? KIND_NAMES.building);
+/** Caverns and tunnels are named as relief ('hill') entries; their role tells them apart. */
+const kindName = (c: LabelCandidate, role?: string): string => translate(c.id.startsWith('free:') ? KIND_NAMES.free
+  : role === 'terrain.cavern' ? KIND_NAMES.cavern : role?.startsWith('terrain.tunnel.') ? KIND_NAMES.tunnel : KIND_NAMES[c.kind] ?? KIND_NAMES.building);
 const PICK_PX = 28;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
@@ -84,6 +106,8 @@ function pathDistance(path: Vec2[] | undefined, p: Vec2): number {
 /** Names panel: towns first, then the name picked on the map; the full list stays one click away. */
 export function mountMapLabelEditor(host: HTMLElement, api: {
   getWorld(): World | undefined; getSettings(): V2Settings; onChange(): void; onNames?(): void;
+  /** A settlement picked on the map: shared with the Places selection. */
+  onPlace?(key: string): void;
   map?: HTMLElement; getView?(): View; focus?(point: Vec2): void;
 }): { sync(): void; active(): boolean; stop(): void; pick(point: Vec2): void; start(): void; selectPlace(key: string): void } {
   const box = el('section', 'map-label-editor'); host.append(box);
@@ -120,11 +144,24 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
   const bulkButtons = [button(), button(), button()]; bulk.append(...bulkButtons);
   const pager = el('div', 'map-label-pager'), previous = button(), next = button(); pager.append(previous, count, next);
   listBox.append(listTitle, browseHint, search, filters, bulk, list, pager);
-  box.append(status, listBox, empty, card, add, towns);
+  // Map-wide toponym culture (same setting as the map naming stage): names-only, applied at once.
+  const cultureHost = el('div', 'map-label-culture');
+  const cultureForm = mountParameterForm(cultureHost, [
+    { path: 'toponymCulture', id: 'labels-toponym-culture', type: 'select', label: T.culture, optional: true, emptyLabel: T.ownCulture,
+      options: CULTURE_LABELS.map(([value, label]) => ({ value, label })) },
+  ], {
+    getValue: () => api.getSettings().naming?.toponymCulture,
+    setValue: (_path, value) => { const s = api.getSettings(); s.naming ??= {}; if (value) s.naming.toponymCulture = String(value); else delete s.naming.toponymCulture; renamed(); },
+  });
+  // Pick on map: the panel's click-to-select, extended from labels to the named features under them.
+  const pickButton = button('map-label-pick'), pickText = el('span'); pickButton.append(lineIcon('crosshair'), pickText); pickButton.id = 'map-label-pick';
+  box.append(cultureHost, pickButton, status, listBox, empty, card, add, towns);
   const marker = el('div', 'map-label-marker'); marker.hidden = true; document.body.append(marker);
 
   let candidates: LabelCandidate[] = [], entries = new Map<string, NameEntry>(), selected = '';
-  let open = false, picking: 'select' | 'create' | 'place' = 'select', frame = 0, townKeys = '';
+  let open = false, picking: 'select' | 'create' | 'place' = 'select', frame = 0, townKeys = '', pickOn = false;
+  const selectTool = button(); selectTool.id = 'edit-select'; selectTool.setAttribute('aria-pressed', 'false');
+  document.getElementById('labels-open')?.before(selectTool); editorButtonIcon(selectTool, 'display-layers');
   let townInputs: { key: string; input: HTMLInputElement }[] = [];
   let page = 0, matches: LabelCandidate[] = [];
   const PAGE_SIZE = 100;
@@ -133,11 +170,17 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
   const changed = (): void => { api.onChange(); };
   const renamed = (): void => { (api.onNames ?? api.onChange)(); };
   const current = (): LabelCandidate | undefined => candidates.find(c => c.id === selected);
+  const kindOf = (c: LabelCandidate): string => kindName(c, entries.get(c.id)?.parts?.role);
+  let presentation: NamePresentation | undefined;
+  const targetOf = (c: LabelCandidate): ToponymTarget => { const entry = entries.get(c.id); return { id: c.id, town: entry ? settlementKeyOf(entry) : undefined, kind: c.id.startsWith('free:') ? 'free' : c.kind }; };
+  /** The name the generator gives for the current culture and language, when the names bank retains it. */
+  const generatedName = (id: string): string | undefined => { const parts = api.getWorld()?.names?.bank?.[id]?.parts; return parts ? presentName(parts, presentation) : undefined; };
 
   function locale(): void {
     townsTitle.textContent = translate(T.towns); townsHint.textContent = translate(T.townsHint);
     add.textContent = translate(T.add);
-    status.textContent = translate(picking === 'create' ? T.creating : picking === 'place' ? T.moving : T.idle);
+    status.textContent = translate(picking === 'create' ? T.creating : picking === 'place' ? T.moving : pickOn ? T.picking : T.idle);
+    pickText.textContent = translate(T.pick); selectTool.textContent = translate(T.select);
     input.setAttribute('aria-label', translate(T.text)); input.placeholder = translate(T.text);
     genericText.textContent = translate(T.keepGeneric);
     hide.textContent = translate(edits()[selected]?.hidden === false ? T.hide : T.show);
@@ -192,11 +235,14 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
   function populate(): void {
     const term = search.value.trim().toLocaleLowerCase(), test = FILTERS.find(f => f[0] === filter.value)?.[2] ?? FILTERS[0][2];
     const shownEdits = edits();
+    // Keep a name being typed (and its caret) through background refreshes of the list.
+    const active = document.activeElement instanceof HTMLInputElement && list.contains(document.activeElement) ? document.activeElement : undefined;
+    const typing = active ? { id: active.closest<HTMLElement>('[data-label-id]')?.dataset.labelId, value: active.value, start: active.selectionStart, end: active.selectionEnd } : undefined;
     list.replaceChildren();
     matches = [];
-    const sorted = candidates.filter(test).sort((a, b) => kindName(a).localeCompare(kindName(b)) || a.text.localeCompare(b.text));
+    const sorted = candidates.filter(test).sort((a, b) => kindOf(a).localeCompare(kindOf(b)) || a.text.localeCompare(b.text));
     for (const c of sorted) {
-      const caption = `${c.text || c.id} — ${kindName(c)}`;
+      const caption = `${c.text || c.id} — ${kindOf(c)}`;
       if (term && !caption.toLocaleLowerCase().includes(term)) continue;
       if (placeFilter.value && candidatePlace(c) !== placeFilter.value) continue;
       const hidden = shownEdits[c.id]?.hidden;
@@ -206,21 +252,68 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
     page = Math.min(page, Math.max(0, Math.ceil(matches.length / PAGE_SIZE) - 1));
     let group = '';
     for (const c of matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
-      const name = kindName(c);
+      const name = kindOf(c);
       if (name !== group) { group = name; list.append(el('h4', 'map-label-group', name)); }
-      const row = el('div', 'map-label-result'); row.dataset.labelId = c.id;
-      const choose = button('map-label-choose'); choose.textContent = c.text || c.id; choose.title = `${choose.textContent} · ${name}`;
-      choose.setAttribute('aria-pressed', String(selected === c.id));
-      choose.onclick = () => { select(c.id, false); api.focus?.(edits()[c.id]?.anchor ?? c.anchor); track(); };
-      const visible = el('select'); visible.setAttribute('aria-label', `${translate(T.visibility)} · ${choose.textContent}`);
-      visible.append(...[[T.automatic, 'auto'], [T.show, 'show'], [T.hide, 'hide']].map(([text, value]) => new Option(translate(text), value)));
-      visible.value = shownEdits[c.id]?.hidden === true ? 'hide' : shownEdits[c.id]?.hidden === false ? 'show' : 'auto';
-      visible.onchange = () => { setVisibility(c, visible.value); populate(); fields(); changed(); };
-      row.append(choose, visible); list.append(row);
+      list.append(resultRow(c, name));
+    }
+    if (typing?.id) {
+      const field = list.querySelector<HTMLInputElement>(`[data-label-id="${CSS.escape(typing.id)}"] .map-label-name`);
+      if (field) { field.value = typing.value; field.focus({ preventScroll: true }); try { field.setSelectionRange(typing.start, typing.end); } catch { /* not a text selection */ } }
     }
     count.textContent = matches.length ? translate(T.page).replace('{from}', String(page * PAGE_SIZE + 1)).replace('{to}', String(Math.min(matches.length, (page + 1) * PAGE_SIZE))).replace('{total}', String(matches.length)) : translate(T.none);
     previous.disabled = page === 0; next.disabled = (page + 1) * PAGE_SIZE >= matches.length;
     bulkButtons.forEach(b => b.disabled = !matches.length);
+  }
+
+  /** One toponym: its name in an editable field, an eye (shown / hidden) and a reset to the generated name. */
+  function resultRow(c: LabelCandidate, kind: string): HTMLElement {
+    const row = el('div', 'map-label-result'); row.dataset.labelId = c.id; row.classList.toggle('is-selected', selected === c.id);
+    const target = targetOf(c), generated = generatedName(c.id);
+    const field = el('input', 'map-label-name'); field.type = 'text'; field.maxLength = TOPONYM_MAX_LENGTH; field.value = c.text; field.spellcheck = false;
+    if (!c.text) field.placeholder = translate(T.unnamed);
+    field.title = `${c.text || translate(T.unnamed)} · ${kind}`; field.setAttribute('aria-label', `${translate(T.text)} · ${kind}`);
+    field.onfocus = () => { if (selected !== c.id) { highlight(c.id); api.focus?.(edits()[c.id]?.anchor ?? c.anchor); } };
+    field.onchange = () => {
+      if (field.value.trim() === c.text) return;
+      // Empty text is refused: the previous name comes back (the arrow is the way to the generated name).
+      if (!renameToponym(settings(), target, field.value, generated)) { field.value = c.text; return; }
+      c.text = field.value.trim(); renamed();
+    };
+    field.onkeydown = e => { if (e.key === 'Enter') field.blur(); else if (e.key === 'Escape') { field.value = c.text; field.blur(); e.stopPropagation(); } };
+    const eye = button('map-label-icon map-label-eye');
+    paintEye(eye, c, kind);
+    // Drawn → hide; hidden or not drawn → always show. Automatic comes back through the reset arrow.
+    // Acting on a row selects it, so the card below always describes that row.
+    eye.onclick = () => { selected = c.id; setVisibility(c, eye.dataset.eye === 'shown' ? 'hide' : 'show'); populate(); fields(); track(); changed(); };
+    const restore = button('map-label-icon map-label-reset'); restore.append(lineIcon('reset'));
+    const visibilityEdited = edits()[c.id]?.hidden !== undefined;
+    restore.disabled = !hasToponymOverride(settings(), target) && !visibilityEdited;
+    restore.title = generated && hasToponymOverride(settings(), target) ? translate(T.restoreNamed).replace('{name}', generated) : translate(T.restoreName); restore.setAttribute('aria-label', restore.title);
+    restore.onclick = () => { highlight(c.id); resetToponymName(settings(), target); setVisibility(c, 'auto'); restore.disabled = true; renamed(); };
+    row.append(field, eye, restore); return row;
+  }
+  /** The eye tells what the map shows now: drawn, hidden by the user, or automatic but not drawn at this view. */
+  function paintEye(eye: HTMLButtonElement, c: LabelCandidate, kind: string): void {
+    const hidden = edits()[c.id]?.hidden === true, drawn = drawnLabelIds();
+    const state = hidden ? 'hidden' : !drawn || drawn.has(c.id) ? 'shown' : 'undrawn';
+    if (eye.dataset.eye === state) return;
+    eye.dataset.eye = state; eye.replaceChildren(lineIcon(state === 'hidden' ? 'eye-off' : 'eye'));
+    eye.setAttribute('aria-pressed', String(state === 'shown'));
+    eye.title = translate(state === 'hidden' ? T.hiddenEye : state === 'undrawn' ? T.undrawnEye : T.shownEye);
+    eye.setAttribute('aria-label', `${eye.title} · ${c.text || kind}`);
+  }
+  function repaintEyes(): void {
+    for (const row of Array.from(list.querySelectorAll<HTMLElement>('.map-label-result'))) {
+      const c = candidates.find(candidate => candidate.id === row.dataset.labelId), eye = row.querySelector<HTMLButtonElement>('.map-label-eye');
+      if (c && eye) paintEye(eye, c, kindOf(c));
+    }
+  }
+  onDrawnLabelsChange(() => { if (open) repaintEyes(); });
+  /** Select without rebuilding the list, so the field the user clicked keeps its focus and caret. */
+  function highlight(id: string): void {
+    selected = id; if (picking === 'place') picking = 'select';
+    for (const row of Array.from(list.querySelectorAll<HTMLElement>('.map-label-result'))) row.classList.toggle('is-selected', row.dataset.labelId === id);
+    fields(); track();
   }
 
   function candidatePlace(c: LabelCandidate): string {
@@ -241,7 +334,7 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
     card.hidden = !c; empty.hidden = !!c;
     if (!c) { marker.hidden = true; return; }
     const town = entry ? settlementKeyOf(entry) : undefined;
-    kind.textContent = kindName(c);
+    kind.textContent = kindOf(c);
     state.textContent = [edit?.hidden ? translate(T.hidden) : '', edit && (edit.text || edit.anchor || edit.style) ? translate(T.edited) : ''].filter(Boolean).join(' · ');
     if (document.activeElement !== input) input.value = town ? settings().naming?.places?.[town] ?? entry?.text ?? '' : edit?.text ?? c.text;
     const canKeepGeneric = !town && !!entry?.parts && !entry.parts.opaque && entry.kind !== 'town' && entry.kind !== 'village';
@@ -271,8 +364,22 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
 
   function setPicking(next: typeof picking): void {
     picking = next;
-    if (api.map) api.map.style.cursor = next === 'select' ? '' : 'crosshair';
+    if (api.map) api.map.style.cursor = next === 'select' && !pickOn ? '' : 'crosshair';
     locale();
+  }
+  function setPick(on: boolean): void {
+    pickOn = on; pickButton.setAttribute('aria-pressed', String(on)); selectTool.setAttribute('aria-pressed', String(on && open));
+    setPicking(picking);
+  }
+  /** Show a name's row whatever the current filters or page, with its field focused for editing. */
+  function reveal(id: string): void {
+    filter.value = 'all'; placeFilter.value = ''; visibilityFilter.value = 'all'; search.value = '';
+    selected = id; page = 0; populate();
+    const index = matches.findIndex(c => c.id === id);
+    if (index >= PAGE_SIZE) { page = Math.floor(index / PAGE_SIZE); populate(); }
+    fields(); track();
+    const field = list.querySelector<HTMLInputElement>(`[data-label-id="${CSS.escape(id)}"] .map-label-name`);
+    if (field) { field.scrollIntoView({ block: 'center' }); field.focus({ preventScroll: true }); field.select(); }
   }
 
   // The marker follows the view while a label is selected and the panel is open.
@@ -291,17 +398,32 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
     step();
   }
 
-  function nearest(point: Vec2): LabelCandidate | undefined {
-    const view = api.getView?.(), limit = view ? PICK_PX / view.scale : (api.getWorld()?.mapSize ?? 0) * .03;
+  function nearest(point: Vec2, feature = false): LabelCandidate | undefined {
+    const view = api.getView?.(), limit = view ? PICK_PX / view.scale : (api.getWorld()?.mapSize ?? 0) * .03, drawn = drawnLabelIds();
     let best: LabelCandidate | undefined, distance = limit;
     for (const c of candidates) {
       if (!c.text) continue;
-      const edit = edits()[c.id]; if (edit?.hidden) continue;
+      const edit = edits()[c.id]; if (edit?.hidden && !feature) continue;
+      // Picking reads what the map shows: a label counts only where it is drawn.
+      if (feature && drawn && !drawn.has(c.id)) continue;
       const entry = entries.get(c.id), anchor = edit?.anchor ?? c.anchor;
       const d = Math.min(Math.hypot(anchor.x - point.x, anchor.y - point.y), edit?.anchor ? Infinity : pathDistance(entry?.path, point));
       // Author labels win ties: they are what the user just placed.
       const score = d * (c.id.startsWith('free:') ? .7 : 1);
       if (score < distance) { distance = score; best = c; }
+    }
+    if (best || !feature) return best;
+    // No drawn label under the click: the settlement around it, else the nearest named feature (river course, relief, water…).
+    const world = api.getWorld();
+    const place = world?.settlements?.map(s => ({ s, d: Math.hypot((s.core ?? s.center).x - point.x, (s.core ?? s.center).y - point.y) })).sort((a, b) => a.d - b.d)[0];
+    if (place && place.d < Math.max(limit * 6, Math.sqrt(place.s.population) * 3)) best = candidates.find(c => { const e = entries.get(c.id); return !!e && settlementKeyOf(e) === place.s.key; });
+    if (best) return best;
+    let reach = limit * 4;
+    for (const c of candidates) {
+      if (!c.text || c.id.startsWith('free:') || c.kind === 'building' || c.kind === 'parcel') continue;
+      const entry = entries.get(c.id);
+      const d = Math.min(Math.hypot(c.anchor.x - point.x, c.anchor.y - point.y), pathDistance(entry?.path, point));
+      if (d < reach) { reach = d; best = c; }
     }
     return best;
   }
@@ -344,16 +466,25 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
   for (const control of [search, filter, placeFilter, visibilityFilter]) control.addEventListener(control === search ? 'input' : 'change', () => { page = 0; populate(); });
   previous.onclick = () => { page--; populate(); list.scrollTop = 0; }; next.onclick = () => { page++; populate(); list.scrollTop = 0; };
   bulkButtons.forEach((b, i) => b.onclick = () => { for (const c of matches) setVisibility(c, ['auto', 'show', 'hide'][i]); populate(); fields(); changed(); });
-  document.addEventListener('keydown', e => { if (open && e.key === 'Escape' && picking !== 'select') setPicking('select'); });
+  document.addEventListener('keydown', e => { if (!open || e.key !== 'Escape') return; if (picking !== 'select') setPicking('select'); else if (pickOn) setPick(false); });
   window.addEventListener('v2-edit-mode', e => {
     open = (e as CustomEvent).detail === 'labels';
-    if (!open) { setPicking('select'); marker.hidden = true; cancelAnimationFrame(frame); } else track();
+    if (!open) { pickOn = false; setPick(false); setPicking('select'); marker.hidden = true; cancelAnimationFrame(frame); } else { selectTool.setAttribute('aria-pressed', String(pickOn)); track(); }
   });
+  pickButton.onclick = () => setPick(!pickOn);
+  // The Editor tab's Select tool: the names panel in pick mode.
+  selectTool.onclick = () => {
+    if (!api.getWorld()) return;
+    if (open && pickOn) { window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'navigate' })); return; }
+    if (!open) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'labels' }));
+    setPick(true);
+  };
 
   function sync(): void {
     const world = api.getWorld();
     add.disabled = !world;
     const shown = world ? mapPresentation(world, settings()) : undefined;
+    presentation = shown?.names?.presentation;
     entries = new Map((shown?.names?.entries ?? []).map(e => [e.id, e]));
     candidates = shown ? labelCandidates(shown) : [];
     const place = placeFilter.value;
@@ -363,7 +494,7 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
     for (const [id, edit] of Object.entries(settings().naming?.labels ?? {})) if (id.startsWith('free:') && !candidates.some(c => c.id === id) && edit.anchor)
       candidates.push({ id, kind: 'square', text: edit.text ?? '', anchor: edit.anchor });
     if (selected && !candidates.some(c => c.id === selected)) selected = '';
-    syncTowns(); populate(); fields();
+    cultureForm.sync(); syncTowns(); populate(); fields();
   }
   onLanguageChange(() => { townKeys = ''; locale(); sync(); });
   locale(); fields();
@@ -377,8 +508,12 @@ export function mountMapLabelEditor(host: HTMLElement, api: {
       if (!open || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
       if (picking === 'create') { create(point); return; }
       if (picking === 'place') { setPicking('select'); write({ anchor: { x: point.x, y: point.y } }); track(); return; }
-      const hit = nearest(point);
-      if (hit) select(hit.id); else { selected = ''; populate(); fields(); }
+      if (!pickOn) { const hit = nearest(point); if (hit) select(hit.id); else { selected = ''; populate(); fields(); } return; }
+      const hit = nearest(point, true);
+      if (!hit) { selected = ''; populate(); fields(); return; }
+      reveal(hit.id);
+      const entry = entries.get(hit.id), town = entry ? settlementKeyOf(entry) : undefined;
+      if (town) api.onPlace?.(town);
     },
   };
 }

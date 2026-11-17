@@ -56,5 +56,7 @@ export function validateBuildingPatch(input: unknown): Partial<UrbanBuilding> {
   return out;
 }
 export function nearestSettlement(world: World, p: Vec2): Settlement | undefined {
-  return world.settlements?.filter(s => Math.hypot(s.center.x - p.x, s.center.y - p.y) < Math.max(s.radius, world.mapSize * .025)).sort((a,b) => Math.hypot(a.center.x-p.x,a.center.y-p.y)-Math.hypot(b.center.x-p.x,b.center.y-p.y))[0];
+  // A place is picked round its published centre (its built core when the town stands beside its placed centre).
+  const reach = (s: Settlement) => { const c = s.core ?? s.center; return Math.hypot(c.x - p.x, c.y - p.y); };
+  return world.settlements?.filter(s => reach(s) < Math.max(s.radius, world.mapSize * .025)).sort((a,b) => reach(a)-reach(b))[0];
 }

@@ -8,6 +8,7 @@ import { withoutLandDetail } from '../../../rust/bridge/terrainMaterialOccupatio
 import { shoreRingPixels, shoreRingTexture } from '../../../rust/bridge/terrainForestBeach';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, forestBeachTexture, type ForestField, type ForestOccupation, type LandDetail } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
+import { bindCrownClumps, crownClumpMode, type CrownDetail } from '../render/crownClumpAtlas';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { SEA_BAND_WIDTH } from '../render/terrainSea';
@@ -29,6 +30,7 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
 import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { RENDER_V2_COAST_GLSL } from '../../../rust/bridge/terrainRenderV2Coast';
 import { UNDERDARK_GLSL } from '../../../rust/bridge/terrainRenderUnderdark';
+import { CROWN_WATER_GLSL } from '../../../rust/bridge/terrainCrownWater';
 import { renderV2ZoneUniform, setSeasonCalendarGl, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
@@ -63,6 +65,9 @@ export interface TerrainLook {
   ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural';
   /** Satellite looks: swell crests and surf along exposed sea coasts (terrainRenderV2Coast). */
   coastWaves?: boolean;
+  /** Close-zoom leaf-clump relief of the procedural broadleaf and orchard crowns (2D map only; composition
+   * `vegetation.crownDetail`, render/crownClumpAtlas.ts). Absent: DEFAULT_CROWN_DETAIL. */
+  crownDetail?: CrownDetail;
   groundCover?: boolean;
   colors?: RenderColors;
   /** V2 composes the retained canopy over every ground; standalone benches keep their material-only canopy. */
@@ -314,6 +319,15 @@ ${WATER_STYLE_GLSL}
 ${MATERIAL_WATER_GLSL}
 ${RENDER_V2_COAST_GLSL}
 ${MOONLIGHT_GLSL}
+${CROWN_WATER_GLSL}
+// Water cover (0-1) at a crown's foot: the sea below the zero level, the water layer at that point of the canvas.
+float crownFootWater(vec2 p){
+  float h=surface(p).x;if(uFloor>0.)h=max(h,uFloor);
+  float w=h<0.?1.:0.;
+  vec2 q=(p-uOrigin)/uPx;
+  if(uUseWaterLayer==1&&q.x>=0.&&q.y>=0.&&q.x<uCanvas.x&&q.y<uCanvas.y)w=max(w,texelFetch(uWaterLayer,min(ivec2(q.x,uCanvas.y-q.y),ivec2(uCanvas)-1),0).a);
+  return w;
+}
 ${UNDERDARK_GLSL}
 // Variant constants (terrainFragment): NATURAL compiles the material path, uRenderV2/uForest
 // become constants when off, so ANGLE/D3D11 (FXC) only compiles what the look uses.
@@ -375,6 +389,13 @@ vec3 land(vec3 s, vec2 world) {
   return hypso(pow(t, 0.85)) * f;
 }
 
+// Distance into a lake's open water in metres (uLake g, bilinear; negative or 0 outside a lake).
+float lakeDistance(vec2 world) {
+  vec2 g = clamp(world * uLakeN / uMapW - 0.5, vec2(0.), vec2(uLakeN - 1.));
+  ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1)); vec2 f = fract(g);
+  return mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
+}
+
 float paperShore(vec2 world) {
   if (uCoastalSea != 1) return 0.;
   vec2 g = clamp((world - uCoastOrigin) / uCoastWidth * float(uCoastN) - .5, vec2(0.), vec2(float(uCoastN - 1)));
@@ -429,6 +450,8 @@ void main() {
     if (uFloor > 0.0) s.x = max(s.x, uFloor);
     // Contours follow the raster surface: refinement adds relief, not ink.
     vec3 raster = s;
+    // The engine's shoreline (urban Surface::wet) is this spline's zero level: refinement adds relief, never moves the coast.
+    float shoreH = s.x;
     if(uEnhanced3d==1 && uGroundCapture==0 && (uQuality==0 || uPx<min(8.,uSourceCell*.25))) {
       if(uRefinementMode==1 && s.x>0.) s+=terrain3dDetail(world,s);
       if(uRefinementMode==2) {
@@ -439,6 +462,7 @@ void main() {
       }
       raster=s;
     } else if (uGroundCapture==0 && uRefine == 1 && s.x > 0.0 && uPx * 2.0 < uSourceCell * uDetailA.w && (uQuality==0 || uPx<min(8.,uSourceCell*.25))) s += detail(world, s);
+    s.x = shoreH > 0.0 ? max(s.x, min(shoreH, 0.05)) : min(s.x, shoreH);
     float grad = length(s.yz);
     // Antialiased coast at the zero level (screen-space width of the height ramp).
     float ramp = max(grad * uPx, 1e-4);
@@ -519,6 +543,9 @@ void main() {
 #endif
     // One V2 water evaluation per fragment (the three cases below only choose its inputs).
     bool v2w=false;vec3 wBase=color;float wCover=0.,wKind=1.,wDepth=0.;
+    // Resolved crowns of the fragment, trees or Underdark mushroom caps: rooted on land, they overhang every water
+    // (rivers, lakes, the sea shore) whole (terrainCrownWater.ts waterUnderCrown).
+    float crownCover=underdark?udCapCover:forestResolvedCover;
     // Fresh ice of the fragment (terrainRenderV2Winter v2FreshIce): x freeze of the water's altitude, y open channel
     // of a river, z inside a lake, w lake shore; the bank line apart. One sheet evaluation below for every case.
     vec4 wIce=vec4(0.);float wIceEdge=0.;
@@ -531,6 +558,11 @@ void main() {
     // Open cover of a river's water in the fragment (land side: its wet bed; sea side: its share of the estuary), kept
     // through the antialiased coastline below.
     float wRiver=0.;
+    // Frozen share of a sea fragment (v2SeaIceCover of its sea evaluation): the estuary's river water, the climate tints
+    // and the swell lie under the sea ice, so a frozen sea is ice to the coastline and across its river mouths.
+    float wSeaIce=0.;
+    // Open share of a lake fragment (0 along its shore, 1 well inside), for the lake's surface tone (v2LakeSurface).
+    float wLake=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
@@ -542,7 +574,7 @@ void main() {
         // the land's snow at the water's altitude, below.
         if(s.x>=0.){
           // Bank crowns lean over the water: rooted on land (forestCrown), drawn whole above it.
-          float bed=water.a*(1.-forestResolvedCover);wCover=bed;
+          float bed=waterUnderCrown(water.a,crownCover);wCover=bed;
           vec3 painted=water.rgb/max(water.a,1e-3);
           // Sandy beds lean red: they are ground. The compositor's damp shadow on the land beside the water (dark
           // olive, greener than any water colour) is ground too: it darkens the bank. Read as partial water it laid a
@@ -576,6 +608,9 @@ void main() {
           // Distance inside the nearest lake, in device pixels (negative outside a lake: lakeShore is positive inside).
           float m=uHasLake>0?lakeShore(world,uHasLake==1):-1e3;
           float inside=uHasLake>0?m/max(fwidth(m),1e-4):-1e3;
+          // Inside a lake the water is a lake (kind 2), not a river's stream: its depth grows with the distance into the
+          // lake, sooner below steep banks (terrainRenderV2 v2LakeDepth); only a wide lake's open water drifts in tone.
+          if(m>0.){float d=lakeDistance(world);wKind=2.;wDepth=v2LakeDepth(d,grad);wLake=smoothstep(150.,600.,d);}
           // Dry season of a dry climate: the lake draws down, leaving a pale exposed shore inside its rim.
           float drop=waterLakeDrop()*80.;
           if(drop>1.&&uHasLake>0){
@@ -625,17 +660,14 @@ void main() {
       float m = lakeShore(world, uHasLake == 1);
       float w = max(fwidth(m), 1e-4);
       vec3 lakeColor;
+      float distance = lakeDistance(world);
       {
-        vec2 g = clamp(world * uLakeN / uMapW - 0.5, vec2(0.), vec2(uLakeN - 1.));
-        ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1));
-        vec2 f = fract(g);
-        float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
         float position=max(distance,0.)/uSeaBand;
         lakeColor = uNaturalWater==1?materialWater(world,position,uPx):styledWater(position);
       }
       float a=clamp(m/w+.5,0.,1.);
       if(uRenderV2>0){
-        v2w=true;wBase=color;wCover=a;wKind=2.;wDepth=8.*a;
+        v2w=true;wBase=color;wCover=waterUnderCrown(a,crownCover);wKind=2.;wDepth=v2LakeDepth(distance,grad)*a;wLake=smoothstep(150.,600.,distance);
         if(!underdark){wIce=vec4(v2WinterFresh,0.,1.,1.-smoothstep(0.,24.*uDpr,m/w));wIceEdge=1.-smoothstep(.5,3.5*uDpr,m/w);}
       }else color=mix(color,lakeColor,a);
       coverage=a+coverage*(1.-a);
@@ -648,7 +680,7 @@ void main() {
     }
     // The antialiased coastline: a river crossing it stays water through the band, in its own colour (the estuary's
     // river share), instead of a line of land colour drawn across every mouth like a thin dam.
-    if(uRenderV2>0 && landCover<1.){v2w=true;if(s.x>=0.)wEst=wRiver;wBase=landColor;wCover=1.-landCover*(1.-wRiver);wKind=1.;wDepth=max(-s.x,0.);}
+    if(uRenderV2>0 && landCover<1.){v2w=true;if(s.x>=0.)wEst=wRiver;wBase=landColor;wCover=waterUnderCrown(1.-landCover*(1.-wRiver),crownCover);wKind=1.;wDepth=max(-s.x,0.);}
 #ifdef AUX_PASS
     uint auxWater = 0u;
     if(!underdark && v2w && uV2WaterVisible == 1 && wCover > 0.){
@@ -657,14 +689,16 @@ void main() {
       for(int i=0;i<2;i++){
         if(i==1&&wEst<=.002)break;
         vec3 c=v2WaterColor(v2Here, world, uPx, wCover, i==0?wKind:3., i==0?wDepth:8.);
-        wc=i==0?c:mix(wc,c,wEst);
+        if(i==0&&wKind<1.5)wSeaIce=v2SeaIceCover;
+        wc=i==0?c:mix(wc,c,wEst*(1.-wSeaIce));
       }
-      auxWater=auxPack4x8(vec4(clamp(wc, 0., 1.), 1.));
+      // Alpha: 1 for open water down to 1/255 for a frozen sea (never 0, the texture's "no water" mark).
+      auxWater=auxPack4x8(vec4(clamp(wc, 0., 1.), 1.-wSeaIce*254./255.));
     }
     outAux = uvec4(auxCanopy, auxWater); return;
 #elif defined(AUX_TEXTURE)
     if(underdark){if(v2w && uV2WaterVisible == 1 && wCover > 0.)color = mix(wBase, underdarkWater(world, uPx, wDepth, 1.-smoothstep(0., .9, wCover)*smoothstep(0.,3.,wDepth)), wCover);}
-    else if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.) color = mix(wBase, aux.rgb, wCover); }
+    else if(v2w && uRenderV2 > 0 && uV2WaterVisible == 1 && wCover > 0. && uHasAux == 1){ vec4 aux = auxUnpack4x8(texelFetch(uAux, ivec2(gl_FragCoord.xy), 0).w); if(aux.a > 0.){ color = mix(wBase, aux.rgb, wCover); if(wKind < 1.5) wSeaIce = clamp((1. - aux.a) * 255. / 254., 0., 1.); } }
 #else
     // v2w is only ever set under uRenderV2>0; the variant test first lets the compilers drop the whole water model.
     if(uRenderV2>0)if(v2w){
@@ -675,7 +709,8 @@ void main() {
         for(int i=0;i<2;i++){
           if(i==1&&wEst<=.002)break;
           vec3 c=v2WaterAtEnv(v2Here,wBase,world,uPx,wCover,i==0?wKind:3.,i==0?wDepth:8.);
-          wc=i==0?c:mix(wc,c,wEst);
+          if(i==0&&wKind<1.5)wSeaIce=v2SeaIceCover;
+          wc=i==0?c:mix(wc,c,wEst*(1.-wSeaIce));
         }
         color=wc;
       }
@@ -685,25 +720,35 @@ void main() {
     if(uRenderV2>0&&v2w&&uV2WaterVisible==1&&!underdark){
       // Keep gallery shade on inland water. Detached crown silhouettes on the open sea read as offshore trees.
       if(wKind>1.5)color*=1.-.4*forestResolvedShade*wCover;
+      // A wide lake's open water drifts in tone along the wind (terrainRenderV2 v2LakeSurface); its shore keeps the bed.
+      if(wLake>0.)color=mix(color,v2LakeSurface(color,world,uPx,wLake),wCover);
       // Boreal humic water darkens to tea; alpine glacial flour turns lakes milky turquoise; silt plumes off river mouths.
-      color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover);
-      color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover);
-      color=mix(color,vec3(.45,.38,.25),.55*wTint.z);
+      // Over a frozen sea they lie under the ice.
+      float unfrozen=1.-wSeaIce;
+      color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover*unfrozen);
+      color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover*unfrozen);
+      color=mix(color,vec3(.45,.38,.25),.55*wTint.z*unfrozen);
     }
     if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
       vec3 paper=paperWater(wKind,paperShore(world));
+      // A lake takes the sea's paper ramp over its own distance to the bank: a narrow darker margin (60 m), a calm mid-tone centre.
+      if(wKind>1.5&&wKind<2.5)paper=paperWater(1.,mix(.6,1.,exp(-max(lakeDistance(world),0.)/60.)));
       // Parchment seas take the climate in muted paper tones: greener on warm coasts, clearer when arid, greyer when cold.
       if(wKind<1.5){
         float T=uMaterialClimate.x,warm=smoothstep(17.,25.,T),cold=1.-smoothstep(-1.,6.,T),arid=1.-smoothstep(150.,500.,uMaterialClimate.y);
         paper*=mix(vec3(1.),vec3(.93,1.03,.97),warm);
         paper=mix(paper,paper*vec3(.98,1.,1.04)+.02,arid);
         paper*=mix(vec3(1.),vec3(.90,.93,.96),cold);
+        // The satellite's estuary share (wEst, the river's own water at its mouth and across the antialiased coastline),
+        // in the paper river tone: the river runs into the sea instead of stopping at a line of sea colour.
+        paper=mix(paper,paperWater(3.,0.),wEst*(1.-wSeaIce));
       }
       color=mix(wBase,paper,wCover);
     }
     // Coastal swell and surf on the open sea (terrainRenderV2Coast), fainter in silt plumes. The estuary share is not
-    // read: the water layer gives it to every shallow sea fragment it covers, not only to river mouths.
-    if(uRenderV2>0)if(v2w&&wKind<1.5&&uV2WaterVisible==1&&!underdark)color=v2CoastSwell(color,world,s,uPx,wCover*(1.-.6*wTint.z));
+    // read: the water layer gives it to every shallow sea fragment it covers, not only to river mouths. Sea ice damps
+    // the swell and holds no surf: both fade with the frozen share, whatever the brightness of the ice.
+    if(uRenderV2>0)if(v2w&&wKind<1.5&&uV2WaterVisible==1&&!underdark)color=v2CoastSwell(color,world,s,uPx,wCover*(1.-.6*wTint.z)*(1.-wSeaIce));
 #endif
 #ifndef AUX_PASS
     if(underdark && uGroundCapture==0){
@@ -1339,6 +1384,8 @@ export class TerrainGl {
     gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
     gl.uniform1i(u('uShoreRing'), 14); gl.uniform3f(u('uShoreRingRect'), this.shoreRing?.x ?? 0, this.shoreRing?.y ?? 0, this.shoreRing?.width ?? 1);
     bindForestBrushes(gl, u, styleTraits(look.style).forestBrushes && mode === 3, 9);
+    // Optional crown clumps on the same unit: painted brushes and clumps never show together.
+    bindCrownClumps(gl, u, crownClumpMode(look.crownDetail, styleTraits(look.style).forestBrushes && mode === 3), 9);
     gl.uniform1i(u('uPaperMap'),styleTraits(look.style).paperMap?1:0);gl.uniform1i(u('uRenderV2'),styleTraits(look.style).satelliteVariant);gl.uniform1i(u('uV2WaterVisible'),look.layers.water===false?0:1);if(this.base&&look.climate)gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources(this.base.layer,look.climate));gl.uniform1f(u('uV2Season'),look.v2Season??.5);setSeasonCalendarGl(gl,u,look.climateZone,look.v2Calendar);gl.uniform1i(u('uMaterialZone'),renderV2ZoneUniform(look.climateZone));gl.uniform2f(u('uCityWater'),this.retainedCity[0],this.retainedCity[1]);
     gl.uniform1i(u('uEnhanced3d'), look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
     gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);

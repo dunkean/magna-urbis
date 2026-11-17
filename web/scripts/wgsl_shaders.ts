@@ -214,7 +214,8 @@ function main(): void {
       jobs3.push(job.stage, input, join(work, `${job.key}.wgsl`));
     }
     const jobsCount = Math.max(1, cpus().length - 2);
-    execFileSync('cargo', ['build', '--release', '--quiet', '-j', String(jobsCount)], { cwd: tool, stdio: 'inherit', env: { ...process.env, CARGO_TARGET_DIR: targetDir } });
+    // --skip-build reuses the existing translator (web-only sessions must not build Rust).
+    if (!process.argv.includes('--skip-build')) execFileSync('cargo', ['build', '--release', '--quiet', '-j', String(jobsCount)], { cwd: tool, stdio: 'inherit', env: { ...process.env, CARGO_TARGET_DIR: targetDir } });
     const exe = join(targetDir, 'release', process.platform === 'win32' ? 'glsl-wgsl.exe' : 'glsl-wgsl');
     try { execFileSync(exe, jobs3, { stdio: 'inherit' }); }
     catch { throw new Error(`naga failed; the rewritten GLSL is kept in ${work}`); }

@@ -2,6 +2,8 @@ import { CULTURES, cultureEra } from '../gen/options';
 import { climateZoneOf, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import type { V2Settings } from './contracts';
 import { UNDERDARK_CULTURES } from './underdarkCultures';
+import { effectiveTerrainSettings } from './terrainSettings';
+import { adaptedExtent } from './settings';
 
 export interface CultureHabitat {
   climates: readonly ClimateZone[];
@@ -101,13 +103,15 @@ export const MEDIEVAL_CULTURES: readonly string[] = CULTURES.filter(id => !cultu
 
 export function cultureEnvironment(settings: V2Settings): { climate: ClimateZone; relief: string; underdark: boolean; coast: boolean } {
   const t = settings.terrain;
+  const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
   const biomeClimate: Record<string, ClimateZone> = { forest: 'continental', tundra: 'arctic' };
   return {
     climate: climateZoneOf(t?.climate) ?? climateZoneOf(t?.climateZone)
       ?? climateZoneOf(settings.options.biome) ?? biomeClimate[String(settings.options.biome)] ?? 'temperate',
-    relief: t?.relief ?? settings.options.relief,
+    // The symbolic engine's carrier family is not a user-selected habitat.
+    relief: t?.zones ? 'flat' : effective.relief,
     underdark: settings.options.biome === 'underdark',
-    coast: t?.procedural?.enabled?.coasts !== false && (t?.coastMask !== undefined ? t.coastMask !== 0 : settings.options.coast !== 'none'),
+    coast: effective.procedural?.enabled?.coasts !== false && effective.coastMask !== 0,
   };
 }
 

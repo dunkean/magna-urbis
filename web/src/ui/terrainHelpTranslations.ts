@@ -113,11 +113,11 @@ export const terrainHelpTranslations: Record<string, readonly [string,string,str
     "El clima condiciona la generación neuronal y el balance hídrico de los lagos. En el relieve procedural afecta al agua, no a las formas del terreno.",
     "O clima condiciona a geração neural e o balanço hídrico dos lagos. No relevo procedural, afeta a água, não as formas do terreno."
   ],
-  "Bruit de conditionnement neuronal : une valeur faible suit plus étroitement l’esquisse. Le réseau voit de grandes cellules (~7,7 km), les petites côtes peintes ne sont donc pas garanties. Heightmap → conserver garde les formes exactes.": [
-    "Neural conditioning noise: A lower value follows the sketch more closely. The network sees large cells (~7.7 km), so small painted coastlines are not guaranteed. Heightmap → preserve keeps the exact shapes.",
-    "神经调节噪声：值越低，越接近草图。该网络存在较大的小区（约 7.7 公里），因此无法保证绘制较小的海岸线。高度图 → 保留保持精确的形状。",
-    "Ruido de acondicionamiento neuronal: un valor más bajo sigue más de cerca el boceto. La red ve células grandes (~7,7 km), por lo que no se garantizan líneas costeras pequeñas pintadas. Mapa de altura → preservar mantiene las formas exactas.",
-    "Ruído de condicionamento neural: um valor mais baixo segue o esboço mais de perto. A rede possui grandes células (~7,7 km), portanto pequenas linhas costeiras pintadas não são garantidas. Heightmap → preservar mantém as formas exatas."
+  "Bruit de conditionnement neuronal : une valeur faible suit plus étroitement les indications régionales. Les directions de mer et le littoral tracé sont appliqués après la génération neuronale.": [
+    "Neural conditioning noise: a lower value follows regional instructions more closely. Sea directions and traced coastlines apply after neural generation.",
+    "神经条件噪声：值越低，越接近区域指令。海洋方向和绘制的海岸线在神经生成后应用。",
+    "Ruido de acondicionamiento neuronal: un valor más bajo sigue mejor las instrucciones regionales. Las direcciones del mar y las costas trazadas se aplican después de la generación neuronal.",
+    "Ruído de condicionamento neural: um valor mais baixo segue melhor as instruções regionais. As direções do mar e os litorais traçados são aplicados após a geração neural."
   ],
   "Le réseau génère 40 × 40 km. Crop prélève une fenêtre à la taille de la carte ; Scale ajuste l’ensemble des 40 km à la carte.": [
     "The network generates 40 × 40 km. Crop takes a window to the size of the map; Scale adjusts the entire 40 km to the map.",
@@ -131,11 +131,11 @@ export const terrainHelpTranslations: Record<string, readonly [string,string,str
     "Agrega detalles fractales debajo del tamaño de la celda mientras hace zoom. Estos son detalles de visualización; Las exportaciones de mapas de altura contienen altitudes físicas, sin este detalle de zoom.",
     "Adiciona detalhes fractais abaixo do tamanho da célula durante o zoom. Estes são detalhes de exibição; As exportações de mapas de altura contêm altitudes físicas, sem esse detalhe de zoom."
   ],
-  "Quand tous les côtés sont marins, choisit une île, plusieurs îles ou un choix seedé. En mode heightmap, les altitudes négatives définissent directement la mer.": [
-    "When all sides are sea, choose one island, several islands or a seed-based choice. In heightmap mode, negative elevations directly define the sea.",
-    "当所有边界都是海洋时，可选择单岛、多岛或根据种子选择。高程图模式中，负高度直接定义海洋。",
-    "Cuando todos los lados son marinos, elige una isla, varias islas o una opción determinada por la semilla. En modo mapa de altura, las altitudes negativas definen directamente el mar.",
-    "Quando todos os lados são marítimos, escolha uma ilha, várias ilhas ou uma opção determinada pela semente. No modo mapa de altura, altitudes negativas definem diretamente o mar."
+  "Les directions de mer s’appliquent à toutes les sources, y compris les heightmaps importées. Les préréglages île et archipel concernent le procédural et le neuronal ; une carte symbolique dessine ses propres îles.": [
+    "Sea directions apply to every source, including imported heightmaps. Island and archipelago presets apply to procedural and neural sources; symbolic maps paint their own islands.",
+    "海洋方向适用于所有来源，包括导入的高度图。岛屿和群岛预设适用于程序和神经来源；符号地图自行绘制岛屿。",
+    "Las direcciones del mar se aplican a todas las fuentes, incluidos los mapas de altura importados. Las islas y archipiélagos se aplican a fuentes procedurales y neuronales; los mapas simbólicos pintan sus propias islas.",
+    "As direções do mar se aplicam a todas as fontes, incluindo mapas de altura importados. Ilhas e arquipélagos se aplicam às fontes procedurais e neurais; mapas simbólicos pintam suas próprias ilhas."
   ],
   "Relief entourant les formes locales comme plateau, volcan ou caldeira, utilisé dans la génération procédurale.": [
     "Landforms surrounding local shapes like plateau, volcano or caldera, used in procedural generation.",

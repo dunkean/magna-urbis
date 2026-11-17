@@ -27,17 +27,18 @@ export interface SurfaceOptions {
   /** Curb return radius as a share of the narrower width of two arms (0: sharp corners). */
   fillet?: number;
   /** Natural grounds: how a loose end stops ('round' cap by default; 'square' a paved end with a short bevel, 'taper'
-   * an earth way narrowing into the ground). With any of them, a straight continuation into a narrower way (a paved
-   * street running on as a country track) narrows over a taper of 15 to 40 m instead of stepping at the node. */
-  ends?: (street: number) => 'round' | 'square' | 'taper';
+   * an earth way narrowing into the ground, 'butt' cut square at its last vertex, nothing past it: a lane that ends at
+   * its last plot). With any of them, a straight continuation into a narrower way (a paved street running on as a
+   * country track) narrows over a taper of 15 to 40 m instead of stepping at the node. */
+  ends?: (street: number) => 'round' | 'square' | 'taper' | 'butt';
 }
 /** One ring; `street` owns its style (a junction belongs to its major arm). */
 export interface SurfacePiece { street: number; ring: Point[] }
 
 /** Ways whose loose ends stop square (decks, quays, moles). */
-const BUTT = new Set(['bridge', 'quay', 'mole', 'pier', 'landing']);
+const BUTT = new Set(['bridge', 'mole', 'pier', 'landing']);
 /** Ways that get no curb return (structures, steps). */
-const SHARP = new Set(['bridge', 'quay', 'mole', 'pier', 'landing', 'ford', 'causeway', 'stairs', 'port-stairs', 'boardwalk', 'walkway']);
+const SHARP = new Set(['bridge', 'mole', 'pier', 'landing', 'ford', 'causeway', 'stairs', 'port-stairs', 'boardwalk', 'walkway']);
 const SNAP = 0.02;
 
 /** `length`: the straight run of the arm's first segment, which bounds its curb return. */
@@ -178,7 +179,7 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
     }
     const end = options.ends?.(si) ?? 'round';
     for (const [i, j] of [[0, 1], [pts.length - 1, pts.length - 2]]) {
-      if (junction(pts[i]) || BUTT.has(s.role)) continue;
+      if (junction(pts[i]) || BUTT.has(s.role) || end === 'butt') continue;
       const d = unit(sub(pts[i], pts[j])), n = left(d), p = pts[i], r = h[i];
       // A paved end stops square, its corners worn back a little; an earth way narrows to a point within a few metres.
       if (end === 'square') out.push({ street: si, ring: ccw([add(p, n, r), add(p, n, -r), add(add(p, d, .3 * r), n, -.8 * r), add(add(p, d, .3 * r), n, .8 * r)]) });

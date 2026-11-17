@@ -17,6 +17,8 @@ registerMessages({
   'Light direction, clockwise from north': { en: 'Light direction, clockwise from north', fr: 'Direction de la lumière, dans le sens horaire depuis le nord' },
   'Height above the horizon': { en: 'Height above the horizon', fr: 'Hauteur au-dessus de l’horizon' },
   'Day': { en: 'Day', fr: 'Jour' }, 'Night': { en: 'Night', fr: 'Nuit' },
+  'Lights on': { en: 'Lights on', fr: 'Lumières allumées' },
+  'Lights off': { en: 'Lights off', fr: 'Lumières éteintes' },
   'Winter': { en: 'Winter', fr: 'Hiver' }, 'Spring': { en: 'Spring', fr: 'Printemps' },
   'Summer': { en: 'Summer', fr: 'Été' }, 'Autumn': { en: 'Autumn', fr: 'Automne' },
 });
@@ -88,6 +90,12 @@ export function mountSceneControls(host: HTMLElement, api: { getSettings(): V2Se
     season.value = String(step); season.setAttribute('aria-valuetext', seasonText);
     output('#scene-season-value', seasonText);
     for (const button of seasonButtons) button.setAttribute('aria-pressed', String(Math.floor(Number(button.dataset.season) / 3) === Math.floor(step / 3)));
+    const underdark = api.getSettings().options.biome === 'underdark';
+    for (const [button, label] of [[day, underdark ? 'Lights on' : 'Day'], [night, underdark ? 'Lights off' : 'Night']] as const) {
+      for (const attr of ['aria-label', 'title']) {
+        button.setAttribute('data-i18n-' + attr, label); button.setAttribute(attr, translate(label));
+      }
+    }
     day.setAttribute('aria-pressed', String(effects.ambience === 'day'));
     night.setAttribute('aria-pressed', String(effects.ambience === 'night'));
     const azimuth = Math.round(light.azimuth) % 360;
