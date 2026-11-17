@@ -65,5 +65,7 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
   for (const action of ['[data-generate]', '[data-cancel]']) header.insertBefore(mounted.dialog.querySelector(action)!, close);
   mounted.button.setAttribute('data-i18n-title', 'Créer une illustration de cette vue');
   mounted.button.title = translate('Créer une illustration de cette vue');
+  // The top-bar Illustrate button is withdrawn from the V2 for now (2026-11-17); the workbench stays mounted.
+  mounted.button.hidden = true; mounted.button.style.display = 'none';
   return mounted;
 }
