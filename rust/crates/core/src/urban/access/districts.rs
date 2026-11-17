@@ -1,9 +1,10 @@
 //! District count and partition by construction: a city has as many districts
 //! as its culture has neighbourhood anchors (parishes, mahalle mosques, ward
 //! temples) and as its quarters can carry, not a fixed handful. Data lives in
-//! `catalogue.json`: `districts.default`, `districts.pools` (French names), and
+//! `catalogue.json`: `districts.default`, `districts.pools`, `districts.roleLabels`, and
 //! `cultures[c].districts` (`unit`, `anchor` service role, `per` anchors per
-//! district, `people` per district when no anchor is placed, `names` pool).
+//! district, `people` per district when no anchor is placed, `names` pool,
+//! `language` for label grammar and role labels).
 use super::super::roles;
 use super::super::{Point, UrbanDistrict};
 use serde_json::Value;
@@ -121,9 +122,26 @@ pub(in crate::urban) fn zone_weight(zone: &str) -> f64 {
     }
 }
 
-/// French noun of the culture's district (`paroisse`, `mahalle`, `fang`...).
+/// Noun of the culture's district in its toponym language.
 pub(in crate::urban) fn unit(culture: &str) -> &'static str {
     text(culture, "unit").unwrap_or("quartier")
+}
+
+/// Optional role vocabulary for the culture's toponym language. Cultures
+/// without one retain the service catalogue's existing French labels.
+pub(in crate::urban) fn role_label(culture: &str, role: &str) -> Option<&'static str> {
+    let language = text(culture, "language")?;
+    let labels = &super::super::catalogue()["districts"]["roleLabels"][language];
+    let mut key = role;
+    loop {
+        if let Some(label) = labels[key].as_str() {
+            return Some(label);
+        }
+        let Some(end) = key.rfind(['.', ':']) else {
+            return labels["_default"].as_str();
+        };
+        key = &key[..end];
+    }
 }
 
 fn roman(mut n: usize) -> String {
@@ -156,11 +174,36 @@ pub(in crate::urban) fn name(culture: &str, index: usize) -> String {
     }
 }
 
-/// French label of a district: the bare unit for a residential one
-/// (`Paroisse Saint-Martin`), the role's label first for a specialised one
-/// (`Quartier des tanneurs, paroisse Saint-Éloi`).
+/// A named district in the culture's toponym language, with its role first
+/// when specialised. English places the possessive name before the unit;
+/// French keeps the unit before the name.
 pub(in crate::urban) fn label(culture: &str, role: &str, role_label: &str, index: usize) -> String {
     let unit = unit(culture);
+    if text(culture, "language") == Some("en") {
+        let cat = super::super::catalogue();
+        let pool_len = text(culture, "names")
+            .and_then(|p| cat["districts"]["pools"][p].as_array())
+            .map_or(0, Vec::len);
+        let district = if pool_len > 0 {
+            let base = name(culture, index % pool_len);
+            let possessive = if base.ends_with('s') { "'" } else { "'s" };
+            let lap = index / pool_len;
+            let numeral = if lap == 0 {
+                String::new()
+            } else {
+                format!(" {}", roman(lap + 1))
+            };
+            format!("{base}{possessive} {unit}{numeral}")
+        } else {
+            format!("{unit} {}", index + 1)
+        };
+        return if matches!(role, "commoner" | "") {
+            district
+        } else {
+            let role_label = self::role_label(culture, role).unwrap_or(role_label);
+            format!("{role_label}, {district}")
+        };
+    }
     let name = name(culture, index);
     if matches!(role, "commoner" | "") {
         let mut chars = unit.chars();
@@ -195,9 +238,10 @@ mod tests {
     }
 
     #[test]
-    fn district_names_are_french_distinct_and_cultural() {
+    fn district_names_follow_toponym_language_are_distinct_and_cultural() {
         for culture in [
             "european-organic",
+            "bastide",
             "ottoman",
             "chinese",
             "roman-core",
@@ -208,7 +252,53 @@ mod tests {
                 .collect();
             assert_eq!(labels.len(), 70, "{culture}");
         }
-        assert!(label("european-organic", "commoner", "", 0).starts_with("Paroisse Saint-"));
+        assert_eq!(unit("european-organic"), "Parish");
+        assert_eq!(
+            label("european-organic", "commoner", "", 0),
+            "St Mary's Parish"
+        );
+        assert_eq!(
+            label(
+                "european-organic",
+                "craft:tanners",
+                "Quartier des tanneurs",
+                1
+            ),
+            "Tanners' Quarter, St Giles' Parish"
+        );
+        assert_eq!(label("bastide", "commoner", "", 0), "Paroisse Saint-Martin");
+        assert_eq!(
+            label("bastide", "craft:tanners", "Quartier des tanneurs", 1),
+            "Quartier des tanneurs, paroisse Saint-Éloi"
+        );
+        let pool_len = super::super::super::catalogue()["districts"]["pools"]["english-saints"]
+            .as_array()
+            .unwrap()
+            .len();
+        assert_eq!(
+            label("european-organic", "commoner", "", pool_len),
+            "St Mary's Parish II"
+        );
+        assert_eq!(
+            roles::district_label("craft:tanners", "european-organic"),
+            "Tanners' Quarter"
+        );
+        assert_eq!(
+            roles::district_label("craft:smiths", "european-organic"),
+            "Smiths' Quarter"
+        );
+        assert_eq!(
+            roles::district_label("craft:unknown", "european-organic"),
+            "Craft Quarter"
+        );
+        assert_eq!(
+            roles::district_label("port", "european-organic"),
+            "Port Quarter"
+        );
+        assert_eq!(
+            roles::district_label("craft:tanners", "bastide"),
+            "Quartier des tanneurs"
+        );
         assert!(label("ottoman", "commoner", "", 0).starts_with("Mahalle de "));
         assert!(label("chinese", "port", "Quartier du port", 1).contains("fang"));
         assert!(label("roman-core", "commoner", "", 0).starts_with("Vicus "));

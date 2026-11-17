@@ -223,6 +223,57 @@ fn along(path: &[Point], t: f64) -> Point {
     Track::new(path).pos(t)
 }
 
+/// Arc length along `path` of the farthest plot corner beside it (within
+/// `near` of it), or `None` when no plot touches it.
+pub(super) fn served_reach(path: &[Point], near: f64, blocks: &[(Shape, &'static str)]) -> Option<f64> {
+    let arcs = arc(path);
+    let mut reach: Option<f64> = None;
+    for (shape, kind) in blocks {
+        if *kind != "block" {
+            continue;
+        }
+        for &v in &shape.outer {
+            for (i, w) in path.windows(2).enumerate() {
+                let (d, t, _) = g::distance(v, w[0], w[1]);
+                if d < near {
+                    let at = arcs[i] + t * (arcs[i + 1] - arcs[i]);
+                    reach = Some(reach.map_or(at, |r: f64| r.max(at)));
+                }
+            }
+        }
+    }
+    reach
+}
+
+/// `path` ending at the far edge of its last plot, or `None` when no plot
+/// touches it. A plot's back edge, oblique to the lane, has corners beside
+/// the lane's tail that lie a metre or two past the plot's corner on the lane:
+/// once cut there they leave its reach, so the cut repeats (a few times at
+/// most) until the lane ends where the plots beside it end.
+pub(super) fn to_last_plot(path: &[Point], near: f64, blocks: &[(Shape, &'static str)]) -> Option<Vec<Point>> {
+    let mut path = path.to_vec();
+    for _ in 0..4 {
+        let reach = served_reach(&path, near, blocks)?;
+        let length = arc(&path).last().copied().unwrap_or(0.0);
+        if reach <= 1.0 || reach >= length - 0.25 {
+            break;
+        }
+        path = cut_at(&path, reach);
+    }
+    Some(path)
+}
+
+/// `path` cut at arc length `t` (from its start).
+pub(super) fn cut_at(path: &[Point], t: f64) -> Vec<Point> {
+    let arcs = arc(path);
+    let mut out: Vec<Point> = path.iter().zip(&arcs).take_while(|pair| *pair.1 < t).map(|pair| *pair.0).collect();
+    if out.is_empty() {
+        out.push(path[0]);
+    }
+    out.push(along(path, t));
+    out
+}
+
 /// The street village's plan, `varied` branch of `linear`: blocks and streets
 /// along `axis` (half width `half`), for `households` lots of `module` frontage.
 #[allow(clippy::too_many_arguments)]
@@ -925,15 +976,12 @@ pub(super) fn plan(
         }
     }
     let blocks = built;
-    // A lane that no plot touches leads nowhere: drop it.
+    // A lane that no plot touches leads nowhere: drop it. A row lane serves
+    // doors only, so it ends at the far side of its last plot, never beyond.
     for (_, _, path, role) in lanes {
-        let serves = blocks.iter().any(|(shape, kind)| {
-            *kind == "block"
-                && shape.outer.iter().any(|&v| path.windows(2).any(|w| g::distance(v, w[0], w[1]).0 < lane * 0.5 + 3.0))
-        });
-        if serves {
-            streets.push(street(path, lane, 3, role));
-        }
+        let Some(cut) = to_last_plot(&path, lane * 0.5 + 3.0, &blocks) else { continue };
+        let path = if rows.iter().any(|(row, _)| *row == path) { cut } else { path };
+        streets.push(street(path, lane, 3, role));
     }
     // Never an empty village: without a single plot the caller falls back.
     blocks.iter().any(|(_, kind)| *kind == "block").then_some((blocks, streets, center))
@@ -1191,7 +1239,9 @@ mod tests {
     /// domestic units), at 150 and 300 inhabitants, with the V2's ribbon
     /// (`villageStreets` off) and the site-read plan, alone and beside a large
     /// town that reserved the village's core first (the string keeps to free
-    /// ground, or the village gathers in its core).
+    /// ground, or the village gathers in its core). The European site-read
+    /// cases (150 on the plain, 300 by the river at a bridge) once collapsed to
+    /// a few houses: on never houses fewer than 95 % either.
     #[test]
     fn street_villages_house_their_households() {
         use crate::urban::neighbours::{Claim, Reserve};
@@ -1205,7 +1255,13 @@ mod tests {
                             if beside && (name != "flat" || culture != "european-organic") {
                                 continue;
                             }
-                            let cfg = LayoutConfig { village_streets: on, street_frontage: true, settlement_form: "ribbon".into(), ..LayoutConfig::default() };
+                            // By the river, as the V2 lays it: a bridge site whose automatic form is the ribbon.
+                            let bridge = name == "river" && culture == "european-organic";
+                            let (form, archetype) = if bridge { ("auto", "bridge") } else { ("ribbon", "") };
+                            let cfg = LayoutConfig {
+                                village_streets: on, street_frontage: true, settlement_form: form.into(), site_archetype: archetype.into(),
+                                ..LayoutConfig::default()
+                            };
                             let mut site = site(culture, &format!("{name}-homes-{population}"));
                             site.population = population;
                             if beside {
@@ -1313,6 +1369,51 @@ mod tests {
                 assert!(lots[1] as f64 >= lots[0] as f64 * 0.6, "{name}/{culture}: households lost ({} -> {})", lots[0], lots[1]);
                 assert!(cv[1] > 0.12, "{name}/{culture}: plot widths still even (CV {:.2})", cv[1]);
             }
+        }
+    }
+
+    /// A perpendicular lane stops at the far side of its last plot: no blind
+    /// lane runs more than 1 m past the farthest plot beside it, neither a
+    /// straight row lane of the site-read plan nor a cross-lane of the default
+    /// form (dry sites: no water lanes; lanes ending on another street are left
+    /// alone; the site-read plan's field tracks are not lanes to plots).
+    #[test]
+    fn street_village_lanes_end_at_their_last_plot() {
+        let morph = Morph { value: serde_json::json!({}) };
+        for varied in [false, true] {
+            let cfg = LayoutConfig { road_width_by_size: false, village_streets: varied, ..LayoutConfig::default() };
+            let mut checked = 0usize;
+            for (name, h, w, roads) in sites().into_iter().filter(|c| c.0 == "flat" || c.0 == "slope") {
+                let surface = surface(&h, &w);
+                for culture in ["southeast-asian-tropical", "ethiopian-highland", "european-organic"] {
+                    for seed in 0..6 {
+                        let site = site(culture, &format!("{name}-rows-{seed}"));
+                        let near = nearest(site.center, &roads, 600.0);
+                        let Some(plan) = linear(&site, &cfg, Kind::StreetVillage, &morph, &near, &[], &|_| 3.05, &roads, surface, &mut Rng::new(&site.key), 1.0) else {
+                            continue;
+                        };
+                        for (i, lane) in plan.streets.iter().enumerate().filter(|(_, s)| s.role == "lane" && (s.path.len() == 2 || !varied)) {
+                            let end = *lane.path.last().unwrap();
+                            let joins = plan.streets.iter().enumerate().any(|(j, s)| {
+                                j != i && s.path.windows(2).any(|w| g::distance(end, w[0], w[1]).0 < s.widths[0] * 0.5 + lane.widths[0])
+                            });
+                            // A lane ending in water or on another street keeps its course.
+                            if joins || surface.wet(end) {
+                                continue;
+                            }
+                            let length = arc(&lane.path).last().copied().unwrap_or(0.0);
+                            let reach = served_reach(&lane.path, lane.widths[0] * 0.5 + 3.0, &plan.blocks).unwrap_or(0.0);
+                            assert!(
+                                length - reach <= 1.0,
+                                "{name}/{culture}/{seed} (varied {varied}): a lane runs {:.1} m past its last plot",
+                                length - reach
+                            );
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+            assert!(checked > 0, "varied {varied}: no perpendicular lane laid");
         }
     }
 }

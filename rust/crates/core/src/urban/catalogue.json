@@ -919,6 +919,7 @@
           "hut"
         ],
         "core": [
+          "hut",
           "granary",
           "granary"
         ]
@@ -1261,7 +1262,7 @@
       "tipi-camp": {"arch":"tipi","roof":"conical","material":"hide","roofs":{},"layout":"round","enclosure":"none","outbuildings":[1,3],"houseSize":[5,7,5,7],"yard":[6,10],"jitter":0.15,"cover":"hide","wall":"hide","ancillary":["hut","sweat-bath","shed"],"core":["hut"]},
       "winter-house": {"arch":"igloo","roof":"dome","material":"snow","roofs":{"raised-granary":"gable"},"layout":"scattered","enclosure":"none","outbuildings":[1,2],"houseSize":[4,7,4,7],"yard":[3,6],"jitter":0.3,"cover":"snow","wall":"snow","ancillary":["hut","raised-granary"],"core":["raised-granary"]},
       "chum-camp": {"arch":"chum","roof":"conical","material":"hide","roofs":{"raised-granary":"gable","shed":"shed"},"layout":"scattered","enclosure":"none","outbuildings":[1,3],"houseSize":[5,7,5,7],"yard":[4,8],"jitter":0.3,"cover":"bark","wall":"hide","ancillary":["raised-granary","shed","hut"],"core":["raised-granary"]},
-      "agbo-ile": {"arch":"agbo-ile","roof":"hip","material":"mud","roofs":{"granary":"conical"},"layout":"closed","enclosure":"wall","outbuildings":[2,4],"houseSize":[9,14,5,7],"yard":[6,10],"jitter":0.04,"cover":"thatch","wall":"earth","ancillary":["granary","cook-house","shed","well","storeroom"],"core":["storeroom","cook-house"]},
+      "agbo-ile": {"arch":"agbo-ile","roof":"hip","material":"mud","roofs":{"granary":"conical"},"layout":"closed","enclosure":"wall","outbuildings":[2,4],"houseSize":[9,14,5,7],"yard":[6,10],"jitter":0.04,"cover":"thatch","wall":"earth","ancillary":["granary","cook-house","shed","well","storeroom"],"core":["storeroom","cook-house","storeroom"]},
       "tukul": {"arch":"tukul","roof":"conical","material":"stone","roofs":{},"layout":"round","enclosure":"wall","outbuildings":[2,4],"houseSize":[6,9,6,9],"yard":[6,10],"jitter":0.1,"cover":"thatch","wall":"stone","ancillary":["hut","raised-granary","byre","hayrick","cook-house"],"core":["hut","byre"]},
       "dhaka-homestead": {"arch":"dhaka","roof":"conical","material":"earth","roofs":{},"layout":"round","enclosure":"wall","outbuildings":[3,6],"houseSize":[6,9,6,9],"yard":[7,12],"jitter":0.12,"cover":"thatch","wall":"earth","ancillary":["hut","raised-granary","hut","cook-house","byre"],"core":["hut","raised-granary"]},
       "stone-huts": {"arch":"stone-hut","roof":"dome","material":"stone","roofs":{"shed":"shed"},"layout":"scattered","enclosure":"none","outbuildings":[2,4],"houseSize":[4,6,4,6],"yard":[4,7],"jitter":0.4,"cover":"turf","wall":"stone","ancillary":["hut","hut","shed"],"core":["hut"]},
@@ -118396,7 +118397,7 @@
         ],
         "campPath": 3.0,
         "campRings": 0,
-        "campHouseholds": 4.0,
+        "campHouseholds": 2.0,
         "campHouse": [
           9.144,
           15.24
@@ -118690,7 +118691,7 @@
         ],
         "campPath": 3.0,
         "campRings": 0,
-        "campHouseholds": 4.0,
+        "campHouseholds": 2.0,
         "campHouse": [
           9.144,
           15.24
@@ -118984,7 +118985,7 @@
         ],
         "campPath": 3.0,
         "campRings": 0,
-        "campHouseholds": 4.0,
+        "campHouseholds": 2.0,
         "campHouse": [
           9.144,
           15.24
@@ -129528,11 +129529,82 @@
   },
   "districts": {
     "default": {
+      "language": "fr",
       "unit": "quartier",
       "people": 3000,
       "quartersPer": 1.5
     },
+    "roleLabels": {
+      "en": {
+        "_default": "Quarter",
+        "civic": "Civic Quarter",
+        "market": "Market Quarter",
+        "religious": "Religious Quarter",
+        "port": "Port Quarter",
+        "elite": "Patrician Quarter",
+        "commoner": "Residential Quarter",
+        "poor": "Poor Quarter",
+        "garrison": "Garrison Quarter",
+        "gardens": "Garden Quarter",
+        "foreign": "Foreign Quarter",
+        "shanty": "Shanty Quarter",
+        "craft": "Craft Quarter",
+        "craft:tanners": "Tanners' Quarter",
+        "craft:smiths": "Smiths' Quarter",
+        "craft:weavers": "Weavers' Quarter",
+        "craft:dyers": "Dyers' Quarter",
+        "craft:knappers": "Flint Knappers' Quarter",
+        "craft:fullers": "Fullers' Quarter",
+        "craft:potters": "Potters' Quarter"
+      }
+    },
     "pools": {
+      "english-saints": [
+        "St Mary",
+        "St Giles",
+        "St Martin",
+        "St Peter",
+        "St Paul",
+        "St John",
+        "St James",
+        "St Michael",
+        "St Nicholas",
+        "St Andrew",
+        "St George",
+        "St Thomas",
+        "St Stephen",
+        "St Lawrence",
+        "St Margaret",
+        "St Catherine",
+        "St Anne",
+        "St Helen",
+        "St Edmund",
+        "St Edward",
+        "St Alban",
+        "St Leonard",
+        "St Benedict",
+        "St Bartholomew",
+        "St Clement",
+        "St Dunstan",
+        "St Bride",
+        "St Luke",
+        "St Matthew",
+        "St Mark",
+        "St Philip",
+        "St Simon",
+        "St Jude",
+        "St Agnes",
+        "St Cecilia",
+        "St Hilda",
+        "St Cuthbert",
+        "St Oswald",
+        "St Wilfrid",
+        "St Aidan",
+        "St Augustine",
+        "St Gregory",
+        "St Ambrose",
+        "St Denis"
+      ],
       "saints": [
         "Saint-Martin",
         "Saint-Éloi",
@@ -129707,10 +129779,11 @@
     "european-organic": {
       "label": "Medieval organic (Europe)",
       "districts": {
-        "unit": "paroisse",
+        "language": "en",
+        "unit": "Parish",
         "anchor": "worship.parish",
         "per": 1.5,
-        "names": "saints"
+        "names": "english-saints"
       },
       "recipes": [
         {
@@ -130616,6 +130689,9 @@
     },
     "dwarven": {
       "label": "Dwarven hold",
+      "sitePrefs": {
+        "harbor": 0.1
+      },
       "recipes": [
         {
           "id": "core",
@@ -131298,6 +131374,9 @@
       "growth": null
     },
     "venetian-lagoon": {
+      "sitePrefs": {
+        "flatWater": 3
+      },
       "shanty": "riverbank",
       "label": "Venetian lagoon town",
       "recipes": [
@@ -131417,7 +131496,7 @@
       "render": {
         "towerShape": "round",
         "lagoon": true,
-        "canalWaterReachM": 120
+        "canals": { "share": 0.3, "quayM": 0.8, "widthM": 4.5, "mainWidthM": 12, "mains": 2, "rii": true, "rioMinM": 2.4, "connectorM": 250, "mouthM": 30, "feederM": 0, "riseM": 2.0, "freeboardM": 0.5, "locks": false, "basin": false, "outletSpacingM": 40 }
       },
       "growth": null
     },
@@ -132218,8 +132297,7 @@
       "render": {
         "towerShape": "square",
         "lagoon": true,
-        "canalWaterReachM": 120,
-        "locks": true
+        "canals": { "share": 0.12, "quayM": 1.6, "widthM": 4, "mainWidthM": 8, "mains": 2, "rii": false, "connectorM": 150, "mouthM": 30, "feederM": 90, "riseM": 1.5, "freeboardM": 0.8, "locks": true, "lockStepM": 2, "maxLocks": 4, "basin": true, "outletSpacingM": 60 }
       },
       "growth": null
     },
@@ -134602,6 +134680,9 @@
     },
     "duergar-hold": {
       "label": "Duergar industrial hold",
+      "sitePrefs": {
+        "harbor": 0.1
+      },
       "recipes": [
         {
           "id": "core",

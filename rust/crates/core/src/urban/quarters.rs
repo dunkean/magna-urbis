@@ -2879,7 +2879,7 @@ pub(super) fn generate(
     // A minimum of one household per enclosed block must fit the +30 %
     // programme. Replan the land budget; wall tracing remains unchanged.
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
-    let limit = (1.3 * site.population as f64 / super::roles::occupancy(culture).household_size).floor().max(1.0);
+    let limit = (1.3 * site.population as f64 / super::roles::settlement_occupancy(culture, site.population).household_size).floor().max(1.0);
     // Rings indexed once, blocks tested in parallel (same arithmetic as `g::contains`).
     let enclosed_blocks = |l: &Layout| {
         let rings: Vec<g::ContainmentIndex> = l.enclosures.iter().map(|e| g::ContainmentIndex::new(&Shape { outer: e.path.clone(), holes: vec![] })).collect();
@@ -4088,7 +4088,9 @@ fn generate_once(
             claim: Default::default(),
         };
 
-        let required = p.required * capacity::MEASURE_MARGIN / (1.0 - capacity::BLOCK_LOSS);
+        // The homes the rule asks plus the housing margin (`p.required`),
+        // before the block loss: no estimator margin stacked on top.
+        let required = p.required / (1.0 - capacity::BLOCK_LOSS);
         let run = |p: &CapacityPlan, probe: &mut Layout| {
             if let Some(s) = probe.structure.as_mut() {
                 s.metrics.capacity = Some(p.clone());
@@ -4176,14 +4178,15 @@ fn generate_once(
         }
     }
     // A small village is cut to the lots it fills: the outermost blocks beyond the housing the
-    // plan needs (with a margin) are open land, and the lanes that served only them go too.
+    // plan needs (its housing margin, rounded up by the last block) are open land, and the
+    // lanes that served only them go too.
     if site.population < 1200
         && enclosures.is_empty()
         && measured.is_some()
         && let Some(p) = plan.as_ref()
         && p.required > 0.0
     {
-        let need = p.required * capacity::MEASURE_MARGIN * 1.2 / (1.0 - capacity::BLOCK_LOSS);
+        let need = p.required / (1.0 - capacity::BLOCK_LOSS);
         let all_area: f64 = blocks.iter().filter(|b| b.kind == "block").map(|b| g::area(&b.shape)).sum::<f64>().max(1.0);
         let yield_of = |i: usize, b: &Block| match &measured {
             Some(m) => m.get(i).copied().unwrap_or(0.0),
@@ -4343,7 +4346,8 @@ fn generate_once(
         && !(cfg.harbour_bridge_clearance && streets.iter().any(|s| s.role == "quay")) {
         macroplan::harbour::keep_sea_access(&mut streets,surface,roads);
     }
-    let works = macroplan::harbour::configured_works(
+    let works = macroplan::harbour::typed_works(
+        seed,
         &streets,
         surface,
         site,
@@ -5198,6 +5202,10 @@ mod tests {
                         && (mb.2 - bb.2).abs().max((mb.3 - bb.3).abs()) < 0.01
                 })
         };
+        // Written before the assertions, so a failing layout can be inspected.
+        if let Ok(path) = std::env::var("BAY_DUMP") {
+            std::fs::write(path, serde_json::to_string(&base).unwrap()).unwrap();
+        }
         for (i, q) in base.quarters.iter().enumerate() {
             let bb = g::bbox(&q.shape);
             assert!(
@@ -5229,9 +5237,6 @@ mod tests {
                 })
             })
             .count();
-        if let Ok(path) = std::env::var("BAY_DUMP") {
-            std::fs::write(path, serde_json::to_string(&base).unwrap()).unwrap();
-        }
         assert_eq!(unserved, 0, "blocks without street frontage");
         // Editing one quarter changes its blocks only.
         let k = (0..base.quarters.len())

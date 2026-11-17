@@ -20,7 +20,7 @@ async function sample(settings: TerrainSettings, runtime: ExecutionRuntime, regi
   const definition = sourceDefinition(settings);
   const preparedSettings = { seed, width, motifSize, relief, erosion, mountainMix, environment, zones, erosionTuning,
     sampleSpacing: definition.requestedSpacing, sourceN: definition.n,
-    coastMask: processing ? 0 : settings.coastMask ?? 0, islandMode: settings.islandMode ?? 'island', source,
+    coastMask: settings.coastMask ?? 0, islandMode: settings.islandMode ?? 'island', source,
     ...(processing ? { sketch: { processing }, surface: Array.from(heightmapSurface(parseTerrainSketch(sketch), definition.n)) } : {}) };
   const response = await nativeRequest(runtime, '/terrain', JSON.stringify({ session, settings: preparedSettings, region, field }));
   const buffer = await response.arrayBuffer();

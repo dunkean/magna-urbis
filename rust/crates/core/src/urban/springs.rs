@@ -293,7 +293,7 @@ pub(super) fn allocate(layout: &Layout, partition: &mut Partition) {
             function:"collective".into(),culture:layout.culture.clone(),
             architecture_pack:pr.cultures.iter().find(|c|c.culture==layout.culture).unwrap().architecture_pack.clone(),
             capacity:area,unit:"usefulArea".into(),score:1.,reasons:vec!["spring-water".into()],role:"civic.bathhouse".into(),
-            label:water.label.clone(),landmark:true,households:0.,housing_floor_need:None,district_role:"civic".into(),wealth:0.4});
+            label:water.label.clone(),landmark:true,households:0.,residents:Some(0.),housing_floor_need:None,district_role:"civic".into(),wealth:0.4});
     }
 }
 

@@ -538,6 +538,30 @@ fn budget(site: &Site, cfg: &LayoutConfig, morph: &Morph, radius: f64) -> (f64, 
     };
     (target, density)
 }
+/// The land (m²) the town plan budgets for `population` people of `culture` under the default
+/// layout settings: `budget` with the founding morph, as `slope_relax_ahead` sizes it. `None`
+/// when the culture's morph does not resolve. Placement reads it to refuse a site too small.
+pub(super) fn planned_land(culture: &str, population: u32) -> Option<f64> {
+    let cfg = LayoutConfig { culture: "site".into(), ..LayoutConfig::default() };
+    let site = Site {
+        key: String::new(),
+        name: String::new(),
+        population,
+        culture: culture.into(),
+        center: Point { x: 0.0, y: 0.0 },
+        radius: crate::settlements::extent_radius(population),
+        neighbours: Vec::new(),
+    };
+    let small = crate::settlements::demographics::below(population, "town");
+    let recipe = super::composition::recipe(culture, population, if small { "village" } else { "core" });
+    let zone = if small && !enclosed(&cfg, culture, population) { "village" } else { "core" };
+    let morph = super::composition::phase_morph(
+        culture, &recipe, zone, &cfg.preset, &cfg.recipe, cfg.density, &cfg.params, "quarters",
+    )
+    .ok()?;
+    let morph = super::with_tissue(morph, &cfg.tissue);
+    Some(budget(&site, &cfg, &morph, site.radius).0)
+}
 #[derive(Clone, Copy)]
 struct Geography {
     dry_fraction: f64,
@@ -1688,6 +1712,21 @@ type Growth = (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>, bool, Option<terrain::S
 /// growth stops as soon as its housable land reaches the goal; the area
 /// target stays the upper bound. Without it the growth is area-bounded only.
 #[allow(clippy::too_many_arguments)]
+/// Underdark: the open share of the ground within `window` of `center` (24 x 24 samples),
+/// or `None` where no cave rock is in that window (every ordinary map).
+pub(in crate::urban) fn cave_floor_share(surface: Surface<'_>, center: Point, window: f64) -> Option<f64> {
+    const K: usize = 24;
+    let at = |a: usize, b: usize| Point {
+        x: center.x + window * (2.0 * (a as f64 + 0.5) / K as f64 - 1.0),
+        y: center.y + window * (2.0 * (b as f64 + 0.5) / K as f64 - 1.0),
+    };
+    let inside = |p: Point| p.x >= 0.0 && p.y >= 0.0 && p.x < surface.width && p.y < surface.width;
+    let points: Vec<Point> = (0..K * K).map(|i| at(i % K, i / K)).filter(|&p| inside(p)).collect();
+    if !points.iter().any(|&p| surface.solid(p)) {
+        return None;
+    }
+    Some(points.iter().filter(|&&p| !surface.wet(p)).count() as f64 / points.len().max(1) as f64)
+}
 fn accessible(
     site_population: u32,
     target: f64,
@@ -1719,6 +1758,10 @@ fn accessible(
     };
     let aspect = aspect + (aspect.min(1.4) - aspect) * small;
     let window = radius * 2.65 * aspect.sqrt();
+    // Underdark: the town follows the galleries to the next chambers. The window widens with
+    // the rock around it (the inverse square root of the open share), up to `CAVE_SPREAD`.
+    let window = window * centers.first().and_then(|c| cave_floor_share(surface, c.point, window))
+        .map_or(1.0, |share| (1.0 / share.max(1e-3).sqrt()).min(crate::settlements::CAVE_SPREAD));
     let reach = window * (1.0 - 0.35 * small);
     let mut x0 = centers
         .iter()
@@ -2785,6 +2828,9 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     // on less, flatter land than the area target: no shortfall.
     let target = land_target;
     let shortfall = if housed { 0.0 } else { (target - allocated_area).max(0.0) };
+    // Underdark: a cave town that found too little floor packs (`capacity::cave_pack`).
+    let cave_pack = (shortfall > target * 0.02 && cave_floor_share(surface, site.center, radius * 2.65).is_some())
+        .then(|| (allocated_area / target.max(1.0)).clamp(crate::settlements::CAVE_LAND_PER_HOME, 1.0));
     // Terrain-bounded growth: plan again on the land actually attributed.
     if let Some(p) = plan.as_mut()
         && shortfall > target * 0.02
@@ -2801,6 +2847,9 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             target,
             shortfall / target * 100.0
         ));
+    }
+    if let (Some(k), Some(p)) = (cave_pack, plan.as_mut()) {
+        p.cave_pack = k;
     }
     let mut history = vec![];
     let mut cumulative = vec![];

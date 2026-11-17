@@ -10,8 +10,11 @@ pub(super) fn camp(layout: &Layout, population: u32) -> bool {
 
 /// One declared communal house capacity drives both the cell count and allocation.
 /// PNW: campHouse = 9.144 × 15.24 m (30 × 50 ft), typical Chinook plankhouse:
-/// https://chinookstory.org/plankhouse/ . Four households/house is a modelling
-/// assumption within its account of three to five family fires, not a census.
+/// https://chinookstory.org/plankhouse/ . Two households/house is a modelling
+/// assumption, not a census: the programme's household is the clan's extended
+/// one (8 persons, 40 m² of floor: `services.json` occupancy), so a 139 m² house
+/// holds two of them (16 persons). Four (32 persons, 4 m² each) read as far too
+/// many for the house drawn: 300 inhabitants in a dozen houses.
 pub(in crate::urban) fn households_per_house(morph: &Morph) -> Option<f64> {
     let n = morph.number_or("campHouseholds", 0.0);
     (n.is_finite() && n >= 1.0).then_some(n)

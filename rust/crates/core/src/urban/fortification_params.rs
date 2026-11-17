@@ -33,6 +33,7 @@ pub(in super::super) fn valid_parameters(cfg: &LayoutConfig) -> bool {
         && ["","none","bank-walls","bank-walls-chain"].contains(&cfg.river_control_mode.as_str())
         && ["","auto","inside","separate","outside"].contains(&cfg.port_enclosure.as_str())
         && ["","auto","concentric","attached"].contains(&cfg.wall_extension.as_str())
+        && ["","none","dry","wet"].contains(&cfg.moat.as_str())
 }
 
 /// Simplification is metric; steep shortcuts are never accepted. Endpoints of

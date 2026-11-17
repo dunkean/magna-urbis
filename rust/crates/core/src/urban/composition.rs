@@ -1000,7 +1000,10 @@ fn generate_modern(
             .map(|v| v.0)
             .unwrap_or(0);
         quarter.phase = epoch;
-        quarter.zone = phases[epoch].zone.clone();
+        // A plan without growth phases (seen with `pnw-plank-village` on a 20 km region) keeps the quarter's own zone.
+        if let Some(phase) = phases.get(epoch) {
+            quarter.zone = phase.zone.clone();
+        }
     }
     plan.warnings.append(&mut footprint.warnings);
     footprint.structure.metrics.components = domains.len();
@@ -2583,7 +2586,11 @@ fn fortify(
     let occupied: Vec<Shape> = plan.quarters.iter().map(|q| q.shape.clone()).collect();
     let castle = fortification::heights_castle(&walls, &occupied, &plan.streets, surface, cfg, culture, site.population, &base);
     let walls = match &castle { Some(c) => fortification::wrap_castle(walls, c), None => walls };
+    // Underdark: the chamber's rock is the enceinte; one circuit closes the passages into it (barrier
+    // walls between the rock faces). A surface town keeps its circuits unchanged.
+    let (walls, cave) = fortification::cave_circuits(walls, surface);
     style.options(cfg);
+    style.cave = cave;
     let mut inner_style = style.inner(culture, site.population);
     inner_style.options(cfg);
     let data = culture_data(culture, site.population);
@@ -2660,7 +2667,9 @@ fn fortify(
     // A town's enceinte, square or polygonal, is filled to its wall street (the
     // castle keeps its own ward); a small settlement fills a square circuit and
     // fits its quarters to any other.
-    if small {
+    if cave {
+        // A cave circuit closes passages: the quarters keep their own outline inside the chamber.
+    } else if small {
         let (rect, other): (Vec<Shape>, Vec<Shape>) = walls.iter().cloned().partition(|w| square && rectangular(w));
         fit_enclosed_quarters(&mut plan.quarters, &other, &plan.streets, surface);
         fill_enclosures(&mut plan.quarters, phases, &rect, walled, &plan.streets, surface);

@@ -28,6 +28,23 @@ pub struct Claim {
     /// streets crossing the edge, dead ends near it. Each ends on its outer side.
     #[serde(default)]
     pub streets: Vec<Street>,
+    /// A placed neighbour generated after this town (canonical order), with no
+    /// land yet: this town keeps a core sized to its population free
+    /// (`reserve_cores`). Real suburbs absorb villages whose cores remain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve: Option<Reserve>,
+}
+
+/// The place a `Claim::reserve` stands for, as the region placed it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Reserve {
+    pub population: u32,
+    #[serde(default)]
+    pub culture: String,
+    pub center: Point,
+    /// Its site radius (m); 0 falls back to the placement's extent radius.
+    #[serde(default)]
+    pub radius: f64,
 }
 
 /// Clear band between a neighbour's land and this town's blocks: room for a
@@ -541,30 +558,38 @@ pub(super) fn settle(seed: &str, layout: &mut Layout, site: &Site, surface: Surf
         let _ = super::programme::prepare(layout, site.population, &context, surface);
     }
     join(layout, &mask);
-    // The neighbours whose land lies within the town's growth window.
-    let target = layout.structure.as_ref().map_or(0.0, |s| s.metrics.target_area);
-    let reach = 2.65 * site.radius.max((target / std::f64::consts::PI).sqrt());
+    if site.population == 0 {
+        return;
+    }
+    let empty = layout.blocks.iter().all(|b| b.kind == "reserve");
+    let short = layout.structure.as_ref().is_none_or(|s| s.metrics.target_area > 0.0 && s.metrics.shortfall_area > 0.02 * s.metrics.target_area);
+    if !empty && !short {
+        return;
+    }
+    // A neighbour is named only when its land took something from this town:
+    // for an empty town, land on its centre or within its site radius; else
+    // land within `TOUCH` of its built blocks (it cut them or stopped their
+    // growth there). A town short for its own reasons reports that itself.
     let mut near: Vec<&str> = vec![];
     for (k, c) in site.neighbours.iter().enumerate() {
-        let d = c.land.iter().filter(|s| s.outer.len() >= 3)
-            .map(|s| if g::contains(s, layout.center) { 0.0 } else { ring_distance(s, layout.center) })
-            .fold(f64::INFINITY, f64::min);
-        if d <= reach && !near.contains(&mask.keys[k].as_str()) {
-            near.push(&mask.keys[k]);
+        let key = mask.keys[k].as_str();
+        let took = c.land.iter().filter(|s| s.outer.len() >= 3).any(|s| if empty {
+            g::contains(s, layout.center) || ring_distance(s, layout.center) <= site.radius
+        } else {
+            touches(s, &layout.blocks)
+        });
+        if took && !near.contains(&key) {
+            near.push(key);
         }
     }
-    if near.is_empty() || site.population == 0 {
+    if near.is_empty() {
         return;
     }
     let keys = near.join(", ");
-    if layout.blocks.iter().all(|b| b.kind == "reserve") {
+    if empty {
         layout.warnings.push(format!(
             "Neighbouring towns: no free land is left beside {keys}; the town is announced empty."
         ));
-        return;
-    }
-    let short = layout.structure.as_ref().is_none_or(|s| s.metrics.target_area > 0.0 && s.metrics.shortfall_area > 0.02 * s.metrics.target_area);
-    if !short {
         return;
     }
     if let Some((wanted, housed)) = super::slopes::households(seed, layout)
@@ -574,6 +599,20 @@ pub(super) fn settle(seed: &str, layout: &mut Layout, site: &Site, surface: Surf
             "Neighbouring towns: the land of {keys} limits this town; {housed:.0} of {wanted:.0} households housed."
         ));
     }
+}
+
+/// Distance within which a neighbour's land counts as touching this town's
+/// blocks: the margin both towns keep, plus the claim's closing.
+const TOUCH: f64 = 2.0 * MARGIN + CLOSE;
+
+/// Some built block of the town comes within `TOUCH` of this piece of land.
+fn touches(land: &Shape, blocks: &[Block]) -> bool {
+    let b = g::bbox(land);
+    blocks.iter().filter(|k| k.kind != "reserve").any(|k| {
+        let kb = g::bbox(&k.shape);
+        kb.0 <= b.2 + TOUCH && kb.2 >= b.0 - TOUCH && kb.1 <= b.3 + TOUCH && kb.3 >= b.1 - TOUCH
+            && k.shape.outer.iter().any(|&p| g::contains(land, p) || ring_distance(land, p) <= TOUCH)
+    })
 }
 
 /// The claim of a finished layout: its held land as a few simplified
@@ -593,11 +632,68 @@ pub(super) fn claim(layout: &Layout) -> Claim {
     held.retain(|s| s.outer.len() >= 3);
     let key = layout.key.clone();
     let Some(raster) = Raster::new(&held) else {
-        return Claim { key, land: vec![], streets: vec![] };
+        return Claim { key, land: vec![], streets: vec![], reserve: None };
     };
     let land = raster.outline();
     let streets = raster.stubs(&layout.streets);
-    Claim { key, land, streets }
+    Claim { key, land, streets, reserve: None }
+}
+
+/// Sides of a reserved core's outline.
+const CORE_SIDES: usize = 32;
+
+/// A town whose neighbours include places generated after it (`Claim::reserve`):
+/// each place is first laid out alone, as its own request would lay it (its
+/// culture, the shared settings, none of this town's own choices), and keeps
+/// that land grown by `MARGIN` together with a disc of the same area round its
+/// centre (its own request may draw another shape): this town's growth,
+/// quarters and finish flow around it, so the place keeps the homes it has
+/// alone, whatever its land plan asks. A core that would reach this town's own
+/// centre is left out (the larger town is not moved off its site for a smaller
+/// one). None when no neighbour carries a reserve.
+pub(super) fn reserve_cores(seed: &str, site: &Site, cfg: &super::LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> Option<Site> {
+    if !site.neighbours.iter().any(|c| c.reserve.is_some()) {
+        return None;
+    }
+    let base = super::LayoutConfig::default();
+    let alone = super::LayoutConfig {
+        culture: "site".into(), preset: base.preset, recipe: base.recipe, params: base.params,
+        tissue: base.tissue, zone: base.zone, radius: 0.0, radius_scale: base.radius_scale,
+        ..cfg.clone()
+    };
+    let mut out = site.clone();
+    out.neighbours = par::map(&site.neighbours, |_, c| -> Option<Claim> {
+        let Some(r) = &c.reserve else { return Some(c.clone()) };
+        if r.population == 0 || !r.center.x.is_finite() || !r.center.y.is_finite() {
+            return None;
+        }
+        let place = Site {
+            key: c.key.clone(), name: String::new(), population: r.population,
+            culture: if r.culture.is_empty() { site.culture.clone() } else { r.culture.clone() },
+            center: r.center,
+            radius: if r.radius > 0.0 { r.radius } else { crate::settlements::extent_radius(r.population) },
+            neighbours: vec![],
+        };
+        let layout = super::generate_quarters(seed, std::slice::from_ref(&place), &alone, surface, roads).ok()?.into_iter().next()?;
+        let held: Vec<Shape> = layout.claim.land.iter().filter(|s| s.outer.len() >= 3).flat_map(grow).collect();
+        let area: f64 = layout.claim.land.iter().map(g::area).sum();
+        if !(area > 0.0) {
+            return None;
+        }
+        // The place keeps `MARGIN` off this town's land: the disc carries that band too.
+        let core = (area / std::f64::consts::PI).sqrt() + MARGIN;
+        if dist(r.center, site.center) <= core + MARGIN + CLOSE || held.iter().any(|s| g::contains(s, site.center)) {
+            return None;
+        }
+        let outer = (0..CORE_SIDES).map(|k| {
+            let a = k as f64 * std::f64::consts::TAU / CORE_SIDES as f64;
+            Point { x: r.center.x + core * a.cos(), y: r.center.y + core * a.sin() }
+        }).collect();
+        let disc = g::normalized(Shape { outer, holes: vec![] });
+        let land = super::footprint::union(&[held, vec![disc]].concat());
+        Some(Claim { key: c.key.clone(), land, streets: vec![], reserve: None })
+    }).into_iter().flatten().collect();
+    Some(out)
 }
 
 /// Cell raster of a town's held land.
@@ -952,12 +1048,42 @@ mod tests {
         let ring = |r: f64| (0..32).map(|k| { let a = k as f64 * std::f64::consts::TAU / 32.0; Point { x: c.x + r * a.cos(), y: c.y + r * a.sin() } }).collect::<Vec<_>>();
         let mut hole = ring(30.0);
         hole.reverse();
-        let claim = Claim { key: "around".into(), land: vec![Shape { outer: ring(2500.0), holes: vec![hole] }], streets: vec![] };
+        let claim = Claim { key: "around".into(), land: vec![Shape { outer: ring(2500.0), holes: vec![hole] }], streets: vec![], reserve: None };
         let mut boxed = site("boxed", 500, c.x, c.y);
         boxed.neighbours = vec![claim.clone()];
         let layout = town(&boxed, &height, &water);
         assert!(overlap(&layout, &claim) < 1.0);
         assert!(layout.warnings.iter().any(|w| w.starts_with("Neighbouring towns")), "{:?}", layout.warnings);
+    }
+
+    #[test]
+    fn a_large_town_leaves_a_later_village_its_homes() {
+        // The town comes first in the canonical order and receives the village
+        // as a reserve; the village then grows against the town's claim and
+        // houses as many households as it does alone. A nucleated village, so
+        // the check does not depend on the street-village grammar.
+        let (height, water) = flat();
+        let surface = Surface { geometry: None, width: WIDTH, n: 128, height: &height, water: &water, interpolation: Default::default() };
+        let cfg = LayoutConfig { settlement_form: "nucleated".into(), ..LayoutConfig::default() };
+        let lay = |s: &Site| generate_quarters("neighbours", std::slice::from_ref(s), &cfg, surface, &[road()]).expect("layout").remove(0);
+        let housed = |l: &Layout| super::super::slopes::households("neighbours", l).expect("village cadastre").1;
+        let big_site = site("big", 12000, 2000.0, 3000.0);
+        let village_site = site("village", 150, 2000.0 + 1.5 * big_site.radius, 3000.0);
+        let alone = housed(&lay(&village_site));
+        let mut big = big_site.clone();
+        big.neighbours = vec![Claim { key: "village".into(), land: vec![], streets: vec![], reserve: Some(Reserve {
+            population: 150, culture: village_site.culture.clone(), center: village_site.center, radius: village_site.radius }) }];
+        let core = reserve_cores("neighbours", &big, &cfg, surface, &[road()]).expect("reserved core").neighbours.remove(0).land;
+        assert!(core.iter().any(|l| g::contains(l, village_site.center)), "no core around the village");
+        let town_layout = lay(&big);
+        let inside: f64 = town_layout.blocks.iter()
+            .map(|b| core.iter().map(|l| g::intersection(&b.shape, l).iter().map(g::area).sum::<f64>()).sum::<f64>()).sum();
+        assert!(inside < 1.0, "the town builds {inside:.0} m² inside the village's core");
+        let mut village = village_site.clone();
+        village.neighbours = vec![town_layout.claim.clone()];
+        let layout = lay(&village);
+        let beside = housed(&layout);
+        assert!(alone > 0.0 && beside >= 0.95 * alone, "village housed {beside:.0} households beside the town, {alone:.0} alone; {:?}", layout.warnings);
     }
 
     #[test]

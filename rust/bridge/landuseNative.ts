@@ -61,7 +61,9 @@ function geometry(w: World, appearance = false): unknown {
     megaDetail: w.megaDetail && Object.fromEntries(Object.entries(w.megaDetail).map(([k, u]) => [k, urban(u, appearance)])),
     roads: w.roads?.map(r => ({ path: r.path, width: r.width, kind: r.kind })) ?? [],
     terrain: { coastline: w.terrain.coastline, islands: w.terrain.islands, lakes: w.terrain.lakes,
-      rivers: w.terrain.rivers.map(r => ({ path: r.path, width: r.width, main: r.main, edgeFed: r.edgeFed })) },
+      rivers: w.terrain.rivers.map(r => ({ path: r.path, width: r.width, main: r.main, edgeFed: r.edgeFed })),
+      // The drawn water domains: the land use is cut by them (landuse ground::water_regions).
+      ...(w.terrain.waterGeometry ? { water: w.terrain.waterGeometry } : {}) },
   };
 }
 type Plane = readonly [string, Float32Array | Uint8Array];
@@ -152,7 +154,10 @@ function ruralRequest(world: World, root: Rng, mainRoads?: number, stripLod?: { 
     ...(naturalForest ? [['naturalForest', naturalForest] as const] : []), ...(soil ? [['soil', soil.data] as const] : [])]);
 }
 function naturalRequest(t: TerrainLayer, biome: string | undefined, root: Rng, naturalForest?: Float32Array) {
-  return request({ ...base(t, root, biome), operation: 'natural', geometry: { terrain: { lakes: t.lakes } } }, [['height', t.height.data], ['slope', t.slope.data], ['water', t.water],
+  return request({ ...base(t, root, biome), operation: 'natural', geometry: { terrain: { lakes: t.lakes,
+    // River widths size the riverside meadow (landuse floodplain_meadow); the drawn water is cut out of every class.
+    rivers: t.rivers.map(r => ({ path: r.path, width: r.width, main: r.main, edgeFed: r.edgeFed })),
+    ...(t.waterGeometry ? { water: t.waterGeometry } : {}) } } }, [['height', t.height.data], ['slope', t.slope.data], ['water', t.water],
     ...(naturalForest ? [['naturalForest', naturalForest] as const] : [])]);
 }
 const capability = new Map<string, Promise<boolean>>();

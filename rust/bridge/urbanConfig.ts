@@ -113,6 +113,8 @@ export interface ParcelOverride {
   /** 'merge': the lot is absorbed by its best neighbour (default of « Supprimer »).
    *  'garden': the lot stays, as unbuilt open ground. */
   deleted?: 'merge' | 'garden';
+  /** Boundary of the lot's house yard (V2 render, `cityLotEnclosures.ts`); absent = the culture's. Not read by the engine. */
+  enclosure?: 'none' | 'fence' | 'hedge' | 'wall';
   /** Redraw of the lot's role among admissible demands, plus its building seed. */
   salt?: number;
 }
@@ -137,6 +139,9 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   fortification: 'culture' | 'none' | 'wall' | 'palisade'; fortificationStyle: FortificationStyle;
   wallStiffness: number | null; wallTerrain: number | null; wallRelief: number | null; wallTowerSpacing: number | null; ditchWetness: number | null;
   riverControlMode: '' | 'none' | 'bank-walls' | 'bank-walls-chain'; portEnclosure: '' | 'auto' | 'inside' | 'separate' | 'outside'; plannedWall: '' | 'rect' | 'follow'; heightsCastle: '' | 'none' | 'force'; wallExtension: '' | 'auto' | 'concentric' | 'attached';
+  /** Moat of the town circuits: '' by culture and site (default, omitted from the native payload), 'none' (no moat: suburbs
+   * and fields come up to the wall), 'dry' or 'wet' (one ditch kind for the whole circuit). */
+  moat: '' | 'none' | 'dry' | 'wet';
   oldEnclosureCitadel: boolean; medievalWalls: boolean; riverControl: boolean; dryDitches: boolean; gateVillages: boolean;
   /** 0: inherited ribbons; 1: organic gate markets and branching lanes. */
   gateVillage: number;
@@ -159,6 +164,9 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   shelteredHarbour: boolean;
   portDetachment: number;
   portShelter: number;
+  /** Harbour type (`urban/harbours.json` types): `auto` draws one or two types from the culture's family with the town
+   * seed (default, omitted from the native payload), `bare` keeps the quays and piers alone, any type id forces it. */
+  portType: string;
   lagoonCanals?: number | null;
   /** Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`…); absent = unknown. */
   siteArchetype?: string;
@@ -168,7 +176,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
 /** Native plan grammars (Rust `urban::kinds::Kind`), distinct from demographic classes. */
 export type SettlementKind = 'single' | 'ruin' | 'farmstead' | 'camp' | 'hamlet' | 'street-village' | 'nucleated-village' | 'market-town' | 'walled-town' | 'city' | 'metropolis';
 export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
-export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', shantyScale: 1, phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', wallExtension: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, lagoonCanals: null, powerHighGround: false, mergeParallelStreets: false, parallelMerge: 0, roadWidthBySize: true, townMainRoad: true, polishRoadEnds: true, lowRuralHouses: true, outbuildings: 0.5, houseComplexity: 'simple', singularDensity: 1, backBuildings: 0.5, styleSheet: {}, roadMouths: false, roadRemnants: false, roadEndJoins: false, smallPlaceCapacity: false, naturalCampApproaches: false, campRingWobble: null, streetFrontage: false, alignEnclosedGrid: false, hideUnusedQuarters: false, deepBlockLanes: false, villageBridgeBudget: false, linksJoinRoads: false, roadNetworkPrune: false, villageStreets: false, organicBranchVariation: 0, ribbonWidthVariation: 0, campGrowth: 'ring', zoneDensity: 'phases', regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
+export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', shantyScale: 1, phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', wallExtension: '', moat: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, portType: 'auto', lagoonCanals: null, powerHighGround: false, mergeParallelStreets: false, parallelMerge: 0, roadWidthBySize: true, townMainRoad: true, polishRoadEnds: true, lowRuralHouses: true, outbuildings: 0.5, houseComplexity: 'simple', singularDensity: 1, backBuildings: 0.5, styleSheet: {}, roadMouths: false, roadRemnants: false, roadEndJoins: false, smallPlaceCapacity: false, naturalCampApproaches: false, campRingWobble: null, streetFrontage: false, alignEnclosedGrid: false, hideUnusedQuarters: false, deepBlockLanes: false, villageBridgeBudget: false, linksJoinRoads: false, roadNetworkPrune: false, villageStreets: false, organicBranchVariation: 0, ribbonWidthVariation: 0, campGrowth: 'ring', zoneDensity: 'phases', regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
 /** Keep the Rust contract strict while discarding fields leaked by older UI versions. */

@@ -62,7 +62,8 @@ export class NativeReliefEngine {
   }
 
   /** `carve_underdark`: the retained relief becomes caves and tunnels. */
-  carveUnderdark(seed: string): Promise<void> { return this.mutate({ op: 'underdark', seed }); }
+  /** `tunnels`: natural tunnels amount (0 none); an older service ignores it and uses its default. */
+  carveUnderdark(seed: string, tunnels?: number): Promise<void> { return this.mutate({ op: 'underdark', seed, ...(tunnels !== undefined ? { tunnels } : {}) }); }
 
   async sampleRegion(x: number, y: number, extent: number, resolution: number): Promise<NativeReliefRegion> {
     const { meta, arrays } = await this.send({ op: 'read', region: { x, y, extent, resolution } });
@@ -75,6 +76,8 @@ export class NativeReliefEngine {
   async physicalHeightField(): Promise<Float32Array> { return (await this.send({ op: 'read', physical: true })).arrays.physical as Float32Array; }
   async samplingBaseField(): Promise<Float32Array> { return (await this.send({ op: 'read', base: true })).arrays.base as Float32Array; }
   async physicalCaveField(): Promise<Uint8Array> { return (await this.send({ op: 'read', cave: true })).arrays.physicalCave as Uint8Array; }
+  /** Natural Underdark tunnels, flattened `[kind, halfWidth, count, x0, y0, …]`; empty from an older service. */
+  async underdarkTunnels(): Promise<Float32Array> { return ((await this.send({ op: 'read', tunnels: true })).arrays.tunnels as Float32Array | undefined) ?? new Float32Array(0); }
 
   /** Release the native session (fire and forget: an evicted or exited session is already gone). */
   free(): void {

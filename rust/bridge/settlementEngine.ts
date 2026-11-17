@@ -28,7 +28,8 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
       try {
         if (request.raster) {
           const r = request.raster;
-          terrain?.free();
+          // Cleared before the build: a failed replacement must not leave a freed handle behind.
+          terrain?.free(); terrain = undefined;
           validatePhysicalTerrain(r.physical);
           if (!SettlementTerrain) throw new Error('Core WASM is not loaded.');
           terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);

@@ -124,7 +124,8 @@ pub(in super::super) fn port_town(cfg: &LayoutConfig) -> bool {
 }
 
 pub(in super::super) fn water_code(surface: Surface<'_>, p: Point) -> u8 {
-    if p.x < 0.0 || p.y < 0.0 || p.x >= surface.width || p.y >= surface.width {
+    // Underdark cave rock is raster class 2 like a lake: it is no water at all.
+    if p.x < 0.0 || p.y < 0.0 || p.x >= surface.width || p.y >= surface.width || surface.solid(p) {
         return 0;
     }
     let x = (p.x / surface.width * surface.n as f64) as usize;
@@ -198,6 +199,10 @@ pub(in super::super) fn sited(
                 continue;
             }
             let q = centre(i, j);
+            // Cave rock (raster class 2) is no bank to move a port to.
+            if surface.solid(q) {
+                continue;
+            }
             let d = dist(q, site.center);
             let kind = usize::from(w == 3);
             if d > search {
@@ -705,6 +710,27 @@ pub(in super::super) fn quays(
     // Existing quays are served. An ordinary shoreline street still needs
     // a quay platform; long quay streets are binned once.
     let existing: Vec<Street> = streets.iter().filter(|s| s.role == "quay").cloned().collect();
+    // Streets already along the shore (a town approach or a road on the
+    // bank): a quay laid behind one would stand back in the town, its paving
+    // spread across the road to the water. The quay is the waterfront or
+    // nothing.
+    let bank_streets: Vec<(Point, Point)> = streets
+        .iter()
+        .filter(|s| !matches!(s.role.as_str(), "quay" | "pier" | "landing" | "mole" | "boardwalk" | "bridge" | "ford" | "causeway"))
+        .flat_map(|s| s.path.windows(2).map(|w| (w[0], w[1])))
+        .collect();
+    let behind_street = |p: Point, n: Point| {
+        let reach = probe + setback + 2.0;
+        [1.0, -1.0].into_iter().any(|s: f64| {
+            let side = Point { x: n.x * s, y: n.y * s };
+            (1..=(2.0 * reach).ceil() as usize).map(|k| 0.5 * k as f64).find(|&d| surface.wet(add(p, side, d))).is_some_and(|d| {
+                let water = add(p, side, d);
+                bank_streets.iter().any(|&(c, e)| {
+                    dist(super::point(c, e, 0.5), p) <= reach + 0.5 * dist(c, e) && g::segment_hit(p, water, c, e).is_some()
+                })
+            })
+        })
+    };
     let served = Index::new(&existing);
     for region in regions {
         let rings =
@@ -729,7 +755,7 @@ pub(in super::super) fn quays(
                         let river = river_side(surface, &path);
                         // A brook or ditch is a bank, not a harbour front:
                         // no boat berths where the water is not navigable.
-                        if channel_width(surface, &path) >= NAVIGABLE {
+                        if channel_width(surface, &path) >= NAVIGABLE && !rock_side(surface, &path) {
                             pieces.push(Piece { path, near, river });
                         }
                     } else {
@@ -756,6 +782,7 @@ pub(in super::super) fn quays(
                         })
                         && routing::segment_clear(surface, a, b, grade)
                         && g::segment_within(region, a, b)
+                        && !behind_street(super::point(a, b, 0.5), n)
                         && [a, b].iter().all(|&p| {
                             // Not at a cliff foot: the land behind the quay
                             // rises no faster than a lane on either side.
@@ -789,7 +816,7 @@ pub(in super::super) fn quays(
     }
     // The sea or lake front first, then river quays, nearest the centre.
     {
-        pieces.extend(inherited.into_iter().filter(|s| channel_width(surface,&s.path) >= NAVIGABLE)
+        pieces.extend(inherited.into_iter().filter(|s| channel_width(surface,&s.path) >= NAVIGABLE && !rock_side(surface,&s.path))
             .map(|s|Piece {near:s.path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min),river:river_side(surface,&s.path),path:s.path}));
         if parameterized(cfg) { placement::select(&mut pieces,regions,streets,surface,site,cfg); }
     }
@@ -800,25 +827,35 @@ pub(in super::super) fn quays(
         .map(|s| length(&s.path))
         .sum::<f64>();
     if std::env::var_os("URBAN_PROFILE").is_some() {eprintln!("harbour quay pieces={} rejected/turn/grade/domain/wet={rejected:?}",pieces.len());}
-    for mut piece in pieces {
-        if budget < MIN {
-            continue;
+    // One simple quay line per shore, on the drawn waterline: a piece is cut
+    // where it folds over itself, clipped where it runs within a quay width
+    // of a quay already laid, and dropped where it does not front the water.
+    let mut laid: Vec<Vec<Point>> = vec![];
+    for piece in pieces {
+        for mut path in unlaid(&untangled(piece.path), &laid, width + 1.0, MIN) {
+            if budget < MIN {
+                continue;
+            }
+            if touching(surface, &path, width * 0.5) < 0.7 {
+                continue;
+            }
+            let l = length(&path);
+            if l > budget {
+                path = centred(&path, site.center, budget);
+            }
+            let Some(links) = landing_streets(&mut path, streets, surface, cfg) else {
+                continue;
+            };
+            budget -= length(&path);
+            laid.push(path.clone());
+            streets.push(Street {
+                widths: vec![width; path.len()],
+                path,
+                rank: 1,
+                role: "quay".into(),
+            });
+            streets.extend(links);
         }
-        let l = length(&piece.path);
-        if l > budget {
-            piece.path = centred(&piece.path, site.center, budget);
-        }
-        let Some(links) = landing_streets(&mut piece.path, streets, surface, cfg) else {
-            continue;
-        };
-        budget -= length(&piece.path);
-        streets.push(Street {
-            widths: vec![width; piece.path.len()],
-            path: piece.path,
-            rank: 1,
-            role: "quay".into(),
-        });
-        streets.extend(links);
     }
 }
 
@@ -840,21 +877,28 @@ pub(in super::super) fn seaward(
         .filter(|s| s.role == "quay" && s.path.len() >= 2)
     {
         let half = q.widths.first().copied().unwrap_or(5.0) * 0.5;
-        let k = q.path.len();
+        // Every 4 m: the quay edge follows the bank between the street's own
+        // vertices (a straight quay street along a curved bank otherwise
+        // overhangs the water at one end and stops short at the other).
+        let line = densify(&q.path, 4.0);
+        let k = line.len();
         let normal = |i: usize| {
-            let (a, b) = (q.path[i.saturating_sub(1)], q.path[(i + 1).min(k - 1)]);
+            let (a, b) = (line[i.saturating_sub(1)], line[(i + 1).min(k - 1)]);
             left(unit(a, b))
         };
+        // The drawn water (`Surface::wet`: the vector shoreline and banks the
+        // renderer draws), not the raster cells: the quay edge is the drawn
+        // waterline, neither short of it nor over the water.
         let first_wet = |p: Point, n: Point| {
             (1..=((surface.width / surface.n as f64 * 2.0 + 20.0) * 2.0).ceil() as usize)
                 .map(|j| 0.5 * j as f64)
-                .find(|&d| code(surface, add(p, n, d)) != 0)
+                .find(|&d| surface.wet(add(p, n, d)))
         };
         let m = k / 2;
         let side = [1.0, -1.0].into_iter().find(|&sg| {
             let n = normal(m);
             first_wet(
-                q.path[m],
+                line[m],
                 Point {
                     x: n.x * sg,
                     y: n.y * sg,
@@ -872,8 +916,8 @@ pub(in super::super) fn seaward(
                 x: n.x * sg,
                 y: n.y * sg,
             };
-            let d = first_wet(q.path[i], n).unwrap_or(half) + 1.0;
-            path.push(add(q.path[i], n, d * 0.5));
+            let d = first_wet(line[i], n).unwrap_or(half) + 1.0;
+            path.push(add(line[i], n, d * 0.5));
             widths.push(d);
         }
         out.push((path, widths));
@@ -917,6 +961,24 @@ fn channel_width(surface: Surface<'_>, path: &[Point]) -> f64 {
 }
 
 /// Whether the water beside a quay (15 m plus two raster cells) is a river.
+/// Underdark: the first obstacle met square to the front (at a quarter, half or three quarters
+/// of it, within 15 m plus two raster cells) is cave rock: a wall foot, not a shore.
+fn rock_side(surface: Surface<'_>, path: &[Point]) -> bool {
+    let l = length(path);
+    let reach = (15.0 + 2.0 * surface.width / surface.n as f64).ceil() as usize;
+    [0.25, 0.5, 0.75].into_iter().any(|f| {
+        let at = sub_path(path, 0.0, l * f);
+        let (Some(&p), Some(&q)) = (at.last(), at.get(at.len().saturating_sub(2))) else {
+            return false;
+        };
+        let n = left(unit(q, p));
+        (1..=reach)
+            .flat_map(|d| [add(p, n, d as f64), add(p, n, -(d as f64))])
+            .find(|&x| surface.wet(x))
+            .is_some_and(|x| surface.solid(x))
+    })
+}
+
 fn river_side(surface: Surface<'_>, path: &[Point]) -> bool {
     let l = length(path);
     let at = sub_path(path, 0.0, l * 0.5);
@@ -1027,6 +1089,90 @@ fn sub_path(path: &[Point], from: f64, to: f64) -> Vec<Point> {
     out
 }
 
+/// `path` with a vertex at least every `step` metres (its own vertices kept).
+fn densify(path: &[Point], step: f64) -> Vec<Point> {
+    let mut out: Vec<Point> = path.first().copied().into_iter().collect();
+    for w in path.windows(2) {
+        let k = (dist(w[0], w[1]) / step).ceil().max(1.0) as usize;
+        out.extend((1..=k).map(|i| super::point(w[0], w[1], i as f64 / k as f64)));
+    }
+    out
+}
+
+/// Share of a quay line with drawn water (`Surface::wet`, the shoreline the
+/// renderer draws) beside it, within its half width, two raster cells and
+/// 12 m, sampled every 8 m. A quay is laid on the waterline: one standing
+/// back from the water (a re-traced or displaced front, a quarter edge
+/// short of the shore) is no quay.
+fn touching(surface: Surface<'_>, path: &[Point], half: f64) -> f64 {
+    let total = length(path);
+    if total <= 1e-6 {
+        return 0.0;
+    }
+    let reach = half + 2.0 * surface.width / surface.n as f64 + 12.0;
+    let samples = (total / 8.0).ceil().max(2.0) as usize;
+    let (mut hit, mut seen) = (0, 0);
+    for k in 0..=samples {
+        let at = sub_path(path, 0.0, (total * k as f64 / samples as f64).max(0.5));
+        let (Some(&p), Some(&q)) = (at.last(), at.get(at.len().saturating_sub(2))) else { continue };
+        if dist(p, q) < 1e-9 {
+            continue;
+        }
+        let n = left(unit(q, p));
+        seen += 1;
+        let wet = |side: f64| (1..=(2.0 * reach).ceil() as usize).any(|j| surface.wet(add(p, n, side * 0.5 * j as f64)));
+        if wet(1.0) || wet(-1.0) {
+            hit += 1;
+        }
+    }
+    if seen == 0 { 0.0 } else { hit as f64 / seen as f64 }
+}
+
+/// The stretches of `path` farther than `clearance` from every quay already
+/// laid, each at least `min` long. One shore carries one quay: never two
+/// stacked strokes (a front re-traced over an inherited quay, the runs of two
+/// quarters meeting at a corner, a sea and a river front at a mouth).
+fn unlaid(path: &[Point], laid: &[Vec<Point>], clearance: f64, min: f64) -> Vec<Vec<Point>> {
+    let near = |p: Point| laid.iter().any(|q| q.windows(2).any(|w| g::distance(p, w[0], w[1]).0 < clearance));
+    let dense = densify(path, 2.0);
+    if !dense.iter().any(|&p| near(p)) {
+        return vec![path.to_vec()];
+    }
+    let (mut out, mut run) = (vec![], vec![]);
+    for p in dense.into_iter().chain([Point { x: f64::NAN, y: f64::NAN }]) {
+        if p.x.is_finite() && !near(p) {
+            run.push(p);
+        } else if run.len() >= 2 && length(&run) >= min {
+            out.push(g::simplify(&std::mem::take(&mut run), 0.4, |_| false));
+        } else {
+            run.clear();
+        }
+    }
+    out
+}
+
+/// A quay line without self-crossings: where an offset run folds over itself
+/// (a tight cove, a corner of two quarters), the loop is cut out and the line
+/// goes straight across it, as a quay is built over a small indentation.
+fn untangled(mut path: Vec<Point>) -> Vec<Point> {
+    'again: loop {
+        let k = path.len();
+        for i in 0..k.saturating_sub(1) {
+            for j in i + 2..k.saturating_sub(1) {
+                if let Some((_, cut)) = g::segment_hit(path[i], path[i + 1], path[j], path[j + 1]) {
+                    let mut joined: Vec<Point> = path[..=i].to_vec();
+                    joined.push(cut);
+                    joined.extend_from_slice(&path[j + 1..]);
+                    joined.dedup_by(|a, b| dist(*a, *b) < 1e-6);
+                    path = joined;
+                    continue 'again;
+                }
+            }
+        }
+        return path;
+    }
+}
+
 /// Landing streets from a quay to the nearest town street, about every
 /// 120 m and at least one; their junctions become quay vertices. `None` when
 /// no landing street can be laid (the quay would be cut off).
@@ -1108,10 +1254,11 @@ pub(in super::super) fn works(
     site: &Site,
     culture: &str,
 ) -> Vec<Street> {
-    works_with_minimum(streets,surface,site,culture,40.0)
+    works_with_minimum(streets,surface,site,culture,40.0,true)
 }
 
-fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, minimum: f64) -> Vec<Street> {
+/// `moles`: whether the port may build its pair of moles (a sheltered basin).
+fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, minimum: f64, moles: bool) -> Vec<Street> {
     let h = params(culture);
     let quays: Vec<&Street> = streets
         .iter()
@@ -1148,7 +1295,7 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
     let mut own: Vec<(Point, Point)> = vec![];
     let mut roots: Vec<Point> = vec![];
     // Moles first: they claim the best front.
-    if (h.basin || !h.fondamenta) && !small && population >= 6000.0 {
+    if moles && (h.basin || !h.fondamenta) && !small && population >= 6000.0 {
         let best = quays
             .iter()
             .filter(|q|front_water(surface,&q.path).is_some_and(|(kind,_)|kind=="sea"))
@@ -1246,8 +1393,10 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
                 h.pier_length.0 + (h.pier_length.1 - h.pier_length.0) * x
             };
             // The longest admissible length down to two thirds of the wanted
-            // one: open water along it and beyond (a free channel).
-            let beyond = |l: f64| if landing { 2.0 * l } else { 20.0 };
+            // one: open water along it and beyond (a free channel). A river
+            // landing reaches at most a fifth of the river: a stage along a
+            // narrow river, never a pier across it.
+            let beyond = |l: f64| if kind == 3 { 4.0 * l } else if landing { 2.0 * l } else { 20.0 };
             let Some(l) = [1.0, 0.85, 0.67]
                 .iter()
                 .map(|f| wanted * f)
@@ -1257,6 +1406,13 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
             };
             let end = add(p, n, d0 + l);
             if crosses(add(p, n, w + 0.5), end, &own) {
+                continue;
+            }
+            // The head stands in open water of its own kind on both sides, as
+            // far as the pier is long: a pier from the corner of a river mouth
+            // would reach into the other water or across the mouth.
+            let reach = l.max(8.0);
+            if !(open(end, t, 0.0, reach, kind) && open(end, Point { x: -t.x, y: -t.y }, 0.0, reach, kind)) {
                 continue;
             }
             own.push((p, end));
@@ -1274,8 +1430,24 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
 }
 
 pub(in super::super) fn configured_works(streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, cfg: &LayoutConfig) -> Vec<Street> {
-    let mut out = if parameterized(cfg) {shelter::works(streets,surface,site,culture)}
+    let out = if parameterized(cfg) {shelter::works(streets,surface,site,culture)}
     else {works(streets,surface,site,culture)};
+    budgeted_works(out, site, culture, cfg)
+}
+
+/// `configured_works` for a town with its own seed (the one its quarters are
+/// laid with): the harbour type drawn for the town (`harbour_furniture`)
+/// decides whether the port keeps its pair of moles; without them the
+/// piers take the whole front. Requested port parameters (detachment,
+/// shelter) and `port_type: bare` keep the works above.
+pub(in super::super) fn typed_works(seed: &str, streets: &[Street], surface: Surface<'_>, site: &Site, culture: &str, cfg: &LayoutConfig) -> Vec<Street> {
+    if parameterized(cfg) || super::super::harbour_furniture::keeps_moles(seed, culture, site.population, &cfg.port_type, streets, surface) {
+        return configured_works(streets, surface, site, culture, cfg);
+    }
+    budgeted_works(works_with_minimum(streets, surface, site, culture, 40.0, false), site, culture, cfg)
+}
+
+fn budgeted_works(mut out: Vec<Street>, site: &Site, culture: &str, cfg: &LayoutConfig) -> Vec<Street> {
     {
         // One pier or mole per ~80 m of the port's quay budget (its demand).
         let budget = quay_budget(site, cfg, params(culture));
@@ -1409,6 +1581,10 @@ pub(in super::super) fn platforms(layout: &mut super::super::Layout, surface: Su
         let (lo, hi) = shape.outer.iter().filter(|&&p| surface.wet(p)).map(|&p| surface.height_at(p))
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), z| (lo.min(z), hi.max(z)));
         if timber { add(shape, "landing", "timber"); continue; }
+        // A stone quay reaches the drawn water (its apron ends a metre past
+        // the waterline): a platform with no corner on the water stands
+        // detached from it and is no quay.
+        if lo > hi { continue; }
         if hi - lo <= 0.8 { add(shape, "quay", "stone"); continue; }
         // Long rivers descend: local slabs follow the water rather than one
         // level platform disappearing under the upstream bank.
@@ -1589,6 +1765,35 @@ mod tests {
         (height, water)
     }
 
+    /// One shore, one simple quay line on the water: a folded run goes
+    /// straight across its loop, a run along a laid quay keeps only its free
+    /// stretches, and a line standing back from the drawn water does not
+    /// front it.
+    #[test]
+    fn a_quay_line_is_simple_single_and_on_the_water() {
+        let p = |x: f64, y: f64| Point { x, y };
+        let flat = untangled(vec![p(0.0, 0.0), p(40.0, 0.0), p(40.0, 10.0), p(20.0, -10.0), p(60.0, -10.0)]);
+        assert!(flat.len() < 5);
+        for i in 0..flat.len() - 1 {
+            for j in i + 2..flat.len() - 1 {
+                assert!(g::segment_hit(flat[i], flat[i + 1], flat[j], flat[j + 1]).is_none(), "the line still crosses itself: {flat:?}");
+            }
+        }
+        let laid = vec![vec![p(0.0, 0.0), p(100.0, 0.0)]];
+        let line = vec![p(-50.0, 3.0), p(150.0, 3.0)];
+        assert_eq!(unlaid(&line, &[], 7.0, 20.0), vec![line.clone()]);
+        let parts = unlaid(&line, &laid, 7.0, 20.0);
+        assert_eq!(parts.len(), 2, "{parts:?}");
+        for part in &parts {
+            assert!(length(part) >= 20.0);
+            assert!(part.iter().all(|&q| g::distance(q, laid[0][0], laid[0][1]).0 >= 7.0 - 1e-9));
+        }
+        let (height, water) = coast(64);
+        let surface = Surface { geometry: None, width: 256.0, n: 64, height: &height, water: &water, interpolation: Default::default() };
+        assert!(touching(surface, &[p(134.0, 40.0), p(134.0, 200.0)], 3.0) > 0.9, "a quay on the waterline");
+        assert!(touching(surface, &[p(200.0, 40.0), p(200.0, 200.0)], 3.0) < 0.1, "a street 70 m from the water");
+    }
+
     /// A port's waterfront is one continuous quay (its budget of the shore,
     /// nearest the centre), joined to the streets, with piers into open water
     /// at intervals, wholly over water; an inland quarter gets none.
@@ -1764,6 +1969,14 @@ mod tests {
         };
         assert!(!quayed(136.0), "a quay along a 4 m brook");
         assert!(quayed(116.0), "no quay along a 24 m river");
+        // A road already on the bank, between the quarter and the river: no
+        // quay set back behind it, its paving spread across the road.
+        let water: Vec<u8> = (0..n * n).map(|i| if ((i % n) as f64 + 0.5) * 4.0 >= 116.0 && ((i % n) as f64 + 0.5) * 4.0 < 140.0 { 3 } else { 0 }).collect();
+        let surface = Surface { geometry: None, width: 256.0, n, height: &height, water: &water, interpolation: Default::default() };
+        let bank = Street { path: vec![Point { x: 143.0, y: 30.0 }, Point { x: 143.0, y: 226.0 }], widths: vec![5.0; 2], rank: 2, role: "approach".into() };
+        let mut streets = vec![road.clone(), bank];
+        quays(&[g::rectangle(140.0, 40.0, 210.0, 216.0)], &mut streets, surface, &cfg, &site, "european-organic", true);
+        assert!(!streets.iter().any(|s| s.role == "quay"), "a quay behind the bank road");
     }
 
     /// A domain stopping short of its water joins the waterline across a

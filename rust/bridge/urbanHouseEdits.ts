@@ -73,7 +73,8 @@ export function isMassingEdit(patch?: Partial<HouseConfig>): boolean {
   return !!patch && Object.keys(patch).every(key => key === 'overrides') && !!patch.overrides && Object.entries(patch.overrides).some(([,value]) => value != null)
     && Object.entries(patch.overrides).every(([key,value]) => value == null || ['roof','floors','roof_pitch_deg'].includes(key));
 }
-const massingRoofs: Record<string,string> = { 'RF-GABLE':'gable', 'RF-HIP':'hip', 'RF-FLAT':'flat', 'RF-DOME':'dome', 'RF-PYRAMID':'pyramid', 'RF-CONICAL':'cone', 'RF-CONE':'cone', 'RF-SHED':'shed', 'RF-BARREL':'barrel' };
+/** Roof systems the city-volume renderer (urban/massing.rs) can apply to a retained footprint. */
+export const massingRoofs: Record<string,string> = { 'RF-GABLE':'gable', 'RF-HIP':'hip', 'RF-FLAT':'flat', 'RF-DOME':'dome', 'RF-PYRAMID':'pyramid', 'RF-CONICAL':'cone', 'RF-CONE':'cone', 'RF-SHED':'shed', 'RF-BARREL':'barrel' };
 export function massingEditApplied(programme: PlacementRequest['programme'], patch: Partial<HouseConfig>): boolean {
   const pieces=(programme as {massing?:any[]}|undefined)?.massing;
   const volumes=Array.isArray(pieces)?pieces.flatMap(piece=>piece.volumes?.filter((v:any)=>!v.minor)??[piece]):[];

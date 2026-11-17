@@ -18,6 +18,8 @@ mod functions;
 mod lots;
 #[path = "programme_camps.rs"]
 pub(in crate::urban) mod camps;
+#[path = "household_population.rs"]
+mod household_population;
 pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
 
 /// Share of the town plan's block area (inside the wall; without a wall, the
@@ -141,6 +143,9 @@ pub struct Allocation {
     /// Households housed on this plot (0 for non-domestic uses).
     #[serde(default)]
     pub households: f64,
+    /// Planned occupants, not a certification of built housing capacity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residents: Option<f64>,
     /// Frozen model generated only during an actual allocation. Old saved
     /// allocations stay without a model; never infer one on request export.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -385,7 +390,7 @@ fn prepare_inner(
     let mixed_share = if population < 150 {
         0.0
     } else { functions.mixed_share(population) };
-    let occupancy = roles::occupancy(&layout.culture);
+    let occupancy = roles::settlement_occupancy(&layout.culture, population);
     // Households of the cultural size (extended families in courtyard cultures).
     let households = n / occupancy.household_size;
     let mut demands = vec![
@@ -1877,9 +1882,23 @@ fn capacity(a: f64, d: &Demand) -> f64 {
         a * 0.55
     }
 }
-/// Households a plot can hold: useful floor area over the cultural floor area per
-/// household (scaled by district wealth), capped by the cultural tenement size.
-/// Villages and communal cultures keep one household per plot.
+/// Dwelling typologies built for several households (apartments, tenements,
+/// slabs): their plots keep the floor-area capacity in villages
+/// and small towns, as longhouses do.
+const COLLECTIVE_TYPOLOGIES: &[&str] = &[
+    "apartment-block", "apartment-building", "apartment-palace", "apartment-slab", "chawl",
+    "green-block", "grown-tower", "housing-slab", "megatower", "mixed-use-block", "panel-block",
+    "perimeter-block", "pilotis-slab", "self-built-block", "setback-block", "stalinka",
+    "stone-apartment", "tenement", "tenement-row", "terrace-block",
+    "terraced-green-block", "timber-block", "tower-block", "worker-block",
+];
+/// Households a plot can hold. A village home holds one household; a town
+/// house one, or two to three when it is a large house (from 2,000 to 4,000
+/// people, `roles::town_house_share`); the culture's floor-area tenement cap
+/// (useful floor over the floor per household, scaled by district wealth) only
+/// near the centre of a city (lot access `pressure`, `roles::dense_core_share`).
+/// Longhouses and collective typologies keep the floor-area capacity everywhere.
+#[allow(clippy::too_many_arguments)]
 fn household_capacity(
     a: f64,
     coverage: f64,
@@ -1887,14 +1906,43 @@ fn household_capacity(
     occupancy: &roles::Occupancy,
     wealth: f64,
     village: bool,
+    population: u32,
+    communal: bool,
+    pressure: f64,
 ) -> f64 {
     if village {
         return 1.0;
     }
     let per = occupancy.floor_per_household * (0.7 + 0.8 * wealth.clamp(0.0, 1.0));
-    (a * coverage * floors / per)
+    let urban = (a * coverage * floors / per)
         .floor()
-        .clamp(1.0, occupancy.max_per_plot.max(1.0))
+        .clamp(1.0, occupancy.max_per_plot.max(1.0));
+    // A longhouse or a declared collective typology (apartment building,
+    // tenement, slab) is built for several households at any size.
+    if communal { return urban; }
+    // Only a large indicative house, not a generous yard alone, gets several
+    // households, and only in a town.
+    let large_house = 1. + ((a * coverage * floors / 160.).floor().clamp(1., 3.) - 1.) * roles::town_house_share(population);
+    // Tenements fill a city's dense core, reached progressively toward its centre.
+    let t = ((pressure - 0.45) / 0.45).clamp(0., 1.);
+    let dense = roles::dense_core_share(population) * t * t * (3. - 2. * t);
+    urban.min((large_house + (urban - large_house).max(0.) * dense).floor().max(1.))
+}
+/// People one undeclared longhouse shelters at most: two or three households, never the
+/// thirty a large farm lot's floor formula gave (user rule 2026-11-17: the population
+/// announced must be credible for the houses drawn).
+const LONGHOUSE_PERSONS: f64 = 20.0;
+/// Most households under one communal roof (longhouse, maloca, plank house). A culture
+/// that declares its house (`campHouse`, a visibly large building: a 60 m Iroquoian
+/// longhouse, a maloca) holds what that floor gives at the culture's floor per household;
+/// any other longhouse holds `LONGHOUSE_PERSONS` at the culture's household size (Norse:
+/// two households of eight). A declared `campHouseholds` replaces both (`allocate`).
+fn roof_households(house: f64, occupancy: &roles::Occupancy) -> f64 {
+    if house > 0.0 {
+        (house / occupancy.floor_per_household.max(1.0)).floor().max(1.0)
+    } else {
+        (LONGHOUSE_PERSONS / occupancy.household_size.max(1.0)).floor().max(1.0)
+    }
 }
 /// Reassign only uses. Streets, reservations and parcel shapes are immutable.
 /// Priority bands: reserved institutions, then sited trades, then shops scaled to
@@ -2391,13 +2439,22 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     lap("bands");
     // Households per plot from floor area, floors and the cultural occupancy.
     let occupancy = roles::occupancy(&layout.culture);
-    let village = pr.population < 500 || camps::camp(layout, pr.population)
+    // A village stays one ordinary household per plot even inside a wall,
+    // where its tissue is labelled `core`. Shared by footprint probes and
+    // real allocation; farm buildings never stand for additional households.
+    let village = crate::settlements::demographics::below(pr.population, "town") || camps::camp(layout, pr.population)
         || mapping(&layout.culture).is_some_and(|m| m.functional_profile == "communal");
     // Tissue of a (block, culture): resolved once, with its storey cap.
     #[derive(Clone, Copy)]
     struct Tissue {
         coverage: f64,
         longhouse: bool,
+        /// A declared apartment or tenement typology: several households per
+        /// building at any settlement size, like a longhouse.
+        collective: bool,
+        /// Floor (m²) of the communal house the culture declares (`campHouse`), 0 when it
+        /// declares none: the roof's household limit (`roof_households`).
+        house: f64,
         households: Option<f64>,
         cap: Option<u32>,
         storeys: [f64; 2],
@@ -2420,26 +2477,28 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             let p = &parcels[pi];
             let culture = parcel_culture(layout, p);
             {
-                let (coverage, raw, longhouse, households, blend) =
+                let (coverage, raw, (longhouse, collective, house), households, blend) =
                     super::culture::lot_morph(layout, part, culture, p)
                         .map(|(zone, m)| {
                             let c = super::zone_blend::coverage(&m, zone);
                             let s = &m.value["arch"]["storeys"];
+                            let typology = m.value["arch"]["typology"].as_str().unwrap_or("");
                             (
                                 ((c[0] + c[1]) * 0.5).clamp(0.2, 0.95),
                                 [s[0].as_f64().unwrap_or(1.0), s[1].as_f64().unwrap_or(1.0)],
-                                matches!(m.value["arch"]["typology"].as_str().unwrap_or(""), "longhouse" | "maloca" | "plank-house"),
+                                (matches!(typology, "longhouse" | "maloca" | "plank-house"), COLLECTIVE_TYPOLOGIES.contains(&typology),
+                                    { let [w, l] = m.pair("campHouse"); if w > 0.0 && l > 0.0 { w * l } else { 0.0 } }),
                                 camps::households_per_house(&m),
                                 super::zone_blend::storeys_of(&m.value["arch"]),
                             )
                         })
-                        .unwrap_or((0.5, [1.0, 1.0], false, None, None));
+                        .unwrap_or((0.5, [1.0, 1.0], (false, false, 0.0), None, None));
                 // The style's height ladder caps the storeys as massing.rs does.
                 let cap = super::forms::kit::storey_cap(culture, pr.population, super::massing::user_core(layout, p.block));
                 let capped = |r: [f64; 2]| super::forms::kit::capped_storeys([r[0] as u32, r[1] as u32], cap).map(f64::from);
                 // Near another phase (`zoneDensity: gradient`) the range leans toward its storeys.
                 let storeys = super::zone_blend::mix(capped(raw), blend.map(|(w, o)| (w, capped(o))));
-                Tissue { coverage, longhouse, households, cap, storeys }
+                Tissue { coverage, longhouse, collective, house, households, cap, storeys }
             }
     });
     let densify = super::footprint::capacity::of(layout)
@@ -2478,8 +2537,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 floors,
                 &occupancy,
                 district_of(p).map_or(0.5, |d| d.wealth),
-                (village || zone_village) && !tissue.longhouse,
+                (village || zone_village) && !tissue.longhouse && !tissue.collective,
+                pr.population,
+                tissue.longhouse || tissue.collective,
+                p.pressure,
             );
+            // A communal house holds what its roof credibly shelters, however large its lot.
+            let capacity = if tissue.longhouse { capacity.min(roof_households(tissue.house, &occupancy)) } else { capacity };
             tissue.households.unwrap_or(capacity)
         })
         .collect::<Vec<_>>();
@@ -2536,11 +2600,21 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     };
     let mut extra_households = vec![false; parcels.len()];
     let requested: f64 = dwelling.iter().map(|&di| pr.demands[di].requested).sum();
-    let fill_limit = (requested * 1.3).floor().max(requested.ceil());
+    // Population margin of the infill of serviced land, the same one the land
+    // plan reserved (`roles::housing_margin`): 5 % in villages, 15 % in towns,
+    // 30 % in large cities.
+    let fill_limit = (requested * roles::housing_margin(pr.population)).floor().max(requested.ceil());
     // Core standing of each block: 1 or 0 by zone, shared across a phase
     // boundary with `zoneDensity: gradient` (`zone_blend::core_weight`).
     let zone_blends = super::zone_blend::blocks(layout);
     let core_weight = |block: usize| super::zone_blend::core_weight(layout, zone_blends.get(block).copied().flatten(), block);
+    // A served lot: a street door, not rear land nor a reserved compound.
+    let served = |pi: usize| parcels[pi].access.as_ref().is_some_and(|a| !matches!(a.kind.as_str(), "attached" | "reserved"));
+    // Population cap of the saturating infill: 30 % over the programme (the
+    // fill limit itself in a large city or on an isolated site). The number of
+    // homes is the land plan's (ootprint::capacity reserves the housing
+    // margin): the cap only binds when the cut strays far above the plan.
+    let population_cap = if roles::is_isolated(&pr.context.intent) { fill_limit } else { (requested * 1.3).floor().max(fill_limit) };
     // Seed the blocks, enclosed ones first then core outward, before cohesion
     // can consume the programme on peripheral street fronts. A circuit whose
     // housing lots exceed the programme by enough land to move a curtain is
@@ -2730,18 +2804,51 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         if commercial {
             continue;
         }
-        // Fill serviced land within the same bounded population margin.
-        let mut extra = 0usize;
+        // Every served lot left is a home (lanes included): no town-wide choice
+        // of which lots stay gardens, so a quarter's homes depend on its own
+        // lots. The number of homes is the land plan's. Only a cut far above the
+        // plan meets the population cap: the excess is then shared among the
+        // quarters in proportion to their lots, each leaving its own
+        // lowest-ranked lots (the last the heap reaches) as gardens.
+        let held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
+        let mut rest: Vec<usize> = vec![];
+        let mut seen = vec![false; parcels.len()];
         while let Some((_, _, _, pi, version)) = heap.pop() {
-            if assignments[pi].is_some() || cohesion[pi] != version {
+            if assignments[pi].is_some() || cohesion[pi] != version || seen[pi] || !served(pi) {
                 continue;
             }
-            if !prime[pi] && !enclosed_at(pi) && !public_street(&parcels[pi]) { continue; }
-            let held: f64 = dwelling.iter().map(|&di| pr.demands[di].parcel_capacity).sum();
-            if held + 1.0 > fill_limit { break; }
+            seen[pi] = true;
+            rest.push(pi);
+        }
+        let room = (population_cap - held).max(0.0).floor() as usize;
+        if rest.len() > room {
+            let quarter_of = |pi: usize| layout.blocks.get(parcels[pi].block).map_or(usize::MAX, |b| b.quarter);
+            let mut lots: BTreeMap<usize, usize> = BTreeMap::new();
+            for &pi in &rest { *lots.entry(quarter_of(pi)).or_default() += 1; }
+            let excess = rest.len() - room;
+            let share = |n: usize| excess as f64 * n as f64 / rest.len() as f64;
+            let mut drop: BTreeMap<usize, usize> = lots.iter().map(|(&q, &n)| (q, share(n).floor() as usize)).collect();
+            let mut left = excess.saturating_sub(drop.values().sum::<usize>());
+            let mut order: Vec<(usize, f64)> = lots.iter().map(|(&q, &n)| (q, share(n) - share(n).floor())).collect();
+            order.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            for (q, _) in order {
+                if left == 0 { break; }
+                if let Some(n) = drop.get_mut(&q) { *n += 1; left -= 1; }
+            }
+            // Each quarter drops from its own end of the ranking.
+            let mut kept = vec![true; rest.len()];
+            for (k, &pi) in rest.iter().enumerate().rev() {
+                if let Some(n) = drop.get_mut(&quarter_of(pi)) && *n > 0 {
+                    *n -= 1;
+                    kept[k] = false;
+                }
+            }
+            rest = rest.into_iter().zip(kept).filter(|(_, k)| *k).map(|(pi, _)| pi).collect();
+        }
+        let extra = rest.len();
+        for pi in rest {
             take(&mut pr, &mut assignments, pi, di, 1.0);
             extra_households[pi] = true;
-            extra += 1;
         }
         if extra > 0 {
             pr.demands[di].reasons.push(format!(
@@ -2918,7 +3025,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 held,
                 land_areas[pi],
                 district.map(|x| (x.role.as_str(), x.wealth)),
-                (pr.population < 500 || layout.blocks.get(p.block).is_some_and(|b| b.zone == "village"))
+                (crate::settlements::demographics::below(pr.population, "town") || layout.blocks.get(p.block).is_some_and(|b| b.zone == "village"))
                     .then(|| farm_share(pr.population, p.pressure, &p.id)),
             )
         } else {
@@ -2960,6 +3067,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             label: String::new(),
             role,
             households: held,
+            residents: None,
             housing_floor_need: if dwelling && matches!(d.function.as_str(), "domestic" | "mixed") {
                 roles::indicative_housing_floor_need(&c.culture, held, district.map_or(0.5, |x| x.wealth))
             } else { None },
@@ -2971,6 +3079,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     lap("gardens");
     decay(&mut pr, &allocation_parcels, &facts, &locked);
     culture_ruins(&mut pr, &allocation_parcels, &locked);
+    household_population::assign(&mut pr);
     // Labels depend on (role, culture) only: one lookup per pair.
     let labels: Vec<String> = {
         let mut known: HashMap<(&str, &str), String> = HashMap::new();
@@ -3352,6 +3461,7 @@ fn decay(pr: &mut UrbanProgramme, allocation_parcels: &[usize], facts: &[SiteFac
         let a = &mut pr.allocations[ai];
         a.role.push_str(&rule.suffix);
         a.households = 0.0;
+        a.residents = Some(0.);
         a.housing_floor_need = None;
         if a.unit == "domesticUnits" {
             a.capacity = 0.0;
@@ -3395,6 +3505,7 @@ fn culture_ruins(pr: &mut UrbanProgramme, allocation_parcels: &[usize], locked: 
             let a = &mut pr.allocations[ai];
             a.role.push_str(".ruin");
             a.households = 0.0;
+            a.residents = Some(0.);
             a.housing_floor_need = None;
             if a.unit == "domesticUnits" {
                 a.capacity = 0.0;
@@ -4358,6 +4469,7 @@ mod tests {
                 label: String::new(),
                 landmark: false,
                 households: 0.0,
+                residents: None,
                 housing_floor_need: None,
                 district_role: String::new(),
                 wealth: 0.5,
@@ -4376,6 +4488,7 @@ mod tests {
                 label: String::new(),
                 landmark: false,
                 households: 0.0,
+                residents: None,
                 housing_floor_need: None,
                 district_role: String::new(),
                 wealth: 0.5,
@@ -4394,6 +4507,7 @@ mod tests {
                 label: String::new(),
                 landmark: false,
                 households: 0.0,
+                residents: None,
                 housing_floor_need: None,
                 district_role: String::new(),
                 wealth: 0.5,
@@ -4499,6 +4613,64 @@ mod tests {
                 .filter(|a| a.unit == "domesticUnits")
                 .all(|a| a.capacity == 1.0)
         );
+    }
+
+    #[test]
+    fn core_village_lots_do_not_turn_farm_yards_into_tenements() {
+        for population in [499, 500, 999, 60000] {
+            let mut l = prepare_case("crossroads", false, "european-organic");
+            for b in &mut l.blocks {
+                b.kind = "block".into();
+                b.zone = "core".into();
+            }
+            let pr = l.programme.as_mut().unwrap();
+            pr.population = population;
+            pr.reservations.clear();
+            pr.demands.retain(|d| d.function == "domestic");
+            pr.demands[0].requested = f64::from(population) / 4.5;
+            let mut p = partition(&l);
+            // A city's tenements stand in its dense core (high access pressure).
+            for lot in &mut p.parcels { lot.pressure = 1.0; }
+            allocate(&l, &mut p);
+            let pr = p.programme.unwrap();
+            let homes: Vec<_> = pr.allocations.iter().filter(|a| a.unit == "domesticUnits").collect();
+            assert!(!homes.is_empty(), "{population}: the fixture must allocate homes");
+            if population < 1000 {
+                assert!(homes.iter().all(|a| a.households == 1.0), "{population}: one ordinary home per yard");
+                assert!(pr.housing_capacity <= p.parcels.len() as f64);
+                assert!(pr.demands[0].parcel_capacity < pr.demands[0].requested,
+                    "a small fixed cadastre must report its missing homes");
+            } else {
+                assert!(homes.iter().any(|a| a.households > 1.0), "city-core tenements keep their capacity");
+            }
+        }
+    }
+
+    #[test]
+    fn small_town_multihousehold_cap_requires_a_large_floor_budget() {
+        let profile = roles::occupancy("european-organic");
+        let cap = |a: f64, population: u32, communal: bool, pressure: f64|
+            household_capacity(a, 0.6, 2., &profile, 0.5, false, population, communal, pressure);
+        // One household per home up to 2,000 people, whatever the house or its place.
+        assert_eq!(cap(400., 1242, false, 1.0), 1.);
+        // A town: only a large house shares its roof (2-3 households).
+        assert_eq!(cap(200., 4000, false, 0.0), 1.);
+        assert_eq!(cap(400., 4000, false, 0.0), 3.);
+        // A town of 10,000 keeps its houses, even at its centre.
+        assert_eq!(cap(200., 10000, false, 1.0), 1.);
+        // A city reaches the tenement cap in its dense core, not on its outskirts.
+        assert!(cap(200., 60000, false, 1.0) >= 3.);
+        assert_eq!(cap(200., 60000, false, 0.2), 1.);
+        // Longhouses and collective typologies keep the floor-area capacity.
+        assert!(cap(200., 1242, true, 0.0) >= 3.);
+    }
+
+    #[test]
+    fn collective_typologies_are_catalogue_typologies() {
+        let text = include_str!("catalogue.json");
+        for t in COLLECTIVE_TYPOLOGIES {
+            assert!(text.contains(&format!("\"{t}\"")), "{t} is no catalogue typology");
+        }
     }
 
     #[test]
@@ -4746,7 +4918,7 @@ mod tests {
         let mut owner = Allocation {
             parcel_id:String::new(),demand_id:"owner".into(),function:"domestic".into(),culture:"european-organic".into(),
             architecture_pack:"EUR-MED".into(),capacity:1.,unit:"domesticUnits".into(),score:0.,reasons:vec![],
-            role:"dwelling.house".into(),label:String::new(),landmark:false,households:1.,housing_floor_need:None,
+            role:"dwelling.house".into(),label:String::new(),landmark:false,households:1.,residents:None,housing_floor_need:None,
             district_role:String::new(),wealth:0.5,
         };
         let mut p = part.parcels[0].clone();
@@ -4793,7 +4965,7 @@ mod tests {
         let (height, water) = (vec![0.0; 32 * 32], vec![0; 32 * 32]);
         prepare(
             &mut l,
-            27,
+            18,
             &ProgrammeContext::default(),
             Surface {
                 geometry: None,

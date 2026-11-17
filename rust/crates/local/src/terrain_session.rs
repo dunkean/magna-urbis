@@ -62,6 +62,9 @@ struct Coast {
 #[derive(Deserialize)]
 struct Carve {
     seed: String,
+    /// Natural tunnels amount (0 none); absent, the default.
+    #[serde(default)]
+    tunnels: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -73,6 +76,8 @@ struct Read {
     base: bool,
     #[serde(default)]
     cave: bool,
+    #[serde(default)]
+    tunnels: bool,
 }
 
 pub(crate) fn handle(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
@@ -141,7 +146,9 @@ fn apply(op: &str, raw: &[u8], plane: Vec<f32>, state: &mut Session) -> ApiResul
         "underdark" => {
             let carve: Carve = decode(raw)?;
             let terrain = state.terrain.as_mut().ok_or(MISSING)?;
-            terrain.carve_underdark(&carve.seed)?;
+            let mut options = magna_urbis_core::underdark::UnderdarkOptions::default();
+            if let Some(amount) = carve.tunnels { options.natural_tunnels = amount as f32; }
+            terrain.carve_underdark_with(&carve.seed, &options)?;
             reply(terrain, Vec::new(), Vec::new(), Value::Null)
         }
         "read" => {
@@ -160,6 +167,9 @@ fn apply(op: &str, raw: &[u8], plane: Vec<f32>, state: &mut Session) -> ApiResul
             }
             if read.base {
                 floats.push(("base", terrain.sampling_base_field()));
+            }
+            if read.tunnels {
+                floats.push(("tunnels", terrain.underdark_tunnels()));
             }
             if read.cave {
                 bytes.push(("physicalCave", terrain.physical_cave_field()));

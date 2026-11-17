@@ -35,6 +35,35 @@ fn fabric(regions: &[Shape], site: &Site) -> Vec<Shape> {
     }
     selected.into_iter().map(|i|regions[i].clone()).collect()
 }
+/// A river mouth at least this wide (m) is open water for a sea port: wider than the engine's
+/// ordinary navigable rivers (a few to a few tens of metres), the channel sea-going ships worked.
+const ESTUARY_WIDTH: f64 = 120.0;
+
+/// A front on the sea or a lake, or on a river mouth at least `ESTUARY_WIDTH` across.
+fn open_front(surface: Surface<'_>, path: &[Point]) -> bool {
+    !river_side(surface, path) || channel_width(surface, path) >= ESTUARY_WIDTH
+}
+
+/// A town whose own waterfront is open water: a sea or lake site, or (for a port without a
+/// water site of its own) sea or lake within its radius. A river town keeps its river fronts.
+fn open_water_town(site: &Site, surface: Surface<'_>, cfg: &LayoutConfig) -> bool {
+    match cfg.site_archetype.as_str() {
+        "harbor" | "estuary" | "lakeshore" | "island" => true,
+        "bridge" | "meander" | "confluence" => false,
+        _ => {
+            if surface.n < 2 {return false;}
+            let n = surface.n as i64;
+            let cell = surface.width / surface.n as f64;
+            let r = (site.radius / cell).ceil() as i64;
+            let (ci, cj) = ((site.center.x / cell).floor() as i64, (site.center.y / cell).floor() as i64);
+            ((cj - r).max(0)..=(cj + r).min(n - 1)).any(|j| ((ci - r).max(0)..=(ci + r).min(n - 1)).any(|i| {
+                matches!(surface.water[(j * n + i) as usize], 1 | 2)
+                    && dist(Point { x: (i as f64 + 0.5) * cell, y: (j as f64 + 0.5) * cell }, site.center) <= site.radius
+            }))
+        }
+    }
+}
+
 fn score(path: &[Point], main: &[Shape], surface: Surface<'_>, site: &Site, cfg: &LayoutConfig) -> Option<f64> {
     if !shore_front(path,surface) {return None;}
     let water=shelter::water(surface,path)?;
@@ -101,6 +130,7 @@ pub(super) fn select(pieces: &mut Vec<Piece>, regions: &[Shape], streets: &[Stre
     }
     let main=fabric(regions,site);
     let span=(f64::from(site.population.max(1)).sqrt()*3.0).clamp(100.0,650.0);
+    let town_open=open_water_town(site,surface,cfg);
     let mut candidates=vec![];
     for piece in pieces.iter() {
         let total=length(&piece.path);
@@ -110,12 +140,16 @@ pub(super) fn select(pieces: &mut Vec<Piece>, regions: &[Shape], streets: &[Stre
             let mut path=sub_path(&piece.path,from,(from+span).min(total));
             let Some(value)=score(&path,&main,surface,site,cfg) else {continue;};
             if landing_streets(&mut path,streets,surface,cfg).is_none() {continue;}
-            candidates.push((value,path,piece.river));
+            let open=!piece.river || (town_open && channel_width(surface,&path)>=ESTUARY_WIDTH);
+            candidates.push((value,path,piece.river,open));
         }
     }
+    // A sea or lake town's port stays on open water: a river front almost never meets the
+    // open water, so it would count as perfectly sheltered and beat every sea front.
+    if town_open && candidates.iter().any(|c|c.3) {candidates.retain(|c|c.3);}
     candidates.sort_by(|a,b|a.0.total_cmp(&b.0));
     pieces.clear();
-    if let Some((_,path,river))=candidates.into_iter().next() {
+    if let Some((_,path,river,_))=candidates.into_iter().next() {
         let near=path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min);
         pieces.push(Piece{path,near,river});
     }
@@ -127,6 +161,7 @@ pub(in super::super::super) fn extend(regions: &[Shape], streets: &mut Vec<Stree
     if !parameterized(cfg) || !port_town(cfg) || surface.n<2 || site.population<800 {return vec![];}
     let main=fabric(regions,site);
     let range=reach(site);
+    let town_open=open_water_town(site,surface,cfg);
     let cell=surface.width/surface.n as f64;
     let half=(f64::from(site.population).sqrt()*0.85).clamp(45.0,180.0);
     let width=params(culture).quay_width;
@@ -160,9 +195,10 @@ pub(in super::super::super) fn extend(regions: &[Shape], streets: &mut Vec<Stree
               }
               fronts.push(front);
               for path in fronts {
-                if length(&path)<40.0 {continue;}
+                if length(&path)<40.0 || rock_side(surface,&path) {continue;}
                 let Some(value)=score(&path,&main,surface,site,cfg) else {continue;};
-                candidates.push((value,path,region.clone()));
+                let open=!town_open || open_front(surface,&path);
+                candidates.push((value,path,region.clone(),open));
               }
             }
         }
@@ -172,17 +208,23 @@ pub(in super::super::super) fn extend(regions: &[Shape], streets: &mut Vec<Stree
             let p=*sub_path(&quay.path,0.0,length(&quay.path)*0.5).last().unwrap();
             let region=regions.iter().min_by(|a,b|gap(p,std::slice::from_ref(*a)).total_cmp(&gap(p,std::slice::from_ref(*b))));
             if let (Some(value),Some(region))=(score(&quay.path,&main,surface,site,cfg),region) {
-                candidates.push((value-1e-6,quay.path.clone(),region.clone()));
+                let open=!town_open || open_front(surface,&quay.path);
+                candidates.push((value-1e-6,quay.path.clone(),region.clone(),open));
             }
         }
     }
+    // A sea or lake town's detached port stays on open water (sea, lake or a wide mouth):
+    // river banks only when no open-water front is in reach. A river town keeps its rivers.
+    let open_only=town_open && candidates.iter().any(|c|c.3);
+    if open_only {candidates.retain(|c|c.3);}
     candidates.sort_by(|a,b|a.0.total_cmp(&b.0));
-    let current=streets.iter().filter(|s|s.role=="quay").filter_map(|s|score(&s.path,&main,surface,site,cfg)).fold(f64::INFINITY,f64::min);
+    let current=streets.iter().filter(|s|s.role=="quay" && (!open_only || open_front(surface,&s.path)))
+        .filter_map(|s|score(&s.path,&main,surface,site,cfg)).fold(f64::INFINITY,f64::min);
     if std::env::var_os("URBAN_PROFILE").is_some() {
-        eprintln!("port extension banks={bank_count} candidates={} current={current:.6}",candidates.len());
-        for (value,path,_) in &candidates {let p=*sub_path(path,0.0,length(path)*0.5).last().unwrap();eprintln!("port candidate score={value:.6} gap={:.1} at={p:?}",gap(p,&main));}
+        eprintln!("port extension banks={bank_count} candidates={} current={current:.6} open_only={open_only}",candidates.len());
+        for (value,path,_,_) in &candidates {let p=*sub_path(path,0.0,length(path)*0.5).last().unwrap();eprintln!("port candidate score={value:.6} gap={:.1} at={p:?}",gap(p,&main));}
     }
-    for (value,path,region) in candidates.into_iter() {
+    for (value,path,region,_) in candidates.into_iter() {
         if value>=current {break;}
         let p=*sub_path(&path,0.0,length(&path)*0.5).last().unwrap();
         let town:Vec<_>=streets.iter().filter(|s|!matches!(s.role.as_str(),"quay"|"pier"|"boardwalk"|"mole"|"landing"))
@@ -366,6 +408,27 @@ mod tests {
         let ramp=bank_ramp(p,q,surface,0.65,1200.0).expect("switchback along the bank");
         assert!(routing::path_clear(surface,&ramp,0.65));
         assert_eq!(ramp.first(),Some(&p));assert_eq!(ramp.last(),Some(&q));
+    }
+    /// Open sea east of 1400 m and a 20 m brook (y 800–820) running into it, 400 m from a town on
+    /// the coast. A brook barely meets the open water, so it scores as perfectly sheltered.
+    #[test]
+    fn sea_town_detached_port_stays_on_the_sea_and_river_town_keeps_its_river() {
+        let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
+        let water:Vec<u8>=(0..n*n).map(|i| if i%n>=140 {1} else if (80..82).contains(&(i/n)) {3} else {0}).collect();
+        let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
+        let site=Site{key:"sea-out".into(),name:String::new(),culture:"hanseatic".into(),population:10000,
+            center:Point{x:1300.0,y:300.0},radius:500.0,
+            neighbours: Vec::new(),};
+        let regions=vec![g::rectangle(1100.0,200.0,1398.0,400.0)];
+        let road=Street{path:vec![Point{x:1200.0,y:220.0},Point{x:1300.0,y:380.0}],widths:vec![5.0;2],rank:1,role:"street".into()};
+        for (archetype,sea) in [("harbor",true),("bridge",false)] {
+            let cfg=LayoutConfig{site_archetype:archetype.into(),port_detachment:0.4,port_shelter:Some(0.75),..LayoutConfig::default()};
+            assert_eq!(open_water_town(&site,surface,&cfg),sea);
+            let mut streets=vec![road.clone()];
+            extend(&regions,&mut streets,surface,&site,&cfg,"hanseatic");
+            let quay=streets.iter().find(|s|s.role=="quay").expect("a chosen front");
+            assert_eq!(river_side(surface,&quay.path),!sea,"{archetype} port at {:?}",quay.path);
+        }
     }
     #[test]
     fn port_controls_reject_nonfinite_and_out_of_range_values() {

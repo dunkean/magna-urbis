@@ -245,9 +245,35 @@ pub(super) fn build(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture
     CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     out
 }
+/// Distance (m) past a court's rim where its bodies may still stand; a body with no
+/// room nearer is dropped, never set across the lot.
+const COURT_MARGIN: f64 = 4.0;
+
+/// Domestic core of a closed court or round compound farm type: the sleeping huts,
+/// cook-house, store and granaries its `core` names. Such a compound is the dwelling
+/// itself (agbo-ile, Sahel compound, kraal, ksar…), not optional outbuildings; a
+/// working farm's barn, byre or smithy stays out of it, and so does every other layout.
+fn compound_core(ty: &'static Value) -> Vec<&'static str> {
+    if !matches!(ty["layout"].as_str(), Some("closed" | "round")) { return vec![]; }
+    ty["core"].as_array().map_or(vec![], |a| a.iter().filter_map(Value::as_str)
+        .filter(|l| matches!(*l, "hut" | "cook-house" | "storeroom" | "granary" | "raised-granary") && is_outbuilding(l))
+        .collect())
+}
+
+/// Whether the farm type a lot draws is a compound dwelling (`compound_core`): its core
+/// is laid on every rural home, whatever the `outbuildings` share, which then only
+/// doses the buildings beyond that core.
+pub(super) fn compound_dwelling(culture: &str, seed: &str) -> bool {
+    !compound_core(&data()["types"][farm_type(culture, seed)]).is_empty()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, farm: bool, replace: bool, wealth: f64, seed: &str, ancillary: bool) -> Option<Value> {
-    if !farm && !ancillary { return None; }
+    let d = data();
+    let kind = farm_type(culture, seed);
+    let ty = &d["types"][kind];
+    let compound = compound_core(ty);
+    if !farm && !ancillary && compound.is_empty() { return None; }
     // The home: the body and the pieces standing against it (its wings, porches,
     // outshots, a second body range). A farm role keeps only those.
     let all: Vec<Vec<Point>> = parts.iter().map(|(s, _)| hull(&s.outer)).collect();
@@ -260,10 +286,10 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
         parts.retain(|_| *keep.next().unwrap_or(&false));
     }
     let home: Vec<bool> = if replace { vec![true; parts.len()] } else { home };
-    let d = data();
-    let kind = farm_type(culture, seed);
-    let ty = &d["types"][kind];
     let layout = ty["layout"].as_str().unwrap_or("scattered");
+    // A closed court or a round compound: every body, small ones included, lines
+    // its yard, spread round it from the house (rooms, stores and huts round one court).
+    let court = matches!(layout, "closed" | "round");
     let mut rng = Rng::new(seed).fork("farmstead");
     // House frame: u along the body's longest hull edge, v towards the lot's interior.
     let house = hull(&parts[mi].0.outer);
@@ -294,7 +320,7 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let (lo, hi) = pair(&ty["outbuildings"]);
     let names = |key: &str| -> Vec<&'static str> { ty[key].as_array().map_or(vec![], |a| a.iter().filter_map(Value::as_str).filter(|l| is_outbuilding(l)).collect()) };
     let small = |l: &&str| { let b = &d["buildings"][*l]; pair(&b["width"]).1 * pair(&b["depth"]).1 <= 25.0 && pair(&b["eave"]).1 <= 3.0 };
-    let mut list: Vec<&'static str> = vec![];
+    let mut list: Vec<&'static str>;
     if farm {
         list = names("core");
         if ancillary {
@@ -303,10 +329,16 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
             while list.len() < n && !pool.is_empty() { list.push(pool[rng.int(0, pool.len() as u32 - 1) as usize]); }
         }
     } else {
-        let (s0, s1) = pair(&d["smallholding"]);
-        let pool: Vec<_> = names("ancillary").into_iter().chain(names("core")).filter(small).collect();
-        let pool = if pool.is_empty() { vec!["shed"] } else { pool };
-        for _ in 0..rng.int(s0 as u32, s1.max(s0) as u32) { list.push(pool[rng.int(0, pool.len() as u32 - 1) as usize]); }
+        // A compound's domestic core always stands; the smallholding's draw only
+        // completes it up to its usual one or two small buildings.
+        list = compound.clone();
+        if ancillary {
+            let (s0, s1) = pair(&d["smallholding"]);
+            let pool: Vec<_> = names("ancillary").into_iter().chain(names("core")).filter(small).collect();
+            let pool = if pool.is_empty() { vec!["shed"] } else { pool };
+            let n = rng.int(s0 as u32, s1.max(s0) as u32) as usize;
+            for _ in compound.len()..n { list.push(pool[rng.int(0, pool.len() as u32 - 1) as usize]); }
+        }
     }
     let (y0, y1) = pair(&ty["yard"]);
     let yard = rng.range(y0, y1.max(y0)) * if farm { 1.0 } else { 0.6 };
@@ -327,7 +359,11 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let mut s = s0 + step / 2.0;
     while s < s1 { let mut t = t0 + step / 2.0; while t < t1 { if g::contains(lot, f.at(s, t)) { grid.push((s, t)); } t += step; } s += step; }
     let (mut slot, mut placed) = (0usize, vec![]);
-    for label in list {
+    // Court ring: the house stands on the yard's rim at `house_angle`; body k aims at
+    // the (k + 1)-th of n + 1 equal steps round the yard from it.
+    let house_angle = (-yt).atan2(-ys);
+    let bodies = list.len();
+    for (index, label) in list.into_iter().enumerate() {
         let bd = &d["buildings"][label];
         let (w0, w1) = pair(&bd["width"]);
         let (d0, d1) = pair(&bd["depth"]);
@@ -354,11 +390,18 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
             _ => {}
         }
         let rim = 0.5 * yard + 0.5 * if round { w } else { dp } + 0.8;
-        let loose = layout == "scattered" || !big;
+        let loose = !court && (layout == "scattered" || !big);
+        let aim = house_angle + (index + 1) as f64 * std::f64::consts::TAU / (bodies + 1) as f64;
         for &(s, t) in &grid {
             let (dx, dy) = (s - ys, t - yt);
+            // A court's body stands on its yard or not at all: never thrown across the lot.
+            if court && dx.hypot(dy) > rim + COURT_MARGIN { continue; }
             let mut score = (dx.hypot(dy) - rim).abs();
             if loose { score = 0.5 * score + 6.0 * rng.float(); }
+            if court {
+                let off = ((dy.atan2(dx) - aim + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI).abs();
+                score += 0.6 * rim * off;
+            }
             if t < -b { score += 15.0; }
             let ang = if layout == "round" || loose && layout == "scattered" { (if dx.abs() > dy.abs() { q } else { 0.0 }) + rng.range(-1.0, 1.0) * jitter * std::f64::consts::PI }
                 else if dx.abs() > dy.abs() { q } else { 0.0 };
@@ -390,7 +433,19 @@ fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, far
     let yard: Vec<Value> = [(s0 - m, t0 - m), (s1 + m, t0 - m), (s1 + m, t1 + m), (s0 - m, t1 + m)].iter()
         .map(|&(s, t)| { let p = f.at(s, t); json!({"x": (p.x * 100.0).round() / 100.0, "y": (p.y * 100.0).round() / 100.0}) }).collect();
     let enclosure = d["cultures"][culture]["enclosure"].as_str().or(ty["enclosure"].as_str()).unwrap_or("fence");
-    Some(json!({"type": kind, "layout": layout, "farm": farm, "enclosure": enclosure, "yard": yard, "outbuildings": placed}))
+    let mut cluster = json!({"type": kind, "layout": layout, "farm": farm, "enclosure": enclosure, "yard": yard, "outbuildings": placed});
+    // A court's own wall or hedge: the same box round the house and its bodies,
+    // clipped to the lot (cityLotEnclosures.ts draws it instead of the lot limits).
+    if court && matches!(enclosure, "wall" | "hedge") {
+        let corners = [(s0 - m, t0 - m), (s1 + m, t0 - m), (s1 + m, t1 + m), (s0 - m, t1 + m)].iter().map(|&(s, t)| f.at(s, t)).collect();
+        let boxed = g::normalized(Shape { outer: corners, holes: vec![] });
+        if let Some(ring) = g::intersection(&boxed, lot).into_iter().max_by(|a, b| g::area(a).total_cmp(&g::area(b)))
+            && ring.outer.len() >= 3
+        {
+            cluster["ring"] = json!(ring.outer.iter().map(|p| json!({"x": (p.x * 100.0).round() / 100.0, "y": (p.y * 100.0).round() / 100.0})).collect::<Vec<_>>());
+        }
+    }
+    Some(cluster)
 }
 
 #[cfg(test)]
@@ -472,5 +527,41 @@ mod tests {
         assert!(european.iter().all(|&(w, d)| (22.0..=80.0).contains(&w) && (24.0..=80.0).contains(&d)));
         let (lo, hi) = european.iter().map(|&(w, d)| w * d).fold((f64::MAX, 0.0_f64), |m, a| (m.0.min(a), m.1.max(a)));
         assert!(hi > 1.3 * lo, "plots of one culture too alike: {lo:.0}..{hi:.0}");
+    }
+
+    /// A Yoruba compound is its dwelling: a home without the ancillary draw still lays
+    /// the compound's domestic core, and the house and its bodies ring one yard
+    /// instead of scattering over the lot. A European working farm keeps its
+    /// optional outbuildings.
+    #[test]
+    fn compound_bodies_ring_their_yard_and_keep_their_core() {
+        let lot = rect(45.0, 60.0);
+        for k in 0..6 {
+            let seed = format!("yoruba/{k}");
+            assert!(compound_dwelling("yoruba", &seed), "{seed}: {}", farm_type("yoruba", &seed));
+            let mut bare = vec![(house(15.0, 2.0, 11.0, 7.0), "building")];
+            build(&mut bare, &lot, "yoruba", false, false, 0.5, &seed, false).expect("a compound is its own dwelling");
+            assert!(bare.len() >= 2, "{seed}: no core building");
+            let core = compound_core(&data()["types"][farm_type("yoruba", &seed)]);
+            assert!(bare[1..].iter().all(|p| core.contains(&p.1)), "{seed}: {:?}", bare.iter().map(|p| p.1).collect::<Vec<_>>());
+            let mut parts = vec![(house(15.0, 2.0, 11.0, 7.0), "building")];
+            let v = build(&mut parts, &lot, "yoruba", true, true, 0.5, &seed, true).unwrap();
+            // Its own wall or hedge ring, inside the lot.
+            let ring = v["ring"].as_array().expect("a compound's ring");
+            assert!(ring.len() >= 3 && ring.iter().all(|p| (-0.01..=45.01).contains(&p["x"].as_f64().unwrap()) && (-0.01..=60.01).contains(&p["y"].as_f64().unwrap())), "{seed}: {ring:?}");
+            let c: Vec<Point> = parts.iter().map(|(s, _)| g::centroid(s)).collect();
+            let m = Point { x: c.iter().map(|p| p.x).sum::<f64>() / c.len() as f64, y: c.iter().map(|p| p.y).sum::<f64>() / c.len() as f64 };
+            assert!(c.iter().all(|p| (p.x - m.x).hypot(p.y - m.y) <= 20.0), "{seed}: a body far from its court {c:?}");
+            if c.len() >= 3 {
+                let mut a: Vec<f64> = c.iter().map(|p| (p.y - m.y).atan2(p.x - m.x)).collect();
+                a.sort_by(f64::total_cmp);
+                let gap = a.windows(2).map(|w| w[1] - w[0]).fold(a[0] + std::f64::consts::TAU - a[a.len() - 1], f64::max);
+                assert!(gap <= 200f64.to_radians(), "{seed}: bodies all on one side ({:.0} deg gap)", gap.to_degrees());
+            }
+        }
+        assert!(!compound_dwelling("european-organic", &pinned("farm", "vierkanthof")));
+        assert!(compound_dwelling("european-organic", &pinned("farm", "agbo-ile")));
+        let mut cottage = vec![(house(8.0, 1.0, 8.0, 6.0), "building")];
+        assert!(build(&mut cottage, &rect(24.0, 30.0), "european-organic", false, false, 0.5, &pinned("cottage", "vierkanthof"), false).is_none());
     }
 }

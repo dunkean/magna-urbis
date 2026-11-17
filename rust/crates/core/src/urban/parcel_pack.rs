@@ -367,6 +367,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
     let (mut a_demand, mut a_function, mut a_culture, mut a_pack) = (vec![], vec![], vec![], vec![]);
     let (mut a_unit, mut a_role, mut a_label, mut a_district) = (vec![], vec![], vec![], vec![]);
     let (mut a_landmark, mut a_capacity, mut a_score, mut a_households, mut a_wealth) = (vec![], vec![], vec![], vec![], vec![]);
+    let mut a_residents = vec![];
     let (mut a_reasons_start, mut a_reasons_codes) = (vec![0u32], vec![]);
     let (mut f_present, mut f_codes, mut f_values) = (vec![], vec![], vec![]);
     // adjacency, environment
@@ -462,7 +463,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
                 for allocation in allocations {
                     let Allocation {
                         parcel_id, demand_id, function, culture, architecture_pack, capacity, unit, score, reasons, role, label,
-                        landmark, households, housing_floor_need, district_role, wealth,
+                        landmark, households, residents, housing_floor_need, district_role, wealth,
                     } = allocation;
                     if allocations_on {
                         a_parcel.push(match by_id.get(parcel_id.as_str()) {
@@ -484,6 +485,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
                         a_capacity.push(*capacity);
                         a_score.push(*score);
                         a_households.push(*households);
+                        a_residents.push(residents.unwrap_or(-1.));
                         a_wealth.push(*wealth);
                         for r in reasons {
                             a_reasons_codes.push(t.alloc_reason.code(r)?);
@@ -629,6 +631,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
         w.f64s("allocations.capacity", &a_capacity);
         w.f64s("allocations.score", &a_score);
         w.f64s("allocations.households", &a_households);
+        if a_residents.iter().any(|&n| n >= 0.) { w.f64s("allocations.residents", &a_residents); }
         w.f64s("allocations.wealth", &a_wealth);
         w.u32s("allocations.reasons.start", &a_reasons_start);
         w.u32s("allocations.reasons.codes", &a_reasons_codes);
@@ -894,6 +897,7 @@ struct AllocationsIn<'a> {
     capacity: Vec<f64>,
     score: Vec<f64>,
     households: Vec<f64>,
+    residents: Option<Vec<f64>>,
     wealth: Vec<f64>,
     reasons_start: Vec<u32>,
     reasons_codes: Vec<u32>,
@@ -1018,6 +1022,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<Partition>, String> {
             capacity: s.f64r("allocations.capacity", Some(a))?,
             score: s.f64r("allocations.score", Some(a))?,
             households: s.f64r("allocations.households", Some(a))?,
+            residents: s.f64s("allocations.residents", Some(a))?,
             wealth: s.f64r("allocations.wealth", Some(a))?,
             reasons_start: s.u32r("allocations.reasons.start", Some(a + 1))?,
             reasons_codes: s.u32r("allocations.reasons.codes", None)?,
@@ -1181,6 +1186,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<Partition>, String> {
             label: named(&t_label, c.label[k], "label")?,
             landmark: c.landmark[k] != 0,
             households: c.households[k],
+            residents: c.residents.as_ref().and_then(|v| (v[k] >= 0.).then_some(v[k])),
             housing_floor_need,
             district_role: named(&t_district_role, c.district[k], "districtRole")?,
             wealth: c.wealth[k],
@@ -1321,6 +1327,7 @@ mod tests {
             label: "Maison \u{e0} colombages".into(),
             landmark: !need,
             households,
+            residents: None,
             housing_floor_need: need.then(|| HousingFloorNeed {
                 version: "indicative-housing-floor-1".into(),
                 unit: "useful_floor_m2".into(),
@@ -1495,6 +1502,17 @@ mod tests {
     fn pack_is_deterministic() {
         let input = synthetic();
         assert_eq!(pack(&input, None, &Value::Null).unwrap(), pack(&input, None, &Value::Null).unwrap());
+    }
+
+    #[test]
+    fn demographic_residents_round_trip_without_inventing_absent_values() {
+        let mut input = synthetic();
+        let pr = input[0].programme.as_mut().unwrap();
+        pr.allocations[0].residents = Some(2.);
+        pr.allocations[1].residents = Some(0.);
+        let bytes = pack(&input, None, &json!({})).unwrap();
+        let back = unpack(&bytes).unwrap();
+        assert_eq!(serde_json::to_string(&back).unwrap(), serde_json::to_string(&input).unwrap());
     }
 
     #[test]

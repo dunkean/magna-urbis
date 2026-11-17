@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "doc": "Harbour catalogue: harbour types (what a waterfront is furnished with), culture families (which types a culture builds, with weights, its boats, crane and material; `simple`: every port of the family is a plain landing, as a village's) and boat classes (hull plan and rig). A type field `moles` is the chance that a port of this type keeps the pair of moles of the harbour planner (0 when absent). Read by urban/harbour_furniture.rs (generation) and web/src/render/harbourStyle.ts (2D paint, 3D heights). A culture missing from every family uses `default`. Lengths in metres.",
+  "types": {
+    "merchant-quay": {
+      "label": ["Merchant quays", "Quais marchands"],
+      "sites": ["sea", "lake", "river", "lagoon"], "minPopulation": 1500,
+      "berth": "alongside", "fill": 0.55, "boats": { "merchant": 3, "lighter": 2, "small": 1 },
+      "cranes": 3, "cargo": "barrels", "posts": 16, "anchored": 2, "moles": 0.25
+    },
+    "fishing-harbour": {
+      "label": ["Fishing harbour", "Port de pêche"],
+      "berth": "stern", "fill": 0.6, "boats": { "fishing": 4, "small": 2 },
+      "jetties": { "spacing": 42, "length": [9, 18], "width": 2.4 },
+      "slips": 0.8, "slipHull": 0.6, "ashore": 0.35, "cargo": "nets", "posts": 12, "anchored": 3
+    },
+    "small-craft-basin": {
+      "label": ["Small-craft basin", "Bassin de petites embarcations"],
+      "minPopulation": 600,
+      "berth": "none", "boats": { "small": 5, "fishing": 1 },
+      "jetties": { "spacing": 17, "length": [16, 32], "width": 2.2, "comb": true },
+      "breakwater": 0.7, "posts": 0, "anchored": 1
+    },
+    "shipyard": {
+      "label": ["Shipyard", "Chantier naval"],
+      "minPopulation": 2500,
+      "berth": "alongside", "fill": 0.2, "boats": { "merchant": 1, "lighter": 1 },
+      "slips": 3.2, "slipHull": 0.75, "shiphouse": 0.2, "cranes": 1, "cargo": "timber", "posts": 24, "rafts": 2
+    },
+    "staithe": {
+      "label": ["River staithe", "Quai fluvial"],
+      "sites": ["river", "lake", "lagoon"],
+      "berth": "alongside", "fill": 0.7, "boats": { "lighter": 4, "small": 1, "ferry": 0.5 },
+      "jetties": { "spacing": 48, "length": [4, 8], "width": 4.5 },
+      "cranes": 1, "cargo": "bales", "posts": 12
+    },
+    "canal-port": {
+      "label": ["Canal port", "Port de canal"],
+      "sites": ["lagoon", "river"],
+      "berth": "alongside", "fill": 0.6, "boats": { "small": 4, "lighter": 2 },
+      "steps": 0.12, "posts": 9, "cargo": "bales"
+    },
+    "mole-harbour": {
+      "label": ["Mole harbour", "Port à môle"],
+      "sites": ["sea", "lake"], "minPopulation": 1200,
+      "berth": "stern", "fill": 0.6, "boats": { "merchant": 2, "fishing": 2, "war": 0.6, "small": 1 },
+      "breakwater": 1.0, "beacon": true, "cranes": 1, "cargo": "barrels", "posts": 14, "anchored": 4, "moles": 0.5
+    },
+    "naval-arsenal": {
+      "label": ["Naval arsenal", "Arsenal"],
+      "sites": ["sea", "lake", "lagoon", "river"], "minPopulation": 8000,
+      "berth": "stern", "fill": 0.45, "boats": { "war": 4, "merchant": 1 },
+      "slips": 3.6, "slipHull": 0.5, "shiphouse": 0.85, "breakwater": 0.5, "beacon": true, "cranes": 1, "cargo": "timber", "posts": 18, "moles": 0.8
+    },
+    "timber-port": {
+      "label": ["Timber port", "Port au bois"],
+      "sites": ["river", "lake", "sea"], "minPopulation": 800,
+      "berth": "alongside", "fill": 0.4, "boats": { "lighter": 3, "merchant": 1 },
+      "slips": 0.6, "slipHull": 0.2, "cranes": 1, "cargo": "timber", "posts": 20, "rafts": 5
+    },
+    "ferry-landing": {
+      "label": ["Ferry landing", "Embarcadère de bac"],
+      "sites": ["river", "lake", "lagoon", "sea"], "maxPopulation": 6000,
+      "berth": "none", "boats": { "ferry": 2, "small": 2 },
+      "jetties": { "spacing": 0, "length": [7, 12], "width": 5, "max": 1 },
+      "ashore": 0.25, "posts": 0, "anchored": 1
+    },
+    "beach-landing": {
+      "label": ["Beach landing", "Grève d’échouage"],
+      "berth": "beach", "fill": 0.55, "boats": { "fishing": 3, "small": 2, "merchant": 1, "war": 0.5 },
+      "ashore": 0.8, "shiphouse": 0.3, "cargo": "nets", "posts": 0, "anchored": 3
+    },
+    "ghat": {
+      "label": ["Stepped landing", "Degrés d’accostage"],
+      "sites": ["river", "lake", "lagoon", "sea"],
+      "berth": "alongside", "fill": 0.45, "boats": { "small": 4, "lighter": 1, "ferry": 1 },
+      "steps": 0.6, "posts": 0, "anchored": 1
+    }
+  },
+  "families": {
+    "default": {
+      "cultures": [],
+      "material": "auto", "crane": "shear",
+      "boats": { "merchant": "cog", "lighter": "barge", "fishing": "smack", "small": "skiff", "war": "cog", "ferry": "ferry" },
+      "types": { "merchant-quay": 3, "fishing-harbour": 3, "small-craft-basin": 1.5, "shipyard": 1, "staithe": 3, "mole-harbour": 1.5, "ferry-landing": 1.5, "beach-landing": 1.5, "timber-port": 0.8 }
+    },
+    "north-european": {
+      "cultures": ["hanseatic", "flemish-cloth-town", "rynek-town", "european-organic", "bastide", "russian-kremlin", "halfling", "gnomish", "wizard-city"],
+      "material": "auto", "crane": "treadwheel",
+      "boats": { "merchant": "cog", "lighter": "barge", "fishing": "smack", "small": "skiff", "war": "cog", "ferry": "ferry" },
+      "types": { "merchant-quay": 4, "fishing-harbour": 2.5, "small-craft-basin": 2, "shipyard": 1.5, "staithe": 3, "mole-harbour": 1.5, "timber-port": 1, "ferry-landing": 1, "beach-landing": 0.6 }
+    },
+    "mediterranean": {
+      "cultures": ["roman-core", "byzantine-greek", "italian-comune", "al-andalus"],
+      "material": "stone", "crane": "treadwheel",
+      "boats": { "merchant": "roundship", "lighter": "barge", "fishing": "tartane", "small": "caique", "war": "galley", "ferry": "ferry" },
+      "types": { "mole-harbour": 4, "merchant-quay": 3, "fishing-harbour": 2.5, "naval-arsenal": 1.5, "shipyard": 1.5, "small-craft-basin": 1.5, "beach-landing": 1, "staithe": 1.5 }
+    },
+    "islamic": {
+      "cultures": ["medina", "ottoman", "levantine-tell", "oasis-caravan", "ksar-oasis"],
+      "material": "stone", "crane": "shear",
+      "boats": { "merchant": "xebec", "lighter": "barge", "fishing": "tartane", "small": "caique", "war": "galley", "ferry": "caique" },
+      "types": { "mole-harbour": 3, "fishing-harbour": 3, "merchant-quay": 2, "beach-landing": 2, "naval-arsenal": 1, "shipyard": 1, "small-craft-basin": 1, "staithe": 1.5, "ferry-landing": 1 }
+    },
+    "indian-ocean": {
+      "cultures": ["swahili-stone-town", "hadhrami-tower", "persian"],
+      "material": "stone", "crane": "none",
+      "boats": { "merchant": "dhow", "lighter": "sambuk", "fishing": "sambuk", "small": "dugout", "war": "dhow", "ferry": "dugout" },
+      "types": { "beach-landing": 4, "fishing-harbour": 2, "merchant-quay": 1.5, "shipyard": 1.5, "small-craft-basin": 1, "mole-harbour": 0.6, "staithe": 1 }
+    },
+    "south-asian": {
+      "cultures": ["indian-temple", "dravidian-temple", "rajput-fort", "newar", "bagan", "himalayan-terraces"],
+      "material": "stone", "crane": "none",
+      "boats": { "merchant": "dhow", "lighter": "patela", "fishing": "dinghi", "small": "dinghi", "war": "dhow", "ferry": "patela" },
+      "types": { "ghat": 4, "merchant-quay": 2, "fishing-harbour": 2, "beach-landing": 2, "shipyard": 1, "ferry-landing": 1.5 }
+    },
+    "southeast-asian": {
+      "cultures": ["khmer", "javanese-courts", "vietnamese-citadel", "stilt-town"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "junk", "lighter": "sampan", "fishing": "prahu", "small": "sampan", "war": "prahu", "ferry": "sampan" },
+      "types": { "staithe": 3, "fishing-harbour": 3, "canal-port": 2, "beach-landing": 2, "merchant-quay": 2, "small-craft-basin": 2, "ferry-landing": 1 }
+    },
+    "east-asian": {
+      "cultures": ["chinese", "korean"],
+      "material": "stone", "crane": "shear",
+      "boats": { "merchant": "junk", "lighter": "canal-barge", "fishing": "sampan", "small": "sampan", "war": "junk", "ferry": "sampan" },
+      "types": { "staithe": 3, "canal-port": 3, "merchant-quay": 3, "fishing-harbour": 2.5, "shipyard": 1.5, "naval-arsenal": 1, "mole-harbour": 1, "ferry-landing": 1 }
+    },
+    "japanese": {
+      "cultures": ["japanese-jokamachi"],
+      "material": "stone", "crane": "none",
+      "boats": { "merchant": "bezaisen", "lighter": "canal-barge", "fishing": "sampan", "small": "sampan", "war": "bezaisen", "ferry": "sampan" },
+      "types": { "fishing-harbour": 3, "merchant-quay": 3, "staithe": 2.5, "beach-landing": 2, "mole-harbour": 1.5, "canal-port": 1.5, "shipyard": 1 }
+    },
+    "norse": {
+      "cultures": ["barbarian-norse", "norse-ringfort", "barbarian", "barbarian-celtic", "celtic-oppidum", "slavic-gord", "giant-hold"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "knarr", "lighter": "pram", "fishing": "faering", "small": "faering", "war": "longship", "ferry": "pram" },
+      "types": { "beach-landing": 4, "fishing-harbour": 2, "staithe": 2, "shipyard": 1.5, "small-craft-basin": 1, "merchant-quay": 1, "ferry-landing": 1, "timber-port": 1 }
+    },
+    "nile-mesopotamian": {
+      "cultures": ["egyptian-planned", "nubian-fortified", "mesopotamian", "indus-planned"],
+      "material": "stone", "crane": "none",
+      "boats": { "merchant": "nile-barge", "lighter": "nile-barge", "fishing": "reed-boat", "small": "reed-boat", "war": "nile-barge", "ferry": "reed-boat" },
+      "types": { "merchant-quay": 3, "staithe": 2.5, "ferry-landing": 2, "fishing-harbour": 2, "small-craft-basin": 1.5, "ghat": 1.5, "beach-landing": 1 }
+    },
+    "african": {
+      "cultures": ["sahel", "hausa-kano", "yoruba", "kraal", "great-zimbabwe", "ethiopian-highland"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "pirogue", "lighter": "pirogue", "fishing": "dugout", "small": "dugout", "war": "pirogue", "ferry": "dugout" },
+      "types": { "beach-landing": 4, "fishing-harbour": 2, "ferry-landing": 2, "staithe": 1 }
+    },
+    "american-pacific": {
+      "cultures": ["maya", "aztec", "inca", "mississippian", "native-iroquoian", "native-pueblo", "native-plains", "guarani-village", "pnw-plank-village", "inuit-camp", "siberian-camp", "maori-pa", "budj-bim", "nomad-camp", "mongol-ordu", "tibetan-monastery", "caucasian-highland"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "war-canoe", "lighter": "canoe", "fishing": "canoe", "small": "canoe", "war": "war-canoe", "ferry": "canoe" },
+      "types": { "beach-landing": 5, "fishing-harbour": 2, "canal-port": 1.5, "ferry-landing": 1, "small-craft-basin": 1 }
+    },
+    "lagoon": {
+      "cultures": ["venetian-lagoon"],
+      "material": "stone", "crane": "shear",
+      "boats": { "merchant": "roundship", "lighter": "barge", "fishing": "tartane", "small": "gondola", "war": "galley", "ferry": "gondola" },
+      "types": { "canal-port": 5, "naval-arsenal": 1.5, "shipyard": 2, "fishing-harbour": 2, "merchant-quay": 2, "small-craft-basin": 2 }
+    },
+    "swamp": {
+      "cultures": ["lizardfolk-swamp", "merfolk-tidal", "myconid-colony"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "pirogue", "lighter": "canoe", "fishing": "canoe", "small": "canoe", "war": "pirogue", "ferry": "canoe" },
+      "types": { "staithe": 3, "fishing-harbour": 3, "canal-port": 2, "beach-landing": 2, "small-craft-basin": 1.5 }
+    },
+    "elven": {
+      "cultures": ["elven"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "swan-ship", "lighter": "swan-skiff", "fishing": "swan-skiff", "small": "swan-skiff", "war": "swan-ship", "ferry": "swan-skiff" },
+      "types": { "small-craft-basin": 3, "mole-harbour": 2, "merchant-quay": 2, "ferry-landing": 1, "staithe": 1.5, "beach-landing": 1 }
+    },
+    "underdark": {
+      "cultures": ["duergar-hold", "drow-enclave"],
+      "simple": true,
+      "material": "stone", "crane": "none",
+      "boats": { "merchant": "stone-barge", "lighter": "stone-barge", "fishing": "skiff", "small": "skiff", "war": "stone-barge", "ferry": "skiff" },
+      "types": { "staithe": 3, "merchant-quay": 1 }
+    },
+    "dwarven": {
+      "cultures": ["dwarven", "necropolis"],
+      "material": "stone", "crane": "derrick",
+      "boats": { "merchant": "stone-barge", "lighter": "stone-barge", "fishing": "skiff", "small": "skiff", "war": "stone-barge", "ferry": "ferry" },
+      "types": { "merchant-quay": 3, "mole-harbour": 3, "staithe": 2, "naval-arsenal": 1, "small-craft-basin": 1, "shipyard": 1 }
+    },
+    "raider": {
+      "cultures": ["orcish", "goblin-warren"],
+      "material": "timber", "crane": "none",
+      "boats": { "merchant": "raider", "lighter": "pram", "fishing": "faering", "small": "faering", "war": "raider", "ferry": "pram" },
+      "types": { "beach-landing": 3, "shipyard": 2, "fishing-harbour": 2, "timber-port": 1.5, "staithe": 1 }
+    },
+    "industrial": {
+      "cultures": ["industrial-victorian", "haussmannian", "belle-epoque", "american-grid", "art-deco-metropolis", "dieselpunk", "soviet-socialist", "garden-city", "modernist-functionalist", "post-apocalyptic-ruins", "atompunk-retrofuturist", "dystopian-brutalism"],
+      "material": "stone", "crane": "derrick",
+      "boats": { "merchant": "steamer", "lighter": "barge", "fishing": "trawler", "small": "skiff", "war": "steamer", "ferry": "tug" },
+      "types": { "merchant-quay": 4, "shipyard": 2, "staithe": 2, "mole-harbour": 2, "fishing-harbour": 2, "small-craft-basin": 1.5, "ferry-landing": 1.5, "timber-port": 1 }
+    },
+    "contemporary": {
+      "cultures": ["mediterranean-modern", "american-suburbia", "european-contemporary", "global-high-rise", "gulf-contemporary", "informal-urban-expansion", "eco-city", "japanese-contemporary", "chinese-megacity", "korean-high-rise", "southeast-asian-tropical", "south-asian-metropolis", "latin-american-grid", "latin-american-hillside", "north-african-contemporary", "sub-saharan-african-metropolis", "middle-eastern-contemporary", "australian-suburban", "post-socialist-european", "cyberpunk", "solarpunk", "corporate-arcology", "futuristic-space-colony", "biopunk-organic-city"],
+      "material": "stone", "crane": "gantry",
+      "boats": { "merchant": "freighter", "lighter": "barge", "fishing": "trawler", "small": "yacht", "war": "freighter", "ferry": "tug" },
+      "types": { "small-craft-basin": 4, "merchant-quay": 3, "mole-harbour": 2, "ferry-landing": 2, "fishing-harbour": 1.5, "shipyard": 1, "staithe": 1.5 }
+    }
+  },
+  "boats": {
+    "cog": { "length": 23, "beam": 7.2, "hull": "round", "masts": 1, "rig": "square", "cabin": true, "freeboard": 2.4, "mast": 16 },
+    "smack": { "length": 10, "beam": 3.3, "hull": "round", "masts": 1, "rig": "square", "freeboard": 1.0, "mast": 7.5 },
+    "skiff": { "length": 5, "beam": 1.6, "hull": "transom", "freeboard": 0.5 },
+    "barge": { "length": 16, "beam": 4.2, "hull": "barge", "freeboard": 0.8 },
+    "ferry": { "length": 11, "beam": 4.2, "hull": "barge", "freeboard": 0.6 },
+    "knarr": { "length": 16, "beam": 4.6, "hull": "double", "masts": 1, "rig": "square", "freeboard": 1.3, "mast": 10 },
+    "longship": { "length": 23, "beam": 4.2, "hull": "double", "masts": 1, "rig": "square", "freeboard": 1.0, "mast": 11 },
+    "faering": { "length": 6.2, "beam": 1.5, "hull": "double", "freeboard": 0.5 },
+    "pram": { "length": 9, "beam": 2.8, "hull": "barge", "freeboard": 0.5 },
+    "roundship": { "length": 25, "beam": 7.8, "hull": "round", "masts": 2, "rig": "lateen", "cabin": true, "freeboard": 2.7, "mast": 16 },
+    "galley": { "length": 38, "beam": 5.2, "hull": "galley", "masts": 2, "rig": "lateen", "cabin": true, "freeboard": 1.4, "mast": 13 },
+    "tartane": { "length": 11, "beam": 3.3, "hull": "double", "masts": 1, "rig": "lateen", "freeboard": 0.9, "mast": 8 },
+    "caique": { "length": 7, "beam": 1.9, "hull": "double", "freeboard": 0.5 },
+    "xebec": { "length": 27, "beam": 6.4, "hull": "transom", "masts": 3, "rig": "lateen", "cabin": true, "freeboard": 2.0, "mast": 14 },
+    "gondola": { "length": 10.5, "beam": 1.5, "hull": "double", "freeboard": 0.45, "color": "1e1c1a" },
+    "dhow": { "length": 22, "beam": 6, "hull": "transom", "masts": 1, "rig": "lateen", "cabin": true, "freeboard": 2.0, "mast": 13 },
+    "sambuk": { "length": 12, "beam": 3.4, "hull": "transom", "masts": 1, "rig": "lateen", "freeboard": 1.0, "mast": 8 },
+    "dugout": { "length": 7, "beam": 0.95, "hull": "double", "freeboard": 0.35 },
+    "pirogue": { "length": 14, "beam": 1.7, "hull": "double", "freeboard": 0.5 },
+    "patela": { "length": 14, "beam": 3.8, "hull": "double", "masts": 1, "rig": "square", "cabin": true, "freeboard": 0.9, "mast": 8, "cabinColor": "b79a5c" },
+    "dinghi": { "length": 6.5, "beam": 1.5, "hull": "double", "freeboard": 0.4 },
+    "junk": { "length": 26, "beam": 7, "hull": "transom", "masts": 3, "rig": "junk", "cabin": true, "freeboard": 2.3, "mast": 14, "sailColor": "a8744a" },
+    "bezaisen": { "length": 24, "beam": 7, "hull": "transom", "masts": 1, "rig": "square", "cabin": true, "freeboard": 2.0, "mast": 15 },
+    "canal-barge": { "length": 18, "beam": 3.8, "hull": "barge", "cabin": true, "freeboard": 0.7, "cabinColor": "8f7a4f" },
+    "sampan": { "length": 7, "beam": 1.9, "hull": "barge", "cabin": true, "freeboard": 0.45, "cabinColor": "9c8554" },
+    "prahu": { "length": 13, "beam": 2.7, "hull": "double", "masts": 1, "rig": "lateen", "freeboard": 0.8, "mast": 8 },
+    "nile-barge": { "length": 18, "beam": 4.4, "hull": "double", "masts": 1, "rig": "square", "cabin": true, "freeboard": 0.9, "mast": 9, "color": "8a6a3c" },
+    "reed-boat": { "length": 7.5, "beam": 1.6, "hull": "double", "freeboard": 0.4, "color": "b59b55" },
+    "canoe": { "length": 7.5, "beam": 1.0, "hull": "double", "freeboard": 0.35 },
+    "war-canoe": { "length": 17, "beam": 1.8, "hull": "double", "freeboard": 0.6 },
+    "swan-ship": { "length": 22, "beam": 4.6, "hull": "double", "masts": 1, "rig": "square", "freeboard": 1.4, "mast": 13, "color": "d9d3c0", "sailColor": "f1eee2" },
+    "swan-skiff": { "length": 7, "beam": 1.5, "hull": "double", "freeboard": 0.45, "color": "d9d3c0" },
+    "stone-barge": { "length": 18, "beam": 6, "hull": "barge", "cabin": true, "freeboard": 1.0, "color": "4a4038", "cabinColor": "6a6258" },
+    "raider": { "length": 20, "beam": 5, "hull": "double", "masts": 1, "rig": "square", "freeboard": 1.3, "mast": 11, "color": "3b2e24", "sailColor": "7a2e25" },
+    "steamer": { "length": 46, "beam": 8.5, "hull": "round", "masts": 2, "rig": "none", "cabin": true, "freeboard": 3.2, "mast": 14, "color": "34343a", "cabinColor": "c9c2b0" },
+    "trawler": { "length": 18, "beam": 5.4, "hull": "round", "masts": 1, "rig": "none", "cabin": true, "freeboard": 1.6, "mast": 8, "color": "3d5560", "cabinColor": "d8d2c2" },
+    "tug": { "length": 16, "beam": 5, "hull": "round", "cabin": true, "freeboard": 1.4, "color": "4a3a36", "cabinColor": "cfc8b6" },
+    "freighter": { "length": 58, "beam": 10, "hull": "round", "masts": 1, "rig": "none", "cabin": true, "freeboard": 4.0, "mast": 12, "color": "2f4050", "cabinColor": "dcd8cc" },
+    "yacht": { "length": 10, "beam": 3.1, "hull": "transom", "masts": 1, "rig": "none", "cabin": true, "freeboard": 0.9, "mast": 12, "color": "ece9e2", "cabinColor": "f6f4ee" }
+  }
+}

@@ -163,7 +163,7 @@ pub(in super::super) fn kind(o: &Occupancy) -> Kind {
 
 /// Labels of a mosque's covered prayer space (the part its lot must hold): the
 /// plain hall and the halls, bays and domed chambers of the cultural forms.
-fn prayer_space(label: &str) -> bool {
+pub(in crate::urban) fn prayer_space(label: &str) -> bool {
     matches!(
         label,
         "prayer-hall" | "prayer-bay" | "prayer-nave" | "mihrab-dome" | "dome-chamber" | "shabestan" | "dome-hall" | "half-dome" | "mud-hall"

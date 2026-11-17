@@ -26,7 +26,10 @@ fn town(cfg: &LayoutConfig) -> Layout {
     let site = Site {
         key: "edits-town".into(),
         name: "Edits town".into(),
-        population: 2500,
+        // About the house count a town of 2,500 had before villages and towns
+        // housed one household per home (2026-11-16): the edit fixtures stay
+        // inside their land bounds.
+        population: 1400,
         culture: "european-organic".into(),
         center: Point {
             x: 1000.0,

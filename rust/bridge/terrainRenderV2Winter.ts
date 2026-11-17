@@ -6,7 +6,7 @@
  * without exposure, relief or noise, so it is one value along a contour and one value per map at sea level.
  * - Land: `v2Local` bends it by the relief and the drift patterns, then thresholds it (`v2GroundSnow`).
  * - Fresh water: `v2WinterFresh` (set by `v2Local`) is the freeze at the water's own altitude; `v2FreshIce` paints it.
- * - Sea: `v2WinterSeaIce` gates the calendar's concentration by the snow of the coast at sea level. */
+ * - Sea: the calendar sets concentration; coastal snow decides whether it is shore-fast or drifting. */
 export const RENDER_V2_WINTER_GLSL = `
 // Temperature follows the sun by about a month: spring is colder than autumn.
 const float V2_SEASON_LAG=.08;
@@ -36,18 +36,17 @@ float v2WinterFreeze(float snow){return sstep(.52,.80,snow);}
 // Width (m) of the border ice grown from each bank at a freeze level: small courses close first, a large river
 // keeps an open channel until the cold is deep; past .97 every course is closed.
 float v2WinterShelf(float freeze){return 2.+90.*freeze*freeze+600.*sstep(.85,1.,freeze);}
-// Sea ice of the map. The calendar's concentration is a potential: a snowy coast lets it form its shore-fast sheet,
-// a thawed coast keeps only the loose drifting floes of a strong pack and nothing of a weak one.
+// Sea ice concentration belongs to the calendar, independently of snow on land. Coastal thaw breaks the sheet
+// into drifting floes; it must not reduce concentration and then discard that pack again at the offshore limit.
 // x concentration, y looseness (0 fast sheet at the shore, 1 drifting floes only).
 vec2 v2WinterSeaIce(float potential){
   float coast=v2WinterCover(v2WinterClimate(0.,1.));
-  float drift=.5*potential*sstep(.5,.8,potential);
-  return vec2(mix(drift,potential,coast),1.-coast);
+  return vec2(potential,(1.-coast)*(1.-sstep(.82,1.,potential)));
 }
 // Offshore limit of the pack's progress (0 fast sheet, about .3 close pack with hairline leads, 1 open water).
-// Up to a nordic winter (.75) the ice is a fringe along the shore and the sea opens with depth (no limit). An
-// arctic concentration (.80 and above) takes the whole sea: past the fast sheet the pack stays close to the map edge.
-float v2WinterPackLimit(float concentration){return mix(2.,.3,sstep(.74,.81,concentration));}
+// Every nonzero concentration retains some offshore pack. Increasing it closes the leads continuously, reaching
+// the existing arctic winter's close pack at .82; there is no threshold below which the whole offshore pack vanishes.
+float v2WinterPackLimit(float concentration){return mix(1.,.3,clamp(concentration/.82,0.,1.));}
 // Ice sheet of fresh water, following the water's own outline (rgb colour, a cover of the water).
 // freeze: v2WinterFresh. channel: 1 where a river fragment lies further than v2WinterShelf from every bank.
 // still: 1 inside a lake; shore: lake only, 1 at the shore fading to 0 inside. edge: 1 on the bank line.

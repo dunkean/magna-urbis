@@ -21,12 +21,21 @@ export interface ForestSettings { enabled: boolean; density: number; clearings: 
 export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density: 1, clearings: .45 };
 /** Included in completed-field and display-cache keys, not terrain identity. */
 export const V2_FOREST_PROFILE_VERSION = 'optical-thinning4';
+/** Trees in a cultivated field (occupation class 1), shared by the shader crowns and the modelled 3D trees:
+ * one lone-tree candidate per `cell` metres, accepted with probability `tree` (times the natural potential),
+ * and the edge hedge only within `hedge` metres of the field limit. No strays from a nearby wood, no bank gallery. */
+export const FOREST_FIELD = { cell: 150, tree: .15, hedge: 2.5 } as const;
 /** Occupation RGBA8: R/G signed distance to open/forest land, encoded
  * clamp(128+16d) in native texels (positive inside); B class id (0 none,
  * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
  * 9 agricultural lane clearance, 10 marsh, 11 forest clearing (main road corridor, farmstead ground), 12 covered way
- * (small road or track under the canopy); A 255 inside applied polygons. */
+ * (small road or track under the canopy), 13 Underdark fungus bed (ui/forestOccupation.ts FUNGUS_BED: no surface
+ * ground paint, read by the Underdark mushrooms). A holds the signed distance to strict woody clearings:
+ * clamp(128 - 16d), d in texels, positive inside; 255 everywhere without clearings. */
+export interface ForestClearing { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }
 export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Holdings for the satellite ground, on their own finer grid. */ detail?: LandDetail;
+  /** Exact defensive clearings, retained through building merges and worker preparation. */
+  clearings?: readonly ForestClearing[];
   /** Exact ways (roads, town streets; render/forestRoom.ts corridors) for the modelled trees: the raster is too coarse
    * to keep a trunk off a street a few metres wide. */
   ways?: readonly { path: readonly { x: number; y: number }[]; half: number | readonly number[]; covered?: boolean }[] }
@@ -540,6 +549,13 @@ vec3 groundOccupation(vec2 world){
   groundOccupationCached=true;groundOccupationPoint=world;groundOccupationSample=vec3(dist,floor(cls+.5));
   return groundOccupationSample;
 }
+// Strict woody exclusion has its own polygon distance, independent of open-land classes and reserves.
+float forestClearingAt(vec2 world){
+  if(uHasOccupation==0)return -1e3;
+  vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;
+  if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return -1e3;
+  return (128.-textureLod(uOccupation,uv,0.).a*255.)/16.*uOccupationRect.z/uOccupationN;
+}
 float forestResolvedCover=0.;
 // Crown shadow cast on the ground (0..1), resolved and revealed like forestResolvedCover: the water pass darkens with it.
 float forestResolvedShade=0.;
@@ -553,6 +569,10 @@ const float FOREST_PATCH=56.;
 // Fixed world lattices of the mid-zoom stand edge: a radius-scaled one would swim with the stand mip.
 const float FOREST_LOBE=14.;
 const float FOREST_LONE=24.;
+// Cultivated fields (occupation class 1): lone-tree cell (m), acceptance per cell, hedge reach from the edge (m).
+const float FOREST_FIELD_CELL=${FOREST_FIELD.cell.toFixed(1)};
+const float FOREST_FIELD_TREE=${FOREST_FIELD.tree};
+const float FOREST_FIELD_HEDGE=${FOREST_FIELD.hedge};
 float forestLookup17(float x,int table){
   float u=clamp(x,0.,1.)*16.;int k=min(int(u),15);
   float a=table==0?forestPatchCdf[k]:forestCrownCdf[k],b=table==0?forestPatchCdf[k+1]:forestCrownCdf[k+1];
@@ -631,6 +651,34 @@ float forestPatchValue(ForestPatch q,vec2 p){
   float fine=forestPerlin(g-vec2(c),forestGradient(b),forestGradient(b+ivec2(1,0)),forestGradient(b+ivec2(0,1)),forestGradient(b+ivec2(1,1))).x;
   return clamp(forestPatchNoise(vec3(fine,0.,0.),vec3(q.glade.x+dot(q.glade.yz,p-q.centre),0.,0.)).x*.6+.5,0.,1.);
 }
+// Lone field tree: one seeded candidate point per FOREST_FIELD_CELL world cell, kept with probability
+// FOREST_FIELD_TREE (scaled by the natural potential), rooted in the single lattice cell holding it on the level
+// nearest the crown's own level (the search covers [level-1, level+1)). Mirrored in ui/terrain3dTrees.ts.
+bool forestFieldTree(ivec2 cell,int level,float s,float centreLevel,float cover,float height){
+  if(level!=min(int(floor(centreLevel+.5)),5))return false;
+  ivec2 c=ivec2(floor((vec2(cell)+.5)*s/FOREST_FIELD_CELL));uint h=groundHash(ivec3(c,733),uMaterialSeed^0x2c1b3c6du);
+  if(forestU8(h,16u)>=FOREST_FIELD_TREE*min(cover*3.,1.)*forestHeightGate(height))return false;
+  // Inset by 10 %: the lattice cell holding the point (at most 16 m) then has its centre in the same coarse cell.
+  vec2 t=(vec2(c)+.1+.8*vec2(forestU8(h,0u),forestU8(h,8u)))*FOREST_FIELD_CELL;
+  return all(equal(ivec2(floor(t/s)),cell));
+}
+// Shares of the open land at a point (0..1): x fields (class 1), y commons (class 6), from the bilinear weights of
+// those texels among the classed texels of the 2x2 footprint. Wood and unclassified texels (class 0) do not count, so
+// along a wood edge a share stays whole and the rules follow the smooth open distance instead of the class texels;
+// between two kinds of open land it blends as the ground's class weights do (applyGroundOccupation). Commons are
+// unworked land: they take the zone's natural cover, not an open-land tree share. Mirrored in ui/terrain3dTrees.ts.
+vec2 forestOpenShares(vec2 world){
+  if(uHasOccupation==0)return vec2(0.);
+  vec2 grid=(world-uOccupationRect.xy)/uOccupationRect.z*uOccupationN-.5,f=fract(grid);
+  ivec2 base=ivec2(floor(grid)),top=ivec2(int(uOccupationN)-1);vec2 share=vec2(0.);float classed=0.;
+  for(int y=0;y<2;y++)for(int x=0;x<2;x++){
+    int cls=int(texelFetch(uOccupation,clamp(base+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
+    float w=(x==0?1.-f.x:f.x)*(y==0?1.-f.y:f.y);
+    if(cls>0){classed+=w;if(cls==1)share.x+=w;else if(cls==6)share.y+=w;}
+  }
+  return classed>0.?share/classed:vec2(0.);
+}
+float forestFieldShare(vec2 world){return forestOpenShares(world).x;}
 // One crown: centre, mean radius, outline harmonics, height, crown depth.
 struct ForestCrown{vec2 c;float r;float h;float depth;bool needle;bool alive;bool riparian;float edge;uint id;};
 // Signed distance (m, positive inside) to the open land of the occupation raster.
@@ -643,7 +691,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   // probabilities/radii can otherwise switch half-way through a drawing,
   // leaving a sliced crown or only a thin strip of its painted foot.
   vec4 centre=forestField(k.c,0.);float cover=centre.r,height=centre.g*50.,needle=centre.b;
-  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false,tilledPlot=false;
+  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false,tilledPlot=false,field=false;
   if(uHasOccupation==1){
     vec2 ouv=(k.c-uOccupationRect.xy)/uOccupationRect.z;
     if(all(greaterThanEqual(ouv,vec2(0.)))&&all(lessThanEqual(ouv,vec2(1.)))){
@@ -652,13 +700,18 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
       // Kitchen and market-garden plots (class 5) root no crown: only the woods around them overhang the beds.
       tilledPlot=cls==5;
+      // A cultivated field keeps only its edge hedge and a lone tree or two (forestFieldTree). Its smooth share, not
+      // the nearest class texel, which drew the field rules along the wood edge as a staircase.
+      vec2 shares=forestOpenShares(k.c);field=shares.x>.5;
       allow=(cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(height);
       hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,height)*(1.-st.dry);
-      if(cls==7||cls==8||cls==9||cls==11)openGallery=0.;
+      if(field||cls==7||cls==8||cls==9||cls==11)openGallery=0.;
       // Class 11 clearings (main road corridors, farmsteads) root no crown; crowns rooted outside may overhang them.
       // Class 12 covered ways (small roads, tracks) root no crown either, and nothing holds the crowns of their
       // sides back: they close over the way.
       occupied=cls==4||cls==8||cls==9||cls==11||cls==12;
+      // Commons are unworked: their crowns follow the natural stand, as on unclassified land.
+      if(shares.y>.5)open=-1e3;
     }
   }
   if(forced>0.)cover=forestWoods(cover,height);
@@ -671,6 +724,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   if(gallery>cover){k.riparian=true;cover=gallery;kappa=0.;needle*=.3;}
   float density=forestDensity(cover,kappa),share=cover/max(density,1e-3);
   float radius=forestRadius(height,needle,st.dry);
+  if(forestClearingAt(k.c)>=0.){k.alive=false;k.r=0.;return k;}
   // Clearings (class 11: road corridors, farmsteads), lanes (9) and construction (8) keep crowns back by most of
   // their own radius: they overhang the road, lane or yard edge without closing over it. Only crowns near an open edge look.
   if(uHasOccupation==1&&open<0.&&open>-radius){
@@ -692,9 +746,11 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   if(beyond>0.){
     // Trees left in open land: scattered field trees, orchards, hedgerows, and
     // lone trees within a few crowns of the stand. Bank strips persist in
-    // farmland at half density, not in built land.
-    float stray=.18*(1.-groundSmooth(0.,4.*radius,open))*min(cover*3.,1.);
-    k.alive=!tilledPlot&&forestU8(h2*0x27d4eb2du,24u)<max(allow+(open<5.?hedge:0.)+stray,openGallery*gallery)*(1.-v2ZoneBare);k.edge=1.;
+    // meadow and pasture at half density, not in fields or built land.
+    // Fields: no strays from a nearby stand, the hedge on the very edge only, and at most a lone tree per coarse cell.
+    float stray=field?0.:.18*(1.-groundSmooth(0.,4.*radius,open))*min(cover*3.,1.);
+    k.alive=!tilledPlot&&forestU8(h2*0x27d4eb2du,24u)<max(allow+(open<(field?FOREST_FIELD_HEDGE:5.)?hedge:0.)+stray,openGallery*gallery)*(1.-v2ZoneBare);k.edge=1.;
+    if(field&&!k.alive)k.alive=forestFieldTree(cell,level,s,centreLevel,cover*(1.-v2ZoneBare),height);
   } else {
     // The zone bare belt (rock, treeline) takes the same share cut as the mean, so near crowns stop where it does.
     k.alive=forestU8(h,16u)<q&&threshold<share*(1.-v2ZoneBare);
@@ -956,11 +1012,11 @@ vec3 forestRiparianTint(ForestStand st){ForestStand w=st;w.dry*=.45;return fores
 vec3 forestTilt(vec3 n,vec3 l,float s){return normalize(mix(n,normalize(n-l*max(dot(n,l),0.)),clamp(s,0.,1.)));}
 // Ground-independent forest state at one point: stand, applied occupation, crown legibility.
 // Shared by applyForest and the map's canopy pass (which writes forestCanopyNear to textures).
-struct ForestPrep{ForestStand st;float fp,lod,standLod,reveal,openA,openW,forcedA,hedgeA,humid,cold,radius,crownVis,fringe,galleryNear;bool valid;};
+struct ForestPrep{ForestStand st;float fp,lod,standLod,reveal,openA,openW,forcedA,hedgeA,humid,cold,radius,crownVis,fringe,galleryNear;bool valid;float field;float wild;};
 ForestPrep forestPrep(vec2 world,float footprint){
-  ForestPrep p;p.valid=false;p.openA=0.;p.openW=1.;p.forcedA=0.;p.hedgeA=0.;
+  ForestPrep p;p.valid=false;p.field=0.;p.wild=0.;p.openA=0.;p.openW=1.;p.forcedA=0.;p.hedgeA=0.;
   vec2 uv=(world-uForestRect.xy)/uForestRect.z;
-  if(uForest==0||any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return p;
+  if(uForest==0||any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.)))||forestClearingAt(world)>=0.)return p;
   p.valid=true;
   p.fp=max(footprint,.02);vec2 fsize=vec2(textureSize(uForestField,0));float fcell=uForestRect.z/fsize.x;
   p.reveal=forestReveal(p.fp);
@@ -997,7 +1053,11 @@ ForestPrep forestPrep(vec2 world,float footprint){
       st.allow=(cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(st.height);
       st.hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,st.height)*(1.-st.dry);
       float w=max(p.fp,.5*texel);p.openW=w;p.openA=clamp(st.open/w+.5,0.,1.);p.forcedA=clamp(st.forced/w+.5,0.,1.)*(1.-p.openA);
-      p.hedgeA=p.openA-clamp((st.open-5.)/w+.5,0.,1.);
+      // Fields keep their hedge on the very edge only (forestCrown).
+      vec2 shares=forestOpenShares(world);p.field=shares.x;p.wild=shares.y;
+      p.hedgeA=p.openA-clamp((st.open-mix(5.,FOREST_FIELD_HEDGE,p.field))/w+.5,0.,1.);
+      // Commons keep the zone's natural cover: they leave the open-land share.
+      p.openA*=1.-p.wild;p.hedgeA*=1.-p.wild;
     }
   }
   if(st.orchard){
@@ -1058,6 +1118,32 @@ ForestCanopy forestCanopyAt(ForestPrep p,vec3 l){
   float packed=b.w*4.+.002,flags=floor(packed);c.tint=packed-flags;c.ink=c.tint;c.needle=mod(flags,2.)>.5;c.riparian=mod(floor(flags*.5),2.)>.5;
   return c;
 }
+// Leaf-clump relief of broadleaf crowns (composition vegetation.crownDetail): the atlas baked once by
+// render/crownClumpAtlas.ts (the relief of the elven town crowns, tone only), bound on the brush atlas sampler, which
+// only the painted brushes use otherwise. Map only, read once for the crown that wins the pixel. uCrownClumps: 0 plain
+// crowns (no read), 1 clumps (layers 0-3), 2 fine grain (layers 4-7): the same single read, another layer.
+uniform int uCrownClumps;
+// x tone factor of the crown (clump faces toward or away from the sun, darker gaps between clumps), y factor of its
+// cover (a rim broken by the clumps), z clump offset for the snow on the crown, w weight (0: the plain crown).
+vec4 forestCrownAtlas(ForestPrep p,ForestCanopy hit,vec3 l){
+  // In from 2.5 to 1.5 m per pixel (the threshold of the elven crowns), once a crown spans a few pixels.
+  float w=(1.-groundSmooth(1.5,2.5,p.fp))*groundSmooth(2.,4.,p.radius/p.fp);
+  // Broadleaf stands and orchards; tropical and savanna canopies and the trees scattered over open land stay plain.
+  vec3 kind=forestKind(p.st.trop,p.st.dry);
+  w*=p.st.orchard?1.:(1.-kind.y-kind.z)*(1.-groundSmooth(p.radius,3.*p.radius,p.st.open));
+  if(w<=0.)return vec4(1.,1.,0.,0.);
+  // Crown-local position in radii: the dome slope points to the crown centre. The crown's tint turns the motif and
+  // picks its variant, so neighbouring crowns differ.
+  vec2 local=-hit.slope/max(length(hit.slope),1e-6)*hit.rel;
+  float a=6.2831853*hit.tint,layer=floor(fract(hit.tint*4.37)*4.)+(uCrownClumps==2?4.:0.);mat2 turn=mat2(cos(a),sin(a),-sin(a),cos(a));
+  vec4 t=textureLod(uForestBrushAtlas,vec3(turn*local*.5+.5,layer),max(0.,log2(64.*p.fp/p.radius)));
+  // Clump faces toward or away from the sun, as the sprites' (h - toward) 3 at their .06 step; none under a zenith sun.
+  vec2 sun=length(l.xz)>1e-4?normalize(l.xz):vec2(0.);
+  float face=1.+clamp(-.18*dot(t.gb*32.-16.,turn*sun),-.35,.35)*groundSmooth(0.,.5,length(l.xz));
+  // The rim follows the clumps, antialiased like the crown outline, where no other crown lies deeper under the pixel.
+  float rim=clamp((t.a-.5)*.5*p.radius/(.75*p.fp)+.5,0.,1.),alone=groundSmooth(-.12,-.04,hit.near-hit.rel);
+  return vec4(mix(1.,t.r*1.25*face,w),mix(1.,rim,w*alone),w*(t.r*1.25-1.),w);
+}
 #else
 ForestCanopy forestCanopyAt(ForestPrep p,vec3 l){return forestCanopyNear(p,l);}
 #endif
@@ -1089,7 +1175,7 @@ float forestCrownSnow(ForestCanopy hit,vec2 sun,float bough){
 }
 ${FOREST_CLUMP_GLSL}
 // Same forest hit, outline, dome normal, seasonal limbs and shadow for the planted grid.
-void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hit,vec3 leafClump,vec2 bare){
+void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hit,vec3 leafClump,vec2 bare,vec4 crownAtlas){
   ForestStand st=p.st;vec3 l=normalize(light),nGround=m.normal;
   float leaf=uRenderV2>0?v2SeasonLeaf():1.,snow=uRenderV2>0?v2GroundSnow*forestSnowLoad(0.):0.;
   // A planted parcel is open land: its floor is the open ground (with its snow), as the forest path rebuilds it for
@@ -1103,6 +1189,8 @@ void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hi
   if(p.crownVis>0.&&uQuality==0){
     float tint=hit.tint;
     float body=mix(bare.x,1.,leaf);
+    // Optional baked clumps (forestCrownAtlas): a rim broken by the foliage clumps.
+    if(crownAtlas.w>0.)hit.cover*=mix(1.,crownAtlas.y,leaf);
     float resolved=hit.cover*body;
     crown=forestCrownColor(st,forestGuide(),0.,vec2(tint*2.-1.,0.),0.);
     vec3 kind=forestKind(st.trop,st.dry);float fall=forestSeason().x*(1.-kind.x-kind.y-kind.z);
@@ -1110,6 +1198,7 @@ void applyOrchard(inout GroundMaterial m,ForestPrep p,vec3 light,ForestCanopy hi
     // Leaf clumps of the foliage, strongest toward the rim; bare limbs carry none.
     float foliageDetail=leaf*mix(.55,1.,hit.rel);
     crown*=1.+.3*foliageDetail*leafClump.x;
+    if(crownAtlas.w>0.)crown*=crownAtlas.x;
     // Bare limbs hold little snow and stay dark over the white floor, the twig haze takes the rest of the mean load.
     crown=forestSnowed(mix(crown,forestBareColor(tint,bare.y),1.-leaf),min(snow*mix(1.,mix(1.2,.4,bare.y),1.-leaf),.97));
     if(uForestTrees.w>0.)crown*=mix(1.,.6,1.-groundSmooth(uForestTrees.z,uForestTrees.w,distance(st.p,uForestTrees.xy)));
@@ -1132,17 +1221,24 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // at full quality): the shader compilers inline every call, and without the auxiliary pass (3D) each call is the
   // whole near-crown search.
   ForestCanopy hit;vec3 leafClump=vec3(0.);
+  // Optional baked clumps of the winning crown (forestCrownAtlas, map only): tone, cover, snow offset, weight.
+  vec4 crownAtlas=vec4(1.,1.,0.,0.);
   // Leafless crown cover and wood share (forestBareCrown), also one evaluation; painted brushes keep a flat share.
   vec2 bare=vec2(FOREST_BARE,.25);
   if(p.crownVis>0.&&uQuality==0){
     hit=forestCanopyAt(p,normalize(light));
     // Leaf clumps once a crown spans a few pixels (painted brushes carry their own): one evaluation for both paths.
     if(uForestBrushes==0){
-      if(hit.cover>0.&&p.radius>2.5*p.fp)leafClump=forestClump(world,p.radius,p.fp,hit.tint);
+#ifdef AUX_TEXTURE
+      if(uCrownClumps>0&&hit.cover>0.&&!hit.needle)crownAtlas=forestCrownAtlas(p,hit,normalize(light));
+#endif
+      // The baked clumps take over from the procedural ones as they come in.
+      if(hit.cover>0.&&p.radius>2.5*p.fp&&crownAtlas.w<1.)leafClump=forestClump(world,p.radius,p.fp,hit.tint);
+      if(crownAtlas.w>0.)leafClump*=1.-crownAtlas.w;
       if(uRenderV2>0){if(hit.cover>0.&&v2SeasonLeaf()<1.)bare=forestBareCrown(hit.rel,hit.slope,hit.tint,p.radius/max(p.fp,.01));}
     }
   }
-  if(p.st.orchard){applyOrchard(m,p,light,hit,leafClump,bare);return;}
+  if(p.st.orchard){applyOrchard(m,p,light,hit,leafClump,bare,crownAtlas);return;}
   ForestStand st=p.st;float fp=p.fp,openA=p.openA,forcedA=p.forcedA,hedgeA=p.hedgeA,crownVis=p.crownVis,radius=p.radius,reveal=p.reveal;
   // Crown share seen from above: foliage, plus the rimed limbs of leafless crowns under snow.
   float foliage=uRenderV2>0?forestCrownShow(v2Foliage):1.;
@@ -1157,7 +1253,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     // Field colour only: no crown candidates, shadows or brush-atlas reads.
     float cover=mix(st.cover,max(st.cover,.25*forestHeightGate(st.height)),forcedA);
     cover=mix(cover,st.allow*.7+min(hedgeA,.6)*st.hedge,openA);
-    cover=max(cover,forestBankCover(world,fp)*(1.-.5*openA));
+    cover=max(cover,forestBankCover(world,fp)*(1.-mix(.5,1.,p.field)*openA));
     float available=(1.-forestWaterCoverage(world))*(1.-v2ZoneBare);
     if(uRenderV2>0)available*=1.-clamp(renderGuideBeach/.8,0.,1.);
     cover=clamp(cover*foliage*available,0.,1.);
@@ -1180,7 +1276,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   if(st.cover>.002&&max(grainVis,edgeVis)>0.){vec2 g=world/FOREST_LOBE+vec2(17.3,-41.9);ivec2 c=ivec2(floor(g));
     lobe=forestPerlin(g-vec2(c),forestGradient(c),forestGradient(c+ivec2(1,0)),forestGradient(c+ivec2(0,1)),forestGradient(c+ivec2(1,1))).x;}
   float grain=lobe*grainVis,lobeShift=2.*radius*lobe*edgeVis;
-  if(uHasOccupation==1)openA=clamp((st.open+lobeShift)/p.openW+.5,0.,1.);
+  if(uHasOccupation==1)openA=clamp((st.open+lobeShift)/p.openW+.5,0.,1.)*(1.-p.wild);
   float hedgeShare=min(hedgeA/max(openA,1e-3),1.);
   // Applied occupation acts at every distance: open land replaces Render's
   // macro woods by its own tree share, applied woods add their weak prior.
@@ -1196,7 +1292,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   refAlbedo*=mix(vec3(1.),groundToLinear(forestGrade(st,st.needle)),refWoods);
   // Riparian gallery over the reference: an area-filtered hint of the narrow
   // bank envelope, colour only (no stand paint, normal or shadow).
-  float galleryArea=forestBankCover(world,fp)*(1.-.5*openA);
+  // No bank gallery inside a field (forestCrown roots none there).
+  float galleryArea=forestBankCover(world,fp)*(1.-mix(.5,1.,p.field)*openA);
   if(uRenderV2>0)galleryArea*=foliage*(1.-clamp(renderGuideBeach/.8,0.,1.));
   vec3 galleryMean=vec3(0.);
   if(galleryArea>0.)galleryMean=groundToLinear(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.)*forestRiparianTint(st));
@@ -1238,10 +1335,12 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // Lone trees just outside the line, at most one per cell. A crown fits inside
   // its cell, so this needs one hash and no neighbour search.
   float lone=0.;
+  // Fields take no lone trees from a nearby stand edge: their own lone trees are crowns (forestFieldTree). Judged at
+  // the tree's centre, so a disc is kept or dropped whole.
   if(edgeVis>0.&&edgeSd<0.&&edgeSd>-5.*radius){
     ivec2 c=ivec2(floor(world/FOREST_LONE));uint h=groundHash(ivec3(c,719),uMaterialSeed^0x2c1b3c6du);
     vec2 centre=(vec2(c)+.3+.4*vec2(forestU8(h,0u),forestU8(h,8u)))*FOREST_LONE;
-    if(forestU8(h,16u)<.35*(1.+edgeSd/(5.*radius))*min(st.cover*3.,1.)*forestHeightGate(st.height))
+    if(forestFieldShare(centre)<=.5&&forestU8(h,16u)<.35*(1.+edgeSd/(5.*radius))*min(st.cover*3.,1.)*forestHeightGate(st.height))
       lone=clamp((min(radius,.3*FOREST_LONE)-distance(world,centre))/fp+.5,0.,1.)*edgeVis;
   }
   if(uRenderV2>0){float bare=1.-clamp(renderGuideBeach/.8,0.,1.);mask*=bare;lone*=bare;maskQ*=1.-forestBeach(q);}
@@ -1269,6 +1368,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   float occlusion=mix(m.occlusion*mix(1.,.72,stand),.8,canopy)*(1.-.08*galleryArea);
   float roughness=mix(m.roughness,.9,canopy);
   if(crownVis>0.){
+    // Optional baked clumps (forestCrownAtlas): a rim broken by the foliage clumps; bare limbs keep their outline.
+    if(crownAtlas.w>0.)hit.cover*=mix(1.,crownAtlas.y,uRenderV2>0?v2SeasonLeaf():1.);
     // Water sees the crowns as displayed: resolved and revealed.
     forestResolvedCover=hit.cover*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
     float shade=hit.shade;
@@ -1315,6 +1416,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     }
     vec3 crown=forestCrownColor(st,forestGuide(),hit.needle?1.:0.,jitter,special)*(1.+detailGain*clump+whorl)*flank*(1.-mix(.12,.3,st.trop)*hit.edge);
     crown*=1.+.3*foliageDetail*leafClump.x;
+    if(crownAtlas.w>0.)crown*=crownAtlas.x;
     if(hit.riparian)crown*=forestRiparianTint(st);
     // Near the camera a modelled tree stands on each crown: the painted crown under it becomes its ground shade.
     if(uForestTrees.w>0.)crown*=mix(1.,.6,1.-groundSmooth(uForestTrees.z,uForestTrees.w,distance(world,uForestTrees.xy)));
@@ -1334,7 +1436,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       crown=mix(crown,forestBareColor(tint,bare.y),1.-leaf);
       // Snow caps the top and lit flank of each crown and lies on its boughs or leaf clumps; the gaps stay dark.
       // Bare limbs hold little and stay dark against the white floor, the twig haze takes the rest of the mean load.
-      crown=forestSnowed(crown,min(forestCrownSnow(hit,sun,hit.needle?bough:.64+foliageDetail*leafClump.x)*mix(1.,mix(1.2,.4,bare.y),1.-leaf),.97));
+      crown=forestSnowed(crown,min(forestCrownSnow(hit,sun,hit.needle?bough:.64+foliageDetail*leafClump.x+crownAtlas.z)*mix(1.,mix(1.2,.4,bare.y),1.-leaf),.97));
     }
     // Forest floor under and right around crowns; open ground beyond.
     float under=uForestBrushes==1?hit.cover:1.-groundSmooth(1.,1.8,hit.near);

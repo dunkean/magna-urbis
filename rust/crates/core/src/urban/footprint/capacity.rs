@@ -27,9 +27,11 @@ use super::super::{
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
 
-/// Households the parcels must hold per household of the population: the
-/// demand, the plots taken by trades and shops, and a 5 % margin.
-pub(in crate::urban) const MARGIN: f64 = 1.12;
+/// Lots the trades and shops take on ordinary plots, per housing lot (the
+/// former fixed 12 % margin less its 5 % housing part). The housing margin
+/// itself is `roles::housing_margin`, shared with the allocation's fill limit,
+/// so the plan reserves the homes the allocation fills, no spare lots.
+pub(in crate::urban) const TRADE_SHARE: f64 = 1.12 / 1.05;
 /// Bound of the footprint extension over the catalogue area.
 pub(in crate::urban) const EXTENSION: f64 = 1.6;
 /// Bound of the extension of a tissue its own densest cutting cannot house
@@ -52,9 +54,6 @@ const OTHER_LAND: f64 = 0.06;
 /// Land of the ordinary blocks lost after the quarter stage: squares,
 /// institutions reserving whole blocks, streetless strips.
 pub(in crate::urban) const BLOCK_LOSS: f64 = 0.06;
-/// Sampling error of the block measure (median ≈ 6 % on the capacity sweep):
-/// the lots and fringe fields are set to hold this much more than required.
-pub(in crate::urban) const MEASURE_MARGIN: f64 = 1.05;
 /// Forecast over requirement beyond which the real blocks are not measured
 /// (the sweep's largest over-prediction is +80 %).
 pub(in crate::urban) const AMPLE: f64 = 2.0;
@@ -172,6 +171,39 @@ pub(in crate::urban) fn densify(morph: &mut Morph, t: f64) {
     }
     morph.value["_densify"] = serde_json::json!(t);
 }
+/// Underdark: a cave town short of floor packs beyond its culture's ranges, within the cave
+/// caps. `land` is its land per home over the culture's (clamped to
+/// `settlements::CAVE_LAND_PER_HOME`..1; 0 or 1 leaves the morph unchanged): lot frontage and
+/// depth shrink by its square root, house and block areas by it, and the storeys rise by its
+/// inverse, up to `settlements::CAVE_HEIGHT`.
+pub(in crate::urban) fn cave_pack(morph: &mut Morph, land: f64) {
+    if land <= 0.0 || land >= 1.0 {
+        return;
+    }
+    let k = land.max(crate::settlements::CAVE_LAND_PER_HOME);
+    for (key, factor) in [("frontage", k.sqrt()), ("plotDepth", k.sqrt()), ("houseArea", k), ("blockSize", k)] {
+        if let Some(zones) = morph.value[key].as_object_mut() {
+            for range in zones.values_mut() {
+                if let Some(values) = range.as_array_mut() {
+                    for v in values.iter_mut() {
+                        if let Some(x) = v.as_f64() {
+                            *v = serde_json::json!(x * factor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let lift = (1.0 / k).min(crate::settlements::CAVE_HEIGHT);
+    if let Some(levels) = morph.value["arch"]["storeys"].as_array_mut() {
+        for v in levels.iter_mut() {
+            if let Some(x) = v.as_u64() {
+                *v = serde_json::json!(((x as f64) * lift).ceil() as u64);
+            }
+        }
+    }
+    morph.value["_cavePack"] = serde_json::json!(k);
+}
 /// The receiver's morph with the donor's network and lot cutting.
 fn graft(mut own: Morph, donor: &Morph) -> Morph {
     for key in TISSUE_KEYS {
@@ -221,6 +253,7 @@ pub(in crate::urban) fn adapt(
         morph
     };
     densify(&mut morph, plan.densify);
+    cave_pack(&mut morph, plan.cave_pack);
     compact_village(&mut morph, zone, population);
     morph
 }
@@ -399,12 +432,18 @@ pub(in crate::urban) fn probe(
     let pressure = (epoch.pressure * 20.0).round() / 20.0;
     let offset = (epoch.offset / 50.0).round() * 50.0;
     let key = format!(
-        "{culture}\u{1}{donor}\u{1}{}\u{1}{}\u{1}{t:.3}\u{1}{pressure}\u{1}{offset}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
+        "{culture}\u{1}{donor}\u{1}{}\u{1}{}\u{1}{t:.3}\u{1}{pressure}\u{1}{offset}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
         epoch.recipe,
         epoch.zone,
         cfg.density,
         cfg.programme.period,
         population < 500,
+        crate::settlements::demographics::below(population, "town"),
+        // Households per town house and per dense-core lot follow the
+        // population (`programme::household_capacity`): a few cached steps of
+        // each blend instead of one yield for every town.
+        (roles::town_house_share(population) * 4.0).round() as u8,
+        (roles::dense_core_share(population) * 8.0).round() as u8,
         cfg.access_mode,
     );
     if let Some(y) = cache().lock().ok().and_then(|c| c.get(&key).copied()) {
@@ -701,7 +740,7 @@ fn reserved_land(
 }
 /// Households of a settlement (domestic and mixed), as the programme counts them.
 pub(in crate::urban) fn households(culture: &str, population: u32) -> f64 {
-    f64::from(population) / roles::occupancy(culture).household_size.max(0.1)
+    f64::from(population) / roles::settlement_occupancy(culture, population).household_size.max(0.1)
 }
 
 #[cfg(test)]
@@ -849,7 +888,7 @@ fn plan_steps(
     catalogue()["cultures"][culture].as_object()?;
     let population = site.population;
     let households = households(culture, population);
-    let required = households * MARGIN;
+    let required = households * TRADE_SHARE * roles::housing_margin(population);
     prefetch(culture, &[""], epochs, &[0.0], cfg, population);
     let (nominal_yield, garden) = gross(culture, "", epochs, 0.0, cfg, population);
     let mut plan = CapacityPlan {

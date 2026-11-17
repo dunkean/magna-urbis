@@ -178,6 +178,7 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   }
   // Construction excludes tree roots, not the surrounding soil/grass response: changing it made a pale pad per house.
   if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;}}
+  if(forestClearingAt(world)>=0.)e.woody=0.;
   float water=forestWaterCoverage(world);e.woody*=1.-water;e.grass*=1.-water;
   // Preserve the retained physical beach footprint at every detail level.
   // Its 0.8 factor belongs to legacy colour blending, not vegetation cover.
@@ -328,6 +329,15 @@ GroundMaterial v2Ground(vec3 s,vec2 world,float footprint,float tpi,vec3 light,v
 // Shore ice on the sea of a local map. Offshore progress t, in depth: 0 is the solid shore-fast sheet (to half the
 // season's reach), 1 is open water, 40 m deeper than the reach.
 float v2ShoreIceProgress(float c,float depth){float reach=2.+24.*c*c;return clamp((depth-.5*reach)/(.5*reach+40.),0.,1.);}
+// Snowy shores retain their fast sheet. During thaw the immediate shoreline opens, shallow shelves retain floes,
+// and the offshore pack survives at the calendar's concentration. Bathymetry supplies the shallow-bay proxy;
+// coastal thaw changes the distribution, never adds a progress offset that can erase the entire pack.
+float v2SeaIceProgress(float c,float loose,float depth){
+  float fast=min(v2ShoreIceProgress(c,depth),v2WinterPackLimit(c));
+  float shallow=sstep(0.,3.,depth),fringe=.3*(1.-shallow)-.12*shallow*(1.-sstep(5.,20.,depth));
+  return mix(fast,1.-.7*c+fringe,loose);
+}
+float v2SeaIceGate(float c){return sstep(0.,.25,c);}
 // Share of floes melted away at progress t (each floe decides at its own seed); a dense season keeps them longer.
 float v2ShoreIceDrop(float c,float t){return sstep(mix(.15,.45,c),1.,t);}
 // Area mean of the resolved pack (kept floes, minus leads and rounding) for footprints that cannot resolve floes.
@@ -347,16 +357,34 @@ vec4 v2IcePlate(vec2 world,float scale,uint salt){
   }}
   return vec4((second-first)/max(2.*length(secondDelta-firstDelta),1e-5)*scale,identity,firstDelta*scale);
 }
+// Set by v2WaterColor for a sea fragment (left alone by fresh water): share of its surface frozen (ice, plus the
+// slush between floes), 0 open water. Whatever the callers lay over the sea after the evaluation (an estuary's river
+// water, climate tints, swell and surf) lies under this ice: the shore band of a frozen sea is ice to the coastline.
+float v2SeaIceCover=0.;
+// Optical depth of a lake (kind 2): shore, distance into the lake in metres; slope, the ground gradient. The bed shows
+// through a narrow margin that follows the shoreline, a few tens of metres below a gentle bank, metres below a steep one.
+float v2LakeDepth(float shore,float slope){
+  return .3+max(shore,0.)*mix(.04,.3,sstep(.03,.3,slope));
+}
+// Open lake water seen from above (open: 0 along the shore, 1 well inside): one slow value field stretched along the
+// wind gives a gradual tone drift with long, slightly brighter wind lanes. Its scale leaves a pond one even tone.
+vec3 v2LakeSurface(vec3 c,vec2 world,float fp,float open){
+  vec2 q=vec2(dot(world,vec2(.8,.6)),3.*dot(world,vec2(-.6,.8)));
+  float n=v2Pattern(vec3(q,0.),1800.,3.*fp,uMaterialSeed+781u);
+  c*=1.+.05*n*open;
+  return mix(c,c*vec3(1.03,1.06,1.07)+.01,.6*sstep(.25,.75,n)*open);
+}
 vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,float depth){
-  // Sea ice of the map and season (terrainRenderV2Winter): x concentration, y looseness. The calendar is the
-  // potential, the snow of the coast decides what forms. Fresh ice is laid by the callers (v2FreshIce).
+  // Sea ice of the map and season (terrainRenderV2Winter): x calendar concentration, y looseness from coastal thaw.
+  // Fresh ice is laid by the callers (v2FreshIce).
   vec2 seaIce=vec2(0.);
-  if(kind<1.5)seaIce=v2WinterSeaIce(v2Zoned()?v2SeasonSeaIce():v2Freeze(kind,local));
+  if(kind<1.5){seaIce=v2WinterSeaIce(v2Zoned()?v2SeasonSeaIce():v2Freeze(kind,local));v2SeaIceCover=0.;}
   // Fresh water reads as the same water along its network. The caller composites the coverage, so a narrow or
   // antialiased stream is not optically thinner (coverage does not enter the colour), and the depth keeps a floor:
-  // a small stream is a little lighter and clearer than its trunk, never bed-coloured beside deep blue.
+  // a small stream is a little lighter and clearer than its trunk, never bed-coloured beside deep blue. A lake (kind 2)
+  // takes its own depth (v2LakeDepth): its shallow margin shows the bed.
   float optical=max(depth,0.),share=cover;
-  if(kind>1.5){optical=max(depth,2.5);share=1.;}
+  if(kind>1.5){optical=max(depth,kind<2.5?.3:2.5);share=1.;}
   if(uQuality>0){
     // Retain the bathymetric/seasonal palette without cellular ice or shore searches.
     bool sea=kind<1.5;
@@ -364,7 +392,8 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     vec3 shallow=mix(mix(v2Mineral(local)*.65,vec3(.20,.33,.24),sediment),vec3(.12,.31,.32),.60);
     vec3 deep=sea?mix(vec3(.045,.16,.27),vec3(.018,.065,.15),sstep(150.,3000.,depth)):vec3(.025,.12,.21);
     vec3 water=mix(shallow,deep,1.-exp(-optical*(sea?.035:.15)*max(.08,share*share)));
-    float ice=v2ShoreIceMean(seaIce.x,clamp(min(v2ShoreIceProgress(seaIce.x,depth),v2WinterPackLimit(seaIce.x))+.65*seaIce.y,0.,1.))*sstep(.05,.25,seaIce.x);
+    float ice=v2ShoreIceMean(seaIce.x,clamp(v2SeaIceProgress(seaIce.x,seaIce.y,depth),0.,1.))*v2SeaIceGate(seaIce.x);
+    if(sea)v2SeaIceCover=ice;
     if(uRenderV2==5)return mix(vec3(.08,.17,.24),vec3(.85,.94,1.),ice);
     if(uRenderV2==4)return vec3(0.,0.,.13);
     return mix(water,vec3(.84,.89,.91),ice);
@@ -387,11 +416,8 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     water=mix(water,vec3(.36,.70,.66),warm*lagoon*.5);
     water=mix(water,vec3(.03,.16,.33),arid*(1.-shelf)*.35);
     water=mix(water,water*vec3(.80,.90,1.)+vec3(0.,.01,.02),cold*.6);
-    float c=seaIce.x,reach=2.+24.*c*c;
-    // An arctic pack takes the whole sea: its offshore progress stops at close pack (v2WinterPackLimit), so the
-    // plates run to the map edge instead of opening with depth. A thawed coast holds no fast sheet: the pack starts
-    // already broken, rounded and thinned (drifting floes).
-    float raw=min((depth-.5*reach)/(.5*reach+40.),v2WinterPackLimit(c))+.65*seaIce.y,t=clamp(raw,0.,1.);
+    float c=seaIce.x;
+    float raw=v2SeaIceProgress(seaIce.x,seaIce.y,depth),t=clamp(raw,0.,1.);
     // Gradient of the unclamped progress on the ground (screen derivatives, both map and 3D projections), so each
     // plate reads its progress at its own seed: it shrinks evenly instead of tapering into a wedge.
     vec2 dw1=dFdx(world),dw2=dFdy(world);float dt1=dFdx(raw),dt2=dFdy(raw),det=dw1.x*dw2.y-dw1.y*dw2.x;
@@ -401,8 +427,8 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     // into smaller floes, which round off and melt away whole toward open water, with slush and brash between them
     // near the sheet. Every decision (break, melt) is taken at a floe's seed, so no depth contour cuts a floe, and
     // nothing blurs the coastline (the land/water cover draws it). Leads are box-filtered: crisp, never aliased.
-    if(c>.05&&raw<1.6){
-      float pw=max(footprint,.3),resolved=1.-sstep(25.,60.,footprint),gate=sstep(.05,.25,c);
+    if(c>0.&&raw<1.6){
+      float pw=max(footprint,.3),resolved=1.-sstep(25.,60.,footprint),gate=v2SeaIceGate(c);
       vec3 g=vec3(world,0.);
       // One gentle domain bend (displacement slope below 1) for both cell sets: curved edges, no straight lattice.
       vec2 q=world;float erode=0.;
@@ -433,6 +459,7 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
       vec3 iceTone=mix(vec3(.75,.82,.87),vec3(.84,.89,.91)*(.96+.07*id3*resolved),sstep(.1,.45,t))+grain;
       water=mix(water,iceTone*.92,.7*brash);
       water=mix(water,iceTone,iceCover);
+      v2SeaIceCover=iceCover+(1.-iceCover)*.65*slush;
     }
   }
   if(uRenderV2==5)water=mix(vec3(.08,.17,.24),vec3(.85,.94,1.),iceCover);

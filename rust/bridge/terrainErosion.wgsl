@@ -303,10 +303,35 @@ fn pitPour(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i>=count()
 fn pitFill(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i>=count()){return;}let root=atomicLoad(&nodes[i].parent);if(root!=0xffffffffu && atomicLoad(&nodes[root].pour)!=0xffffffffu){let spill=decoded(atomicLoad(&nodes[root].spill));if(nodes[i].h<spill){nodes[i].h+=p.values[4].z*p.values[7].z*p.values[12].x*(spill-nodes[i].h);}}}
 @compute @workgroup_size(256)
 fn breachInit(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<count()){atomicStore(&nodes[i].breached,ordered(nodes[i].h));}}
+// CPU sill_phase / sill_flow: physical wavelengths and a small bearing perturbation on gentle, descending ground.
+fn sillPhase(pour:u32)->f32 {
+  let hash=pour*747796405u+2891336453u;
+  return f32((hash^(hash>>16u))&65535u)*(6.283185307179586/65536.0);
+}
+fn sillFlow(c:u32,arc:f32,phase:f32)->vec4<f32> {
+  let f=nodes[c].flow;if(f.x<0.0){return f;}
+  var d=0u;for(var k=0u;k<8u;k++){if(neighbor(c,k)==i32(f.x)){d=k;break;}}
+  let current=nodes[c].flood[0];
+  let slope=(current.x-nodes[u32(f.x)].flood[0].x)/(p.values[1].x*distances[d]);
+  if(slope<=0.0 || slope>=0.01){return f;}
+  let wave=0.7*sin(6.283185307179586*arc/1000.0+phase)+0.3*sin(6.283185307179586*arc/430.0+2.0*phase);
+  var bearing=f32(d)+select(f.z,0.0,f.y<0.0)+0.8*(1.0-slope/0.01)*wave;
+  bearing=min(7.999999,bearing-8.0*floor(bearing/8.0));
+  let a=u32(floor(bearing));let b=(a+1u)&7u;let ar=neighbor(c,a);let br=neighbor(c,b);
+  if(ar<0 || br<0){return f;}
+  if(!lower(nodes[u32(ar)].flood[0],current) || !lower(nodes[u32(br)].flood[0],current)){return f;}
+  let t=bearing-f32(a);
+  return vec4<f32>(f32(ar),f32(br),t,(1.0-t)*distances[a]+t*distances[b]);
+}
 @compute @workgroup_size(256)
 fn breach(@builtin(global_invocation_id) id:vec3<u32>){
-  let i=id.x;if(i>=count() || atomicLoad(&nodes[i].parent)!=i){return;}let pour=atomicLoad(&nodes[i].pour);if(pour==0xffffffffu){return;}let frac=p.values[7].z;let spill=decoded(atomicLoad(&nodes[i].spill));let bottom=decoded(atomicLoad(&nodes[i].bottom));var current=min(nodes[pour].h,spill-frac*(spill-bottom));atomicMin(&nodes[pour].breached,ordered(nodes[pour].h+frac*(current-nodes[pour].h)));var r=nodes[pour].receiver;
-  for(var k=0u;k<400u;k++){if(r<0){break;}current=max(0.5,current-0.01*p.values[1].x);let old=nodes[u32(r)].h;if(old<=current){break;}atomicMin(&nodes[u32(r)].breached,ordered(old+frac*(current-old)));r=nodes[u32(r)].receiver;}
+  let i=id.x;if(i>=count() || atomicLoad(&nodes[i].parent)!=i){return;}let pour=atomicLoad(&nodes[i].pour);if(pour==0xffffffffu){return;}let frac=p.values[7].z;let spill=decoded(atomicLoad(&nodes[i].spill));let bottom=decoded(atomicLoad(&nodes[i].bottom));var current=min(nodes[pour].h,spill-frac*(spill-bottom));atomicMin(&nodes[pour].breached,ordered(current));var r=nodes[pour].receiver;
+  // CPU `carve_sills`: the reach never descends under the depression's own floor (nor 0.5 m), and follows the
+  // D-infinity pair with metre-scaled winding on gentle slopes; only already drained neighbours are eligible.
+  // The outlet and the reach are cut to the profile itself, three cells wide: the eight neighbours of a reach cell
+  // are lowered by its cut, never under its level (a one-cell cut does not survive the resampling to the source grid).
+  let bed=max(0.5,bottom);var turn=0.0;var arc=0.0;let phase=sillPhase(pour);
+  for(var k=0u;k<400u;k++){if(r<0){break;}current=max(bed,current-0.01*p.values[1].x);let old=nodes[u32(r)].h;if(old<=current){break;}atomicMin(&nodes[u32(r)].breached,ordered(current));for(var d=0u;d<8u;d++){let q=neighbor(u32(r),d);if(q>=0){atomicMin(&nodes[u32(q)].breached,ordered(max(current,nodes[u32(q)].h-(old-current))));}}let from=u32(r);let f=sillFlow(from,arc,phase);if(f.y<0.0){r=nodes[from].receiver;}else{turn+=f.z;if(turn>=0.5){turn-=1.0;r=i32(f.y);}else{r=i32(f.x);}}if(r>=0){let to=u32(r);let diagonal=from%size()!=to%size() && from/size()!=to/size();arc+=p.values[1].x*select(1.0,1.4142135623730951,diagonal);}}
 }
 @compute @workgroup_size(256)
 fn breachFinish(@builtin(global_invocation_id) id:vec3<u32>){let i=id.x;if(i<count()){nodes[i].h=decoded(atomicLoad(&nodes[i].breached));}}

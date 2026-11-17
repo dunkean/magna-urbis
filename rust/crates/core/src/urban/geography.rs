@@ -20,6 +20,8 @@ pub struct Geography {
     water: Vec<Shape>,
     land_index: Vec<g::ContainmentIndex>,
     water_index: Vec<g::ContainmentIndex>,
+    /// Solid ground (Underdark cave rock): part of `water` for building, told apart by `solid`.
+    solid_index: Vec<g::ContainmentIndex>,
     edges: Vec<(Point, Point)>,
     bins: BTreeMap<(i64, i64), Vec<usize>>,
     /// Water shapes by coarse bin of their box: a tiled shoreline holds
@@ -45,7 +47,13 @@ fn even_odd(rings: Vec<Vec<Point>>) -> Vec<Shape> {
 }
 impl Geography {
     pub fn new(input: VectorGeography, width: f64) -> Result<Self, String> {
-        let rings = input.land.iter().chain(input.water.iter().flatten());
+        Self::with_solid(input, vec![], width)
+    }
+    /// `new` with solid ground no town builds on and no boat reaches (Underdark cave rock, one
+    /// even/odd ring group). It joins the water that `wet` and the clips exclude, and `solid`
+    /// tells it apart: harbours and bridges never take it for a shore or a channel.
+    pub fn with_solid(input: VectorGeography, solid: Vec<Vec<Point>>, width: f64) -> Result<Self, String> {
+        let rings = input.land.iter().chain(input.water.iter().flatten()).chain(solid.iter());
         let mut count = 0;
         for ring in rings {
             count += ring.len();
@@ -61,11 +69,13 @@ impl Geography {
             }
         }
         let land = even_odd(input.land);
+        let solid = even_odd(solid);
         let water = g::union(
             &input
                 .water
                 .into_iter()
                 .flat_map(even_odd)
+                .chain(solid.iter().cloned())
                 .collect::<Vec<_>>(),
         );
         if input.springs.len() > 100_000 || input.springs.iter().any(|p|
@@ -75,7 +85,16 @@ impl Geography {
         }
         let mut result = Self::build(land, water, width);
         result.springs = input.springs;
+        result.solid_index = solid.iter().map(g::ContainmentIndex::new).collect();
         Ok(result)
+    }
+    /// Whether any solid rock is set (an Underdark map).
+    pub(super) fn has_solid(&self) -> bool {
+        !self.solid_index.is_empty()
+    }
+    /// Solid rock (Underdark): an obstacle (`wet`), never water for a harbour or a bridge.
+    pub(super) fn solid(&self, p: Point) -> bool {
+        self.solid_index.iter().any(|s| s.contains(p))
     }
     /// Index already resolved land and water shapes. Water shapes may share
     /// edges (tiles of one body); containment and clipping treat them as a union.
@@ -84,6 +103,7 @@ impl Geography {
             springs: vec![],
             land_index: land.iter().map(g::ContainmentIndex::new).collect(),
             water_index: water.iter().map(g::ContainmentIndex::new).collect(),
+            solid_index: vec![],
             land,
             water,
             edges: vec![],

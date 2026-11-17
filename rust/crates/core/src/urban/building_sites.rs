@@ -1328,7 +1328,9 @@ impl BuildingSiteIndex {
         if !parts.is_empty() && !role.ends_with(".ruin") && !super::massing::pile_house(building_culture, arch)
             && let Some(farm) = super::farmsteads::rural(tissue.as_ref().map_or("", |(zone, _)| zone.as_str()), &role,
                 programme["landmark"].as_bool().unwrap_or(false), tissue.as_ref().is_some_and(|(_, m)| !m.text("campLayout").is_empty()), ring_area(&lot.outer), pr.population)
-            && (ancillary || lone)
+            // A closed court or round compound is the dwelling itself: its domestic core
+            // stands on every rural home; the share only doses what lies beyond it.
+            && (ancillary || lone || super::farmsteads::compound_dwelling(building_culture, &site_seed))
             && let Some(cluster) = super::farmsteads::build(&mut parts, &lot, building_culture, farm, farmhouse, wealth, &site_seed, ancillary) {
             programme["farmstead"] = cluster;
         }

@@ -32,6 +32,7 @@ mod lagoon;
 mod geometry;
 mod growth;
 pub use growth::grown_at;
+mod harbour_furniture;
 mod massing;
 pub use geography::{Geography, VectorGeography};
 mod influences;
@@ -49,6 +50,8 @@ mod refonte_tests;
 mod stilt_ground_tests;
 #[cfg(test)]
 mod small_settlement_tests;
+#[cfg(test)]
+mod village_chain_tests;
 #[cfg(test)]
 mod site_options_tests;
 #[cfg(test)]
@@ -143,6 +146,9 @@ pub struct Enclosure {
 }
 fn is_ring_growth(v: &str) -> bool {
     v == "ring"
+}
+fn is_auto_port(v: &str) -> bool {
+    v == "auto"
 }
 fn is_simple_houses(v: &str) -> bool {
     v.is_empty() || v == "simple"
@@ -396,6 +402,14 @@ pub struct CapacityPlan {
     /// Correction of the probed yields after a first measure of the real
     /// blocks fell short (1 = none; `quarters::generate`).
     pub calibration: f64,
+    /// Underdark: land per home over the culture's once a cave town found too little floor
+    /// (`settlements::CAVE_LAND_PER_HOME` to 1; 0 = as drawn); storeys rise in proportion,
+    /// up to `settlements::CAVE_HEIGHT`.
+    #[serde(skip_serializing_if = "cave_pack_unset")]
+    pub cave_pack: f64,
+}
+fn cave_pack_unset(v: &f64) -> bool {
+    *v == 0.0
 }
 /// Applied growth budgets and their disjoint land, before street carving.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -641,6 +655,11 @@ pub struct LayoutConfig {
     /// wall) or "auto" (attached when the growth is lopsided).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub wall_extension: String,
+    /// Moat of the town circuits (« Douve »): "" by culture and site, "none"
+    /// (no ditch: suburbs and fields come up to the wall), "dry" or "wet" (one
+    /// kind for the whole circuit).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub moat: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub gate_villages: bool,
     /// Gate nucleus strength. Absent retains the legacy `gateVillages` meaning.
@@ -659,6 +678,11 @@ pub struct LayoutConfig {
     /// None preserves old shelteredHarbour links; explicit 0 overrides them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port_shelter: Option<f64>,
+    /// Harbour type (`harbours.json` types): `auto` draws one or two types of
+    /// the culture's family with the town seed, `bare` keeps the quays and
+    /// piers alone, a type id forces that type (`harbour_furniture`).
+    #[serde(skip_serializing_if = "is_auto_port")]
+    pub port_type: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub merge_parallel_streets: bool,
     /// Share (0..1) of sustained parallel street runs (less than 4 m of land
@@ -859,8 +883,11 @@ pub struct QuarterOverride {
     pub culture: Option<String>,
     pub tissue: Option<String>,
     pub density: Option<f64>,
-    /// User-set zone of the quarter: `core` lifts the style's height ladder
-    /// (`forms/kit.rs` `storey_cap`) to its top step whatever the population.
+    /// User-set zone of the quarter: its lots are cut with that zone's tables
+    /// and occupation pressure (`parcels.rs` `edited_pressure`: core = narrow,
+    /// deep, continuous, high coverage; faubourg/village = wide lots, gardens),
+    /// and `core` lifts the style's height ladder (`forms/kit.rs` `storey_cap`)
+    /// to its top step whatever the population.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zone: Option<String>,
     /// New outline (`urban/edits.rs`): clipped to dry land, the other quarters
@@ -926,6 +953,7 @@ impl Default for LayoutConfig {
             planned_wall: String::new(),
             heights_castle: String::new(),
             wall_extension: String::new(),
+            moat: String::new(),
             gate_villages: false,
             gate_village: None,
             max_street_grade: 0.12,
@@ -936,6 +964,7 @@ impl Default for LayoutConfig {
             sheltered_harbour: false,
             port_detachment: 1.0,
             port_shelter: None,
+            port_type: "auto".into(),
             merge_parallel_streets: false,
             parallel_merge: 0.0,
             road_width_by_size: true,
@@ -1168,6 +1197,11 @@ impl Surface<'_> {
         (h(0, 0) * (1.0 - tx) + h(1, 0) * tx) * (1.0 - ty)
             + (h(0, 1) * (1.0 - tx) + h(1, 1) * tx) * ty
     }
+    /// Underdark cave rock (vector geography only): `wet` for building, but never a shore, a
+    /// navigable channel or a bridge span.
+    pub fn solid(&self, p: Point) -> bool {
+        self.geometry.is_some_and(|geometry| geometry.solid(p))
+    }
     pub fn wet(&self, p: Point) -> bool {
         if p.x < 0.0 || p.y < 0.0 || p.x >= self.width || p.y >= self.width {
             return true;
@@ -1371,6 +1405,11 @@ pub fn culture_site_weight(culture: &str, site: &str) -> f64 {
     catalogue()["cultures"][culture]["sitePrefs"][site]
         .as_f64()
         .unwrap_or(1.0)
+}
+/// Land (m²) the town plan budgets for a place of this culture and population (default layout
+/// settings); `None` when the culture's morph does not resolve. Read by settlement placement.
+pub fn planned_land(culture: &str, population: u32) -> Option<f64> {
+    footprint::planned_land(culture, population)
 }
 /// Culture site preference by key with an explicit default (e.g. `mountainFace`, 0 = none).
 pub fn culture_site_pref(culture: &str, key: &str, default: f64) -> f64 {
@@ -1724,7 +1763,10 @@ pub fn generate_quarters(
         .unwrap_or(sites.len());
     let laid = par::map(&sites[..valid], |_, site| -> Result<Layout, String> {
         // A town with neighbours starts from free ground, and its roads stop at
-        // their land and lead on into their edge streets (`neighbours`).
+        // their land and lead on into their edge streets (`neighbours`). Later
+        // places it reserves become cores of land it flows around.
+        let cored = neighbours::reserve_cores(seed, site, config, surface, roads);
+        let site = cored.as_ref().unwrap_or(site);
         let relocated = neighbours::relocate(site, surface);
         let site = relocated.as_ref().unwrap_or(site);
         let joined_roads = neighbours::roads(site, roads);
@@ -1758,6 +1800,10 @@ pub fn generate_quarters(
         // Resolve the tissue for each attempt: the capacity ladder starts with
         // the culture's normal streets and only later tries contour terraces.
         let lay = |config: &LayoutConfig| -> Result<Layout, String> {
+        // The kind the attempt asks for: `effective` wrote the resolved kind to
+        // `settlement_form`; the household ladder below may gather a hamlet or a
+        // string that found no ground into a clustered plan.
+        let kind = kinds::Kind::from_id(&config.settlement_form).unwrap_or(kind);
         let morph = resolve(
             culture,
             &config.preset,
@@ -1939,6 +1985,13 @@ pub fn generate_quarters(
         laps.lap("clear_water");
         shanty::extend(seed, &mut layout, site, config, kind, physical_surface, roads);
         laps.lap("shanty.extend");
+        // Last: boats, jetties, cranes and the other harbour furniture join the finished waterfront
+        // (the town's own seed, as for its quarters: the planner drew the same harbour type).
+        harbour_furniture::furnish(&key_seed, &mut layout, site.population, config, physical_surface);
+        laps.lap("harbour.furnish");
+        // Last: a gate no street uses any more closes (the curtain opens only where a street passes).
+        fortification::drop_dead_gates(&mut layout);
+        laps.lap("drop_dead_gates");
         Ok(layout)
         };
         // A town whose strict house gates refuse most of its land (a user-placed
@@ -2024,6 +2077,63 @@ pub fn generate_quarters(
                 ));
             }
         }
+        // Invariant (no empty settlement): a hamlet or a village whose finished plan
+        // houses less than half of its households on the real cut (a camp lattice on
+        // the wedges between the roads of a junction, a string with no ground) is laid
+        // out again: a directly laid kind gathers into the clustered plan, then the
+        // same grammar takes more land (half, a quarter, an eighth of its gross
+        // density). The first plan housing its households is kept, else the one that
+        // houses the most; a place still without a home keeps the cadastre's notice.
+        if config.programme.intent == "settlement" && config.scope == "settlement"
+            && config.footprint.mechanism != "legacy" && config.footprint.budget == "population"
+            && !matches!(config.programme.state.as_str(), "abandoned" | "ruined")
+            && (HOUSED_FROM..HOUSED_BELOW).contains(&site.population)
+        {
+            let need = footprint::capacity::households(culture, site.population);
+            let mut homes = housed_households(seed, &layout);
+            if homes < 0.5 * need {
+                let density_of = |l: &Layout| l.structure.as_ref().map_or(0.0, |s| s.metrics.gross_density);
+                let direct = layout.structure.as_ref().is_some_and(|s| s.mechanism == "kind");
+                let mut density = if direct { 0.0 } else { density_of(&layout) };
+                let mut attempt = first.clone();
+                let mut steps = vec![];
+                if direct && config.footprint.gross_density <= 0.0 {
+                    steps.push(None);
+                }
+                steps.extend([Some(0.5), Some(0.25), Some(0.125)]);
+                let (was, mut gathered, mut land) = (homes, false, 1.0);
+                for step in steps {
+                    match step {
+                        None => attempt.settlement_form = kinds::Kind::NucleatedVillage.id().into(),
+                        Some(share) if density > 0.0 => attempt.footprint.gross_density = density * share,
+                        Some(_) => break,
+                    }
+                    let Ok(next) = lay(&attempt) else { continue };
+                    if step.is_none() {
+                        density = density_of(&next);
+                    }
+                    let next_homes = housed_households(seed, &next);
+                    if next_homes > homes {
+                        (layout, homes) = (next, next_homes);
+                        gathered = attempt.settlement_form == kinds::Kind::NucleatedVillage.id() && direct;
+                        land = step.map_or(1.0, |share| 1.0 / share);
+                    }
+                    if homes >= 0.95 * need {
+                        break;
+                    }
+                }
+                if homes > was && gathered {
+                    layout.warnings.push(format!(
+                        "Aucun terrain pour ses fermes le long du chemin ({was:.0} ménages logés sur {need:.0}) : lieu regroupé autour de son centre ({homes:.0} ménages logés)."
+                    ));
+                }
+                if homes > was && land > 1.0 {
+                    layout.warnings.push(format!(
+                        "Plan trop à l’étroit pour ses ménages ({was:.0} logés sur {need:.0}) : lieu tracé sur {land:.0} fois plus de terrain ({homes:.0} ménages logés)."
+                    ));
+                }
+            }
+        }
         neighbours::settle(seed, &mut layout, site, surface);
         layout.claim = neighbours::claim(&layout);
         Ok(layout)
@@ -2036,6 +2146,18 @@ pub fn generate_quarters(
         return Err("Settlement urbain invalide".into());
     }
     Ok(out)
+}
+/// The household invariant of `generate_quarters` covers hamlets and villages:
+/// from the hamlet floor (a farmstead is one reserved farm) to the town floor
+/// (a town's plan is sized by `footprint::capacity`, and its probe costs seconds).
+const HOUSED_FROM: u32 = 15;
+const HOUSED_BELOW: u32 = 1000;
+/// Households a finished layout houses on its real cut: the trim's probe cadastre
+/// (`probe_parcels`) and its allocation, the lots the published parcels give.
+fn housed_households(seed: &str, layout: &Layout) -> f64 {
+    probe_parcels(seed, layout).map_or(0.0, |part| {
+        part.programme.iter().flat_map(|p| &p.allocations).map(|a| a.households).sum()
+    })
 }
 /// Share of a town's land (its ordinary blocks and the blocks released to the
 /// fields) that its houses may use: dry blocks within the house slope gate of
@@ -2175,8 +2297,12 @@ pub fn generate_parcels(
         laps.lap("finish_lots");
         roles::face_quays(layout, &mut partition);
         laps.lap("face_quays");
-        // A populated place never ends without a dwelling silently.
-        if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
+        // A populated place never ends without a dwelling silently. A dwelling is a house lot,
+        // or a household housed on reserved land: an isolated farm stands on its whole reserved
+        // block (use `reserve`, role `dwelling.farm`) and is no empty place.
+        let housed = partition.programme.as_ref().is_some_and(|p| p.allocations.iter().any(|a| a.households > 0.0));
+        if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !housed
+            && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
             partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
         }
         partition.enclosure = Some(enclosure::resolve(culture, layout.programme.as_ref().map(|p| p.population), config));

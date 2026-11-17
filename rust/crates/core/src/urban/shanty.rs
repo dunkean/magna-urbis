@@ -1137,6 +1137,7 @@ pub(super) fn allocate(layout: &Layout, partition: &mut Partition) {
                 label: "Habitation informelle".into(),
                 landmark: false,
                 households: 1.,
+                residents: None,
                 housing_floor_need: None,
                 district_role: "shanty".into(),
                 wealth: 0.08,

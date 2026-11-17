@@ -194,7 +194,7 @@ pub(super) fn works(streets:&[Street], surface:Surface<'_>, site:&Site, culture:
     }
     let mut protected=streets.to_vec();protected.extend(out.iter().cloned());
     // Existing works avoid the moles and keep the navigation channel open.
-    out.extend(super::works_with_minimum(&protected,surface,site,culture,20.0).into_iter().filter(|s|s.role!="mole"));
+    out.extend(super::works_with_minimum(&protected,surface,site,culture,20.0,true).into_iter().filter(|s|s.role!="mole"));
     out
 }
 

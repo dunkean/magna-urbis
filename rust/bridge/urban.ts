@@ -38,9 +38,22 @@ export interface Enclosure {
   reserve?: Shape[];
 }
 export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
+/** A harbour platform (`quay`, `landing`, `pier`, `mole`) or a piece of harbour furniture (`jetty`, `slip`, `steps`, `basin`, `boat`,
+ * `mast`, `crane`, `beacon`, `post`, `cargo`, `shiphouse`…; Rust `urban::harbour_furniture`). `material` is `stone` or `timber`, a boat
+ * class or a cargo kind; `deck_z_m` is one metre above the item's water level. Looks: web/src/render/harbourStyle.ts. */
 export interface Quay { kind: string; shape: Shape; deck_z_m: number; material: string }
+/** Town canal water (urban/lagoon.rs): one level per reach, bridges and lock gates over it. */
+export interface Waterway {
+  shape: Shape; levelM: number; crossings: Shape[];
+  /** `canal` (with quays), `rio` (a lane turned to water over its whole width), `pool`, `mouth` (onto natural water), `feeder` or `basin`. */
+  kind?: 'canal' | 'rio' | 'pool' | 'mouth' | 'feeder' | 'basin';
+  /** 0 main canal, 1 secondary canal, 2 rio. */
+  rank?: number; path?: Point[]; widthM?: number; locks?: Shape[];
+  /** Lowest ground along the piece: the 3D water lies just above it (the 3D ground is not dug). */
+  bankM?: number;
+}
 export interface UrbanStructure {
-  waterways?: { shape: Shape; levelM: number; crossings: Shape[] }[];
+  waterways?: Waterway[];
   gateVillageCenters?: Point[];
   quays?: Quay[];
   portDistricts?: { district: number; role: 'port'; quarters: number[]; shapes: Shape[] }[];
@@ -51,7 +64,9 @@ export interface UrbanStructure {
   metrics: { targetArea: number; allocatedArea: number; streetArea: number; reservedArea: number; grossDensity: number; plannedPopulation: number; shortfallArea: number; components: number; accessAdded: number };
 }
 /** Land and edge streets a town holds (world metres), for the towns generated after it (`urban/neighbours.rs`). */
-export interface Claim { key: string; land: Shape[]; streets: Street[] }
+/** A placed neighbour generated after this town (canonical order): the engine keeps a core sized to its own population free. */
+export interface ClaimReserve { population: number; culture: string; center: Point; radius: number }
+export interface Claim { key: string; land: Shape[]; streets: Street[]; reserve?: ClaimReserve }
 /** A site of a `quarters` request: `neighbours` are the claims of the earlier towns it must keep off and join. */
 export type UrbanSite = RoadSite & { neighbours?: Claim[] };
 export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[]; claim?: Claim }
@@ -63,7 +78,7 @@ export interface ParcelContact { a: Point; b: Point; street: number; rank: numbe
 export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
 export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }
 export interface UrbanDemand { id: string; role?: string; function: string; unit: 'domesticUnits' | 'usefulAreaM2'; requested: number; targetArea: number; targetFrontage: number; provenance: string[]; requires: string[]; parcelCapacity: number; builtCapacity: number; openCapacity?: number; deficit: number; reasons: string[] }
-export interface UrbanAllocation { parcelId: string; demandId: string; role?: string; households?: number; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[]; housingFloorNeed?: HousingFloorNeed }
+export interface UrbanAllocation { parcelId: string; demandId: string; role?: string; households?: number; residents?: number; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[]; housingFloorNeed?: HousingFloorNeed }
 export interface UrbanProgramme {
   builtBalance?: import('./urbanBuiltBalance').BuiltOutcomeBalance;
   version: 1; population: number; context: import('./urbanConfig').ProgrammeContext; cultures: CultureMapping[]; demands: UrbanDemand[];
@@ -120,7 +135,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
     if (input[key] === false || input[key] === undefined) delete input[key];
   for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness', 'lagoonCanals', 'campRingWobble'] as const)
     if (input[key] == null) delete input[key];
-  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension'] as const)
+  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension', 'moat'] as const)
     if (!input[key]) delete input[key];
   for (const key of ['roadWidthBySize', 'townMainRoad', 'polishRoadEnds', 'lowRuralHouses', 'riverSpurFilter', 'harbourBridgeClearance', 'wallGatePolicy', 'smallRoadLoops', 'isolatedAccess'] as const)
     if (input[key] === true || input[key] === undefined) delete input[key];
@@ -137,6 +152,7 @@ function nativeLayoutConfig(config: LayoutConfig) {
   if (!input.ribbonWidthVariation) delete input.ribbonWidthVariation;
   if (input.portDetachment === 1) delete input.portDetachment;
   if (input.portShelter === 0 && !input.shelteredHarbour) delete input.portShelter;
+  if (input.portType === 'auto' || !input.portType) delete input.portType;
   config = input as LayoutConfig;
   const programme = nativeProgrammeContext(config.programme);
   if (config.fortificationStyle !== 'auto') return programme === config.programme ? config : { ...config, programme };
@@ -357,7 +373,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       terrain = next; terrainRaster = r;
       pool?.setRaster(r);
     }
-    if (!terrain) throw new Error('Générez le terrain avant les quartiers.');
+    if (!terrain) throw new Error('[raster_missing] Generate the terrain before the quarters.');
     const t = terrain;
     const start = performance.now();
     if (request.kind === 'quarters') {

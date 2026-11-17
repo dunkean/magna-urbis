@@ -321,8 +321,12 @@ vec4 occupationMaterial(int cls,vec2 world,float footprint,vec3 bare,vec3 micro,
   else if(cls==6)target=landHeath(world,footprint,green,bare);
   else if(cls==7)target=landTown(world,footprint,green,bare);
   else {target=mix(bare,vec3(.45,.40,.31),.55);rough=.91;}
-  // Dry climates bleach the grass and the plots toward straw; fields take their dry crop ramp instead (landField).
+  // Dry climates: fields take their dry crop ramp (landField); orchards and gardens bleach toward straw. A meadow is
+  // watered ground: it stays a little greener than the dry land around it, never paler. Pasture and commons are
+  // grazed or unworked: they take the natural dry ground of the zone.
   if(cls==1)target=mix(target,landFieldDryTone(.32,green,bare),dry);
+  else if(cls==2)target=mix(target,mix(bare,vec3(.33,.40,.21)*(.8+.4*green),.3),dry);
+  else if(cls==3||cls==6)target=mix(target,bare,dry);
   else if(cls<=5)target=mix(target,mix(bare,vec3(.55,.47,.30),.55),.9*dry);
   // Keep the existing microdetail, slope normal, snow and sun response.
   return vec4(clamp(target*micro,0.,1.),rough);
@@ -442,7 +446,7 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
     else if(i==4){cls=9;w=wLane;d=0.;}
     else if(i==5){cls=2;w=wMeadow;d=dry;}
     else if(i==6){cls=3;w=wPasture;d=dry;}
-    else if(i==7){cls=6;w=wHeath;d=0.;}
+    else if(i==7){cls=6;w=wHeath;d=dry;}
     else{cls=10;w=wMarsh;d=0.;}
     if(w<=0.)continue;
     float pool;vec4 c=w*occupationMaterial(cls,world,footprint,bare,micro,d,green,pool);
@@ -469,8 +473,10 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
     float own=clamp(snow+(h-.5)*2.8*snow*(1.-snow),0.,1.)*(1.-.3*limit);
     snow=mix(snow,own,fieldShare/covered);
   }
-  // Town ground is trodden: about a third of its packed earth shows through a full snow cover.
-  float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-.3*dry*wildShare/covered)*(1.-snow*(1.-.35*wTown/max(covered,.001)))*covered;
+  // Snow covers every ground class, including town streets and yards. Occupation paint lies below it;
+  // class-dependent snow exemptions expose the coarse class raster as a halo. Roofs have their own snow pass.
+  // In a dry zone grazed and common land is the natural ground itself: its paint fades out entirely.
+  float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-dry*(.3*(wMeadow+wMarsh)+wPasture+wHeath)*wildShare/covered)*(1.-snow)*covered;
   // A holding whiter than the local mean takes its extra snow over its own cover.
   float extra=max(snow-v2GroundSnow,0.)*covered;
   if(a<=0.&&extra<=0.)return;

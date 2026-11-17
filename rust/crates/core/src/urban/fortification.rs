@@ -74,6 +74,8 @@ pub(super) struct Style {
     pub ditch: String,
     pub ditch_p: f64,
     pub ditch_width: [f64; 2],
+    /// Ditch depth (m), for the 3D moat; 0: from its width (`build`).
+    pub ditch_depth: f64,
     pub berm: f64,
     pub outworks: Vec<String>,
     pub outer_gap: [f64; 2],
@@ -88,6 +90,9 @@ pub(super) struct Style {
     pub dry_ditches: bool,
     pub timber_culture: bool,
     pub ditch_wetness: Option<f64>,
+    /// Underdark town: the circuit closes the passages into its chamber (`cave_circuits`); its rock runs
+    /// are open passages of the curtain and it digs no wet moat.
+    pub cave: bool,
 }
 
 fn num(v: &Value, key: &str, default: f64) -> f64 {
@@ -141,6 +146,7 @@ impl Style {
             ditch: text(v, "ditch", "none"),
             ditch_p: num(v, "ditchP", 1.0),
             ditch_width: pair(&v["ditchWidthM"], [0.0, 0.0]),
+            ditch_depth: num(v, "ditchDepthM", 0.0),
             berm: num(v, "bermM", 2.0),
             outworks: v["outworks"]
                 .as_array()
@@ -161,6 +167,7 @@ impl Style {
             dry_ditches: false,
             timber_culture: false,
             ditch_wetness: None,
+            cave: false,
         })
     }
     pub(super) fn options(&mut self, cfg: &super::LayoutConfig) {
@@ -182,6 +189,17 @@ impl Style {
             self.tower_height = self.tower_height.min(5.0);
         }
         self.ditch_wetness = cfg.ditch_wetness;
+        // « Moat »: by culture and site (empty), none, or one kind for the
+        // whole circuit; a style without a ditch of its own digs a 6–10 m one.
+        if matches!(cfg.moat.as_str(), "none" | "dry" | "wet") {
+            self.ditch = cfg.moat.clone();
+            self.ditch_p = 1.0;
+            self.ditch_wetness = None;
+            self.dry_ditches = false;
+            if self.ditch_width[1] <= 0.0 {
+                self.ditch_width = [6.0, 10.0];
+            }
+        }
         if self.medieval {
             self.tower_spacing = Some(pair(&data()["styles"][&self.id]["towerSpacing"], [25.0, 35.0])
                 .map(|v| v.clamp(20.0, 40.0)));
@@ -233,6 +251,9 @@ impl Style {
             && d != "auto"
         {
             self.ditch = d.into();
+        }
+        if let Some(d) = o["ditchDepthM"].as_f64() {
+            self.ditch_depth = d;
         }
         if let Some(h) = o["heightM"].as_f64().or_else(|| o["heightM"][1].as_f64()) {
             self.tower_height += h - self.height;
@@ -477,6 +498,12 @@ pub(super) use parameters::{valid_parameters, parameter_trace, port_walls, wall_
 
 #[path = "fortification_extension.rs"]
 mod extension;
+#[path = "fortification_cave.rs"]
+mod cave;
+pub(super) use cave::cave_circuits;
+#[path = "fortification_gates.rs"]
+mod gate_budget;
+pub(super) use gate_budget::drop_dead_gates;
 pub(super) use extension::{attach, lopsided, trim_shared, dedupe_shared, inner_gates, shared_length};
 
 // ---------------------------------------------------------------- vectors
@@ -1619,7 +1646,8 @@ pub(super) fn build(
     // along a dry run that just hugs the shore with nothing built behind it
     // open as one passage: no stub of wall, tower or moat between them.
     let hugs = |q: Point, k: usize| [3.0, 6.0, 10.0].iter().any(|&d| surface.wet(add(q, ns[k], d)));
-    let merged: Vec<(Point, bool)> = {
+    // A cave circuit keeps every rock contact: its short barriers between the rock are the curtain.
+    let merged: Vec<(Point, bool)> = if style.cave { banks.to_vec() } else {
         let mut b: Vec<(Point, bool)> = banks.to_vec();
         // At a bank, the passage starts where the curtain stops
         // hugging the shore, when that run is short or has nothing behind it.
@@ -1823,7 +1851,9 @@ pub(super) fn build(
         let kind = if info.major && pop >= style.gate_min_pop {
             style.gate_major.as_str()
         } else if info.major {
-            "opening"
+            // Below the gatehouse population a main road still passes a built
+            // gate (the minor one), never a bare gap in the curtain.
+            if gate_params(&style.gate_minor, c).is_some() { style.gate_minor.as_str() } else { "opening" }
         } else {
             style.gate_minor.as_str()
         };
@@ -2500,17 +2530,54 @@ pub(super) fn build(
             }
         }
     }
+    // --- ditch: decided once per circuit; a wet ditch where water is near
+    // and the ground is level, otherwise dry with the style's probability.
+    // Decided before the faubourg fronts: a moated circuit keeps its moat
+    // whole and has no lean-to outside (rule: the moat wins over the houses).
+    let berm = style.berm * size;
+    let ditch_kind = match style.ditch.as_str() {
+        "none" => None,
+        _ if style.ditch_wetness.is_some() => Some("dry"),
+        "wet" => Some("wet"),
+        "dry" => dr.chance(style.ditch_p).then_some("dry"),
+        _ if style.dry_ditches => Some("dry"),
+        _ => {
+            let near_water = wet.iter().any(|&w| w)
+                || (0..n_seg).any(|i| {
+                    wet_outward(path[i], path[i + 1], ns[i], surface, face + berm + dw) > 0.0
+                });
+            let level = (0..n_seg)
+                .map(|i| {
+                    dist(path[i], path[i + 1])
+                        * segment_relief(path[i], path[i + 1], ns[i], surface)
+                })
+                .sum::<f64>()
+                / (0..n_seg)
+                    .map(|i| dist(path[i], path[i + 1]))
+                    .sum::<f64>()
+                    .max(1.0)
+                < 0.05;
+            if near_water && level {
+                Some("wet")
+            } else {
+                dr.chance(style.ditch_p).then_some("dry")
+            }
+        }
+    };
+    // Underdark: no water moat in a cave (a culture's dry ditch stays, across the passages).
+    let ditch_kind = if style.cave && ditch_kind == Some("wet") { None } else { ditch_kind };
+    // Depth of the ditch (3D moat): the style's, else from its width.
+    let depth = if style.ditch_depth > 0.0 { style.ditch_depth } else { (dw * 0.35).clamp(1.5, 4.0) };
     // --- faubourg gate fronts: lean-tos against the outer face beside the
     // major gates, each row with the lane that serves it (a dead end off the
-    // gate street, round the gate structures). Drawn before the ditch, which
-    // then stops at the front (filled where the faubourg leans on the wall),
-    // so a lean-to is never in a ditch, a glacis or a gate passage. No front
+    // gate street, round the gate structures), only on a circuit without a
+    // moat, so a lean-to is never in a ditch, a glacis or a gate passage. No front
     // on steep or water-side runs, nor where a glacis or ravelins hold the
     // approaches (no-build zone).
     let mut attached: Vec<Attached> = vec![];
     let mut lanes: Vec<Street> = vec![];
     let mut fronts: Vec<Shape> = vec![];
-    if style.attached > 0.0 && !has("glacis") && !has("ravelin") {
+    if style.attached > 0.0 && ditch_kind.is_none() && !has("glacis") && !has("ravelin") {
         let held: Vec<Shape> = towers
             .iter()
             .map(|t| t.footprint.clone())
@@ -2681,41 +2748,10 @@ pub(super) fn build(
             }
         }
     }
-    // --- ditch: decided once per circuit; a wet ditch where water is near
-    // and the ground is level, otherwise dry with the style's probability.
+    // --- ditch pieces (kind decided above).
     let mut ditch: Vec<Work> = vec![];
     let mut glacis: Vec<Shape> = vec![];
     let moat_core = g::union(&moat_core);
-    let berm = style.berm * size;
-    let ditch_kind = match style.ditch.as_str() {
-        "none" => None,
-        _ if style.ditch_wetness.is_some() => Some("dry"),
-        "wet" => Some("wet"),
-        "dry" => dr.chance(style.ditch_p).then_some("dry"),
-        _ if style.dry_ditches => Some("dry"),
-        _ => {
-            let near_water = wet.iter().any(|&w| w)
-                || (0..n_seg).any(|i| {
-                    wet_outward(path[i], path[i + 1], ns[i], surface, face + berm + dw) > 0.0
-                });
-            let level = (0..n_seg)
-                .map(|i| {
-                    dist(path[i], path[i + 1])
-                        * segment_relief(path[i], path[i + 1], ns[i], surface)
-                })
-                .sum::<f64>()
-                / (0..n_seg)
-                    .map(|i| dist(path[i], path[i + 1]))
-                    .sum::<f64>()
-                    .max(1.0)
-                < 0.05;
-            if near_water && level {
-                Some("wet")
-            } else {
-                dr.chance(style.ditch_p).then_some("dry")
-            }
-        }
-    };
     let ravelins_wanted = has("ravelin") && ditch_kind.is_some();
     let mut ravelin_cut: Vec<Shape> = vec![];
     let mut ravelin_ditch: Vec<Shape> = vec![];
@@ -2863,7 +2899,7 @@ pub(super) fn build(
                             options::ditch_kind(&d, surface, rng).into()
                         } else { kind.into() },
                         shape: d,
-                        height_m: 0.0,
+                        height_m: depth,
                         passage: None,
                     });
                 }
@@ -2967,7 +3003,7 @@ pub(super) fn build(
                             ditch.push(Work {
                                 kind: kind.into(),
                                 shape: d,
-                                height_m: 0.0,
+                                height_m: depth,
                                 passage: None,
                             });
                         }
@@ -2983,6 +3019,8 @@ pub(super) fn build(
             break;
         }
     }
+    // Rule: the moat is a ring or nothing (no stubs between cuts).
+    let ditch = continuous_moat(ditch, &path, surface);
     // Same bounded mitres as the drawn curtain, with a quantisation margin.
     // Rounded buffers leave buildable wedges under its corners.
     let body = curtain_body(&path,c,h);
@@ -3294,12 +3332,279 @@ fn stop_at_curtains(streets: &mut Vec<Street>, enclosures: &mut [Enclosure]) {
     }
 }
 
+/// Shortest moat run kept (m along the curtain, half the piece's perimeter):
+/// a shorter piece left between two causeways, a street or a slope is a relic
+/// stub, not a moat.
+const MIN_MOAT_RUN: f64 = 30.0;
+/// A circuit whose moat runs cover less than this share of its dry curtain
+/// digs none: a moat is a ring, or nothing, never a few scattered pieces.
+const MIN_MOAT_SHARE: f64 = 0.35;
+/// Invariant (a moat is continuous or absent): pieces shorter than
+/// `MIN_MOAT_RUN` go, and the whole moat goes when what is left covers less
+/// than `MIN_MOAT_SHARE` of the dry length of the curtain.
+fn continuous_moat(ditch: Vec<Work>, path: &[Point], surface: Surface<'_>) -> Vec<Work> {
+    if ditch.is_empty() {
+        return ditch;
+    }
+    let run = |s: &Shape| {
+        let n = s.outer.len();
+        (0..n).map(|i| dist(s.outer[i], s.outer[(i + 1) % n])).sum::<f64>() * 0.5
+    };
+    // Runs are measured on the joined moat (tiles of one run count together).
+    let parts = g::union(&ditch.iter().map(|d| d.shape.clone()).collect::<Vec<_>>());
+    let runs: Vec<f64> = parts.iter().map(|s| run(s)).collect();
+    let kept: Vec<Work> = ditch
+        .into_iter()
+        .filter(|d| {
+            let p = g::interior_point(&d.shape);
+            parts.iter().zip(&runs).any(|(s, &r)| r >= MIN_MOAT_RUN && g::contains(s, p))
+        })
+        .collect();
+    let dry: f64 = path
+        .windows(2)
+        .map(|w| {
+            let l = dist(w[0], w[1]);
+            let k = (l / 8.0).ceil().max(1.0) as usize;
+            let wet = (0..k)
+                .filter(|&j| surface.wet(add(w[0], dir(w[0], w[1]), l * (j as f64 + 0.5) / k as f64)))
+                .count();
+            l * (1.0 - wet as f64 / k as f64)
+        })
+        .sum();
+    let covered: f64 = runs.iter().filter(|&&r| r >= MIN_MOAT_RUN).sum();
+    if covered < MIN_MOAT_SHARE * dry { vec![] } else { kept }
+}
+
+/// A crossing within this distance (m) of a gate is that gate's street.
+const GATE_REACH: f64 = 8.0;
+/// Invariant (every crossing of a curtain is a gate): a street that is neither
+/// a main street (rank 0–1) nor a regional road, and crosses a curtain away
+/// from its gates and its water passages, opens no bare gap in the wall: it is
+/// split there, each side ending clear of the curtain body (`stop_at_curtains`
+/// then pulls the ends out of the berm and the moat). The quarter on each side
+/// keeps its own streets; the town is entered through the gates.
+fn close_minor_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure]) {
+    close_crossings(streets, enclosures, false);
+}
+/// `close_minor_crossings`; with `main_too`, main roads as well (all but the water crossings: bridges,
+/// quays…): after `limit_gates` a road crossing where no gate is kept ends at the wall too.
+fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too: bool) {
+    let walls: Vec<(Near, f64, &Enclosure)> = enclosures
+        .iter()
+        .filter(|e| !e.style.is_empty() && e.path.len() >= 4)
+        .map(|e| (Near::new(&e.path, 16.0), ribbon_half(&e.kind).max(e.curtain_width_m * 0.5), e))
+        .collect();
+    if walls.is_empty() {
+        return;
+    }
+    let passages: Vec<(Point, Point)> = enclosures
+        .iter()
+        .flat_map(|e| e.gatehouses.iter())
+        .filter(|gh| matches!(gh.kind.as_str(), "water" | "shore"))
+        .map(|gh| (gh.passage[0], gh.passage[1]))
+        .collect();
+    let mut out: Vec<Street> = Vec::with_capacity(streets.len());
+    for mut s in std::mem::take(streets) {
+        let water = matches!(
+            s.role.as_str(),
+            "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole"
+        );
+        let minor = !water && (main_too || s.rank >= 2 && !matches!(s.role.as_str(), "regional" | "approach" | "outbound"));
+        if !minor || s.path.len() < 2 {
+            out.push(s);
+            continue;
+        }
+        if s.widths.len() != s.path.len() {
+            let last = s.widths.last().copied().unwrap_or(4.0);
+            s.widths.resize(s.path.len(), last);
+        }
+        let n = s.path.len();
+        let cum: Vec<f64> = std::iter::once(0.0)
+            .chain(s.path.windows(2).scan(0.0, |acc, w| {
+                *acc += dist(w[0], w[1]);
+                Some(*acc)
+            }))
+            .collect();
+        // Spans (arc along the street) to remove around each stray crossing.
+        let mut spans: Vec<(f64, f64)> = vec![];
+        for (i, w) in s.path.windows(2).enumerate() {
+            let l = dist(w[0], w[1]);
+            for (near, half, e) in &walls {
+                for k in near.crossed(w[0], w[1]) {
+                    let (a, b) = (e.path[k], e.path[k + 1]);
+                    let Some((t, x)) = g::segment_hit(w[0], w[1], a, b) else { continue };
+                    // A street end resting on the curtain is no crossing.
+                    if (i == 0 && t * l < 0.6) || (i + 2 == n && (1.0 - t) * l < 0.6) {
+                        continue;
+                    }
+                    if e.gates.iter().any(|&q| dist(q, x) < GATE_REACH)
+                        || passages.iter().any(|&(p, q)| g::distance(x, p, q).0 < 25.0)
+                    {
+                        continue;
+                    }
+                    let sin = cross(dir(w[0], w[1]), dir(a, b)).abs().max(0.3);
+                    let clear = (half + s.widths[i].max(s.widths[i + 1]) * 0.5) / sin + 0.5;
+                    let at = cum[i] + t * l;
+                    spans.push((at - clear, at + clear));
+                }
+            }
+        }
+        if spans.is_empty() {
+            out.push(s);
+            continue;
+        }
+        spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let total = cum[n - 1];
+        // Kept intervals between the removed spans.
+        let mut keep: Vec<(f64, f64)> = vec![];
+        let mut from = 0.0_f64;
+        for (a, b) in spans {
+            if a > from {
+                keep.push((from, a));
+            }
+            from = from.max(b);
+        }
+        if from < total {
+            keep.push((from, total));
+        }
+        let at = |d: f64| -> (Point, f64) {
+            let i = (0..n - 1).find(|&i| cum[i + 1] >= d).unwrap_or(n - 2);
+            let l = (cum[i + 1] - cum[i]).max(1e-9);
+            let t = ((d - cum[i]) / l).clamp(0.0, 1.0);
+            let (p, q) = (s.path[i], s.path[i + 1]);
+            (pt(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t), s.widths[i] + (s.widths[i + 1] - s.widths[i]) * t)
+        };
+        for (a, b) in keep.into_iter().filter(|(a, b)| b - a >= 1.0) {
+            let (p0, w0) = at(a);
+            let (p1, w1) = at(b);
+            let mut path = vec![p0];
+            let mut widths = vec![w0];
+            for i in 1..n - 1 {
+                if cum[i] > a + 1e-6 && cum[i] < b - 1e-6 {
+                    path.push(s.path[i]);
+                    widths.push(s.widths[i]);
+                }
+            }
+            path.push(p1);
+            widths.push(w1);
+            out.push(Street { path, widths, rank: s.rank, role: s.role.clone() });
+        }
+    }
+    *streets = out;
+}
+
+/// Invariant (a main road enters through a gatehouse): a land gate whose
+/// street is a main street (rank 0–1) or a regional road, and which no
+/// gatehouse guards yet (a crossing opened after `build`), gets the culture's
+/// gate block, square to its street, off the street ribbons (`clear`) and off
+/// the other structures. Where no such block fits (water, a tower) the
+/// opening stays as it is.
+fn guard_main_gates(e: &mut Enclosure, streets: &[&Street], clear: &Cut, culture: &str, pop: u32, surface: Surface<'_>) {
+    if e.style.is_empty() || e.path.len() < 4 {
+        return;
+    }
+    let style = styled(&e.style, culture, pop);
+    let kind = if pop >= style.gate_min_pop { style.gate_major.clone() } else { style.gate_minor.clone() };
+    let c = if e.curtain_width_m > 0.0 { e.curtain_width_m } else { style.curtain_width };
+    let Some((depth, mass)) = gate_params(&kind, c) else { return };
+    let h = ribbon_half(&e.kind);
+    let ns = normals(&e.path);
+    // A gate outranks a flanking or corner tower: those give way to its gatehouse (removed below).
+    let mut held = Cut::new(
+        e.towers_detail
+            .iter()
+            .filter(|t| !matches!(t.kind.as_str(), "flank" | "corner"))
+            .map(|t| t.footprint.clone())
+            .chain(e.gatehouses.iter().flat_map(|gh| gh.masses.iter().cloned()))
+            .chain(e.bastions.iter().map(|w| w.shape.clone()))
+            .collect(),
+    );
+    let moat = Cut::new(e.ditch.iter().map(|d| d.shape.clone()).collect());
+    let guarded: Vec<usize> = e.gatehouses.iter().map(|gh| gh.gate).collect();
+    for gi in 0..e.gates.len() {
+        if guarded.contains(&gi) {
+            continue;
+        }
+        let q = e.gates[gi];
+        let k = e
+            .path
+            .windows(2)
+            .enumerate()
+            .min_by(|a, b| g::distance(q, a.1[0], a.1[1]).0.total_cmp(&g::distance(q, b.1[0], b.1[1]).0))
+            .map_or(0, |(k, _)| k);
+        let tangent = dir(e.path[k], e.path[k + 1]);
+        // The main street through this gate: (along the curtain, rank, width, direction). A street that
+        // crosses the curtain (over 30°) wins over one that only meets the gate point along the wall.
+        let mut best: Option<(usize, usize, f64, V)> = None;
+        for st in streets {
+            let main = (matches!(st.role.as_str(), "regional" | "approach") || st.rank <= 1)
+                && !matches!(st.role.as_str(), "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole" | "wall-lane");
+            if !main {
+                continue;
+            }
+            let rank = if matches!(st.role.as_str(), "regional" | "approach") { 0 } else { st.rank };
+            for (i, w) in st.path.windows(2).enumerate() {
+                // Through the gate point, or ending on it (a regional road entering from the network).
+                if g::distance(q, w[0], w[1]).0 >= st.widths.get(i).copied().unwrap_or(6.0) * 0.5 + 2.0 || dist(w[0], w[1]) <= 0.1 {
+                    continue;
+                }
+                let along = usize::from(cross(dir(w[0], w[1]), tangent).abs() < 0.5);
+                if best.is_none_or(|b| (along, rank) < (b.0, b.1)) {
+                    best = Some((along, rank, st.widths.get(i).copied().unwrap_or(6.0), dir(w[0], w[1])));
+                }
+            }
+        }
+        let Some((_, _, width, mut s)) = best else { continue };
+        let n = ns[k];
+        if dot(s, n) < 0.0 {
+            s = (-s.0, -s.1);
+        }
+        if dot(s, n) < 0.25 {
+            s = n;
+        }
+        let pw = width + 1.0;
+        let across = (-s.1, s.0);
+        let back = h / dot(s, n).max(0.3) + 0.5;
+        let half = pw * 0.5 + mass;
+        // On a bank (a bridge approach) the block keeps to the dry land: a shallower one, else none.
+        let Some(depth) = [depth, depth * 0.5, c - h + 1.0]
+            .into_iter()
+            .find(|&d| !quad(q, s, across, [-back, d], [-half, half]).outer.iter().any(|&p| surface.wet(p)))
+        else {
+            continue;
+        };
+        let block = quad(q, s, across, [-back, depth], [-half, half]);
+        // Off the street ribbons and out of the moat (its causeway stays open).
+        let masses: Vec<Shape> = moat.from(clear.from(vec![block.clone()])).into_iter().filter(|m| g::area(m) >= 4.0).collect();
+        if masses.is_empty() || masses.iter().any(|m| held.hits(m) > 0.5) {
+            continue;
+        }
+        let block_cut = Cut::new(masses.clone());
+        e.towers_detail.retain(|t| !matches!(t.kind.as_str(), "flank" | "corner") || block_cut.hits(&t.footprint) <= 0.5);
+        e.towers = e.towers_detail.iter().map(|t| t.anchor).collect();
+        for m in &masses {
+            held.add(m.clone());
+            e.reserve.push(m.clone());
+        }
+        e.gatehouses.push(Gatehouse {
+            gate: gi,
+            kind: kind.clone(),
+            shape: block,
+            masses,
+            passage: [add(q, s, -back), add(q, s, depth)],
+            passage_width_m: pw,
+            height_m: e.height_m.max(style.height) + 2.0,
+        });
+    }
+}
+
 /// Invariant (a curtain is crossed by a street only at a gate): the gates
 /// are the real crossings of `streets` with the curtain, plus the water
-/// gates and the gates on a bank. A gate no street crosses any more closes, a
+/// gates (their passage ends) and the ends of regional accesses; a point where
+/// the curtain only touches a bank is no gate (it would cut the river wall). A gate no street crosses any more closes, a
 /// crossing without a gate opens a plain one. Returns the old gate index ->
 /// new index map (for the gatehouses).
-fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) -> Vec<Option<usize>> {
+fn reconcile_gates(e: &mut Enclosure, streets: &[Street], _surface: Surface<'_>) -> Vec<Option<usize>> {
     let crossings = super::composition::gates(&e.path, streets);
     let water_ends: Vec<Point> = e
         .gatehouses
@@ -3307,13 +3612,7 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], surface: Surface<'_>) 
         .filter(|gh| matches!(gh.kind.as_str(), "water" | "shore"))
         .flat_map(|gh| gh.passage)
         .collect();
-    let bank = |p: Point| {
-        water_ends.iter().any(|&q| dist(p, q) < 1.0)
-            || (0..8).any(|k| {
-                let a = k as f64 * std::f64::consts::FRAC_PI_4;
-                surface.wet(pt(p.x + 4.0 * a.cos(), p.y + 4.0 * a.sin()))
-            })
-    };
+    let bank = |p: Point| water_ends.iter().any(|&q| dist(p, q) < 1.0);
     let mut remap: Vec<Option<usize>> = vec![None; e.gates.len()];
     let mut gates: Vec<Point> = vec![];
     let referenced: Vec<usize> = e
@@ -3348,6 +3647,10 @@ pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
     let old_masses = gate_masses(layout);
     super::network::wall_approaches(layout, surface);
     laps.lap("wall_approaches");
+    // Late streets (bridgeheads, bank links) obey the same crossing rule.
+    close_minor_crossings(&mut layout.streets, &layout.enclosures);
+    stop_at_curtains(&mut layout.streets, &mut layout.enclosures);
+    laps.lap("close_minor_crossings");
     let streets = std::mem::take(&mut layout.streets);
     for e in layout.enclosures.iter_mut().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
         let remap = reconcile_gates(e, &streets, surface);
@@ -3450,6 +3753,9 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
     if layout.enclosures.iter().all(|e| e.style.is_empty()) {
         return;
     }
+    // Gate budget (population): the other crossings close; their main roads go round outside.
+    let extra_mural = gate_budget::limit_gates(layout);
+    close_crossings(&mut layout.streets, &layout.enclosures, true);
     stop_at_curtains(&mut layout.streets, &mut layout.enclosures);
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
@@ -3461,6 +3767,9 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
         .filter(|s| s.role != "wall-lane")
         .collect();
     let mut reserve_all: Vec<(Shape, Box2)> = vec![];
+    let culture = layout.culture.clone();
+    let pop = layout.structure.as_ref().map_or_else(|| layout.phases.iter().map(|p| p.population).sum(),
+        |s| s.metrics.planned_population).max(500.0).round() as u32;
     // Built land of the final plan, for moats the town has grown round.
     let built: Vec<(Box2, &Shape)> = layout.blocks.iter()
         .filter(|b| matches!(b.kind.as_str(), "block" | "place"))
@@ -3565,6 +3874,7 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
                 (!gh.masses.is_empty() && on_street(mid, 0.5)).then_some(gh)
             })
             .collect();
+        guard_main_gates(e, &streets, &ribbons, &culture, pop, surface);
         e.bastions = std::mem::take(&mut e.bastions)
             .into_iter()
             .filter_map(|mut b| {
@@ -3583,10 +3893,15 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
             .partition(|w| matches!(w.kind.as_str(), "outer-wall" | "antemural"));
         e.outworks = cut(works, 10.0);
         e.outworks.extend(continuous);
-        e.ditch = cut(std::mem::take(&mut e.ditch), 20.0);
-        // A moat inside the built town holds no water: a dry ditch.
-        for d in e.ditch.iter_mut().filter(|d| d.kind == "wet") {
-            if embedded(&d.shape, &e.path, &built) { d.kind = "dry".into(); }
+        e.ditch = continuous_moat(cut(std::mem::take(&mut e.ditch), 20.0), &e.path, surface);
+        // A moat the town has grown round holds no water. Its wet pieces dry
+        // together, when most of their area lies inside the built town.
+        let wet_area: f64 = e.ditch.iter().filter(|d| d.kind == "wet").map(|d| g::area(&d.shape)).sum();
+        let inside: f64 = e.ditch.iter().filter(|d| d.kind == "wet" && embedded(&d.shape, &e.path, &built)).map(|d| g::area(&d.shape)).sum();
+        if wet_area > 0.0 && inside * 2.0 >= wet_area {
+            for d in e.ditch.iter_mut().filter(|d| d.kind == "wet") {
+                d.kind = "dry".into();
+            }
         }
         e.reserve = ribbons
             .from(std::mem::take(&mut e.reserve))
@@ -3616,6 +3931,9 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
     let freed = release_gate_reserve(layout, old_masses);
     let reserve_all: Vec<_> = Cut::new(freed).from(reserve_all.into_iter().map(|(s, _)| s).collect()).into_iter()
         .map(|s| { let bb = g::bbox(&s); (s, bb) }).collect();
+    // Blocks give up the extra-mural roads too (their houses would stand on them).
+    let mut reserve_all = reserve_all;
+    reserve_all.extend(extra_mural.into_iter().map(|s| { let bb = g::bbox(&s); (s, bb) }));
     if reserve_all.is_empty() {
         return;
     }
@@ -3769,6 +4087,106 @@ mod tests {
             assert!(!e.gatehouses.is_empty());
             assert!(e.gatehouses.iter().all(|g| g.kind == expected));
         }
+    }
+
+    /// Walls review 16/11: a secondary street crossing the curtain away from
+    /// every gate opens no bare gap: it ends clear of the wall on both sides;
+    /// a main street keeps its crossing (it is a gate).
+    #[test]
+    fn walls16_minor_crossings_end_at_the_wall_on_both_sides() {
+        let path = octagon();
+        let e = Enclosure { path: path.clone(), kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, ..Default::default() };
+        let mut streets = vec![street(&[(1000.0, 1000.0), (1500.0, 1020.0)], 2, 4.0), street(&[(1000.0, 1000.0), (1000.0, 1500.0)], 1, 8.0)];
+        close_minor_crossings(&mut streets, std::slice::from_ref(&e));
+        let crosses = |s: &Street| s.path.windows(2).any(|w| path.windows(2).any(|c| g::segment_hit(w[0], w[1], c[0], c[1]).is_some()));
+        let minor: Vec<_> = streets.iter().filter(|s| s.rank == 2).collect();
+        assert_eq!(minor.len(), 2, "the minor street is split in two");
+        assert!(minor.iter().all(|s| !crosses(s)), "a minor street still crosses the curtain");
+        let near = Near::new(&path, 20.0);
+        assert!(minor.iter().all(|s| s.path.windows(2).all(|w| near.distance(w[0], w[1]) >= 2.0)), "a split end on the wall");
+        assert!(streets.iter().filter(|s| s.rank == 1).all(crosses), "the main street lost its crossing");
+        // Through a gate it passes.
+        let mut through = vec![street(&[(1000.0, 1000.0), (1500.0, 1000.0)], 2, 4.0)];
+        let hit = through[0].path.windows(2).flat_map(|w| path.windows(2).filter_map(|c| g::segment_hit(w[0], w[1], c[0], c[1]).map(|h| h.1))).next().unwrap();
+        let gated = Enclosure { gates: vec![hit], ..e.clone() };
+        close_minor_crossings(&mut through, std::slice::from_ref(&gated));
+        assert_eq!(through.len(), 1);
+    }
+
+    /// Walls review 16/11: bank points of a curtain hugging a river are no
+    /// gates; only a street crossing or a water passage keeps one.
+    #[test]
+    fn walls16_bank_points_without_a_street_are_no_gates() {
+        let height = vec![10.0f32; N * N];
+        let water = river(1300.0, 1400.0);
+        let s = surface(&height, &water);
+        let path = octagon();
+        let bank = pt(1296.0, 1100.0);
+        let crossing = streets()[0].clone();
+        let hit = crossing.path.windows(2).flat_map(|w| path.windows(2).filter_map(|c| g::segment_hit(w[0], w[1], c[0], c[1]).map(|h| h.1))).next().unwrap();
+        let mut e = Enclosure { path, kind: "wall".into(), style: "curtain".into(), gates: vec![hit, bank], ..Default::default() };
+        let remap = reconcile_gates(&mut e, &[crossing], s);
+        assert_eq!(remap, vec![Some(0), None]);
+        assert!(e.gates.iter().all(|&q| dist(q, bank) > 8.0), "a bank point stayed a gate");
+    }
+
+    /// Walls review 16/11: a moat is a ring or nothing: stubs go, and a moat
+    /// left on a small share of its curtain goes whole.
+    #[test]
+    fn walls16_moat_is_continuous_or_absent() {
+        let height = vec![10.0f32; N * N];
+        let water = vec![0u8; N * N];
+        let s = surface(&height, &water);
+        let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
+        let work = |shape: Shape| Work { kind: "dry".into(), shape, height_m: 3.0, passage: None };
+        let long = |y0: f64| work(g::rectangle(600.0, y0, 1400.0, y0 + 8.0));
+        let stub = work(g::rectangle(600.0, 1420.0, 615.0, 1428.0));
+        let kept = continuous_moat(vec![long(580.0), long(1404.0), work(g::rectangle(1404.0, 600.0, 1412.0, 1400.0)), stub], &path, s);
+        assert_eq!(kept.len(), 3, "the stub stays");
+        let scattered = continuous_moat(vec![long(580.0)], &path, s);
+        assert!(scattered.is_empty(), "a quarter of a moat is kept");
+    }
+
+    /// Walls review 16/11: a main road crossing opened after `build` gets the
+    /// culture's gatehouse; a minor street never does.
+    #[test]
+    fn walls16_main_road_crossing_gets_a_gatehouse() {
+        let height = vec![10.0f32; N * N];
+        let water = vec![0u8; N * N];
+        let s = surface(&height, &water);
+        let path = octagon();
+        let road = street(&[(500.0, 1010.0), (1500.0, 990.0)], 1, 8.0);
+        let hits: Vec<Point> = road.path.windows(2).flat_map(|w| path.windows(2).filter_map(|c| g::segment_hit(w[0], w[1], c[0], c[1]).map(|h| h.1)).collect::<Vec<_>>()).collect();
+        assert_eq!(hits.len(), 2);
+        let mut e = Enclosure { path, kind: "wall".into(), style: "flanked".into(), curtain_width_m: 3.0, height_m: 8.0, gates: hits, ..Default::default() };
+        let ribbons = Cut::new(g::ribbon(&road.path, &[9.0, 9.0]));
+        guard_main_gates(&mut e, &[&road], &ribbons, "european-organic", 12_000, s);
+        assert_eq!(e.gatehouses.len(), 2);
+        assert!(e.gatehouses.iter().all(|gh| !gh.masses.is_empty() && gh.masses.iter().all(|m| ribbons.hits(m) < 0.5)));
+        let lane = street(&[(500.0, 1010.0), (1500.0, 990.0)], 3, 4.0);
+        let mut bare = Enclosure { gatehouses: vec![], ..e.clone() };
+        guard_main_gates(&mut bare, &[&lane], &Cut::new(vec![]), "european-organic", 12_000, s);
+        assert!(bare.gatehouses.is_empty());
+    }
+
+    /// Walls review 16/11: « Moat » is a generation parameter: none digs no
+    /// ditch (and keeps the faubourg fronts), dry and wet fix one kind for the
+    /// whole circuit, also for a style without a ditch of its own.
+    #[test]
+    fn walls16_moat_parameter_sets_the_ditch() {
+        for (moat, kind) in [("none", "none"), ("dry", "dry"), ("wet", "wet")] {
+            let mut st = styled("hedge", "european-organic", 5_000);
+            st.options(&LayoutConfig { moat: moat.into(), ditch_wetness: Some(0.5), ..LayoutConfig::default() });
+            assert_eq!(st.ditch, kind);
+            assert!(st.ditch_wetness.is_none());
+            if moat != "none" {
+                assert!(st.ditch_width[1] > 0.0 && st.ditch_p == 1.0);
+            }
+        }
+        let mut st = styled("curtain", "european-organic", 5_000);
+        let before = st.ditch.clone();
+        st.options(&LayoutConfig::default());
+        assert_eq!(st.ditch, before, "the culture keeps its moat by default");
     }
 
     fn surface<'a>(height: &'a [f32], water: &'a [u8]) -> Surface<'a> {
@@ -4462,6 +4880,10 @@ mod tests {
     }
 
     fn town_on(style: &str, water: Vec<u8>) -> Vec<super::super::Layout> {
+        town_with(style, water, "")
+    }
+
+    fn town_with(style: &str, water: Vec<u8>, moat: &str) -> Vec<super::super::Layout> {
         let height = vec![10.0f32; N * N];
         let roads: Vec<Street> = [
             [(100.0, 1030.0), (1950.0, 1010.0)],
@@ -4478,6 +4900,7 @@ mod tests {
             fortification_style: style.into(),
             phases: 3,
             suburbs: "many".into(),
+            moat: moat.into(),
             // Peripheral frontage strips (open-edge exits) are cut after this
             // stage without the reserve: queued for the quarters stage.
             exit_treatment: "legacy".into(),
@@ -4507,6 +4930,9 @@ mod tests {
         for style in ["curtain", "flanked"] {
             for layout in town_on(style, water.clone()) {
                 for e in layout.enclosures.iter().filter(|e| !e.style.is_empty() && e.path.len() >= 4) {
+                    // The town exercises crossings: through crossings of the curtain, a street across it or
+                    // two street ends meeting on it from both sides (a street split at its gate).
+                    crossings += composition::gates(&e.path, &layout.streets).len();
                     for st in layout.streets.iter().filter(|st| {
                         !matches!(st.role.as_str(), "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole")
                     }) {
@@ -4517,7 +4943,6 @@ mod tests {
                                 if t * dist(w[0], w[1]) < 0.6 || (1.0 - t) * dist(w[0], w[1]) < 0.6 {
                                     continue;
                                 }
-                                crossings += 1;
                                 let gate = e.gates.iter().map(|&q| dist(q, x)).fold(f64::MAX, f64::min);
                                 assert!(gate <= 8.0, "{style}: {} crosses the curtain {gate:.0} m from a gate", st.role);
                             }
@@ -4646,6 +5071,11 @@ mod tests {
         st.attached = 1.0;
         st.ditch = "dry".into();
         st.ditch_p = 1.0;
+        // A moated circuit keeps its moat whole: no lean-to outside.
+        let mut ditched = e.clone();
+        build(&mut ditched, land, &[], &streets, s, &st, 12_000, &predicted(), &Rng::new("fortification-test").fork("enc:0"));
+        assert!(!ditched.ditch.is_empty() && ditched.attached.is_empty(), "a lean-to outside a moated circuit");
+        st.ditch = "none".into();
         let lanes = build(
             &mut e,
             land,
@@ -4658,7 +5088,6 @@ mod tests {
             &Rng::new("fortification-test").fork("enc:0"),
         );
         assert!(!e.attached.is_empty() && !lanes.is_empty());
-        assert!(!e.ditch.is_empty(), "the ditch runs elsewhere");
         let segs: Vec<(Point, Point, f64)> = lanes
             .iter()
             .flat_map(|l| l.path.windows(2).map(|w| (w[0], w[1], l.widths[0] * 0.5)))
@@ -4698,7 +5127,8 @@ mod tests {
     /// the reserve (I3 still holds).
     #[test]
     fn served_lean_tos_leave_the_reserve_as_faubourg_lots() {
-        let layouts = town("flanked");
+        // Faubourg fronts lean on a curtain without a moat.
+        let layouts = town_with("flanked", vec![0u8; N * N], "none");
         let layout = &layouts[0];
         let e = &layout.enclosures[0];
         assert!(!e.attached.is_empty(), "the test town has a faubourg front");
@@ -4802,7 +5232,8 @@ mod tests {
         let height = vec![10.0f32; N * N];
         let s = surface(&height, &water);
         let (e, mut streets) = built("flanked", "wall", &water, 60_000);
-        // The diagonal street is pruned, a later street crosses the north-east front.
+        // The diagonal street is pruned, a later minor street crosses the
+        // north-east front: it opens no gap, it ends at the wall on both sides.
         streets.remove(2);
         streets.push(street(&[(1000.0, 1000.0), (1400.0, 1400.0)], 2, 5.0));
         let tower = e.towers_detail[e.towers_detail.len() / 2].center;
@@ -4837,6 +5268,9 @@ mod tests {
         };
         settle(&mut layout, s);
         let e = &layout.enclosures[0];
+        let later = (pt(1000.0, 1000.0), pt(1400.0, 1400.0));
+        assert!(e.gates.iter().all(|&q| g::distance(q, later.0, later.1).0 > 1.0), "the later minor street opened a gate");
+        let streets = layout.streets.clone();
         let crossings = composition::gates(&e.path, &streets);
         assert_eq!(e.gates.len(), crossings.len());
         assert!(

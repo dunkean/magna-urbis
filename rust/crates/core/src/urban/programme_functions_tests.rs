@@ -19,7 +19,7 @@ fn generic<'a>(p: &'a UrbanProgramme, function: &str) -> Option<&'a Demand> {
 #[test]
 fn programme_functions_prepare_combines_capital_port_artisan_at_zero_half_and_full() {
     let population = 600;
-    let household_target = f64::from(population) / roles::occupancy("european-organic").household_size;
+    let household_target = f64::from(population) / roles::settlement_occupancy("european-organic", 600).household_size;
     for weight in [0.0, 0.5, 1.0] {
         let context = ProgrammeContext {
             functions: Some(ProgrammeFunctions { capital: weight, port: weight, artisan: weight, ..Default::default() }),
@@ -48,7 +48,7 @@ fn programme_intent_and_specialisation_are_separate_fields_without_role() {
     let explicit = prepared(&ProgrammeContext { functions: Some(ProgrammeFunctions::default()), ..declared.clone() }, 600);
     assert!(generic(&explicit, "warehouse").is_none());
     assert_eq!(generic(&explicit, "mixed").unwrap().requested,
-        600.0 / roles::occupancy("european-organic").household_size * 0.08);
+        600.0 / roles::settlement_occupancy("european-organic", 600).household_size * 0.08);
     let json = serde_json::to_value(&declared).unwrap();
     assert_eq!(json["intent"], "settlement");
     assert!(json.get("role").is_none() && json.get("functions").is_none());

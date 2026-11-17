@@ -251,7 +251,7 @@ pub(in crate::urban) fn over_still_water(surface: Surface<'_>, a: Point, b: Poin
     for k in 0..=steps {
         let t = k as f64 / steps as f64;
         let p = Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-        if !surface.wet(p) { continue; }
+        if !surface.wet(p) || surface.solid(p) { continue; }
         match still_cell(surface, p) { Some(true) => still += 1, Some(false) => river += 1, None => {} }
     }
     still > river
@@ -266,12 +266,13 @@ const DECK_SPAN_PER_WIDTH: f64 = 2.5;
 /// few channel widths smooths raster stairs without following an oblique road.
 /// `None` over still water (sea, lake, harbour basin): a deck spans rivers only.
 pub(in crate::urban) fn deck(surface: Surface<'_>, middle: Point) -> Option<[Point; 2]> {
-    if surface.wet(middle) && still_cell(surface, middle) == Some(true) { return None; }
+    if surface.wet(middle) && !surface.solid(middle) && still_cell(surface, middle) == Some(true) { return None; }
     let ends = deck_at(surface, middle, 2)?;
     (!over_still_water(surface, ends[0], ends[1])).then_some(ends)
 }
 fn deck_at(surface: Surface<'_>, middle: Point, center_passes: u8) -> Option<[Point; 2]> {
-    if !surface.wet(middle) { return None; }
+    // Underdark cave rock is an obstacle, not a channel: no deck spans it.
+    if !surface.wet(middle) || surface.solid(middle) { return None; }
     let cell = surface.width / surface.n as f64;
     let bank = |u: (f64, f64)| -> Option<f64> {
         let at = |t: f64| Point { x: middle.x + u.0 * t, y: middle.y + u.1 * t };

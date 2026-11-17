@@ -93,6 +93,8 @@ export interface RoadCrossing { kind: 'bridge' | 'ford' | 'causeway'; path: Poin
 export interface RoadSegment {
   class: RoadClass; surface: RoadSurface; profile: string; width: number; a: number; b: number;
   path: Point[]; crossings: RoadCrossing[]; length: number; grade: number; importance: number;
+  /** Underdark: stretches dug through cave rock (not crossings); absent from older engines and on other maps. */
+  tunnels?: { kind: 'dug'; path: Point[] }[];
 }
 export interface RoadJunction { point: Point; degree: number; site: string | null }
 export interface ExitReport { requested: RoadClass; class: RoadClass | null; gateway: string | null; point: Point | null; reason: string | null }
@@ -139,6 +141,9 @@ export async function runSettlementRequest(request: SettlementRequest): Promise<
   return fallbackEngine.run(request);
 }
 
+/** Cave rock reaches Rust as water class 2 with its level this far below the ground: no lake or
+ * sea sits there, so the Underdark is told apart from any surface water (Rust `grid::CAVE_ROCK_MARK`). */
+export const CAVE_ROCK_DEPTH = 1000;
 /** Adapt the completed terrain and the displayed water geometry, without regenerating either. */
 /** `upsample`: the planning grid may be finer than the physical source (bilinear heights; water and river masks
  * rasterised from the vector network at the finer cell). Decor exports ask for it; live planning does not. */
@@ -179,7 +184,7 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
       const cave = t.field?.cave ?? t.caveMask, cn = t.field?.cave ? t.field.n : t.resolution;
       // The physical cave field is a soft mask (128 on the wall); the region mask is 0/1.
       const v = cave[Math.min(cn - 1, Math.floor(py / width * cn)) * cn + Math.min(cn - 1, Math.floor(px / width * cn))];
-      if (t.field?.cave ? v >= 128 : v) { water[i] = 2; (rock ??= new Uint8Array(n * n))[i] = 1; }
+      if (t.field?.cave ? v >= 128 : v) { water[i] = 2; waterLevel[i] = height[i] - CAVE_ROCK_DEPTH; (rock ??= new Uint8Array(n * n))[i] = 1; }
     }
     if (vector) {
       const h = vector.hydro, c = Math.min(h.n - 1, Math.floor(py / width * h.n)) * h.n + Math.min(h.n - 1, Math.floor(px / width * h.n));

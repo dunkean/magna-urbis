@@ -73,17 +73,39 @@ export function contentType(response: Response): string {
   return response.headers?.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? '';
 }
 
+/** The engine session holds no terrain (engine restarted, session evicted or released). */
+export function isRasterMissing(error: unknown): boolean {
+  return String(error instanceof Error ? error.message : error).includes('[raster_missing]');
+}
+/** Forget every upload recorded for `server`: after a restart none of them is held any more. */
+export function forgetNativeRasters(server: string): void {
+  for (const key of [...rasterUploads.keys()]) if (key.startsWith(`${server}|`)) rasterUploads.delete(key);
+}
+
 type NativeCall = { runtime: ExecutionRuntime; raster?: SettlementRaster; [key: string]: unknown };
-/** Serialize mutations of a single retained raster, while other benches run independently. */
+/**
+ * Serialize mutations of a single retained raster, while other benches run independently.
+ * Callers send `raster` only when it changes; when the engine answers `[raster_missing]` (it lost the
+ * session's terrain), the client re-uploads the raster it last sent for this session and retries once.
+ */
 export function nativeRasterClient() {
-  let session: string | undefined;
+  let session: string | undefined, held: SettlementRaster | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   const send = <T>(path: string, request: NativeCall, read: (response: Response) => Promise<T>): Promise<T> => {
     const result = queue.then(async () => {
       session ??= nativeSession();
       const { runtime, raster, ...input } = request;
-      if (raster) await uploadNativeRaster(runtime, session, raster);
-      return read(await nativeRequest(runtime, path, JSON.stringify({ ...input, session })));
+      if (raster) { held = undefined; await uploadNativeRaster(runtime, session, raster); held = raster; }
+      const body = JSON.stringify({ ...input, session });
+      let response: Response;
+      try { response = await nativeRequest(runtime, path, body); }
+      catch (error) {
+        if (!held || !isRasterMissing(error)) throw error;
+        forgetNativeRasters(runtime.server);
+        await uploadNativeRaster(runtime, session, held);
+        response = await nativeRequest(runtime, path, body);
+      }
+      return read(response);
     });
     queue = result.catch(() => undefined);
     return result;
@@ -93,7 +115,7 @@ export function nativeRasterClient() {
   const raw = (path: string, request: NativeCall): Promise<Response> => send(path, request, async response => response);
   /** Drop this client's retained native session (raster, urban products) once its owner is done. */
   const release = async (runtime: ExecutionRuntime): Promise<void> => {
-    await queue; const id = session; session = undefined;
+    await queue; const id = session; session = undefined; held = undefined;
     if (id) try { await nativeJson(runtime, '/release', { session: id }); } catch { /* an exited or evicted session is already released */ }
   };
   return Object.assign(call, { release, raw });

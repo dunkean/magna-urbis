@@ -1,9 +1,22 @@
 // The dedicated third simplex stream matches Rust's shore-noise fork.
 // Sixteen header vec4s (profile, unused offsets and turns, character, six bumps, then the
-// relief fit: shift/median/inverse spread/drowning and band/shelf/sea count), then the edge
-// sea capsules, two vec4s each (endpoints; radii), then each land capsule is three vec4s:
+// relief fit: shift/median/inverse spread/drowning and band/shelf/sea count/field n), then
+// the sea capsules, two vec4s each (endpoints; radii), then the optional row-major n*n
+// sea field padded to a vec4, then each land capsule is three vec4s:
 // endpoints; radii/scale/phase; islet height/center/apron. Same layout as Rust `Coast`.
 @group(0) @binding(6) var<storage, read> coast: array<vec4<f32>>;
+fn coastFieldValue(base:u32,k:u32)->f32 {
+  return coast[base+k/4u][k%4u];
+}
+// Cell-centred bilinear sea distance, with constant extension beyond the grid.
+fn coastSeaField(point:vec2<f32>,n:u32,base:u32)->f32 {
+  let f=clamp(point*f32(n)-vec2<f32>(0.5),vec2<f32>(0.0),vec2<f32>(f32(n-1u)));
+  let i0=vec2<u32>(floor(f));let i1=min(i0+vec2<u32>(1u),vec2<u32>(n-1u));
+  let t=f-vec2<f32>(i0);
+  let north=mix(coastFieldValue(base,i0.y*n+i0.x),coastFieldValue(base,i0.y*n+i1.x),t.x);
+  let south=mix(coastFieldValue(base,i1.y*n+i0.x),coastFieldValue(base,i1.y*n+i1.x),t.x);
+  return mix(north,south,t.y);
+}
 fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let config=coast[0];let mask=u32(config.x);
   if(mask==0u){return terrainHeight;}
@@ -12,14 +25,19 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let datum=coast[1].w;
   if(datum>0.0){let relative=height-datum;height=0.3+0.5*(relative+sqrt(relative*relative+1.0));}
   let uv=xy/p.values[0].x;let footprint=p.values[2].w/p.values[0].x;
+  let seaCount=u32(coast[15].z);let fieldN=u32(coast[15].w);
+  let fieldBase=16u+2u*seaCount;
   var distance=-2.0;var scale=0.2;var isletHeight=0.0;var apron=1.0;
   if(mask!=255u){
     let character=coast[6];let fine=coast[7];
     let warped=uv+character.x*vec2<f32>(fbm(uv/character.y+vec2<f32>(5.2,1.3),2u,3u,0.5,footprint/character.y),
       fbm(uv/character.y+vec2<f32>(-7.7,9.1),2u,3u,0.5,footprint/character.y));
-    // Edge seas (coves, corner seas, coastal runs): union of their capsules, as in Rust.
+    // Union of the traced field and edge-sea capsules, positive in the sea.
     var sea=-10.0;
-    for(var k=0u;k<u32(coast[15].z);k++){
+    if(fieldN>0u){
+      sea=coastSeaField(warped,fieldN,fieldBase);
+    }
+    for(var k=0u;k<seaCount;k++){
       let ends=coast[16u+k*2u];let radii=coast[17u+k*2u];let delta=ends.zw-ends.xy;
       let t=clamp(dot(warped-ends.xy,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
       sea=max(sea,mix(radii.x,radii.y,t)-length(warped-ends.xy-t*delta));
@@ -29,7 +47,7 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
       +fine.x*fbm(uv/fine.y,2u,5u,0.55,footprint/fine.y);
   }
   var cachedPhase=-1.0;var detail=0.0;
-  let land=16u+2u*u32(coast[15].z);
+  let land=fieldBase+(fieldN*fieldN+3u)/4u;
   for(var i=0u;i<u32(config.y);i++){
     let ends=coast[land+i*3u];let shape=coast[land+1u+i*3u];let geology=coast[land+2u+i*3u];let delta=ends.zw-ends.xy;
     let t=clamp(dot(uv-ends.xy,delta)/max(dot(delta,delta),1e-12),0.0,1.0);

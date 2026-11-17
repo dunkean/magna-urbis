@@ -45,7 +45,7 @@ fn celtic_200_has_one_dwelling_per_cultural_household() {
     let (layouts, parts, requests) = town("celtic-oppidum", 200, 4000.0, 0.0, None);
     let programme = parts[0].programme.as_ref().unwrap();
     let homes: Vec<_> = programme.allocations.iter().filter(|a| a.unit == "domesticUnits").collect();
-    let wanted = 200.0 / urban::roles::occupancy("celtic-oppidum").household_size;
+    let wanted = 200.0 / urban::roles::settlement_occupancy("celtic-oppidum", 200).household_size;
     let held: f64 = homes.iter().map(|a| a.households).sum();
     eprintln!("CELTIC200 homes={} households={held}/{wanted} requests={} walls={}", homes.len(), requests.len(), layouts[0].enclosures.len());
     assert!(homes.len() as f64 >= wanted * 0.9, "{} homes for {wanted} households", homes.len());

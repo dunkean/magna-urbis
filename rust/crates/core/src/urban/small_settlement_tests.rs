@@ -449,7 +449,10 @@ fn reviewed_villages_have_no_unoccupied_parcels() {
         let tolerance = if kinds::native_camp(&layout.culture, 500, layout.config.as_ref().unwrap()) { 0. } else { 0.01 };
         if bare.len() as f64 > tolerance * parts[0].parcels.len() as f64 { failures.push(format!("{culture}: {bare:?}")); }
         for r in requests.iter().filter(|r| r["programme"]["role"].as_str().is_some_and(|s| s.starts_with("worship.mosque") || s.starts_with("worship.masjid"))) {
-            assert!(r["preview_parts"].as_array().unwrap().iter().any(|p| p == "prayer-hall"), "{culture}: mosque without prayer hall: {r}");
+            // Any covered prayer space the occupation rule recognises (hall,
+            // nave, bays, mihrab dome...), so the test follows that rule.
+            assert!(r["preview_parts"].as_array().unwrap().iter().any(|p| p.as_str().is_some_and(parcels::occupation_prayer_space)),
+                "{culture}: mosque without prayer hall: {r}");
         }
         for r in &pr.reservations {
             let d = pr.demands.iter().find(|d| d.id == r.demand_id).unwrap();
@@ -515,7 +518,8 @@ fn plank_house_count_follows_population_at_its_declared_metric_size() {
         if homes.len() <= previous { failures.push(format!("{population}: {} homes after {previous}",homes.len())); }
         if population == 500 && homes.len() < 15 { failures.push(format!("500 inhabitants: {} homes",homes.len())); }
         if housed < wanted*0.9 { failures.push(format!("{population}: {housed}/{wanted} households")); }
-        assert!(pr.allocations.iter().filter(|a|a.unit == "domesticUnits").all(|a|a.households <= 4.));
+        // Two extended households (16 persons) under one 139 m² roof: catalogue `campHouseholds`.
+        assert!(pr.allocations.iter().filter(|a|a.unit == "domesticUnits").all(|a|a.households <= 2.));
         for r in &homes {
             let shapes: Vec<Shape> = serde_json::from_value(r["preview"].clone()).unwrap();
             assert!(shapes.iter().all(|s| g::area(s) <= 9.144*15.24+0.1), "oversized plank house");
@@ -703,10 +707,14 @@ fn no_quarter_of_a_town_stands_empty() {
 }
 
 #[test]
-fn a_town_forced_onto_a_steep_flank_houses_half_its_households() {
-    // A user-placed town on a uniform 29° flank (grade 0.55): the strict house
+fn a_village_forced_onto_a_steep_flank_builds_homes_and_reports_its_shortfall() {
+    // A user-placed village on a uniform 29° flank (grade 0.55): the strict house
     // gates refuse every block, so the slope gates relax until half of the
-    // land is housable; the town is laid out, cut and sited without panic.
+    // land is housable; the village is laid out, cut and sited without panic.
+    // A village keeps one household per home (rural households of 3.15): the
+    // lots the flank cannot give are reported as a population shortfall, never
+    // packed into tenements (2026-11-16: 51 of 159 households, against 55 of
+    // 111 in tenements before).
     let (n, width, grade) = (128, 6000.0, 0.55);
     let h: Vec<f32> = (0..n * n).map(|i| (10.0 + grade * (i / n) as f64 * width / n as f64) as f32).collect();
     let w = vec![0_u8; n * n];
@@ -729,7 +737,10 @@ fn a_town_forced_onto_a_steep_flank_houses_half_its_households() {
     let wanted: f64 = pr.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
     let housed: f64 = pr.allocations.iter().map(|a| a.households).sum();
     eprintln!("steep flank: relax {} housed {housed:.0}/{wanted:.0} households, {sites} sites, warnings {:?}", pr.context.slope_relax, layouts[0].warnings);
-    assert!(housed >= 0.5 * wanted, "housed {housed:.0} of {wanted:.0} households");
+    assert!(housed >= 0.25 * wanted, "housed {housed:.0} of {wanted:.0} households");
+    assert!(pr.allocations.iter().filter(|a| a.unit == "domesticUnits").all(|a| a.households <= 1.0), "village homes hold one household");
+    assert!(housed >= wanted - 0.5 || pr.warnings.iter().any(|w| w.starts_with("Population target not reached:")),
+        "a shortfall of {:.0} households must be reported: {:?}", wanted - housed, pr.warnings);
 }
 
 /// (layout, parts, building requests, housed households, wanted households) of a

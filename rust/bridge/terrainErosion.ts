@@ -440,7 +440,8 @@ async function generateOnce(state: Context, settings: TerrainSettings, sourceN: 
       for (let iteration = 0; iteration < (stageEnabled(settings,'regional') ? iterations : 0); iteration++) {
         dispatch('uplift');
         if (strength > 0) {
-          solve(0, 64 * coarseFactor); pits(); carve(block[1]); dispatch('flow'); solve(1, 128 * coarseFactor); solve(2, 128 * coarseFactor); thermal(3);
+          // The split drainage comes before the sill carving: its reach follows it (it reads the flood, not the heights).
+          solve(0, 64 * coarseFactor); pits(); dispatch('flow'); carve(block[1]); solve(1, 128 * coarseFactor); solve(2, 128 * coarseFactor); thermal(3);
           const dose = base[17] * 3 * strength;
           for (let k = 0; k < Math.floor(dose); k++) diffuse(.5);
           if (dose % 1 > 0) diffuse(.5 * (dose % 1));
@@ -452,7 +453,8 @@ async function generateOnce(state: Context, settings: TerrainSettings, sourceN: 
       const clamp = normal.slice(); clamp[7] = 1; dispatch('bounds', clamp);
       if (strength > 0 && stageEnabled(settings,'regionalFinish')) {
         thermal(4, tail);
-        for (let k = 0; k < 2; k++) { solve(0, 64 * coarseFactor); pits(tail); carve(block[2]); }
+        // Six fill-then-carve passes: CPU `FINISH_PASSES` (a pass drains a basin into the next closed one below it).
+        for (let k = 0; k < 6; k++) { solve(0, 64 * coarseFactor); pits(tail); dispatch('flow'); carve(block[2]); }
         diffuse(strength * .5, tail);
       }
       });
@@ -496,9 +498,9 @@ async function generateOnce(state: Context, settings: TerrainSettings, sourceN: 
       }
       for (let step = 0; step < tuning[3]; step++) {
         // Routed: water crosses depressions to their spill, whose sill is carved.
-        if (routed) { solve(0, surfacePasses); pits(normal, false); carve(block[7]); }
-        else { dispatch('surfaceFlowInit'); dispatch('receivers'); }
-        dispatch('flow');
+        // The split drainage comes before the sill carving, whose reach follows it.
+        if (routed) { solve(0, surfacePasses); pits(normal, false); dispatch('flow'); carve(block[7]); }
+        else { dispatch('surfaceFlowInit'); dispatch('receivers'); dispatch('flow'); }
         // Surface graphs converge sooner than the basin-wide coarse graph;
         // mixed/finite/coastal surfaces need a longer initial budget. Retain
         // validation and retries up to the old 512-pass ceiling.

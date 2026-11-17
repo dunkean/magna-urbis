@@ -23,7 +23,9 @@ export function proceduralSignatures(s: TerrainSettings): Map<GenerationStage, s
   const own: Partial<Record<GenerationStage, unknown>> = {
     initialize: [s.seed, s.width, s.sampleSpacing, s.source, s.relief, s.environment, s.motifSize, s.mountainMix, s.erosion,
       isCompactProcedural(s), isCompactProcedural(s) ? s.phasor?.quality ?? 'balanced' : null,
-      r.regionalN, r.noiseScale, r.crest, r.biome && climate, s.generationCompute, s.compute],
+      r.regionalN, r.noiseScale, r.crest, r.biome && climate, s.generationCompute, s.compute,
+      s.sketch, s.zones,
+      s.source?.startsWith('neural') ? [climate, s.fidelity, s.neuralServer, s.neuralTuning, s.neuralFit, s.neuralSlopes, s.coarseModel, s.baseModel, s.decoderModel] : null],
     regional: [r.uplift, r.regionalThermal, r.regionalDiffusion, pick('iterations', 'incision', 'incisionSlope', 'fill', 'carve', 'talus', 'thermal', 'diffusion')],
     regionalFinish: [r.regionalThermal, r.regionalDiffusion, pick('finalCarve', 'thermal', 'talus', 'fill')],
     reconstruct: [r.reconstruction, pick('warp')], amplitude: [],

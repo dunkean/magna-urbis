@@ -5,7 +5,10 @@ import singleInit, * as single from '../pkg/wasm/magna_urbis_wasm.js';
 import singleJsUrl from '../pkg/wasm/magna_urbis_wasm.js?url';
 import singleWasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { expectedWasmThreads, inWorker, setWasmThreadsInfo, threadsJsLoad, threadsWasmLoad, wasmThreadsInfo } from './wasmThreads';
+import { registerWasmModuleUrl } from './engineIdentity';
 export * from './wasmThreads';
+// The core module's identity keys the page's retained stage results (engineIdentity.ts).
+registerWasmModuleUrl(singleWasmUrl);
 
 export type CoreWasm = typeof single;
 let activeCoreWasm: CoreWasm = single;

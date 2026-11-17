@@ -12,12 +12,12 @@ export interface ZoneSeason {
   herb: Year<Tint>;
   /** Fullness of deciduous crowns: 0 bare, 1 in full leaf. */
   leaf: Year<number>;
-  /** Sea ice concentration. The satellite material treats it as a potential: the snow of the coast decides what forms. */
+  /** Sea ice concentration. Coastal snow controls fast sheet versus drifting floes, independently of this amount. */
   seaIce: Year<number>;
   /** Water table of low flat ground, as a ratio. */
   wet: Year<number>;
   /** Low-ground snow of the map styles, and through it their fresh-water ice (waterRegime.ts). The satellite material
-   * derives its snow from temperature and its fresh and sea ice from that snow (terrainRenderV2Winter.ts). */
+   * derives snow and fresh-water freezing from temperature; sea ice concentration follows the calendar. */
   snow: Year<number>;
   /** Rain regime: -1 all in winter, 1 all in summer. */
   rain: number;
@@ -26,7 +26,7 @@ export interface ZoneSeason {
   /** Share of conifers that are larches: gold in autumn, bare in winter. */
   larch: number;
   /** Warming of the snow line (°C): maritime springs melt the snow long before the air proxy says so; negative values
-   * bring the snow early (arctic autumn). Snow, river, lake and sea ice of the satellite material all follow it. */
+   * bring the snow early (arctic autumn). Snow and fresh-water freezing follow it; sea ice changes sheet versus drift. */
   thaw?: Year<number>;
 }
 const NO_ICE: Year<number> = [0, 0, 0, 0], STEADY: Year<number> = [1, 1, 1, 1];
@@ -36,7 +36,7 @@ export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
   continental: { herb: [[.85, .80, .72], [.96, 1.12, .90], [.97, 1.05, .93], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1, thaw: [0, 10.5, 0, 4] },
   nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.75, .30, 0, .05], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12, thaw: [0, 4.5, 0, 0] },
   alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: NO_ICE, wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
-  arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .82, .76, .80], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0, thaw: [0, 0, 0, -3.5] },
+  arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .70, .62, .68], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0, thaw: [0, 0, 0, -3.5] },
   steppe: { herb: [[.92, .86, .76], [.86, 1.14, .82], [1.06, .98, .84], [1.04, .94, .80]], leaf: [0, .60, 1, .70], seaIce: [.30, 0, 0, 0], wet: STEADY, snow: [.60, 0, 0, .05], rain: .3, cool: 6, larch: 0 },
   desert: { herb: [[.90, .90, .92], [.96, 1.02, .90], [1.08, 1, .88], [1.02, .97, .90]], leaf: [.90, 1, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: 0, cool: 0, larch: 0 },
   savanna: { herb: [[1.12, 1, .74], [1.04, 1.02, .80], [.72, 1.14, .74], [.92, 1.08, .78]], leaf: [.30, .55, 1, .80], seaIce: NO_ICE, wet: [.2, .6, 1.6, 1.1], snow: NO_ICE, rain: .95, cool: 0, larch: 0 },

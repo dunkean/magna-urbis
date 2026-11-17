@@ -248,6 +248,7 @@ export function materializePartitions(pack: ParcelPack, base?: readonly Partitio
     const landmark = view<Uint8Array>(S.allocLandmark, 'u8'), capacity = view<Float64Array>(S.allocCapacity, 'f64');
     const score = view<Float64Array>(S.allocScore, 'f64'), households = view<Float64Array>(S.allocHouseholds, 'f64');
     const wealth = view<Float64Array>(S.allocWealth, 'f64');
+    const residents = sections['allocations.residents'] ? view<Float64Array>('allocations.residents', 'f64') : undefined;
     const rStart = view<Uint32Array>(S.allocReasonsStart, 'u32'), rCodes = view<Uint32Array>(S.allocReasonsCodes, 'u32');
     const fPresent = floorNeed ? view<Uint8Array>(S.floorPresent, 'u8') : new Uint8Array(parcel.length);
     const fCodes = floorNeed ? view<Uint32Array>(S.floorCodes, 'u32') : new Uint32Array(0);
@@ -264,6 +265,7 @@ export function materializePartitions(pack: ParcelPack, base?: readonly Partitio
         unit: tUnit[unit[j]], score: score[j], reasons, role: tRole[role[j]], label: tLabel[label[j]], landmark: landmark[j] !== 0,
         households: households[j],
       };
+      if (residents && residents[j] >= 0) row.residents = residents[j];
       if (fPresent[j]) {
         const c = 7 * j, v = 7 * j;
         // Codes: version, unit, scope, basis, family, profile_provenance, calibration.

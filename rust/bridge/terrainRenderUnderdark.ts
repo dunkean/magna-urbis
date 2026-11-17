@@ -8,9 +8,16 @@
  * - light: a low, cold key light and a dim ambient; no sun, no sky, no snow, no season;
  * - rock: near-black textured stone, a soft occlusion onto the floor near walls and a thin cold rim;
  * - water: deep dark blue-green, a faint luminous edge, no sky reflection.
- * Every function depends on world metres and the pixel footprint only: 2D and 3D draw the same ground.
+ * Every function depends on world metres and the pixel footprint only: 2D and 3D draw the same ground. Mushroom caps
+ * follow the crown rule over water (terrainCrownWater.ts): the host shader includes CROWN_WATER_GLSL and defines
+ * crownFootWater(world) (water cover 0-1 at a point) before this module; it reads udCapCover for the water mix.
  */
+/** Fungus-farm look of the cultivated land (occupation class 13) in the satellite looks and the 3D (2D beds and 3D farm
+ * mushrooms). Off: the user rejected it; the drawing code stays, unreachable, until a new look is validated. */
+export const UNDERDARK_FARMS = false;
 export const UNDERDARK_GLSL = `
+// Resolved cover of the mushroom cap drawn at this fragment (0-1), set by underdarkFloor: the water mix keeps it whole.
+float udCapCover=0.;
 // Fungal farms (champignonnières): x, y, half-size (m), row angle of each farm lot, up to 32.
 uniform vec4 uFarmBeds[32]; uniform int uFarmBedCount;
 float udHash(vec2 p){
@@ -84,13 +91,21 @@ vec4 underdarkMushroomCell(vec2 world,float px,float grove,float CELL,vec2 seed,
   shadow=0.;
   vec2 g=world/CELL+seed,i=floor(g),f=g-i;
   float h=udHash(i+vec2(17.,233.)+seed);
-  if(h>.7*grove)return vec4(0.);
+  if(udHash(i+vec2(401.,77.))>.2)return vec4(0.);
   vec2 c=vec2(udHash(i+vec2(5.,71.)),udHash(i+vec2(61.,2.)))*.56+.22;
+  // A cap is one object: whether it exists is decided once, by the grove field at its centre (fungusGroveAt in
+  // ui/terrain3dFungi.ts), never per pixel by the slope, the water or the land under each pixel.
+  vec2 cw=(i+c-seed)*CELL;
+  float groveAt=smoothstep(.04,.2,udFbm(cw+vec2(-517.,233.),520.,px)+.2*smoothstep(.05,.25,udFbm(cw+vec2(191.,23.),240.,px)-.1)-.1);
+  if(h>.7*groveAt)return vec4(0.);
   float room=min(min(c.x,1.-c.x),min(c.y,1.-c.y))*CELL;
   float size=min(room*.95,CELL*(.16+.2*udHash(i+vec2(23.,9.))));
   vec2 d=(f-c)*CELL;float r=length(d)/size;
   float resolved=clamp(size*2./px-.5,0.,1.);
   shadow=resolved*(1.-smoothstep(.75,1.15,length(d-vec2(.5,.42)*size*.55)/size))*step(1.,r);
+  if(r>=1.&&shadow<=0.)return vec4(0.);
+  // A cap stands only on land: its stem (the cap's centre) out of the water (crownRooted), then drawn whole over the bank.
+  if(!crownRooted(crownFootWater((i+c-seed)*CELL))){shadow=0.;return vec4(0.);}
   if(r>=1.)return vec4(0.);
   float k=udHash(i+vec2(88.,13.));
   vec3 cap=k<.45?vec3(.30,.19,.33):k<.8?vec3(.34,.21,.14):vec3(.20,.30,.27);
@@ -106,43 +121,67 @@ vec4 underdarkMushroomCell(vec2 world,float px,float grove,float CELL,vec2 seed,
 // pale teal) lit by the key light, pale spots, a cast shadow and, on some, a luminous gill rim. Unresolved caps
 // give way to the grove's mean tint. Returns the cap colour (rgb) and its cover (a) and the cast shadow.
 vec4 underdarkMushrooms(vec2 world,float px,float grove,out float shadow){
-  shadow=0.;
+  shadow=0.;udCapCover=0.;
   if(grove<=0.)return vec4(0.);
   float s1,s2;
   vec4 a=underdarkMushroomCell(world,px,grove,31.,vec2(0.),s1);
   vec4 b=underdarkMushroomCell(world,px,grove,19.,vec2(.37,.61),s2);
   shadow=max(s1,s2);
   vec4 cap=a.a>0.?a:b;
+  udCapCover=cap.a;
   vec3 mean=vec3(.19,.14,.17);
   float haze=.16*grove*(1.-clamp(14./px-.5,0.,1.));
   return vec4(mix(mean,cap.rgb,cap.a),max(cap.a,haze));
 }
-// Mushroom beds of the fungal farms: dark compost ridges in rows along the lot, pale caps in lines on each ridge,
-// lighter walkways between; below a couple of pixels per row, an even compost tint. Returns colour and cover.
-vec4 underdarkFarmBeds(vec2 world,float px){
-  for(int k=0;k<32;k++){
-    if(k>=uFarmBedCount)break;
-    vec4 f=uFarmBeds[k];vec2 d=world-f.xy;
-    if(dot(d,d)>f.z*f.z*2.)continue;
-    vec2 a=vec2(cos(f.w),sin(f.w));vec2 l=vec2(dot(d,a),dot(d,vec2(-a.y,a.x)));
-    vec2 hs=vec2(f.z,f.z*.62);
-    float edge=min(hs.x-abs(l.x),hs.y-abs(l.y));
-    if(edge<=0.)continue;
-    float cover=smoothstep(0.,2.5,edge);
-    if(cover<=0.)continue;
-    float rows=clamp(3.2/px-.8,0.,1.);
-    float ridge=smoothstep(.12,.22,fract(l.y/3.2))*(1.-smoothstep(.62,.72,fract(l.y/3.2)));
-    vec3 compost=vec3(.12,.095,.075),walk=vec3(.24,.22,.19);
-    vec2 g=vec2(l.x/1.3,l.y/3.2),i=floor(g),q=fract(g)-vec2(.5,.42);
-    float cap=(1.-smoothstep(.16,.26,length(q*vec2(1.3,3.2)/1.3)))*step(.25,udHash(i+vec2(f.x,f.y)*.01));
-    float capsOn=clamp(1.3/px-.7,0.,1.);
-    vec3 detail=mix(walk,compost,ridge);
-    detail=mix(detail,vec3(.58,.53,.45),cap*ridge*capsOn);
-    vec3 mean=mix(walk,compost,.55);
-    return vec4(mix(mean,detail,rows),cover);
+// Fungus beds (occupation class 13, FUNGUS_BED in web/src/ui/forestOccupation.ts): organic patches of dense low
+// mushrooms, no straight edge, no rows. The bilinear share of class 13 over the 2×2 texels (as forestOpenShares), its
+// edge warped by an fbm; pale, ochre and violet caps on a dark compost, resolved near, an even tint far.
+float underdarkBedShare(vec2 world){
+  if(uHasOccupation==0)return 0.;
+  float n=uOccupationN;vec2 g=(world-uOccupationRect.xy)/uOccupationRect.z*n-.5,f=fract(g);ivec2 b=ivec2(floor(g)),hi=ivec2(int(n)-1);
+  float share=0.;
+  for(int k=0;k<4;k++){
+    ivec2 o=ivec2(k-2*(k/2),k/2);float cls=texelFetch(uOccupation,clamp(b+o,ivec2(0),hi),0).b*255.;
+    share+=(abs(cls-13.)<.5?1.:0.)*(o.x==1?f.x:1.-f.x)*(o.y==1?f.y:1.-f.y);
   }
-  return vec4(0.);
+  return share;
 }
+// Switch of the farm look (UNDERDARK_FARMS): off until a new look is validated; the cultivated land is bare floor.
+const bool UD_FARMS=${UNDERDARK_FARMS};
+vec3 udBedLight=vec3(0.);
+// Share of the painted grove caps (1 in 2D; the 3D ground lowers it where its modelled mushrooms stand).
+float udPaintCaps=1.;
+// A mushroom farm on the cultivated land: fields (44 m blocks) each with its own row direction and spacing; rows of
+// compost beds broken by cross paths, every fifth row a path; per bed one cap size and colour, caps at a jittered
+// spacing along the bed; a few beds glow (udBedLight). Same layout as the 3D farms (ui/terrain3dFungi.ts, section 3).
+vec4 underdarkFarmBeds(vec2 world,float px){
+  udBedLight=vec3(0.);
+  if(!UD_FARMS)return vec4(0.);
+  float share=underdarkBedShare(world);
+  if(share<=0.)return vec4(0.);
+  float cover=smoothstep(.3,.7,share+.45*udFbm(world+vec2(613.,-41.),55.,px));
+  if(cover<=0.)return vec4(0.);
+  vec2 b=floor(world/44.),d=world-(b+.5)*44.;
+  float angle=udHash(b+vec2(3001.,7.))*3.14159265,spacing=2.2+.9*udHash(b+vec2(3003.,11.));
+  vec2 dir=vec2(cos(angle),sin(angle));
+  float u=dot(d,dir),v=dot(d,vec2(-dir.y,dir.x)),r=floor(v/spacing+.5),dv=v-r*spacing;
+  float len=6.+6.*udHash(vec2(b.x+r,b.y+3005.)),seg=floor(u/len),within=u/len-seg;
+  float bed=udHash(vec2(b.x*131.+r,b.y*71.+seg)),size=bed<.4?.3:bed<.8?.5:.8;
+  bool path=mod(r,5.)>3.5||within>.84||bed>.93;
+  vec3 walk=vec3(.20,.185,.16),compost=vec3(.085,.07,.06)*(1.+.3*udFbm(world+vec2(31.,-77.),9.,px));
+  float rows=clamp(spacing/px*.5-.5,0.,1.);
+  float ridge=path?0.:1.-smoothstep(.42,.6,abs(dv));
+  vec3 tint=bed<.45?vec3(.56,.52,.45):bed<.75?vec3(.50,.37,.24):vec3(.44,.35,.40);
+  float pitch=size*2.,k=floor(u/pitch),along=(fract(u/pitch)-.5)*pitch+(udHash(vec2(k,r+b.y))-.5)*size*.6;
+  float cap=ridge*(1.-smoothstep(size*.35,size*.5,length(vec2(along,dv))))*clamp(size*2.5/px-.6,0.,1.);
+  vec3 c=mix(walk,compost,ridge);
+  c=mix(c,tint*(.85+.3*udHash(vec2(k,seg+r))),cap);
+  vec3 mean=mix(walk,compost,.6);
+  if(!path&&udHash(vec2(b.x+seg,b.y+r*7.))<.06)udBedLight=(bed>.5?vec3(.62,.30,.95):vec3(.15,.85,.90))*(cap*.6+.05*ridge)*cover;
+  return vec4(mix(mean,c,rows),cover);
+}
+// The few glowing beds of the farms (set by underdarkFarmBeds).
+vec3 underdarkBedGlow(vec2 world,float px,float cover){return udBedLight;}
 // Cave floor. s: height and gradient (m/m); wet: dampness near water (0-1); ao: occlusion near walls (0-1).
 vec3 underdarkFloor(vec3 s,vec2 world,float px,float wet,float ao){
   float slope=length(s.yz);
@@ -160,17 +199,21 @@ vec3 underdarkFloor(vec3 s,vec2 world,float px,float wet,float ao){
   c=c*(1.-detail.x)+vec3(.30,.29,.27)*detail.y;
   c=mix(c,beds.rgb,beds.a);
   c*=udLight(s.yz)*(1.-.62*ao);
-  float grove=smoothstep(.04,.2,udFbm(world+vec2(-517.,233.),520.,px)+.1*wet+.2*moss-.1)*(1.-rocky)*(1.-smoothstep(.15,.45,wet))*(1.-beds.a);
+  // No damp-floor cut: near water a cap is kept or dropped whole by its foot (underdarkMushroomCell), not sliced by the shore.
+  // Where caps may stand (an early out and the far haze); each cap is decided at its own centre (underdarkMushroomCell).
+  float grove=smoothstep(-.02,.2,udFbm(world+vec2(-517.,233.),520.,px)+.2*moss-.1);
   float shade;vec4 cap=underdarkMushrooms(world,px,grove,shade);
+  cap.a*=udPaintCaps;shade*=udPaintCaps;
   c*=1.-.55*shade;
   c=mix(c,cap.rgb*(1.-.45*ao),cap.a);
-  return c+underdarkFungi(world,px,moss)*(1.-.6*ao)*(1.-cap.a);
+  if(uNight==0)c+=vec3(.20,.12,.05)*beds.a; // inhabited period: farm lamps, using the existing ambience flag
+  return c+underdarkBedGlow(world,px,beds.a)*(1.-.6*ao);
 }
 // Rock mass over the floor; rim: the thin cold light where floor meets wall (0-1).
 vec3 underdarkRock(vec3 s,vec2 world,float px,float rim){
   float t=udFbm(world+vec2(401.,13.),180.,px)+.6*udFbm(world*1.3+vec2(17.,88.),25.,px);
-  // Crags of the rock surface carry the form: a dim key light over near-black stone, a lit ledge at the wall.
-  vec3 c=vec3(.075,.072,.08)*(1.+.8*t)*(.18+.95*udLight(s.yz));
+  // Basalt: near-black, slightly cool and matte; the crags carry the form under a dim key light, a lit ledge at the wall.
+  vec3 c=vec3(.052,.056,.066)*(1.+.6*t)*(.25+.9*udLight(s.yz));
   // Fractured bedrock: ridged cracks at three scales (narrower when smaller), faded before they alias, over a fine grain.
   float crack=0.;
   for(int k=0;k<3;k++){
@@ -192,7 +235,26 @@ vec3 underdarkRock(vec3 s,vec2 world,float px,float rim){
     c*=mix(1.,.45+1.1*lit,facet);
   }
   c*=1.-.6*crack;
-  return c+vec3(.16,.17,.17)*rim;
+  // Basalt column tops seen from above, on the level tops of the masses only: an irregular Voronoi of five- to
+  // seven-sided cells whose size wanders between about 3 and 6 m, joints only slightly darker, each top a little
+  // tilted so the key light picks some out; gone before the cells shrink to a few pixels.
+  float columns=clamp(3.4/px*.25-.6,0.,1.)*(1.-smoothstep(.06,.25,length(s.yz)));
+  if(columns>0.){
+    float scale=4.5*(.7+.6*udNoise(world/37.+vec2(13.,7.)));
+    vec2 p=world/scale,i=floor(p),f=p-i,id=i;float d1=9.,d2=9.;
+    for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+      vec2 o=vec2(float(x),float(y)),cc=o+vec2(udHash(i+o+vec2(3.,17.)),udHash(i+o+vec2(29.,5.)))*.85+.075;
+      float d=length(cc-f);
+      if(d<d1){d2=d1;d1=d;id=i+o;}else if(d<d2)d2=d;
+    }
+    float joint=1.-smoothstep(.04,.12+1.2*px,(d2-d1)*.5*scale);
+    vec3 tn=normalize(vec3((vec2(udHash(id+vec2(41.,3.)),udHash(id+vec2(7.,59.)))-.5)*.4,1.));
+    float top=(.9+.2*udHash(id+vec2(11.,47.)))*(.88+.24*max(dot(tn,normalize(vec3(-.55,-.45,.62))),0.));
+    c*=mix(1.,top*(1.-.2*joint),columns);
+  }
+  // A wall seen from above (the steep ramp at the edge of a mass): darker, the shadowed face of the cave wall.
+  c*=1.-.45*smoothstep(.35,1.4,length(s.yz));
+  return c+vec3(.15,.16,.17)*rim;
 }
 // Cave water: depth in metres, edge 0-1 near the shore (faint luminous rim).
 vec3 underdarkWater(vec2 world,float px,float depth,float edge){

@@ -28,6 +28,8 @@ pub(super) use occupation::{
     Kind as OccupationKind, Occupancy, empty_reason as occupation_empty_reason, kind as occupation_kind,
     preview_parts as occupation_preview, preview_parts_resolved as occupation_preview_resolved,
 };
+#[cfg(test)]
+pub(super) use occupation::prayer_space as occupation_prayer_space;
 
 #[derive(Clone, Copy)]
 pub(super) struct Front {
@@ -4002,6 +4004,67 @@ impl StoredCut {
     }
 }
 
+/// Growth zones a quarter edit may set (`overrides.quarters.<i>.zone`).
+const QUARTER_ZONES: [&str; 5] = ["core", "middle", "edge", "faubourg", "village"];
+/// A user edit of a quarter's growth zone and/or density, resolved for one block.
+struct QuarterEdit {
+    phase: usize,
+    zone: String,
+    zone_set: bool,
+    density: f64,
+    density_set: bool,
+}
+/// Occupation pressure of an edited quarter: a set zone stands for its place
+/// on the town's gradient (core = the densest street pressure, a faubourg
+/// almost none); a set density moves it, 0.3 per doubling (×10 reaches the
+/// densest tissue from an ordinary ring, ×0.1 the loosest). Lot width, depth,
+/// house area and coverage follow it through `pressure::apply`, in every
+/// culture; the admission floors (smallest native house) still hold.
+fn edited_pressure(measured: f64, edit: &QuarterEdit) -> f64 {
+    let base = if edit.zone_set {
+        match edit.zone.as_str() {
+            "core" => 1.0,
+            "middle" => 0.7,
+            "edge" => 0.4,
+            "faubourg" => 0.2,
+            _ => 0.05,
+        }
+    } else {
+        measured
+    };
+    let shift = if edit.density_set { 0.3 * edit.density.log2() } else { 0.0 };
+    (base + shift).clamp(0.0, 1.0)
+}
+/// The quarter density control spans ×0.1–×10 while the morph's own density
+/// transformation (`resolve`) stops at ×0.5–×2: beyond it the lot tables keep
+/// moving at the same rates per doubling, bounded by the same floors.
+fn steer(morph: &mut Morph, density: f64) {
+    let f = (1.0 / density).clamp(0.1, 10.0).log2();
+    let residual = f - f.clamp(-1.0, 1.0);
+    if residual == 0.0 {
+        return;
+    }
+    let looser = residual > 0.0;
+    for (key, rate, lo, hi) in [
+        ("coverage", -0.24, 0.05, 0.97),
+        ("frontage", 0.32, 3.5, f64::MAX),
+        ("plotDepth", 0.22, 8.0, f64::MAX),
+        ("blockSize", if looser { 0.45 } else { 0.1 }, 300.0, f64::MAX),
+        ("houseArea", if looser { 0.25 } else { 0.12 }, 30.0, f64::MAX),
+    ] {
+        let scale = (1.0 + rate * residual).max(0.35);
+        if let Some(zones) = morph.value[key].as_object_mut() {
+            for range in zones.values_mut() {
+                if let Some(a) = range.as_array_mut() {
+                    for n in a {
+                        *n = serde_json::json!((n.as_f64().unwrap_or(0.0) * scale).clamp(lo, hi));
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn generate(
     seed: &str,
     layout: &Layout,
@@ -4109,42 +4172,62 @@ pub(super) fn generate(
         .zip(&layout.phases)
         .map(|(m, p)| adapt(m, None, p))
         .collect::<Vec<_>>();
-    // User edits of a quarter (« éditer un quartier »): its density and tissue
-    // reach the lot cutting of that quarter's blocks only.
+    // User edits of a quarter (« éditer un quartier »): its growth zone,
+    // density and tissue reach the lot cutting of that quarter's blocks only.
+    // The edited morph goes through the same resolution as its phase (style
+    // sheet, adaptive capacity), with the edited zone and density; the zone
+    // and density then set the quarter's occupation pressure (`edited_pressure`),
+    // which drives lot width, depth and coverage along the culture's own
+    // core-to-edge gradient.
     let edits = layout.config.as_ref().map(|c| &c.overrides.quarters);
-    let mut edited_morphs: BTreeMap<(usize, u64), Morph> = BTreeMap::new();
-    for block in &layout.blocks {
-        let edit = edits.and_then(|e| e.get(&block.quarter.to_string()));
-        let phase_index = layout
+    let quarter_edit = |block: &super::Block| -> Option<QuarterEdit> {
+        let edit = edits.and_then(|e| e.get(&block.quarter.to_string()))?;
+        let zone = edit.zone.as_deref().filter(|z| QUARTER_ZONES.contains(z));
+        let density = edit.density.filter(|d| d.is_finite() && *d > 0.0);
+        if zone.is_none() && density.is_none() {
+            return None;
+        }
+        let pi = layout
             .quarters
             .get(block.quarter)
-            .map(|q| block.phase.unwrap_or(q.phase));
-        if let (Some(density), Some(pi)) = (edit.and_then(|e| e.density), phase_index)
-            && density.is_finite()
-            && layout.phases.get(pi).is_some()
-        {
-            let key = (pi, density.to_bits());
-            if !edited_morphs.contains_key(&key) {
-                let p = &layout.phases[pi];
-                let (preset, selected) =
-                    super::composition::globals(chosen(p), &cfg.preset, &cfg.recipe);
-                let m = super::composition::phase_morph(
-                    if (cfg.culture == "site" || chosen(p)) && !p.culture.is_empty() {
-                        &p.culture
-                    } else {
-                        culture
-                    },
-                    &p.recipe,
-                    &zone_of(p),
-                    preset,
-                    selected,
-                    density.clamp(0.1, 10.0),
-                    &cfg.params,
-                    "parcels",
-                )?;
-                edited_morphs.insert(key, m);
-            }
+            .map(|q| block.phase.unwrap_or(q.phase))
+            .filter(|&pi| pi < layout.phases.len())?;
+        Some(QuarterEdit {
+            phase: pi,
+            zone: zone.map_or_else(|| zone_of(&layout.phases[pi]), str::to_owned),
+            zone_set: zone.is_some(),
+            density: density.map_or(cfg.density, |d| d.clamp(0.1, 10.0)),
+            density_set: density.is_some(),
+        })
+    };
+    let mut edited_morphs: BTreeMap<(usize, u64, String, bool), Morph> = BTreeMap::new();
+    for block in &layout.blocks {
+        let Some(e) = quarter_edit(block) else {
+            continue;
+        };
+        let borrowed = plan.is_some_and(|c| c.borrowed_quarters.contains(&block.quarter));
+        let key = (e.phase, e.density.to_bits(), e.zone.clone(), borrowed);
+        if edited_morphs.contains_key(&key) {
+            continue;
         }
+        let p = &layout.phases[e.phase];
+        let (preset, selected) = super::composition::globals(chosen(p), &cfg.preset, &cfg.recipe);
+        let sheet = super::forms::sheet::plots(layout, e.phase);
+        let own = if (cfg.culture == "site" || chosen(p)) && !p.culture.is_empty() { &p.culture } else { culture };
+        let m = super::composition::phase_morph(
+            sheet.as_ref().map_or(own.as_str(), |s| s.0.as_str()),
+            sheet.as_ref().map_or(p.recipe.as_str(), |s| s.1.as_str()),
+            &e.zone,
+            preset,
+            selected,
+            e.density,
+            &cfg.params,
+            "parcels",
+        )?;
+        let quarter = if borrowed { plan.and_then(|c| c.borrowed_quarters.first().copied()) } else { None };
+        let mut m = super::footprint::capacity::adapt(m, plan, quarter, &p.recipe, &e.zone, population, e.density, "parcels");
+        steer(&mut m, e.density);
+        edited_morphs.insert(key, m);
     }
     // Blocks are cut independently (each forks its own random stream from its
     // geometric identity) and merged in block order: identical output on any
@@ -4171,13 +4254,11 @@ pub(super) fn generate(
             .quarters
             .get(block.quarter)
             .map(|q| block.phase.unwrap_or(q.phase));
-        let edited = match (edit.and_then(|e| e.density), phase_index) {
-            (Some(density), Some(pi)) if density.is_finite() && layout.phases.get(pi).is_some() => {
-                edited_morphs.get(&(pi, density.to_bits()))
-            }
-            _ => None,
-        };
         let borrowed = plan.is_some_and(|c| c.borrowed_quarters.contains(&block.quarter));
+        let quarter_edit = quarter_edit(block);
+        let edited = quarter_edit
+            .as_ref()
+            .and_then(|e| edited_morphs.get(&(e.phase, e.density.to_bits(), e.zone.clone(), borrowed)));
         let morph = block_morphs.get(&bi.to_string()).or(edited)
             .or_else(|| {
                 phase_index.and_then(|pi| {
@@ -4275,10 +4356,11 @@ pub(super) fn generate(
                 }
             }
         }
-        let zone = if cfg.zone == "auto" {
-            &block.zone
-        } else {
-            &cfg.zone
+        // A zone the user set on the quarter wins over the plan's own.
+        let zone = match &quarter_edit {
+            Some(e) if e.zone_set => &e.zone,
+            _ if cfg.zone == "auto" => &block.zone,
+            _ => &cfg.zone,
         };
         let dense_souk = block_culture == "medina"
             && local_morph.text("id") == "medina-souk"
@@ -4309,7 +4391,9 @@ pub(super) fn generate(
         if operator == "culture" && cfg.preset == "culture" && cfg.params.get("plotOp").is_none() {
             super::composition::gate_morph(layout, bi, &mut local_morph);
         }
-        let occupation = road_pressures[bi];
+        let occupation = quarter_edit
+            .as_ref()
+            .map_or(road_pressures[bi], |e| edited_pressure(road_pressures[bi], e));
         // Lot sizes keep the culture's own ranges, floored by the smallest
         // native house that may occupy them (the compact tier when it exists),
         // not by a 30 m court house that only grand lots hold.
@@ -5450,15 +5534,52 @@ mod tests {
     /// density on the quarter widens its lots, other quarters are unchanged.
     #[test]
     fn quarter_density_override_reaches_the_lots() {
+        let (mut layout, lots) = two_quarters("core");
+        let (a0, a1) = (lots(&layout, 0), lots(&layout, 1));
+        layout.config.as_mut().unwrap().overrides.quarters.insert(
+            "1".into(),
+            super::super::QuarterOverride {
+                density: Some(0.25),
+                ..Default::default()
+            },
+        );
+        let (b0, b1) = (lots(&layout, 0), lots(&layout, 1));
+        assert_eq!(a0, b0, "an unedited quarter keeps its lots");
+        assert!(
+            b1 < a1,
+            "a sparser quarter has fewer, wider lots: {a1} -> {b1}"
+        );
+    }
+
+    /// A ring quarter set to `core` by the user is cut as the densest tissue:
+    /// more, narrower lots; a high density does the same; other quarters keep theirs.
+    #[test]
+    fn quarter_zone_override_densifies_the_lots() {
+        let (mut layout, lots) = two_quarters("edge");
+        let (a0, a1) = (lots(&layout, 0), lots(&layout, 1));
+        let edit = |layout: &mut Layout, o: super::super::QuarterOverride| {
+            layout.config.as_mut().unwrap().overrides.quarters.insert("1".into(), o);
+        };
+        edit(&mut layout, super::super::QuarterOverride { zone: Some("core".into()), ..Default::default() });
+        let (b0, b1) = (lots(&layout, 0), lots(&layout, 1));
+        assert_eq!(a0, b0, "an unedited quarter keeps its lots");
+        assert!(b1 > a1, "a core quarter has more lots: {a1} -> {b1}");
+        edit(&mut layout, super::super::QuarterOverride { density: Some(10.0), ..Default::default() });
+        let c1 = lots(&layout, 1);
+        assert!(c1 > a1, "a ×10 quarter has more lots: {a1} -> {c1}");
+    }
+
+    /// Two quarters of one block each along a street, every phase in `zone`.
+    fn two_quarters(zone: &str) -> (Layout, impl Fn(&Layout, usize) -> usize) {
         let block = |x: f64, q: usize| Block {
             phase: None,
             shape: rectangle(x, 0.0, x + 120.0, 30.0),
             quarter: q,
             kind: "block".into(),
             axis: Point { x: 1.0, y: 0.0 },
-            zone: "core".into(),
+            zone: zone.into(),
         };
-        let mut layout = Layout {
+        let layout = Layout {
             config: Some(super::super::LayoutConfig::default()),
             programme: None,
             key: "edited-quarter".into(),
@@ -5466,7 +5587,7 @@ mod tests {
             phases: vec![super::super::GrowthPhase {
                 culture: "european-organic".into(),
                 kind: "core".into(),
-                zone: "core".into(),
+                zone: zone.into(),
                 recipe: "core".into(),
                 population: 1000.0,
                 target_area: 0.0,
@@ -5479,7 +5600,7 @@ mod tests {
                 .map(|q| super::super::Quarter {
                     shape: rectangle(q as f64 * 130.0, 0.0, q as f64 * 130.0 + 120.0, 30.0),
                     phase: 0,
-                    zone: "core".into(),
+                    zone: zone.into(),
                 })
                 .collect(),
             enclosures: vec![],
@@ -5505,20 +5626,7 @@ mod tests {
                 .filter(|p| p.block == b && p.front.is_some())
                 .count()
         };
-        let (a0, a1) = (lots(&layout, 0), lots(&layout, 1));
-        layout.config.as_mut().unwrap().overrides.quarters.insert(
-            "1".into(),
-            super::super::QuarterOverride {
-                density: Some(0.25),
-                ..Default::default()
-            },
-        );
-        let (b0, b1) = (lots(&layout, 0), lots(&layout, 1));
-        assert_eq!(a0, b0, "an unedited quarter keeps its lots");
-        assert!(
-            b1 < a1,
-            "a sparser quarter has fewer, wider lots: {a1} -> {b1}"
-        );
+        (layout, lots)
     }
 
     #[test]

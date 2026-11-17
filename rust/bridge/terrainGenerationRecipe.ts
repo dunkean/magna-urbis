@@ -164,7 +164,7 @@ export function generationStageActive(s: TerrainSettings, id: GenerationStage): 
         return w.iterations > 0 && w.transport > 0;
     }
     if (id === 'coasts' || id === 'coastCut')
-        return !!s.coastMask;
+        return !!s.coastMask && s.relief !== 'cavern' && !s.underdark;
     if (id === 'hydrology')
         return !!s.hydrology?.enabled;
     return true;

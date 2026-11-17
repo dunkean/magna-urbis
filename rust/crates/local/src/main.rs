@@ -251,7 +251,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
                     source_n,
                 )?;
                 generator.set_edited_surface(heights)?;
-                generator
+                TerrainGenerator::with_surface_owned(&settings.seed, settings.width, generator.sampling_base_field())?
             } else if processing == Some("surface") {
                 TerrainGenerator::with_surface(&settings.seed, settings.width, heights)?
             } else {
@@ -288,9 +288,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
                 )?,
             }
         };
-        if processing.is_none() {
-            terrain.set_coast(settings.coast_mask, &settings.island_mode)?;
-        }
+        terrain.set_coast(settings.coast_mask, &settings.island_mode)?;
         // Regional and coastal/zoned fields are already physical metre rasters.
         // Preserve their control points rather than smoothing them a second time.
         let family = terrain.sampling_parameters()[5];
@@ -498,7 +496,8 @@ fn settlement_reply(input: Value, state: &Session) -> ApiResult<Reply> {
     let terrain = state
         .settlements
         .as_ref()
-        .ok_or("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les lieux et routes.")?;
+        // Coded: the client re-uploads its last raster and retries once (engine restart, eviction).
+        .ok_or("[raster_missing] Generate the terrain before settlement sites and roads.")?;
     let seed = input["seed"].as_str().ok_or("Graine absente.")?;
     let mut sites = input
         .get("sites")
@@ -902,7 +901,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let terrain = state
             .settlements
             .as_ref()
-            .ok_or("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les quartiers.")?;
+            .ok_or("[raster_missing] Generate the terrain before the quarters.")?;
         let sites = input
             .get("sites")
             .map(value::<Vec<urban::Site>>)
@@ -939,7 +938,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         })
     } else if input["kind"] == "parcels" {
         if state.settlements.is_none() {
-            return Err("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les quartiers.".into());
+            return Err("[raster_missing] Generate the terrain before the quarters.".into());
         }
         let explicit: Option<Vec<urban::Layout>> = input.get("layouts").map(value).transpose()?;
         let layouts = match explicit {
@@ -1211,10 +1210,25 @@ fn client_gone() -> bool {
         gone
     })
 }
+/// Identity of this engine binary (package version, executable size and modification time): the page
+/// keys its retained stage results with it, so a rebuilt and redeployed engine is asked again instead
+/// of the page reusing what the previous binary produced. Read once per process.
+fn engine_build() -> &'static str {
+    static BUILD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BUILD.get_or_init(|| {
+        let stamp = std::env::current_exe().and_then(std::fs::metadata).ok().map(|meta| {
+            let modified = meta.modified().ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |since| since.as_millis());
+            format!("{}-{modified}", meta.len())
+        }).unwrap_or_else(|| "unknown".to_string());
+        format!("{}+{stamp}", env!("CARGO_PKG_VERSION"))
+    })
+}
 pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if path == "/status" {
         return json_reply(
-            json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
+            json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1, "build": engine_build(),
                 "capabilities": ["landuse.stage-v1", "terrain.water-v1", "terrain.relief-session-v1","site.choose-v1", "terrain.forest-v1", "urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers", "urban.parcel-pack-v1", "urban.site-visuals-v2",
                     "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
@@ -1635,6 +1649,7 @@ mod native_assembly_boundary_tests {
         assert!(native_assembly_body_budget("/houses/plans",MAX_NATIVE_ASSEMBLY_BODY+1));
         let reply=dispatch("/status",b"{}",&Mutex::new(Sessions::default())).unwrap();
         let status:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert!(status["build"].as_str().is_some_and(|build|build.starts_with(env!("CARGO_PKG_VERSION"))));
         assert!(status["capabilities"].as_array().unwrap().iter().any(|v|v.as_str()==Some("houses.native-assembly-pair-1")));
         assert!(status["capabilities"].as_array().unwrap().iter().any(|v|v.as_str()==Some("houses.native-assembly-std-json-v1")));
         let reply=houses_reply("/houses/native-assembly-capability",b"{}").unwrap();
