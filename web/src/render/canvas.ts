@@ -132,7 +132,9 @@ export interface CanvasRenderer {
   palette: Palette;
   /** Only explicit live draws use density buckets, progressive filling and the browser quality policy. */
   draw(view: View, options?: { live: boolean }): FrameStats;
-  suspendLive(): void;
+  /** Stops the progressive work of the live view. A retained region waiting to be recorded waits for the view to rest
+   * again; `hold`: however long the view has been moving (it follows as a bitmap, a new region could not show). */
+  suspendLive(hold?: boolean): void;
   /** `moving`: a frame of a pan or zoom gesture; the labels of the last placement follow the map instead of being placed again. */
   drawText(target: CanvasRenderingContext2D, view: View, width: number, height: number, moving?: boolean): void;
   /** Physical land use alone (no grid, semantics, water or roads) on the transparent `target`, which covers the world square `box`. False: nothing there. */
@@ -483,7 +485,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const rasterFill = new LiveTileFill(now);
   const previewFill = new LiveTileFill(now);
   let lastRaster: { canvas: CanvasLike; view: View; dpr: number } | undefined;
-  const suspendLive = (): void => { rasterFill.suspend(); previewFill.suspend(); };
+  const suspendLive = (hold = false): void => {
+    rasterFill.suspend(); previewFill.suspend();
+    // Each band of a retained region is a long task: none while the view moves.
+    if (retainedJob !== undefined && (hold || now() - retainedSince < RETAIN_MAX_WAIT_MS)) { clearTimeout(retainedJob); retainedJob = setTimeout(recordStep, RETAIN_SETTLE_MS); }
+  };
   const dropLastRaster = (): void => { if (lastRaster) { lastRaster.canvas.width = 0; lastRaster.canvas.height = 0; } lastRaster = undefined; };
   /** The whole map rasterised once at a coarse density: a live view shows it under its missing tiles, never blank tiles. */
   let preview: { key: string; canvas: CanvasLike } | undefined;

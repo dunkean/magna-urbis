@@ -426,7 +426,10 @@ describe('V2 and City Bench stay in sync', () => {
     }
     // The 3D ground tile (drawGround) is a separate, footprint-only call.
     expect(bench).toContain('drawCity(ctx, cityPlan, cityDrawOptions(');
-    expect(v2).toContain('drawCity(ctx, entry.plan, cityDrawOptions(');
+    // The V2 paints at once (drawCity) or, for its live town layer, in steps (drawCitySteps): one set of options for both.
+    expect(v2).toContain('const options = cityDrawOptions({');
+    expect(v2).toContain('drawCity(ctx, entry.plan, options)');
+    expect(v2).toContain('drawCitySteps(ctx, entry.plan, options)');
   });
 
   it('passes the coastal swell option of the resolved water to the ground renderer on both pages', () => {

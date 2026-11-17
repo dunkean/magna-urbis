@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createViewer, type FrameRequest } from '../src/ui/viewer';
 import { illustrationContext } from '../src/ui/illustrationContext';
 import { battlemapAvailability } from '../../illustration/web/framing.mjs';
-import { MAX_SCALE } from '../src/render/view';
+import { MAX_SCALE, clampView, zoomAt } from '../src/render/view';
 
 class Element extends EventTarget {
   style = { opacity: '', transform: '', width: '', height: '' };
@@ -84,5 +84,24 @@ describe('viewer presentation and scheduling', () => {
     viewer.setDirectSource({ element: new Element() as unknown as HTMLElement, draw: () => ({ ms: 1, band: 0, scale: 1 }) }); tick();
     expect(viewer.present({ ...answer, seq: current[0].seq })).toBe(false);
     expect(canvas.context.transferFromImageBitmap).not.toHaveBeenCalled(); viewer.destroy();
+  });
+  it('eases wheel notches to the view direct jumps give, and follows touchpad deltas directly', () => {
+    const { viewer, canvas, callbacks } = setup(); let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const frame = (ms: number) => { now += ms; const batch = [...callbacks.values()]; callbacks.clear(); batch.forEach(cb => cb(now)); };
+    const wheel = (deltaY: number, x: number, y: number) => canvas.dispatchEvent(Object.assign(new Event('wheel'), { clientX: x, clientY: y, deltaY, deltaMode: 0, ctrlKey: false }));
+    viewer.contentChanged(4000, false); viewer.setView({ cx: 2000, cy: 2000, scale: 0.5 }); frame(16);
+    const start = viewer.getView(), step = Math.exp(100 * 0.0015);
+    const target = clampView(zoomAt(clampView(zoomAt(start, step, 600, 200, 800, 600), 4000, 800, 600), step, 600, 200, 800, 600), 4000, 800, 600);
+    wheel(-100, 600, 200); wheel(-100, 600, 200); frame(16);
+    const first = viewer.getView();
+    expect(first.scale).toBeGreaterThan(start.scale); expect(first.scale).toBeLessThan(target.scale);
+    // The point under the cursor stays under it while the camera moves.
+    expect(first.cx + (600 - 400) / first.scale).toBeCloseTo(start.cx + (600 - 400) / start.scale, 6);
+    for (let i = 0; i < 40 && callbacks.size; i++) frame(16);
+    expect(viewer.getView()).toEqual(target); expect(callbacks.size).toBe(0);
+    wheel(-8, 400, 300); frame(16);
+    expect(viewer.getView().scale).toBeCloseTo(target.scale * Math.exp(8 * 0.0015), 12); expect(callbacks.size).toBe(0);
+    vi.restoreAllMocks(); viewer.destroy();
   });
 });

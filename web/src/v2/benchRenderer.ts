@@ -145,6 +145,14 @@ export class BenchRenderer {
   private programWork?: Promise<void>;
   private programError?: unknown;
   private cityRevision = 0;
+  /** Bumped by every set() and quality or engine change: a town layer kept for the live view is then repainted. */
+  private cityContent = 0;
+  /** True while `invalidate` only asks for a new frame of the same content (the miniature of the page stays valid). */
+  redrawOnly = false;
+  private redraw(): void {
+    this.redrawOnly = true;
+    try { this.invalidate(); } finally { this.redrawOnly = false; }
+  }
   private request?: RenderReadiness;
   private suspended = false;
   get requestId(): number | undefined { return this.request?.id; }
@@ -256,7 +264,7 @@ export class BenchRenderer {
     this.element.setAttribute('aria-hidden', 'true');
     this.element.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
     const repaint = (): void => {
-      this.liveCapture = false;
+      this.liveCapture = false; this.cityContent++;
       this.suspendLiveTiles(); clearTimeout(this.liveTimer); this.livePending = undefined; this.liveShown = undefined;
       if (!this.disposed && this.world) this.invalidate();
     };
@@ -275,7 +283,7 @@ export class BenchRenderer {
   }
   async set(world: World, settings: V2Settings, r: ResolvedAppearance, layers: Partial<ExportLayers> = {}, request = new RenderReadiness(r.target === 'export' ? 'capture' : '2d')): Promise<void> {
     // A live forest update in flight stays wanted: this set() skips the forest pass unless its key moved (forestPass).
-    this.request = request; this.programError = undefined; this.programWork = undefined; this.restoredFrameKey = '';
+    this.request = request; this.programError = undefined; this.programWork = undefined; this.restoredFrameKey = ''; this.cityContent++;
     // Worker-prepared terrain products (shore ring, distances, mips) before the passes that would build them on the page.
     retainTerrainDisplayPreparation(world);
     if (r.target !== 'export') setDisplayAppearanceQuality(r.quality);
@@ -843,7 +851,8 @@ export class BenchRenderer {
   private async cityPass(): Promise<void> {
     const v = this.scene!.revisions, key = JSON.stringify([v.cities, v.settlements, v.terrain]), shared = this.shared;
     if (shared.city?.key === key) { this.city = shared.city.map; return; }
-    const map = await createNativeCityMapAsync(this.world!, () => { this.cityRevision++; this.restoredFrameKey = ''; this.invalidate(); });
+    // `progress` (the live town layer of the current view is complete): same content, so the cached frames stay valid.
+    const map = await createNativeCityMapAsync(this.world!, kind => { if (kind === 'content') { this.cityRevision++; this.restoredFrameKey = ''; this.invalidate(); } else this.redraw(); });
     // Another pass prepared the same cities while the volumes were built: keep one map.
     if (this.ownsShared && shared.city?.key === key) { map.dispose(); this.city = shared.city.map; return; }
     if (this.ownsShared) { shared.city?.map.dispose(); shared.city = { key, map }; } else { this.exportCity?.dispose(); this.exportCity = map; }
@@ -871,7 +880,11 @@ export class BenchRenderer {
     const width = this.world!.mapSize;
     // A live miniature must not synchronously render the entire map, cancel
     // progressive tile filling or restore the camera through another full draw.
-    const canvas = this.miniature; canvas.width = canvas.height = size;
+    const canvas = this.miniature;
+    // While the view moves the miniature keeps its last drawing: it costs as much as a full frame, and the page asks
+    // for it again every 350 ms until it is complete, which a moving view (deferred repaints pending) never lets it be.
+    if (canvas.width === size && canvas.height === size && (!!this.livePending || performance.now() < this.movingUntil)) { this.miniComplete = false; return canvas; }
+    canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.fillStyle = this.paper; ctx.fillRect(0, 0, size, size);
     if (this.base) ctx.drawImage(this.base, 0, 0, size, size);
@@ -880,7 +893,10 @@ export class BenchRenderer {
     if (gpuGround) ctx.drawImage(gpuGround, 0, 0, size, size);
     const cached = this.cartography?.drawCachedMap(canvas, { minX: 0, minY: 0, maxX: width, maxY: width }) ?? false;
     const vectors = this.vectorBase;
-    this.miniComplete = (cached || !!this.base || !!gpuGround || !!vectors) && this.pendingWork() === 0;
+    // What only concerns the live view (the deferred repaints of a moving view, the town layer) is not in the miniature:
+    // waiting for it redrew the whole miniature every 350 ms for as long as a gesture lasted.
+    const viewOnly = Number(!!this.livePending) + Number(!!this.groundPending) + Number(!!(this.stats.city as { pending?: boolean } | undefined)?.pending);
+    this.miniComplete = (cached || !!this.base || !!gpuGround || !!vectors) && this.pendingWork() - viewOnly <= 0;
     if (vectors) ctx.drawImage(vectors.image, vectors.region.x * size / width, vectors.region.y * size / width,
       vectors.region.width * size / width, vectors.region.height * size / width);
     return canvas;
@@ -905,16 +921,7 @@ export class BenchRenderer {
     const frameKey = this.frameKey(view, w, h, dpr);
     if (this.restoredFrameKey === frameKey) { this.notePresented(); return; }
     this.restoredFrameKey = '';
-    const cached = this.retained.get<HTMLCanvasElement>('frame:' + frameKey);
-    if (cached && !this.programWork && !this.forestJob) {
-      this.surface.width = cached.width; this.surface.height = cached.height;
-      this.surface.style.cssText = `width:${w}px;height:${h}px`;
-      this.surface.getContext('2d')!.drawImage(cached, 0, 0);
-      this.liveGround?.remove(); this.liveGround = undefined; this.groundShown = undefined;
-      this.element.append(this.surface); this.liveShown = { view: { ...view }, w, h, dpr };
-      this.restoredFrameKey = frameKey; this.stats.frameCache = 'hit'; this.notePresented(); return;
-    }
-    this.stats.frameCache = cached ? 'pending' : 'miss';
+    if (this.restoreFrame(frameKey, view, w, h, dpr)) return;
     if (this.liveCapture) {
       const frame = this.liveShown;
       if (frame && frame.w === w && frame.h === h && frame.dpr === dpr && frame.view.cx === view.cx && frame.view.cy === view.cy && frame.view.scale === view.scale) return;
@@ -968,7 +975,7 @@ export class BenchRenderer {
     }
     if (shown && !gpuLive && (this.cartography || this.fantasy || this.liveCost > LIVE_DEFER_MS) && shown.w === w && shown.h === h && shown.dpr === dpr
       && (this.livePending || navigating || shown.view.cx !== view.cx || shown.view.cy !== view.cy || shown.view.scale !== view.scale)) {
-      this.suspendLiveTiles();
+      this.suspendLiveTiles(true);
       // Downsample the retained CPU overlay once per gesture; the ground owns its own resolution policy.
       if (getDisplayQuality() === 'light' && dpr > 1 && this.surface.width > Math.round(w)) {
         const reduced = document.createElement('canvas'); reduced.width = Math.round(w); reduced.height = Math.round(h);
@@ -984,10 +991,31 @@ export class BenchRenderer {
       this.livePending = { view: { ...view }, w, h, dpr };
       if (restart) {
         clearTimeout(this.liveTimer);
-        this.liveTimer = setTimeout(() => { const p = this.livePending; if (p && !this.disposed && this.world) this.paintLive(p.view, p.w, p.h, p.dpr); }, LIVE_SETTLE_MS);
+        this.liveTimer = setTimeout(() => { const p = this.livePending; if (p && !this.disposed && this.world) this.paintRest(p.view, p.w, p.h, p.dpr); }, LIVE_SETTLE_MS);
       }
       return;
     }
+    this.paintLive(view, w, h, dpr);
+  }
+  /** Shows the stored frame of this view, if there is one: nothing is painted. */
+  private restoreFrame(frameKey: string, view: View, w: number, h: number, dpr: number): boolean {
+    const cached = this.retained.get<HTMLCanvasElement>('frame:' + frameKey);
+    if (cached && !this.programWork && !this.forestJob) {
+      clearTimeout(this.liveTimer); this.livePending = undefined;
+      this.surface.width = cached.width; this.surface.height = cached.height;
+      this.surface.style.cssText = `width:${w}px;height:${h}px`;
+      this.surface.getContext('2d')!.drawImage(cached, 0, 0);
+      this.liveGround?.remove(); this.liveGround = undefined; this.groundShown = undefined;
+      this.element.append(this.surface); this.liveShown = { view: { ...view }, w, h, dpr };
+      this.restoredFrameKey = frameKey; this.stats.frameCache = 'hit'; this.notePresented(); return true;
+    }
+    this.stats.frameCache = cached ? 'pending' : 'miss';
+    return false;
+  }
+  /** The repaint of a view that has come to rest: its stored frame when it was shown before (a pan or zoom back),
+   * else a full repaint. */
+  private paintRest(view: View, w: number, h: number, dpr: number): void {
+    if (!this.liveCapture && this.restoreFrame(this.frameKey(view, w, h, dpr), view, w, h, dpr)) { clearTimeout(this.groundTimer); this.groundPending = undefined; this.redraw(); return; }
     this.paintLive(view, w, h, dpr);
   }
   private paintLive(view: View, w: number, h: number, dpr: number, store = true): void {
@@ -996,10 +1024,16 @@ export class BenchRenderer {
     LiveTileFill.track(this, () => this.drawInto(this.surface, view, w, h, dpr, true));
     noteLivePart('frame', t);
     // A decaying peak: one cheap repaint from warm caches must not make the next zoom step (a cold level) paint inline.
-    this.liveCost = Math.max(performance.now() - t, this.liveCost * .8); this.liveShown = { view: { ...view }, w, h, dpr };
+    // The town layer is repainted off the frame (nativeCityMap): its own cost still decides whether a moving view repaints.
+    this.liveCost = Math.max(performance.now() - t, (this.stats.city as { paintMs?: number } | undefined)?.paintMs ?? 0, this.liveCost * .8); this.liveShown = { view: { ...view }, w, h, dpr };
     this.surface.style.transform = '';
     this.notePresented();
-    if (store) this.storePresentedFrame(view, w, h, dpr);
+    // Painted while the view still counts as moving (a layer completed or a raster arrived just after the last move:
+    // the labels follow the map instead of being laid out): not this view's frame at rest. It is not stored, and the
+    // rest repaint, which this paint cancelled, stays due.
+    const moving = this.liveMoving || t < this.movingUntil;
+    if (moving && !this.liveMoving) this.liveTimer = setTimeout(() => { if (!this.disposed && this.world) this.paintLive(view, w, h, dpr); }, Math.max(1, this.movingUntil - performance.now() + 1));
+    if (store && !moving) this.storePresentedFrame(view, w, h, dpr);
   }
   private frameKey(view: View, w: number, h: number, dpr: number): string {
     return JSON.stringify([this.presentationKey, view, w, h, dpr, getLanguage(), getDistanceUnit(), getDisplayQuality(), getVectorEngine(), this.contourRevision, this.cityRevision]);
@@ -1045,8 +1079,10 @@ export class BenchRenderer {
       requestAnimationFrame(() => { if (this.request === request && this.pendingWork() === 0) request?.mark('visible-complete'); });
     }
   }
-  private suspendLiveTiles(): void {
-    this.cartography?.suspendLive();
+  /** `hold`: the view follows as a transformed bitmap, so the overlay records nothing new until it rests. */
+  private suspendLiveTiles(hold = false): void {
+    this.cartography?.suspendLive(hold);
+    if (this.ownsShared) this.city?.suspendLive();
     if (this.fantasy) suspendFantasyRaster(this.fantasy);
   }
   /** Resolves once the progressive updates (woods after a town build) are on screen. */
@@ -1122,7 +1158,7 @@ export class BenchRenderer {
       drawFantasyRaster(ctx, fantasy, viewRect(view, w, h), view.scale * dpr, undefined, false, true, live, live); ctx.restore();
     }
     if (live) t = noteLivePart('fantasy', t);
-    if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, { ...this.exportLayers, labels: false }, this.cityHooks);
+    if (this.exportLayers.city !== false||this.exportLayers.streets!==false) this.stats.city = this.city?.draw(ctx, view, w, h, dpr, r, { ...this.exportLayers, labels: false }, this.cityHooks, live ? { key: this.cityContent, moving: this.liveMoving } : undefined);
     if (live) t = noteLivePart('city', t);
     if (this.cartography) { ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.cartography.drawText(ctx, view, w, h, this.liveMoving || performance.now() < this.movingUntil); ctx.restore(); reportDrawnLabels(this.cartography.lastPlaced().map(p => p.label.id)); }
     if (live) noteLivePart('text', t);

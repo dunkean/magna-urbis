@@ -327,7 +327,7 @@ export class StudioClient {
     if(useBench){
       const {BenchRenderer}=await import('./benchRenderer');
       if(superseded())return;
-      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world){this.benchMiniRevision=-1;}if(this.benchActive&&this.world&&!this.view3dActive)this.viewer.contentChanged(this.world.mapSize,true);});
+      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world&&!this.bench?.redrawOnly){this.benchMiniRevision=-1;}if(this.benchActive&&this.world&&!this.view3dActive)this.viewer.contentChanged(this.world.mapSize,true);});
       this.bench.setSuspended(this.view3dActive);
       this.bench.resourceSource=w=>this.resources(w);
       // One bench set() at a time: two interleaved sets (style switch + language redraw) share the renderer's passes and

@@ -10,6 +10,9 @@ import type { ExportLayers } from '../render/exportLayers';
 import type { RenderReadiness } from '../render/renderReadiness';
 
 const LIVE_DEFER_MS = 40, LIVE_SETTLE_MS = 160, SLICE_MS = 8;
+/** A paint whose next animation frame comes later than this was too heavy for the graphics process to show in time,
+ * however short its Canvas calls were; after `SLOW_PAINTS` of them in a row a moving view follows as a bitmap. */
+const SLOW_PAINT_MS = 45, SLOW_PAINTS = 2;
 const polygon = (layer: string, shape: Shape): MinimalFeature => ({ layer, points: shape.outer, holes: shape.holes, closed: true });
 
 /** Adapts only retained products. No city renderer, roof builder, naming engine or display worker. */
@@ -81,6 +84,12 @@ export class MinimalRenderer {
   private painted?: Frame;
   private timer?: ReturnType<typeof setTimeout>;
   private lastMove = 0;
+  /** Recent paints shown late (0 to SLOW_PAINTS), and whether a moving view therefore follows as a transformed bitmap. */
+  private slowPaints = 0;
+  private slowLive = false;
+  /** Scale at which the view started to follow as a bitmap: it paints live again a factor of two away (a far view
+   * shows fewer, simpler features) or on new content. */
+  private slowScale = 0;
   private readiness?: RenderReadiness;
   readonly stats = { renderer: 'minimal', frameMs: 0, geometryBuildMs: 0, features: 0 };
   constructor(private invalidate: () => void) {
@@ -143,7 +152,8 @@ export class MinimalRenderer {
     this.requested = frame;
     if (!this.dirty && this.painted && same(frame, this.painted)) return;
     clearTimeout(this.timer); this.timer = undefined;
-    if (!this.dirty && moving && this.painted && this.painted.w === w && this.painted.h === h && this.stats.frameMs > 1000 / 60) {
+    if (this.slowLive && (this.dirty || view.scale > this.slowScale * 2 || view.scale < this.slowScale / 2)) { this.slowLive = false; this.slowPaints = 0; }
+    if (!this.dirty && moving && this.painted && this.painted.w === w && this.painted.h === h && (this.slowLive || this.stats.frameMs > 1000 / 60)) {
       const old = this.painted.view, ratio = view.scale / old.scale;
       const x = w / 2 + (old.cx - view.cx) * view.scale - w / 2 * ratio;
       const y = h / 2 + (old.cy - view.cy) * view.scale - h / 2 * ratio;
@@ -164,6 +174,15 @@ export class MinimalRenderer {
     this.stats.frameMs = paintMinimalMap(this.canvas.getContext('2d')!, this.geometry, { view, width: w, height: h, dpr,
       recipe: this.resolved.composition.recipe, places: this.places, textLayout: this.textLayout, layoutText, relief: this.relief, contours: this.contours, layers: this.layers });
     this.painted = frame; this.dirty = false;
+    // The Canvas calls return before the graphics process has drawn them: on a large map each takes several display
+    // frames to show although `frameMs` stays short. The delay of the next animation frame tells.
+    if (typeof requestAnimationFrame === 'function') {
+      const started = performance.now();
+      requestAnimationFrame(() => {
+        this.slowPaints = performance.now() - started > SLOW_PAINT_MS ? this.slowPaints + 1 : 0;
+        if (this.slowPaints >= SLOW_PAINTS && !this.slowLive) { this.slowLive = true; this.slowScale = frame.view.scale; }
+      });
+    }
     this.readiness?.mark('first-useful-frame'); this.readiness?.mark('first-covered-frame'); this.readiness?.mark('visible-complete');
   }
   drawMini(size: number): HTMLCanvasElement { return this.captureCanvas(size); }

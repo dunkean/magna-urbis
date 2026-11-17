@@ -2,6 +2,8 @@
  * Pan/zoom viewer.
  * Drag + touch pan, wheel zoom toward cursor, pinch, double-click zoom, keyboard (+ - 0 arrows),
  * fit-to-map, devicePixelRatio aware, work only when dirty (requestAnimationFrame).
+ * Wheel notches, double-clicks and the zoom keys set a target view that the camera eases to over a few frames
+ * (the end view is the one a direct jump gives); touchpad and pinch deltas are followed directly.
  *
  * Two drawing modes:
  *  - sync (fallback): a CanvasRenderer on this thread draws every dirty frame (`setRenderer`).
@@ -61,6 +63,9 @@ export interface Viewer {
 }
 
 const sameView = (a: View, b: View): boolean => a.cx === b.cx && a.cy === b.cy && a.scale === b.scale;
+/** Time constant of the eased zoom (the camera covers 63 % of what is left in this time), and the wheel delta, in
+ * pixels, from which a wheel event is a notch to ease rather than a touchpad or pinch step to follow. */
+const ZOOM_EASE_MS = 45, WHEEL_NOTCH_PX = 40;
 
 export function createViewer(o: ViewerOptions): Viewer {
   const { container, canvas, minimap } = o;
@@ -72,6 +77,8 @@ export function createViewer(o: ViewerOptions): Viewer {
   let view: View = { cx: 500, cy: 500, scale: 0.5 };
   let w = 1, h = 1, dpr = 1;
   let dirty = false, raf = 0, destroyed = false, paused = false;
+  /** Eased zoom: the view the camera is moving to, and the time of its last step. */
+  let zoomTarget: View | null = null, zoomStamp = 0;
   // async mode state
   let bmCtx: ImageBitmapRenderingContext | null = null;
   let shown: { view: View; w: number; h: number } | null = null;
@@ -138,11 +145,28 @@ export function createViewer(o: ViewerOptions): Viewer {
     source.request({ seq: inflight, view: req.view, w, h, dpr, mini: minimap ? minimap.width : 0 });
   }
 
-  function frame(): void {
+  /** One step of the eased zoom: the scale covers a share of what is left (geometric), around the screen point that the
+   * current view and the target have in common (the cursor of a wheel zoom), which therefore stays put. */
+  function stepZoom(now: number): void {
+    const target = zoomTarget!, dt = Math.max(0, Math.min(64, now - zoomStamp)); zoomStamp = now;
+    const ratio = target.scale / view.scale;
+    // Within 0.4 % of the scale and a pixel of the place: the camera takes the target itself.
+    if (Math.abs(Math.log(ratio)) < 0.004 && Math.abs(target.cx - view.cx) * target.scale < 1 && Math.abs(target.cy - view.cy) * target.scale < 1) {
+      view = target; zoomTarget = null; return;
+    }
+    const share = 1 - Math.exp(-dt / ZOOM_EASE_MS), scale = view.scale * Math.pow(ratio, share), spread = 1 / view.scale - 1 / target.scale;
+    if (Math.abs(ratio - 1) > 1e-6) {
+      const qx = (target.cx - view.cx) / spread, qy = (target.cy - view.cy) / spread;
+      view = { cx: view.cx + qx / view.scale - qx / scale, cy: view.cy + qy / view.scale - qy / scale, scale };
+    } else view = { cx: view.cx + (target.cx - view.cx) * share, cy: view.cy + (target.cy - view.cy) * share, scale: target.scale };
+    invalidate();
+  }
+  function frame(stamp?: number): void {
     raf = 0;
     if (paused) return;
     if (!dirty) return;
     dirty = false;
+    if (zoomTarget) stepZoom(typeof stamp === 'number' ? Math.max(stamp, zoomStamp) : performance.now());
     view = clampView(view, mapSize, w, h);
     o.onView?.(view, w, h);
     if (direct) {
@@ -168,9 +192,15 @@ export function createViewer(o: ViewerOptions): Viewer {
       o.onFrame?.(st.ms, st.band, view.scale);
     } catch (error) { o.onError?.(error instanceof Error ? error : new Error(String(error))); }
   }
-  const set = (v: View): void => { view = clampView(v, mapSize, w, h); invalidate(); };
+  const set = (v: View): void => { zoomTarget = null; view = clampView(v, mapSize, w, h); invalidate(); };
   const fit = (): void => set(fitView(mapSize, w, h));
   const zoomBy = (f: number, sx = w / 2, sy = h / 2): void => set(zoomAt(view, f, sx, sy, w, h));
+  /** Zoom by `f` around a screen point, eased: successive calls move the target, as direct jumps would move the view. */
+  const easeZoomBy = (f: number, sx = w / 2, sy = h / 2): void => {
+    if (!zoomTarget) zoomStamp = performance.now();
+    zoomTarget = clampView(zoomAt(zoomTarget ?? view, f, sx, sy, w, h), mapSize, w, h);
+    invalidate();
+  };
 
   size();
   const ro = new ResizeObserver(() => { size(); invalidate(); });
@@ -211,7 +241,10 @@ export function createViewer(o: ViewerOptions): Viewer {
       set(v);
     } else {
       pts.set(e.pointerId, cur);
+      // A drag during an eased zoom moves its target too: the zoom ends where the drag left the map.
+      const target = zoomTarget && clampView(panBy(zoomTarget, cur.x - prev.x, cur.y - prev.y), mapSize, w, h);
       set(panBy(view, cur.x - prev.x, cur.y - prev.y));
+      zoomTarget = target;
     }
   });
   const up = (e: PointerEvent): void => {
@@ -225,18 +258,21 @@ export function createViewer(o: ViewerOptions): Viewer {
     e.preventDefault();
     const p = local(e);
     const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-    zoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
+    // A wheel notch is a large step (16 % and more): eased. Touchpads and pinch gestures (ctrl+wheel) send many small
+    // steps that are already continuous: followed directly, unless a notch is still being eased.
+    if (zoomTarget || Math.abs(dy) >= WHEEL_NOTCH_PX && !e.ctrlKey) easeZoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
+    else zoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
   }, { passive: false });
   canvas.addEventListener('dblclick', (e) => {
     const p = local(e);
-    zoomBy(e.shiftKey ? 0.5 : 2, p.x, p.y);
+    easeZoomBy(e.shiftKey ? 0.5 : 2, p.x, p.y);
   });
   const key = (e: KeyboardEvent): void => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
     switch (e.key) {
-      case '+': case '=': zoomBy(1.4); break;
-      case '-': case '_': zoomBy(1 / 1.4); break;
+      case '+': case '=': easeZoomBy(1.4); break;
+      case '-': case '_': easeZoomBy(1 / 1.4); break;
       case '0': fit(); break;
       case 'ArrowLeft': set(panBy(view, 80, 0)); break;
       case 'ArrowRight': set(panBy(view, -80, 0)); break;
@@ -263,7 +299,7 @@ export function createViewer(o: ViewerOptions): Viewer {
       renderer?.dispose();
       const sizeChanged = size2 !== mapSize;
       renderer = r; mapSize = size2;
-      if (!keepView || sizeChanged) view = fitView(mapSize, w, h);
+      if (!keepView || sizeChanged) { zoomTarget = null; view = fitView(mapSize, w, h); }
       invalidate();
     },
     setSource(src) { detachDirect(); source = src; resetRequests(); invalidate(); },
@@ -308,7 +344,7 @@ export function createViewer(o: ViewerOptions): Viewer {
       const sizeChanged = size2 !== mapSize;
       mapSize = size2;
       if (markerColor) marker = markerColor;
-      if (!keepView || sizeChanged) view = fitView(mapSize, w, h);
+      if (!keepView || sizeChanged) { zoomTarget = null; view = fitView(mapSize, w, h); }
       force = true;
       invalidate();
     },

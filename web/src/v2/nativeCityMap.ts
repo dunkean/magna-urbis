@@ -8,7 +8,7 @@ import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
-import { buildCityBuildings, buildCityScene, cityGroundSubjects, drawCity, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
+import { buildCityBuildings, buildCityScene, cityGroundSubjects, drawCity, drawCitySteps, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
 import { CityGlComposite, cityGlDrawOptions, mergeCityBuildings, mergeCityPlans } from '../render/cityGlView';
 import type { CityGlFrame } from '../render/cityGl';
@@ -40,6 +40,8 @@ export interface NativeCityMapStats {
   drawCalls?: number;
   pending: boolean;
   ms: number;
+  /** Live view: Canvas work of the last complete repaint of the town layer (0 before the first one). */
+  paintMs?: number;
   materialFaces: number;
   frames: CityFrameStats[];
   houses: BuildingRenderMetrics[];
@@ -52,8 +54,21 @@ export interface NativeCityHooks {
   /** Canvas 2D town: puts the map's water back over the town ground and streets, before quays and bridges. */
   waterAbove?(ctx: CanvasRenderingContext2D, box: Box, over?: () => void): void;
 }
+/** Live view: the town layer of a view is kept between frames, and a new view repaints it over several short tasks
+ * while the previous layer follows the view. Captures and exports omit this and paint at once. */
+export interface NativeCityLive {
+  /** Changes whenever what the hooks and the shared render state paint may have changed (a new appearance or world). */
+  key: number | string;
+  /** The view is moving: no long repaint is started, the last painted layer follows the view. */
+  moving: boolean;
+}
+/** `content`: what the towns show changed (textures arrived, a mesh was uploaded); `progress`: the live layer of the
+ * current view is complete, the same frame can now be composed exactly. */
+export type NativeCityInvalidation = 'content' | 'progress';
 export interface NativeCityMap {
-  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks): NativeCityMapStats;
+  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks, live?: NativeCityLive): NativeCityMapStats;
+  /** Stops the live repaint in progress, if any (the view moves again, or the renderer is busy elsewhere). */
+  suspendLive(): void;
   /** The city plans (activity sites included), for the semantic district layer. */
   scenes(): readonly CityScene[];
   /** Uploads the WebGL2 plan a frame with this appearance would use, if any (exports draw synchronously). */
@@ -159,7 +174,7 @@ function cityPlans(world: World): CityScene[] {
   return cities.map(city => buildCityScene(city.layouts, city.partitions ?? [], raster));
 }
 /** `createNativeCityMap` with the city volumes of the unedited native towns built over workers (same result). */
-export async function createNativeCityMapAsync(world: World, onInvalidate: () => void): Promise<NativeCityMap> {
+export async function createNativeCityMapAsync(world: World, onInvalidate: (kind: NativeCityInvalidation) => void): Promise<NativeCityMap> {
   const cities = nativeCitiesOf(world);
   // The water clip of every town's lots and blocks runs on the warm build workers first; the plans then read it.
   if (cities.length)
@@ -170,7 +185,13 @@ export async function createNativeCityMapAsync(world: World, onInvalidate: () =>
   releaseCityBuildingWorkers();
   return createNativeCityMap(world, onInvalidate, { plans, buildings });
 }
-export function createNativeCityMap(world: World, onInvalidate: () => void, prepared?: PreparedCities): NativeCityMap {
+/** Live town layer: Canvas work run in the frame that asks for a new view before the repaint continues in the
+ * background, share of a frame a moving view may spend on it, and Canvas work of one background step (first, least
+ * and most: the step follows what the graphics process keeps up with). */
+const LIVE_INLINE_MS = 8, LIVE_MOVING_MS = 6, LIVE_SLICE_MS = 5, LIVE_SLICE_MIN_MS = 2.5, LIVE_SLICE_MAX_MS = 14;
+const objectIds = new WeakMap<object, number>(); let objectSeq = 0;
+const idOf = (value: object | undefined): number => { if (!value) return 0; let id = objectIds.get(value); if (!id) objectIds.set(value, id = ++objectSeq); return id; };
+export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCityInvalidation) => void, prepared?: PreparedCities): NativeCityMap {
   let disposed = false, queued = false, layer: LayerCanvas | undefined, context: CanvasRenderingContext2D | undefined;
   let lod: CityLod | undefined;
   const cities = nativeCitiesOf(world), plans = prepared?.plans ?? cityPlans(world);
@@ -195,10 +216,13 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
   // Bounded, display-only geometry. Retained native meshes and plan objects are
   // read, never copied into generated geometry or mutated.
   const textures = new Map<PlacedBuilding, MaterialGeometry>();
+  /** Bumped whenever the towns may paint differently for the same frame: a kept live layer is then stale. */
+  let contentRevision = 0;
   const invalidate = (): void => {
+    contentRevision++;
     if (disposed || queued) return;
     queued = true;
-    queueMicrotask(() => { queued = false; if (!disposed) onInvalidate(); });
+    queueMicrotask(() => { queued = false; if (!disposed) onInvalidate('content'); });
   };
   // WebGL2: every city in one GL scene (one context, one upload), built on the first GL frame.
   // Native house plans stay on Canvas 2D over it, as in City Bench.
@@ -246,85 +270,240 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
     } finally { ctx.restore(); }
     return painted;
   }
+  type TownFrame = { view: View; w: number; h: number; dpr: number; appearance: ResolvedAppearance; visibility: Partial<ExportLayers>; hooks?: NativeCityHooks; lod: CityLod };
+  const townLayers = (appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): CityLayers => {
+    // Urban plan off is already folded into city.layers (withoutUrbanPlan): streets, walls and lamps stay.
+    const requestedLayers = appearance.city.layers;
+    return { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
+      streets: appearance.composition.networks.roads.visible && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
+  };
+  const newStats = (): NativeCityMapStats => ({ native: entries.length > 0, cities: entries.length, layouts, buildings,
+    visibleBuildings: 0, renderer: 'canvas2d', pending: false, ms: 0, materialFaces: 0, frames: [], houses: [] });
+  /** Paints every town of a frame into `ctx` (the frame's device pixels), in resumable steps: the same Canvas calls in
+   * the same order whether they run at once (captures, exports, opaque towns: `drawCity`) or, `resumable`, over
+   * several tasks (the live layer: `drawCitySteps`, the same function with pauses). */
+  function* paintSteps(ctx: CanvasRenderingContext2D, f: TownFrame, stats: NativeCityMapStats, resumable = false): Generator<void, void> {
+    const { view, w, h, dpr, appearance, visibility, hooks, lod } = f, city = appearance.city;
+    const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
+    const palette = city.palette, buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
+    const layers = townLayers(appearance, visibility);
+    const painted = city.painted, textured = city.textured;
+    const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
+    const buildingsVisible = visibility.city !== false && city.visible;
+    let reason = glBlockReason(appearance, visibility);
+    let glFrame: CityGlFrame | undefined;
+    ctx.save();
+    try {
+      ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
+      // Activity / node installations: flat ground under every building.
+      if (buildingsVisible) drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
+      if (!reason) {
+        if (!prepareGl()) reason = gl?.unavailable !== false ? 'gl-unavailable' : 'gl-not-ready';
+        else {
+          glFrame = gl!.draw(ctx, Math.round(w * dpr), Math.round(h * dpr), cityGlDrawOptions({ viewport, mpp, lod, view: city.view, palette, layers,
+            buildingStyle: buildingAppearance.style, painted, buildingsVisible, diagnostic: buildingAppearance.diagnostic,
+            refusedParcels: buildingAppearance.diagnostic === 'access' ? new Set(entries.flatMap(entry => [...entry.refused])) : undefined, textured, colors: appearance.palette.colors, water: hooks?.water?.() }));
+          if (!glFrame) reason = 'gl-unavailable';
+        }
+      }
+      stats.renderer = glFrame ? 'webgl2' : 'canvas2d'; stats.reason = reason; stats.drawCalls = glFrame?.drawCalls ?? 0;
+      for (const entry of entries) {
+        const options = cityDrawOptions({ appearance, city, frame: { viewport, mpp, dpr }, lod, layers, glFrame,
+          labelsAllowed: visibility.labels !== false, buildingAppearance,
+          page: { buildings: entry.buildings, farBuildings: entry.large?.base, buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses), onTexturesReady: invalidate,
+          refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
+          beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? (hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp })) : undefined,
+          waterAbove: hooks?.waterAbove ? ((hookCtx, box, over) => hooks.waterAbove!(hookCtx, box, over)) : undefined,
+          renderer: entry.houses && { draw(houseCtx, options) {
+            const metrics = entry.houses!.draw(houseCtx, { ...options, painted });
+            stats.houses.push(metrics); stats.visibleBuildings += metrics.visibleBuildings;
+            if (images) stats.materialFaces += textureRoofs(houseCtx, entry, viewport, mpp, buildingAppearance, images);
+            return metrics;
+          } } } });
+        const frame = resumable ? yield* drawCitySteps(ctx, entry.plan, options) : drawCity(ctx, entry.plan, options);
+        finishCityFrame(ctx, entry.plan, entry.canopyBuildings, { viewport, mpp, view: city.view, palette,
+          visible: buildingsVisible, diagnostic: buildingAppearance.diagnostic, night: !!buildingAppearance.lightsOn, streets: layers.streets });
+        stats.frames.push(frame); stats.pending ||= frame.pending;
+        if (!entry.houses || city.view !== 'buildings' || buildingAppearance.style === 'silhouette') stats.visibleBuildings += frame.buildings;
+        // City volumes drawn by WebGL2: counted from the plan bins (drawCity painted none of them).
+        if (glFrame && !entry.houses && buildingsVisible) stats.visibleBuildings += entry.buildings.bins.query(viewport).length;
+        yield;
+      }
+    } finally { ctx.restore(); }
+  }
+
+  // Live town layer. The isolated layer of the last painted view is kept: a frame of the same view composes it again
+  // (a redraw for a ground, water or label update costs the town nothing), and a new view repaints a second layer in
+  // short tasks while the kept one follows the view, scaled. The final frame composes the same layer pixels as a
+  // repaint at once: only the moment they are produced changes.
+  interface TownLayer { canvas: LayerCanvas; ctx: CanvasRenderingContext2D; key: string; look: string; view: View; dpr: number; stats: NativeCityMapStats }
+  type LiveJob = { layer: TownLayer; steps: Generator<void, void>; ms: number };
+  let shownLayer: TownLayer | undefined, spareLayer: TownLayer | undefined, liveJob: LiveJob | undefined;
+  let liveScheduled = false, liveBroken = false, lastPaintMs = 0, tierRevision = 0;
+  // One step per animation frame. The graphics process spends two to three times a step's Canvas time rasterizing
+  // it, and what is queued cannot be withdrawn: steps run back to back left it most of a second behind, and the first
+  // frames of the next gesture waited for that. A frame that comes on time means it kept up (the next step may be
+  // longer); a late one, that it is behind (shorter).
+  let sliceBudget = LIVE_SLICE_MS, sliceAt = 0, frameFloor = Infinity;
+  const framePaced = typeof requestAnimationFrame === 'function';
+  const freeLayer = (held: TownLayer | undefined): void => { if (held) held.canvas.width = held.canvas.height = 1; };
+  const recycleLayer = (held: TownLayer): void => { if (!spareLayer) spareLayer = held; else freeLayer(held); };
+  function stopLive(): void {
+    const job = liveJob; if (!job) return;
+    liveJob = undefined;
+    try { job.steps.return(); } catch { /* The layer is discarded either way. */ }
+    recycleLayer(job.layer);
+  }
+  // Chrome records the Canvas calls and rasterizes them when the canvas is read. A layer painted over a second would be
+  // rasterized in one go by the frame that composes it, and the display would stop for that long although the page
+  // stays free. Reading the layer into a scratch pixel after every step sends that step's calls to the graphics
+  // process, which then has a few milliseconds of work at a time, between its own frames.
+  const flushSurface = canvas(1, 1), flushContext = flushSurface?.getContext('2d') as CanvasRenderingContext2D | undefined;
+  function flushLayer(held: TownLayer): void {
+    if (!flushSurface || !flushContext) return;
+    try { flushContext.drawImage(held.canvas, 0, 0, 1, 1); flushSurface.width = 1; } catch { /* Only a hint. */ }
+  }
+  /** Runs the job for about `budget` ms of Canvas work; true once the layer is complete. */
+  function runLive(job: LiveJob, budget: number): boolean {
+    if (!(budget > 0)) return false;
+    const t = performance.now(); let done = false;
+    try { do { done = !!job.steps.next().done; } while (!done && performance.now() - t < budget); }
+    finally { job.ms += performance.now() - t; }
+    if (budget !== Infinity) flushLayer(job.layer);
+    return done;
+  }
+  function showLive(job: LiveJob): TownLayer {
+    const previous = shownLayer; shownLayer = job.layer; lastPaintMs = job.ms;
+    if (previous) recycleLayer(previous);
+    // Content still arriving (house tiles, textures): the layer is repainted, as a frame painted at once would be.
+    if (job.layer.stats.pending) invalidate();
+    return job.layer;
+  }
+  function liveSlice(): void {
+    liveScheduled = false;
+    const job = liveJob; if (!job || disposed) return;
+    const now = performance.now(), gap = now - sliceAt; sliceAt = now;
+    if (gap < 250) {
+      frameFloor = Math.min(frameFloor * 1.01, gap);
+      sliceBudget = gap > frameFloor * 1.4 + 2 ? Math.max(LIVE_SLICE_MIN_MS, sliceBudget * .6) : Math.min(LIVE_SLICE_MAX_MS, sliceBudget * 1.25);
+    } else sliceBudget = LIVE_SLICE_MS;
+    let done = false;
+    // A failed step: the next frame paints at once and reports the error as before.
+    try { done = runLive(job, sliceBudget); }
+    catch { liveBroken = true; stopLive(); onInvalidate('progress'); return; }
+    if (!done) { scheduleLive(); return; }
+    liveJob = undefined; showLive(job); onInvalidate('progress');
+  }
+  function scheduleLive(): void {
+    if (liveScheduled) return;
+    liveScheduled = true;
+    if (framePaced) requestAnimationFrame(liveSlice); else setTimeout(liveSlice, 0);
+  }
+  /** The town layer to compose for a live frame: `exact` when it is this frame's, else the last painted layer (another
+   * view, drawn scaled) while this frame's is painted. Undefined: no layer can be kept, the frame paints at once. */
+  function liveTown(f: TownFrame, live: NativeCityLive, pixelsW: number, pixelsH: number): { layer?: TownLayer; exact: boolean } | undefined {
+    if (liveBroken) return undefined;
+    const look = `${live.key}|${idOf(f.appearance)}|${idOf(f.hooks?.water?.())}|${JSON.stringify(f.visibility)}|${getRenderMode()}`;
+    const key = `${contentRevision}|${tierRevision}|${look}|${f.view.cx}|${f.view.cy}|${f.view.scale}|${f.w}|${f.h}|${f.dpr}|${f.lod}`;
+    if (shownLayer?.key === key) { stopLive(); return { layer: shownLayer, exact: true }; }
+    // The same towns in the same look stand in while this frame is painted: seen from another view, or from this one
+    // before a texture or a mesh arrived.
+    const standIn = shownLayer?.look === look ? shownLayer : undefined;
+    if (liveJob && liveJob.layer.key !== key) stopLive();
+    if (liveJob) return { layer: standIn, exact: false };
+    if (live.moving && standIn && lastPaintMs > LIVE_MOVING_MS) return { layer: standIn, exact: false };
+    let layer = spareLayer; spareLayer = undefined;
+    if (!layer) {
+      const surface = canvas(pixelsW, pixelsH), ctx = surface?.getContext('2d') as CanvasRenderingContext2D | undefined;
+      if (!surface || !ctx) return undefined;
+      layer = { canvas: surface, ctx, key: '', look: '', view: f.view, dpr: f.dpr, stats: newStats() };
+    }
+    if (layer.canvas.width !== pixelsW) layer.canvas.width = pixelsW;
+    if (layer.canvas.height !== pixelsH) layer.canvas.height = pixelsH;
+    // A stopped repaint may have left drawing state behind: start from a clean context.
+    (layer.ctx as { reset?: () => void }).reset?.();
+    layer.ctx.setTransform(1, 0, 0, 1, 0, 0); layer.ctx.clearRect(0, 0, pixelsW, pixelsH);
+    Object.assign(layer, { key, look, view: { ...f.view }, dpr: f.dpr, stats: { ...newStats(), lod: f.lod } });
+    const job: LiveJob = { layer, steps: paintSteps(layer.ctx, f, layer.stats, true), ms: 0 };
+    // Nothing to show meanwhile (first frame, new appearance): paint at once, as before. Otherwise a short share of
+    // this frame when the last repaint was short (small towns and far views complete in place); a long one starts
+    // after the frame, so the frame a view rests on never waits for the town.
+    let done = false;
+    try { done = runLive(job, !standIn ? Infinity : live.moving ? LIVE_MOVING_MS : lastPaintMs > LIVE_INLINE_MS ? 0 : LIVE_INLINE_MS); }
+    catch (error) { recycleLayer(layer); throw error; }
+    if (done) return { layer: showLive(job), exact: true };
+    if (live.moving) {
+      // Too long for a moving frame: the kept layer follows the view until it rests.
+      try { job.steps.return(); } catch { /* Discarded. */ }
+      recycleLayer(layer); lastPaintMs = Math.max(lastPaintMs, 4 * LIVE_MOVING_MS);
+      return { layer: standIn, exact: false };
+    }
+    liveJob = job; scheduleLive();
+    return { layer: standIn, exact: false };
+  }
   return {
     scenes: () => textScenes,
-    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks) {
+    suspendLive: stopLive,
+    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks, live) {
       const started = performance.now();
-      const stats: NativeCityMapStats = { native: entries.length > 0, cities: entries.length, layouts, buildings,
-        visibleBuildings: 0, renderer: 'canvas2d', pending: false, ms: 0, materialFaces: 0, frames: [], houses: [] };
+      const stats = newStats();
       if (disposed || !entries.length || !(view.scale > 0) || !(w > 0) || !(h > 0) || !(dpr > 0)) return stats;
       const city = appearance.city, opacity = finite(city.opacity, .8, 0, 1);
       if (!opacity) return stats;
       const pixelsW = Math.max(1, Math.ceil(w * dpr)), pixelsH = Math.max(1, Math.ceil(h * dpr));
-      if (opacity < 1) {
-        layer ??= canvas(pixelsW, pixelsH);
-        context ??= layer?.getContext('2d') as CanvasRenderingContext2D | undefined;
-      }
-      // Node/non-DOM hosts can still exercise the exact drawing API. Browsers
-      // always use the isolated layer so nested painter alpha cannot defeat opacity.
-      const isolated = opacity < 1 && !!layer && !!context, ctx = isolated ? context! : target;
-      if (isolated) {
-        if (layer!.width !== pixelsW) layer!.width = pixelsW;
-        if (layer!.height !== pixelsH) layer!.height = pixelsH;
-        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pixelsW, pixelsH);
-      }
       const viewport = viewRect(view, w, h), mpp = 1 / view.scale;
       lod = selectCityLod(mpp, lod); stats.lod = lod;
       // Very large towns: the buildings of this view (base or visible detail); the GL scene follows once uploaded.
       let swapped = false;
       for (const entry of entries) if (entry.large) { const shown = largeTownBuildings(entry, viewport, mpp); if (shown !== entry.buildings) { entry.buildings = shown; swapped = true; } }
+      if (swapped) tierRevision++;
       if (swapped && glScene) gl?.setBuildings(mergeCityBuildings(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings }))));
-      const palette = city.palette, buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
-      // Urban plan off is already folded into city.layers (withoutUrbanPlan): streets, walls and lamps stay.
-      const requestedLayers = city.layers;
-      const layers = { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers),
-        streets: appearance.composition.networks.roads.visible && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
-      const painted = city.painted, textured = city.textured;
-      const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
-      const buildingsVisible = visibility.city !== false && city.visible;
-      let reason = glBlockReason(appearance, visibility);
-      let glFrame: CityGlFrame | undefined;
-      ctx.save();
-      try {
-        ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
-        // Activity / node installations: flat ground under every building.
-        if (buildingsVisible) drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
-        if (!reason) {
-          if (!prepareGl()) reason = gl?.unavailable !== false ? 'gl-unavailable' : 'gl-not-ready';
-          else {
-            glFrame = gl!.draw(ctx, Math.round(w * dpr), Math.round(h * dpr), cityGlDrawOptions({ viewport, mpp, lod, view: city.view, palette, layers,
-              buildingStyle: buildingAppearance.style, painted, buildingsVisible, diagnostic: buildingAppearance.diagnostic,
-              refusedParcels: buildingAppearance.diagnostic === 'access' ? new Set(entries.flatMap(entry => [...entry.refused])) : undefined, textured, colors: appearance.palette.colors, water: hooks?.water?.() }));
-            if (!glFrame) reason = 'gl-unavailable';
-          }
+      const frame: TownFrame = { view, w, h, dpr, appearance, visibility, hooks, lod };
+      // Live view with a translucent town: the kept layer (see liveTown).
+      const kept = opacity < 1 && live ? liveTown(frame, live, pixelsW, pixelsH) : undefined;
+      let isolated = !!kept;
+      if (kept) {
+        const held = kept.layer;
+        if (held) {
+          const from = held.stats;
+          Object.assign(stats, { visibleBuildings: from.visibleBuildings, renderer: from.renderer, reason: from.reason, drawCalls: from.drawCalls, materialFaces: from.materialFaces, frames: from.frames, houses: from.houses });
+          target.save();
+          try {
+            target.setTransform(1, 0, 0, 1, 0, 0); target.globalAlpha *= opacity;
+            if (kept.exact) target.drawImage(held.canvas, 0, 0);
+            else {
+              // The layer of another view, placed where its ground now is.
+              const k = view.scale * dpr / (held.view.scale * held.dpr), wide = held.canvas.width * k, high = held.canvas.height * k;
+              target.drawImage(held.canvas, pixelsW / 2 + (held.view.cx - view.cx) * view.scale * dpr - wide / 2, pixelsH / 2 + (held.view.cy - view.cy) * view.scale * dpr - high / 2, wide, high);
+            }
+          } finally { target.restore(); }
         }
-        stats.renderer = glFrame ? 'webgl2' : 'canvas2d'; stats.reason = reason; stats.drawCalls = glFrame?.drawCalls ?? 0;
-        for (const entry of entries) {
-          const frame = drawCity(ctx, entry.plan, cityDrawOptions({ appearance, city, frame: { viewport, mpp, dpr }, lod, layers, glFrame,
-            labelsAllowed: visibility.labels !== false, buildingAppearance,
-            page: { buildings: entry.buildings, farBuildings: entry.large?.base, buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses), onTexturesReady: invalidate,
-            refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
-            beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? (hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp })) : undefined,
-            waterAbove: hooks?.waterAbove ? ((hookCtx, box, over) => hooks.waterAbove!(hookCtx, box, over)) : undefined,
-            renderer: entry.houses && { draw(houseCtx, options) {
-              const metrics = entry.houses!.draw(houseCtx, { ...options, painted });
-              stats.houses.push(metrics); stats.visibleBuildings += metrics.visibleBuildings;
-              if (images) stats.materialFaces += textureRoofs(houseCtx, entry, viewport, mpp, buildingAppearance, images);
-              return metrics;
-            } } } }));
-          finishCityFrame(ctx, entry.plan, entry.canopyBuildings, { viewport, mpp, view: city.view, palette,
-            visible: buildingsVisible, diagnostic: buildingAppearance.diagnostic, night: !!buildingAppearance.lightsOn, streets: layers.streets });
-          stats.frames.push(frame); stats.pending ||= frame.pending;
-          if (!entry.houses || city.view !== 'buildings' || buildingAppearance.style === 'silhouette') stats.visibleBuildings += frame.buildings;
-          // City volumes drawn by WebGL2: counted from the plan bins (drawCity painted none of them).
-          if (glFrame && !entry.houses && buildingsVisible) stats.visibleBuildings += entry.buildings.bins.query(viewport).length;
+        stats.pending = !kept.exact || !!held?.stats.pending;
+      } else {
+        if (opacity < 1) {
+          layer ??= canvas(pixelsW, pixelsH);
+          context ??= layer?.getContext('2d') as CanvasRenderingContext2D | undefined;
         }
-      } finally { ctx.restore(); }
+        // Node/non-DOM hosts can still exercise the exact drawing API. Browsers
+        // always use the isolated layer so nested painter alpha cannot defeat opacity.
+        isolated = opacity < 1 && !!layer && !!context;
+        const ctx = isolated ? context! : target;
+        if (isolated) {
+          if (layer!.width !== pixelsW) layer!.width = pixelsW;
+          if (layer!.height !== pixelsH) layer!.height = pixelsH;
+          ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pixelsW, pixelsH);
+        }
+        const steps = paintSteps(ctx, frame, stats);
+        while (!steps.next().done);
+        if (isolated) {
+          target.save();
+          try { target.setTransform(1, 0, 0, 1, 0, 0); target.globalAlpha *= opacity; target.drawImage(layer!, 0, 0); }
+          finally { target.restore(); }
+        }
+      }
       if (isolated) {
-        target.save();
-        try { target.setTransform(1, 0, 0, 1, 0, 0); target.globalAlpha *= opacity; target.drawImage(layer!, 0, 0); }
-        finally { target.restore(); }
         // Canal water is water, not plan ink: at full strength, as the rivers under the plan (townWater.ts).
+        const layers = townLayers(appearance, visibility);
         if (layers.waterways !== false && (layers.streets || layers.waterways)) {
           target.save();
           try {
@@ -333,9 +512,10 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
           } finally { target.restore(); }
         }
       }
-      if (stats.pending) invalidate();
-      stats.ms = performance.now() - started;
-      reportRenderStats({ path: glFrame ? 'gpu' : 'cpu', ms: stats.ms, drawCalls: stats.drawCalls ?? 0, reason: glFrame ? undefined : reason ?? undefined });
+      // A kept layer reports its own pending content when its repaint ends (showLive).
+      if (!kept && stats.pending) invalidate();
+      stats.ms = performance.now() - started; stats.paintMs = lastPaintMs;
+      reportRenderStats({ path: stats.renderer === 'webgl2' ? 'gpu' : 'cpu', ms: stats.ms, drawCalls: stats.drawCalls ?? 0, reason: stats.renderer === 'webgl2' ? undefined : stats.reason ?? undefined });
       return stats;
     },
     async prepare(appearance, visibility = {}) {
@@ -345,6 +525,7 @@ export function createNativeCityMap(world: World, onInvalidate: () => void, prep
     dispose() {
       if (disposed) return;
       disposed = true; offRenderMode(); gl?.dispose(); gl = undefined; glScene = undefined;
+      stopLive(); freeLayer(shownLayer); freeLayer(spareLayer); shownLayer = spareLayer = undefined;
       for (const entry of entries) entry.houses?.replaceScene({ buildings: [] });
       entries.length = 0; textures.clear();
       if (layer) layer.width = layer.height = 1;

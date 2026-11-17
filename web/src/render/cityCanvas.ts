@@ -542,6 +542,16 @@ class Batches {
     }
     ctx.globalAlpha = 1; ctx.setLineDash([]); this.groups.clear();
   }
+  /** `flush` with a pause after each style: the same calls in the same order (resumable painting, drawCitySteps). */
+  *flushSteps(ctx: CanvasRenderingContext2D): Generator<void, void> {
+    for (const { style, path } of this.groups.values()) {
+      ctx.globalAlpha = style.alpha ?? 1;
+      if (style.fill) { ctx.fillStyle = style.fill; ctx.fill(path, 'nonzero'); }
+      if (style.stroke && style.width) { ctx.strokeStyle = style.stroke; ctx.lineWidth = style.width; ctx.setLineDash(style.dash ?? []); ctx.lineCap = style.cap ?? 'round'; ctx.stroke(path); }
+      yield;
+    }
+    ctx.globalAlpha = 1; ctx.setLineDash([]); this.groups.clear();
+  }
 }
 /** Stroked over the street surface. A causeway is not one: it joins the surface as an ordinary raised road. */
 const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
@@ -622,6 +632,14 @@ function tintedWall(wall: string, tint: string | undefined, palette: CityPalette
  * the top of those walls, in their colour (the brick of a block shows from above); snow is the inset patch of each
  * face, an uneven mantle at the scales of the cover grain (the same on every roof), the flat snow tint further out. */
 function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): void {
+  const steps = drawPlanRoofsSteps(ctx, b, o, images);
+  while (!steps.next().done);
+}
+/** Buildings between two pauses of the resumable roof and shadow loops (a few milliseconds of Canvas calls). */
+const ROOF_STEP = 16, SHADOW_STEP = 128;
+/** `drawPlanRoofs` in resumable steps: the same calls in the same order, with a pause every `ROOF_STEP` buildings. The
+ * context must not be drawn on by anyone else between two steps. */
+function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): Generator<void, void> {
   const roofs = b.roofs!;
   let index = roofIndex.get(roofs);
   if (!index) { const byOwner: number[][] = b.items.map(() => []); roofs.owner.forEach((ow, k) => byOwner[ow]?.push(k)); roofIndex.set(roofs, index = { byOwner, paths: [] }); }
@@ -635,8 +653,10 @@ function drawPlanRoofs(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityD
   const frame = natural && !images ? coverGrainFrame(device) : undefined, unevenSnow = frame ? frame.alpha[0] : 0;
   // Pan edges (eaves, ridges, hips): ink on the drawn plans, a soft joint on a natural ground.
   ctx.strokeStyle = parchment ? 'rgba(44,33,23,0.65)' : natural ? 'rgba(31,24,17,0.45)' : 'rgba(31,24,17,0.65)'; ctx.lineWidth = (parchment ? 0.3 : 0.5) * o.mpp;
+  let drawn = 0;
   for (const i of b.bins.query(o.viewport)) {
     const pans = index.byOwner[i]; if (!pans?.length) continue;
+    if (++drawn % ROOF_STEP === 0) yield;
     const item = b.items[i], age = item.age ?? .5, ground = mapGroundSnow(item.snowAltitude ?? item.building.ground_z_m);
     for (const k of pans) {
       // Without snow on the ground a snow patch repeats the pan under it.
@@ -760,6 +780,13 @@ export function drawRoofedBuildings(ctx: CanvasRenderingContext2D, buildings: Ci
 
 /** Paint the visible plan into a context already set to world coordinates. */
 export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: CityDrawOptions): CityFrameStats {
+  const steps = drawCitySteps(ctx, scene, o);
+  for (;;) { const step = steps.next(); if (step.done) return step.value; }
+}
+/** `drawCity` in resumable steps, for a caller that paints a large town over several tasks (the live town layer of
+ * the V2): the same Canvas calls in the same order, with a pause between the layers of the plan and every few
+ * buildings. No `save()` is open at a pause; the context must not be drawn on by anyone else between two steps. */
+export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, o: CityDrawOptions): Generator<void, CityFrameStats> {
   if (o.buildings) updateYardEnclosures(scene, o.buildings.items, () => o.buildings!.items.map(b => b.building));
   const start = performance.now(), { viewport, mpp, lod, view, palette, layers } = o, px = (n: number): number => n * mpp;
   // Textured materials: repeating patterns anchored to world metres (ink and parchment keep their own look).
@@ -825,7 +852,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       // Parchment: built blocks hatched in ink, as on the engraved plans.
       if (parchment && !night && !blend && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { const hatch = hatchPattern(ctx, mpp); if (hatch) batch.add({ fill: hatch, alpha: view === 'buildings' ? 0.5 : 1 }, pathOf(b)); }
     }
-    batch.flush(ctx);
+    yield* batch.flushSteps(ctx);
     // Parcels: cadastral detail from near; uses and roles from mid.
     const parcelLevel = view === 'uses' || view === 'roles' ? 'mid' : 'near';
     if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') for (const i of scene.bins.parcels.query(viewport)) {
@@ -861,8 +888,9 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         else if (lod === 'close' && lotLine) batch.add({ stroke: parchment ? PARCH.inkSoft : '#c4b597', width: px(0.6), alpha: parchment ? 0.45 : 1 }, pathOf(p));
       }
     }
-    batch.flush(ctx);
+    yield* batch.flushSteps(ctx);
   }
+  yield;
 
   if (layers.parcelOverlay !== false && o.readableGardens && (lod === 'near' || lod === 'close') && view !== 'tissue') {
     for (const i of scene.bins.parcels.query(viewport)) {
@@ -1015,8 +1043,12 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       let rings = SURFACE_CACHE.get(scene)?.get(key);
       if (!rings) {
         const cas = surfaced.some(x => x.casing) ? roadSurface(streets, { extra: i => surfaced[i].casing ? surfaced[i].edge : 0, minWidth, tolerance, ends }) : [];
+        yield;
         const inner = surfaced.some(x => x.inset) ? roadSurface(streets, { extra: i => -(surfaced[i].inset ?? 0), minWidth, tolerance, ends }).filter(p => surfaced[p.street].inset) : [];
-        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: roadSurface(streets, { minWidth, tolerance, ends }).map(p => ({ street: p.street, path: ring(p.ring) })), inner: inner.map(p => ({ street: p.street, path: ring(p.ring) })) };
+        yield;
+        const body = roadSurface(streets, { minWidth, tolerance, ends });
+        yield;
+        rings = { casing: cas.map(p => ({ street: p.street, path: ring(p.ring) })), fill: body.map(p => ({ street: p.street, path: ring(p.ring) })), inner: inner.map(p => ({ street: p.street, path: ring(p.ring) })) };
         let memo = SURFACE_CACHE.get(scene); if (!memo) SURFACE_CACHE.set(scene, memo = new Map());
         if (memo.size >= 8) memo.delete(memo.keys().next().value!);
         memo.set(key, rings);
@@ -1025,7 +1057,8 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
       for (const p of rings.fill) surface.add(surfaced[p.street].fill, p.path);
       for (const p of rings.inner) { const st = surfaced[p.street].inner; if (st) carriageways.add(st, p.path); }
     }
-    casing.flush(ctx); under.flush(ctx); surface.flush(ctx); carriageways.flush(ctx); marks2.flush(ctx);
+    yield;
+    yield* casing.flushSteps(ctx); yield* under.flushSteps(ctx); yield* surface.flushSteps(ctx); yield* carriageways.flushSteps(ctx); yield* marks2.flushSteps(ctx);
     // Draw order on the water: streets, the water (put back), the quays over it, bridges and fords. Only around this
     // town's own streets: another town's quays and bridges drawn before stay above the water.
     if (o.waterAbove && visible.length) {
@@ -1039,6 +1072,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
     drawQuays();
     over.flush(ctx); marks.flush(ctx);
   }
+  yield;
 
   if (layers.lotEnclosures !== false) drawLotEnclosures(ctx, scene, { mpp, lod, palette, groundOnly: layers.lotEnclosureMeshes }); // enclosures hook
 
@@ -1063,6 +1097,7 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
 
   if (layers.waterways !== false && (layers.streets || layers.waterways)) drawCityWaterways(ctx, scene.layouts, mpp, o.waterColor);
 
+  yield;
   o.beforeBuildings?.(ctx);
 
   // Buildings: native renderer (compact / detailed) or batched silhouettes. On satellite grounds the far raster stands
@@ -1079,11 +1114,14 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, paths = []);
         ctx.fillStyle = castShadowFill(palette, night, o.buildings.items[0]?.snowAltitude);
+        let cast = 0;
         for (const i of o.buildings.bins.query(viewport)) {
           let path = paths[i];
           if (!path) { path = paths[i] = new Path2D(); for (const s of roofs.shadows[i] ?? []) path.addPath(shapePath(s)); }
           ctx.fill(path);
+          if (++cast % SHADOW_STEP === 0) yield;
         }
+        yield;
       }
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i]; stats.buildings++;
@@ -1097,8 +1135,10 @@ export function drawCity(ctx: CanvasRenderingContext2D, scene: CityScene, o: Cit
           batch.add({ fill: color, ...edge, ...(b.stilts ? { stroke: '#514431', width: px(0.6) } : {}) }, b.path);
         }
       }
-      batch.flush(ctx);
-      if (!footprint && o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') drawPlanRoofs(ctx, o.buildings, o, tex);
+      yield;
+      yield* batch.flushSteps(ctx);
+      if (!footprint && o.buildings.roofs && view === 'buildings' && o.appearance.diagnostic !== 'uses') yield* drawPlanRoofsSteps(ctx, o.buildings, o, tex);
+      yield;
       if (footprint && !parchment) {
         ctx.strokeStyle = colors?.buildingEdge ?? '#2e261d'; ctx.lineWidth = px(0.4);
         for (const i of o.buildings.bins.query(viewport)) if (o.buildings.items[i].footprintPath) ctx.stroke(o.buildings.items[i].footprintPath!);
