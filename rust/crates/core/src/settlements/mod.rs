@@ -298,6 +298,25 @@ impl Terrain {
             roads,
         )?;
         crate::urban::display::quay_water_levels(&mut layouts, r.width, r.n, &r.water, &r.water_level);
+        // Underdark invariant: nothing stands on cave rock. The clip to the solid rock keeps every
+        // block on the floor; a block that still reaches into the rock (a corner deep inside it)
+        // is dropped here, whatever stage drew it, and the town says how many.
+        if self.fields.cave.is_some() {
+            let surface = self.urban_surface();
+            let deep = |p: &Point| {
+                [(0.0, 0.0), (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)]
+                    .iter()
+                    .all(|(dx, dy)| surface.solid(Point { x: p.x + dx, y: p.y + dy }))
+            };
+            for layout in &mut layouts {
+                let before = layout.blocks.len();
+                layout.blocks.retain(|b| !b.shape.outer.iter().any(deep));
+                let removed = before - layout.blocks.len();
+                if removed > 0 {
+                    layout.warnings.push(format!("{} blocks on cave rock removed", removed));
+                }
+            }
+        }
         Ok(layouts)
     }
     /// Physical placement intents from retained parcel/programme outputs.
@@ -460,7 +479,19 @@ impl Terrain {
         &mut self,
         input: crate::urban::VectorGeography,
     ) -> Result<(), String> {
-        self.urban_geometry = Some(crate::urban::Geography::new(input, self.fields.r.width)?);
+        // Underdark: the cave rock is solid ground for the urban stage (the vector water alone
+        // leaves it dry): a town, its blocks and lots stay on the open floor, a chamber smaller
+        // than the plan reports its shortfall, and no quay or bridge takes the rock for water.
+        let rock: Vec<Vec<crate::urban::Point>> = if self.fields.cave.is_some() {
+            self.fields
+                .rock_rings()
+                .into_iter()
+                .map(|ring| ring.into_iter().map(|[x, y]| crate::urban::Point { x, y }).collect())
+                .collect()
+        } else {
+            vec![]
+        };
+        self.urban_geometry = Some(crate::urban::Geography::with_solid(input, rock, self.fields.r.width)?);
         Ok(())
     }
     pub fn place(&self, seed: &str, cfg: &Config) -> Result<Output, String> {
@@ -494,6 +525,9 @@ impl Terrain {
             grid => (n.div_ceil(grid)..=n).find(|k| n % k == 0).unwrap_or(1),
         };
         let mut out = if k == 1 { roads::route(seed, &self.fields, sites, cfg)? } else { self.pooled_roads(k, seed, sites, cfg)? };
+        // Safety net of the road chain, on the full-resolution terrain: no road over the sea or
+        // a lake, no road end without a destination; what it removes is said in the warnings.
+        roads::enforce(&self.fields, k as f64 * self.fields.cell, &mut out);
         // Network nodes read the finished network on the full-resolution terrain.
         if cfg.network_nodes {
             out.nodes = nodes::place(seed, &self.fields, sites, &out);
@@ -616,6 +650,17 @@ fn validate(cfg: &Config, width: f64) -> Result<(), String> {
     Ok(())
 }
 
+/// Underdark towns: the caps of every relaxed constraint, in one place. A town in the caves
+/// spreads along the galleries and packs where floor is short; it keeps its population while
+/// the floor it reaches within these caps can house it, and is lowered (announced) beyond.
+/// Spread: a cave town grows along the galleries over at most this multiple of its ordinary
+/// growth window, and placement counts the floor within this multiple of its land radius.
+pub const CAVE_SPREAD: f64 = 2.0;
+/// Densify: land per home down to this share of the culture's (lots, houses, blocks).
+pub const CAVE_LAND_PER_HOME: f64 = 0.6;
+/// Densify: building height up to this multiple of the culture's storeys.
+pub const CAVE_HEIGHT: f64 = 1.5;
+
 pub fn extent_radius(pop: u32) -> f64 {
     let p = pop as f64;
     if p < 15.0 {
@@ -669,6 +714,38 @@ mod physical_tests {
     use super::*;
 
     #[test]
+    fn edge_place_and_long_activity_approach_route_with_warnings() {
+        let n = 32;
+        let height = vec![10.0f32; n * n];
+        let water = vec![0u8; n * n];
+        let widths = vec![0.0f32; n * n];
+        let ids = vec![-1i32; n * n];
+        let width = 3200.0;
+        let terrain = Terrain::new(Raster { width, n, height: &height, water: &water,
+            water_level: &height, river_width: &widths, river_ids: &ids }).unwrap();
+        let list = vec![
+            SettlementSpec { key: "west".into(), population: 300, position: Some(Point { x: 600.0, y: 1600.0 }), ..Default::default() },
+            SettlementSpec { key: "edge".into(), population: 300, position: Some(Point { x: width - 0.001, y: 1600.0 }), ..Default::default() },
+        ];
+        let out = terrain.place("edge", &Config { mode: "list".into(), list, ..Default::default() }).unwrap();
+        let edge = out.settlements.iter().find(|s| s.spec.key == "edge").unwrap();
+        assert!(edge.center.x <= width - 0.5 && edge.center.x > width - 1.0, "edge centre {:?}", edge.center);
+        let mut sites: Vec<roads::RoadSite> = out.settlements.iter().map(|s| roads::RoadSite {
+            key: s.spec.key.clone(), population: s.spec.population, center: s.center, radius: s.radius, ..Default::default()
+        }).collect();
+        let approach: Vec<Point> = (0..400).map(|k| Point { x: 1600.0, y: 400.0 + k as f64 * 2.0 }).collect();
+        sites.push(roads::RoadSite { key: "mill".into(), population: 1, center: Point { x: 1600.0, y: 1200.0 },
+            access: Some("track".into()), approach, ..Default::default() });
+        sites.push(roads::RoadSite { key: "lost".into(), population: 1, center: Point { x: width + 5.0, y: 100.0 },
+            access: Some("track".into()), ..Default::default() });
+        let cfg = roads::RoadConfig { density: 0.0, exits: roads::ExitCounts::default(), activity_access: true, ..Default::default() };
+        let routed = terrain.roads("edge", &sites, &cfg).expect("roads, not an error");
+        assert!(!routed.segments.is_empty());
+        assert!(routed.warnings.iter().any(|w| w.contains("thinned to")), "{:?}", routed.warnings);
+        assert!(routed.warnings.iter().any(|w| w.contains("outside the map")), "{:?}", routed.warnings);
+    }
+
+    #[test]
     fn retained_physical_ground_does_not_expand_planning_water() {
         let height = vec![12.0; 16 * 16];
         let water = vec![0; 16 * 16];
@@ -685,5 +762,129 @@ mod physical_tests {
         assert_eq!(surface.height_resolution(), 32);
         assert_eq!(surface.height_at(Point { x: 10.5 * 250.0 / 32.0, y: 10.5 * 250.0 / 32.0 }), 80.0);
         assert!(terrain.set_physical_height(32, vec![f32::NAN; 32 * 32]).is_err());
+    }
+
+    /// A 3000-inhabitant town in a 250 m cave chamber (cave rock: class 2 at ground level): with
+    /// the vector geography the urban stage reads, every block stays on the open floor.
+    #[test]
+    fn underdark_town_in_a_small_chamber_keeps_its_blocks_on_floor() {
+        let (n, width) = (64, 1600.0);
+        let cell = width / n as f64;
+        let mut height = vec![10.5f32; n * n];
+        let mut water = vec![2u8; n * n];
+        for y in 0..n {
+            for x in 0..n {
+                if ((x as f64 - 31.5).powi(2) + (y as f64 - 31.5).powi(2)).sqrt() <= 10.0 {
+                    height[y * n + x] = 10.0;
+                    water[y * n + x] = 0;
+                }
+            }
+        }
+        let widths = vec![0.0; n * n];
+        let ids = vec![-1; n * n];
+        let level: Vec<f32> = height.iter().zip(&water).map(|(&h, &w)| if w == 2 { h - 1000.0 } else { h }).collect();
+        let mut terrain = Terrain::new(Raster { width, n, height: &height, water: &water,
+            water_level: &level, river_width: &widths, river_ids: &ids }).unwrap();
+        assert!(terrain.fields.cave.is_some());
+        let square = vec![Point { x: 0.0, y: 0.0 }, Point { x: width, y: 0.0 },
+            Point { x: width, y: width }, Point { x: 0.0, y: width }];
+        terrain.set_urban_geometry(crate::urban::VectorGeography { land: vec![square], ..Default::default() }).unwrap();
+        let site = crate::urban::Site { key: "main".into(), name: String::new(), population: 3000,
+            culture: "drow-enclave".into(), center: Point { x: 800.0, y: 800.0 }, radius: extent_radius(3000),
+            neighbours: Vec::new() };
+        let layouts = terrain.urban_quarters("cave-town", &[site], &crate::urban::LayoutConfig::default(), &[]).unwrap();
+        let blocks: Vec<_> = layouts.iter().flat_map(|l| &l.blocks).collect();
+        assert!(!blocks.is_empty());
+        // The rock is no water: no quay, pier or bridge in a chamber without any.
+        let works: Vec<_> = layouts.iter().flat_map(|l| &l.streets)
+            .filter(|s| matches!(s.role.as_str(), "quay" | "pier" | "landing" | "mole" | "bridge" | "causeway")).map(|s| &s.role).collect();
+        assert!(works.is_empty(), "water works along cave walls: {works:?}");
+        // An ordinary map has no cave: no spread, no packing.
+        let open = vec![0u8; n * n];
+        let plain = Terrain::new(Raster { width, n, height: &height, water: &open,
+            water_level: &height, river_width: &widths, river_ids: &ids }).unwrap();
+        assert!(plain.fields.cave.is_none());
+        // A vertex may sit on the wall line; none lies inside the rock (all four cells around it rock).
+        let floor = |x: f64, y: f64| {
+            let (cx, cy) = ((x / cell).floor(), (y / cell).floor());
+            cx >= 0.0 && cy >= 0.0 && cx < n as f64 && cy < n as f64 && water[cy as usize * n + cx as usize] == 0
+        };
+        for block in blocks {
+            for p in &block.shape.outer {
+                assert!([(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)].iter().any(|(dx, dy)| floor(p.x + dx, p.y + dy)),
+                    "block vertex {p:?} inside the rock");
+            }
+        }
+    }
+
+    /// A 5000-inhabitant town in a row of five 220 m chambers 750 m apart, joined by 94 m
+    /// galleries: no chamber holds its plan, so it spreads along the galleries.
+    #[test]
+    fn underdark_town_spreads_over_chambers_joined_by_galleries() {
+        let (n, width) = (128, 4000.0);
+        let cell = width / n as f64;
+        let centres = [16.0, 40.0, 64.0, 88.0, 112.0];
+        let mut height = vec![10.5f32; n * n];
+        let mut water = vec![2u8; n * n];
+        for y in 0..n {
+            for x in 0..n {
+                let chamber = centres.iter().any(|&c| ((x as f64 - c).powi(2) + (y as f64 - 64.0).powi(2)).sqrt() <= 8.0);
+                if chamber || ((16..=112).contains(&x) && (62..=66).contains(&y)) {
+                    height[y * n + x] = 10.0;
+                    water[y * n + x] = 0;
+                }
+            }
+        }
+        let widths = vec![0.0; n * n];
+        let ids = vec![-1; n * n];
+        let level: Vec<f32> = height.iter().zip(&water).map(|(&h, &w)| if w == 2 { h - 1000.0 } else { h }).collect();
+        let mut terrain = Terrain::new(Raster { width, n, height: &height, water: &water,
+            water_level: &level, river_width: &widths, river_ids: &ids }).unwrap();
+        let square = vec![Point { x: 0.0, y: 0.0 }, Point { x: width, y: 0.0 },
+            Point { x: width, y: width }, Point { x: 0.0, y: width }];
+        terrain.set_urban_geometry(crate::urban::VectorGeography { land: vec![square], ..Default::default() }).unwrap();
+        let centre = Point { x: 64.5 * cell, y: 64.5 * cell };
+        let site = crate::urban::Site { key: "main".into(), name: String::new(), population: 5000,
+            culture: "drow-enclave".into(), center: centre, radius: extent_radius(5000), neighbours: Vec::new() };
+        let layouts = terrain.urban_quarters("cave-spread", &[site], &crate::urban::LayoutConfig::default(), &[]).unwrap();
+        let blocks: Vec<_> = layouts.iter().flat_map(|l| &l.blocks).collect();
+        let mid = |s: &crate::urban::Shape| Point {
+            x: s.outer.iter().map(|p| p.x).sum::<f64>() / s.outer.len() as f64,
+            y: s.outer.iter().map(|p| p.y).sum::<f64>() / s.outer.len() as f64,
+        };
+        let chambers: std::collections::BTreeSet<usize> = blocks.iter().filter_map(|b| {
+            let m = mid(&b.shape);
+            centres.iter().position(|&c| ((m.x / cell - 0.5 - c).powi(2) + (m.y / cell - 64.5).powi(2)).sqrt() <= 8.5)
+        }).collect();
+        assert!(chambers.len() >= 3, "blocks in chambers {chambers:?}");
+        let floor = |x: f64, y: f64| {
+            let (cx, cy) = ((x / cell).floor(), (y / cell).floor());
+            cx >= 0.0 && cy >= 0.0 && cx < n as f64 && cy < n as f64 && water[cy as usize * n + cx as usize] == 0
+        };
+        for block in &blocks {
+            for p in &block.shape.outer {
+                assert!([(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)].iter().any(|(dx, dy)| floor(p.x + dx, p.y + dy)),
+                    "block vertex {p:?} inside the rock");
+            }
+        }
+        // Every quarter is served: a street runs within 60 m of each block.
+        let streets: Vec<Point> = layouts.iter().flat_map(|l| &l.streets).flat_map(|s| s.path.iter().copied()).collect();
+        for block in &blocks {
+            assert!(block.shape.outer.iter().any(|p| streets.iter().any(|q| p.distance(*q) <= 60.0)), "unserved block");
+        }
+        // A city of 20 000 in the same caves: not one block corner touches the rock (the town keeps
+        // its one-cell margin from the walls), and the invariant pass had nothing to remove.
+        let city = crate::urban::Site { key: "city".into(), name: String::new(), population: 20000,
+            culture: "drow-enclave".into(), center: centre, radius: extent_radius(20000), neighbours: Vec::new() };
+        let layouts = terrain.urban_quarters("cave-city", &[city], &crate::urban::LayoutConfig::default(), &[]).unwrap();
+        let blocks: Vec<_> = layouts.iter().flat_map(|l| &l.blocks).collect();
+        assert!(!blocks.is_empty());
+        for block in &blocks {
+            for p in &block.shape.outer {
+                assert!([(-0.5, -0.5), (0.5, -0.5), (-0.5, 0.5), (0.5, 0.5)].iter().all(|(dx, dy)| floor(p.x + dx, p.y + dy)),
+                    "city block vertex {p:?} touches the rock");
+            }
+        }
+        assert!(!layouts.iter().flat_map(|l| &l.warnings).any(|w| w.contains("blocks on cave rock removed")));
     }
 }

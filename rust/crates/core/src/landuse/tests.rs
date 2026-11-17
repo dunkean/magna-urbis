@@ -33,14 +33,49 @@ fn ts_vectorizer_and_natural_cover_fixture() {
         }
         assert!((region_area(a) - region_area(b)).abs() < 1e-8);
     }
+    // Without settlements the land is wild: only woods, marsh and the floodplain meadow of real rivers are classed
+    // (the TS fixture's pasture is now unclassified ground); this fixture has no river geometry, so no meadow.
     let result = generate_natural_cover(&input(&f)).unwrap();
-    assert_eq!(result.areas.len(), num(&f["natural"]["count"]) as usize);
+    assert!(result.areas.iter().all(|a| ["forest", "marsh"].contains(&a.kind.as_str())));
     let total: f64 = result
         .areas
         .iter()
         .map(|a| area(&a.poly).abs() - a.holes.iter().map(|h| area(h).abs()).sum::<f64>())
         .sum();
-    assert!((total - num(&f["natural"]["area"])).abs() < 1e-6);
+    assert!(total <= num(&f["natural"]["area"]) + 1e-6);
+}
+#[test]
+fn floodplain_meadow_follows_river_size_and_relief() {
+    // A plain rising 4 cm per metre away from a straight north-south river in the middle of the map.
+    let f = fixture();
+    let mut i = input(&f);
+    let (w, h, cell) = (i.w, i.h, i.cell);
+    let xr = 0.5 * w as f64 * cell;
+    for k in 0..w * h {
+        let x = ((k % w) as f64 + 0.5) * cell;
+        i.height[k] = (8.0 + 0.04 * (x - xr).abs()) as f32;
+        i.slope[k] = 0.02;
+    }
+    let river = |width: f64| {
+        serde_json::json!([{ "path": [{ "x": xr, "y": 0.0 }, { "x": xr, "y": h as f64 * cell }], "width": [width, width] }])
+    };
+    let side = |fl: &[bool], near: bool| {
+        (0..w * h).filter(|&k| fl[k] && {
+            let d = (((k % w) as f64 + 0.5) * cell - xr).abs();
+            if near { d <= 40.0 } else { d > 200.0 }
+        }).count()
+    };
+    // A large desert river keeps a meadow on its valley floor, bounded by its flood stage, not a fixed buffer.
+    i.biome = "desert".into();
+    i.geometry["terrain"]["rivers"] = river(60.0);
+    let fl = floodplain_meadow(&i, w, h, cell);
+    assert!(side(&fl, true) > 0);
+    assert_eq!(side(&fl, false), 0);
+    // A desert wadi keeps none; the same small stream in a temperate climate does.
+    i.geometry["terrain"]["rivers"] = river(5.0);
+    assert!(floodplain_meadow(&i, w, h, cell).iter().all(|&m| !m));
+    i.biome = "temperate".into();
+    assert!(side(&floodplain_meadow(&i, w, h, cell), true) > 0);
 }
 #[test]
 fn retained_lakes_exclude_smoothed_landuse() {
@@ -95,6 +130,105 @@ fn retained_lakes_exclude_smoothed_landuse() {
     assert!(!inside(&lakes[0], point));
 }
 
+#[test]
+fn drawn_rivers_cut_every_class() {
+    use super::{boolean as bo, geom::*};
+    // A drawn river through a field, as the V2 sends it: a closed water domain (`terrain.water`), with no river cell in
+    // the water raster (the coarse raster and the drawn river disagree). No class may lie on it, and the land use
+    // reaches its banks on both sides.
+    let mut i = input(&fixture());
+    let before = generate_rural(&i).unwrap();
+    let field = before.layer.areas.iter().find(|a| a.kind == "field").expect("fixture must contain a field");
+    let c = centroid(&field.poly);
+    let bank = ribbon(&[p(c.x - 400.0, c.y - 90.0), p(c.x + 400.0, c.y + 90.0)], 14.0);
+    i.geometry["terrain"]["water"] = serde_json::json!([[bank]]);
+    let river = ground::water_regions(&i);
+    assert_eq!(river.len(), 1);
+    let out = generate_rural(&i).unwrap().layer;
+    assert!(out.areas.iter().any(|a| a.kind == "field"));
+    for a in &out.areas {
+        let wet = bo::safe(&[a.region()], &river, bo::Op::Intersection);
+        assert!(wet.iter().map(region_area).sum::<f64>() < 0.5, "{} on the river", a.kind);
+        for strip in &a.strips {
+            let wet = bo::safe(&[piece(strip.clone())], &river, bo::Op::Intersection);
+            assert!(wet.iter().map(region_area).sum::<f64>() < 0.5, "field strip on the river");
+        }
+    }
+    // The same river as a centre line with its drawn width (`terrain.rivers`) is the same authority.
+    i.geometry["terrain"]["water"] = serde_json::json!([]);
+    i.geometry["terrain"]["rivers"] = serde_json::json!([{ "path": [p(c.x - 400.0, c.y - 90.0), p(c.x + 400.0, c.y + 90.0)], "width": [14.0, 14.0] }]);
+    let river = ground::water_regions(&i);
+    let out = generate_rural(&i).unwrap().layer;
+    for a in &out.areas {
+        let wet = bo::safe(&[a.region()], &river, bo::Op::Intersection);
+        assert!(wet.iter().map(region_area).sum::<f64>() < 0.5, "{} on the river ribbon", a.kind);
+    }
+}
+
+#[test]
+fn dense_wood_claims_cultivated_land() {
+    use super::rural::{dense_wood, wood_claims, DENSE_WOOD};
+    // A lone dense cell never converts (no salt-and-pepper); a dense block converts its inside only.
+    let n = 9;
+    let mut stands = vec![0.3_f32; n * n];
+    stands[2 * n + 2] = 0.9;
+    for y in 4..9 {
+        for x in 4..9 {
+            stands[y * n + x] = 0.8;
+        }
+    }
+    let dense = dense_wood(&stands, n);
+    assert!(!dense[2 * n + 2]);
+    assert!(dense[6 * n + 6] && !dense[4 * n + 4]);
+    assert!(DENSE_WOOD > 0.22);
+    // Holdings are given up whole or kept whole: a field mostly in dense wood goes, one mostly outside stays entire.
+    let mut cls = vec![0_u8; n * n];
+    for y in 0..9 {
+        for x in 0..3 {
+            cls[y * n + x] = 1; // a field outside the wood
+        }
+    }
+    for y in 4..9 {
+        for x in 5..9 {
+            cls[y * n + x] = 5; // an orchard mostly in the wood
+        }
+    }
+    let claimed = wood_claims(&cls, &dense, n);
+    assert!((0..n * n).filter(|&i| cls[i] == 1).all(|i| !claimed[i]));
+    assert!((0..n * n).filter(|&i| cls[i] == 5).all(|i| claimed[i]));
+    // On the fixture: a dense wood over the whole map leaves no field, orchard or garden; light woods keep them.
+    let f = fixture();
+    let crops = |forest: f32| {
+        let mut i = input(&f);
+        i.natural_forest = vec![forest; i.w * i.h];
+        let out = generate_rural(&i).unwrap();
+        out.layer
+            .areas
+            .iter()
+            .filter(|a| ["field", "orchard", "garden"].contains(&a.kind.as_str()))
+            .map(|a| area(&a.poly).abs() - a.holes.iter().map(|h| area(h).abs()).sum::<f64>())
+            .sum::<f64>()
+    };
+    let (light, dense) = (crops(0.3), crops(0.9));
+    assert!(light > 0.0 && dense < 0.5 * light, "crop area {light} -> {dense}");
+}
+
+#[test]
+fn underdark_rural_land_is_fungus_beds_and_cave_floor() {
+    // No surface fields, orchards, meadows, pastures or woods underground: cultivated land is fungus beds
+    // (garden, cultivation 'fungal'), the rest the wild cave floor (commons) or cave pools (marsh).
+    let f = fixture();
+    let mut i = input(&f);
+    i.biome = "underdark".into();
+    let out = generate_rural(&i).unwrap();
+    assert!(!out.layer.areas.is_empty());
+    for a in &out.layer.areas {
+        assert!(["garden", "commons", "marsh"].contains(&a.kind.as_str()), "{} underground", a.kind);
+        if a.kind == "garden" {
+            assert_eq!(a.cultivation.as_deref(), Some("fungal"));
+        }
+    }
+}
 #[test]
 fn ts_rural_and_farm_fixture() {
     let f = fixture();

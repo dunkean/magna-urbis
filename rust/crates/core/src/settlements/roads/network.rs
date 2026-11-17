@@ -249,6 +249,56 @@ impl Graph {
         }
     }
 
+    /// Invariant of the network: every road end is a destination or a junction. A dead-end
+    /// chain (from a vertex of degree 1 back to the first junction or pinned point) is removed
+    /// when `keep(label of its end, its length)` refuses it, again and again until none is left,
+    /// so a junction that loses its last branch is tested in turn. Returns the chains removed
+    /// and their length (m). Cost: one pass over the edges per round.
+    pub fn prune_dead_ends(&mut self, keep: impl Fn(Option<&str>, f64) -> bool) -> (usize, f64) {
+        let (mut chains, mut metres) = (0, 0.0);
+        loop {
+            let adj = self.adjacency();
+            let mut removed = false;
+            for v in 0..adj.len() {
+                if adj[v].len() != 1 {
+                    continue;
+                }
+                // The chain: on from the dead end while the way does not fork or reach a pin.
+                let (mut at, mut e) = adj[v][0];
+                let (mut edges, mut length) = (vec![e], self.pos[v].distance(self.pos[at]));
+                while adj[at].len() == 2 && self.pin[at].is_none() && at != v {
+                    let Some(&(next, via)) = adj[at].iter().find(|&&(_, x)| x != e) else {
+                        break;
+                    };
+                    length += self.pos[at].distance(self.pos[next]);
+                    edges.push(via);
+                    (at, e) = (next, via);
+                }
+                if keep(self.pin[v].as_deref(), length) {
+                    continue;
+                }
+                // A chain met from both of its ends in one round is removed, and counted, once.
+                let mut cut = false;
+                for e in edges {
+                    if self.edges[e].alive {
+                        let (a, b) = (self.edges[e].a, self.edges[e].b);
+                        self.edges[e].alive = false;
+                        self.by_pair.remove(&(a.min(b), a.max(b)));
+                        cut = true;
+                    }
+                }
+                if cut {
+                    removed = true;
+                    chains += 1;
+                    metres += length;
+                }
+            }
+            if !removed {
+                return (chains, metres);
+            }
+        }
+    }
+
     /// Chains between junctions (degree ≠ 2), pinned points and dead ends.
     pub fn links(&self) -> Vec<Link> {
         let adj = self.adjacency();

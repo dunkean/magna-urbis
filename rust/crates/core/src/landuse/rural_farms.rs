@@ -381,6 +381,8 @@ fn new_builder<'a>(
 }
 /// Farmsteads for cultivated land that no existing farmer reaches: one farm per site, laid out
 /// like the other farms and given a drive to the nearest road when one is within walking range.
+/// Returns the farms and, per site, whether its farm was built (a site without one loses its
+/// fields).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn add_for_demand<'a>(
     input: &'a Input,
@@ -393,7 +395,7 @@ pub(crate) fn add_for_demand<'a>(
     lm: f64,
     existing: &[Value],
     sites: &[Point],
-) -> Vec<Value> {
+) -> (Vec<Value>, Vec<bool>) {
     let mut build = new_builder(input, rr, soil, roads, slope, reserve, u_dist, lm);
     for f in existing {
         if let Ok(c) = serde_json::from_value::<Point>(f["pos"].clone()) {
@@ -401,7 +403,9 @@ pub(crate) fn add_for_demand<'a>(
         }
     }
     let fr = rr.fork("demand-farm");
+    let mut built = Vec::with_capacity(sites.len());
     for (k, &c) in sites.iter().enumerate() {
+        let before = build.farms.len();
         let nr = build.nearest_road(c);
         let culture = build.culture_at(c);
         let ctx = build.context(c, &culture, None);
@@ -425,8 +429,9 @@ pub(crate) fn add_for_demand<'a>(
         if let Some(pl) = build.plan_on(ctx, fr.fork(&format!("d{k}")), places, 12.0) {
             build.accept(pl, &culture, (nr.d < 1500.0).then_some(nr.bp));
         }
+        built.push(build.farms.len() > before);
     }
-    build.farms
+    (build.farms, built)
 }
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate<'a>(

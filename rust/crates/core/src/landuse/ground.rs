@@ -327,7 +327,10 @@ fn layer(
 /// Retained lake rings use the renderer's even-odd rule, independently of winding.
 /// Group islands with their containing lake instead of filling every ring.
 pub(crate) fn lake_regions(input: &Input) -> Vec<Region> {
-    let mut rings = polygons(&input.geometry["terrain"]["lakes"]);
+    nest(polygons(&input.geometry["terrain"]["lakes"]))
+}
+/// Even-odd nesting of one ring group: a ring inside an odd number of larger rings is a hole (an island).
+fn nest(mut rings: Vec<Polygon>) -> Vec<Region> {
     rings.retain(|r| r.len() >= 3);
     rings.sort_by(|a, b| area(b).abs().total_cmp(&area(a).abs()));
     let mut placed: Vec<(Polygon, Box2, usize, usize)> = vec![];
@@ -351,8 +354,96 @@ pub(crate) fn lake_regions(input: &Input) -> Vec<Region> {
     out
 }
 
-/// Smoothing and area thresholds may close a small wet hole. Restore the retained
-/// lake boundary before partitioning holdings, rather than vectorizing water again.
+/// Side (m) of the square tiles the water domains are cut into: a river crossing the map is one long polygon whose box
+/// meets every holding; tiled, each holding is cut only by the water pieces next to it.
+const WATER_TILE: f64 = 1000.0;
+/// The drawn water, the one water authority of the land use: every class is cut by it, so no field, meadow or wood is
+/// ever drawn on a river, lake or sea. Sources, all as drawn by the map:
+/// - `terrain.water`: closed water domains, one even-odd ring group each (sea, lakes, river banks; the V2 sends the
+///   settlement raster's `geometry.water`, the same domains the towns are built against);
+/// - `terrain.lakes`: lake outlines;
+/// - `terrain.rivers`: river centre lines with their drawn width per vertex (ribbons).
+pub(crate) fn water_regions(input: &Input) -> Vec<Region> {
+    let t = &input.geometry["terrain"];
+    let mut out: Vec<Region> = arr(&t["water"]).iter().flat_map(|g| nest(polygons(g))).collect();
+    out.extend(lake_regions(input));
+    for rv in arr(&t["rivers"]) {
+        let path = poly(&rv["path"]);
+        let widths: Vec<f64> = arr(&rv["width"]).iter().map(|w| num(w).max(1.0)).collect();
+        if path.len() >= 2 && widths.len() == path.len() && widths.iter().all(|w| w.is_finite()) {
+            out.extend(river_pieces(&path, &widths));
+        }
+    }
+    out
+}
+/// A river as simple pieces: one quad per segment (its own normal, the width of each end) and a round joint at every
+/// inner vertex. A single offset ribbon of a meandering course folds over itself at the bends; the boolean overlay
+/// then dropped or inverted whole stretches of it, and fields stayed on the river there.
+fn river_pieces(path: &[Point], widths: &[f64]) -> Vec<Region> {
+    let mut out = vec![];
+    for i in 1..path.len() {
+        let (a, b) = (path[i - 1], path[i]);
+        let len = dist(a, b);
+        if len < 1e-6 {
+            continue;
+        }
+        let (nx, ny) = (-(b.y - a.y) / len, (b.x - a.x) / len);
+        let (ha, hb) = (widths[i - 1] / 2.0, widths[i] / 2.0);
+        out.push(piece(vec![
+            p(a.x + nx * ha, a.y + ny * ha),
+            p(b.x + nx * hb, b.y + ny * hb),
+            p(b.x - nx * hb, b.y - ny * hb),
+            p(a.x - nx * ha, a.y - ny * ha),
+        ]));
+        if i + 1 < path.len() {
+            // Inscribed 12-gon scaled to circumscribe the circle of the half width.
+            out.push(piece(circle(b, hb / (std::f64::consts::PI / 12.0).cos(), 12)));
+        }
+    }
+    out
+}
+/// `water_regions` as square pieces within `focus` (the land-use extent, in metres), ready for `cut_index`; water
+/// outside the focus is dropped.
+pub(crate) fn tile_water(water: &[Region], focus: Box2) -> Vec<Region> {
+    let tiles: Vec<(&Region, Box2)> = water
+        .iter()
+        .filter_map(|r| {
+            let b = bbox(&r.outer);
+            b.meets(focus).then_some((r, b))
+        })
+        .collect();
+    par::map(&tiles, |(r, b)| {
+        if b.x1 - b.x0 <= WATER_TILE && b.y1 - b.y0 <= WATER_TILE {
+            return vec![(*r).clone()];
+        }
+        let (x0, x1) = (b.x0.max(focus.x0), b.x1.min(focus.x1));
+        let (y0, y1) = (b.y0.max(focus.y0), b.y1.min(focus.y1));
+        let mut pieces = vec![];
+        let mut ty = (y0 / WATER_TILE).floor() * WATER_TILE;
+        while ty < y1 {
+            let mut tx = (x0 / WATER_TILE).floor() * WATER_TILE;
+            while tx < x1 {
+                let square = piece(vec![
+                    p(tx, ty),
+                    p(tx + WATER_TILE, ty),
+                    p(tx + WATER_TILE, ty + WATER_TILE),
+                    p(tx, ty + WATER_TILE),
+                ]);
+                pieces.extend(bo::safe(&[(*r).clone()], &[square], Op::Intersection));
+                tx += WATER_TILE;
+            }
+            ty += WATER_TILE;
+        }
+        pieces
+    })
+    .into_iter()
+    .flatten()
+    .filter(|r| r.outer.len() >= 3)
+    .collect()
+}
+
+/// Cuts the drawn water out of land-use regions (`water_regions`): smoothing and area thresholds of the class raster
+/// never decide where land meets water.
 pub(crate) fn exclude_lakes(source: Vec<Region>, lakes: &[Region], index: &BoxIndex) -> Vec<Region> {
     source
         .into_iter()

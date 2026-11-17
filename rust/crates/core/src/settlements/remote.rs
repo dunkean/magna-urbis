@@ -246,10 +246,27 @@ fn fall_line(f: &Fields, from: Point, max_grade: f64, reach: f64, ease: f64) -> 
     (top - h >= 8.0).then_some(line)
 }
 
+/// What an access line may span. Invariant of the road chain: no way crosses the sea or a lake
+/// but an explicit causeway to land that cannot be walked to; running water takes a bridge.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Over {
+    /// A rope bridge: running water only (a river, a gorge stream), never the sea or a lake.
+    River,
+    /// A causeway: the sea (a tidal flat) and, with `lake`, a lake (a culture that builds lake
+    /// causeways), and only from land cut off by that water to the land of the parent place:
+    /// a place one can walk to gets no causeway across a bay.
+    Tidal { lake: bool },
+}
+
 /// The shortest line from `from` across water to other dry ground within `reach`
-/// (a causeway, a rope bridge): its own shore, then the far one.
-fn span(f: &Fields, from: Point, reach: f64) -> Option<[Point; 2]> {
+/// (a causeway, a rope bridge): its own shore, then the far one. The water it crosses and the
+/// land it joins follow `over`; the far shore lies nearer to `towards` (the parent place) than
+/// the place itself, so the line leads home and not across a bay to a headland beyond.
+fn span(f: &Fields, from: Point, reach: f64, over: Over, towards: Point) -> Option<[Point; 2]> {
     let step = (0.5 * f.cell).max(4.0);
+    let own = f.land_part[f.index(from)];
+    let home = if in_map(f, towards) { f.land_part[f.index(towards)] } else { u32::MAX };
+    let area = |part: u32| f.land_area.get(part as usize).copied().unwrap_or(0.0);
     let mut found: Option<(f64, Point, Point)> = None;
     for k in 0..16 {
         let a = k as f64 * TAU / 16.0;
@@ -260,10 +277,27 @@ fn span(f: &Fields, from: Point, reach: f64) -> Option<[Point; 2]> {
             if !in_map(f, q) {
                 break;
             }
-            if f.r.water[f.index(q)] != 0 {
+            let i = f.index(q);
+            let (class, lake) = (f.r.water[i], f.r.lake_depth(i) > 0.0);
+            let spanned = match (class, over) {
+                (0, _) | (3, _) => true,
+                (1, Over::Tidal { .. }) => true,
+                (2, Over::Tidal { lake: allowed }) => allowed && lake,
+                _ => false,
+            };
+            if !spanned {
+                break;
+            }
+            if class != 0 {
                 wet = true;
             } else if wet {
-                if found.is_none_or(|b| t < b.0) {
+                let part = f.land_part[i];
+                let joins = match over {
+                    Over::River => true,
+                    // Another land than the place's own: the parent's, else a larger one.
+                    Over::Tidal { .. } => part != own && if home != u32::MAX { part == home } else { area(part) > area(own) },
+                };
+                if joins && q.distance(towards) < from.distance(towards) && found.is_none_or(|b| t < b.0) {
                     found = Some((t, shore, q));
                 }
                 break;
@@ -331,7 +365,8 @@ fn template_for(culture: &str, situation: &str, rng: &mut Rng) -> Option<&'stati
 /// The way to a place: the access kinds of its template in a weighted random order, the
 /// first one the ground allows. Returns the kind, its line, the point where the ordinary
 /// path ends and the class of that path (`none`: no path at all).
-fn approach(f: &Fields, t: &act::Site, place: &'static act::RemotePlace, centre: Point, front: Point, up: Point, rng: &mut Rng) -> (&'static str, Option<Installation>, Point, &'static str) {
+#[allow(clippy::too_many_arguments)]
+fn approach(f: &Fields, t: &act::Site, place: &'static act::RemotePlace, culture: &str, parent: Point, centre: Point, front: Point, up: Point, rng: &mut Rng) -> (&'static str, Option<Installation>, Point, &'static str) {
     let cfg = &act::data().remote;
     let class = if t.access == "trail" { "trail" } else { "track" };
     let mut pool: Vec<(&'static str, f64)> = place.access.iter().map(|(k, w)| (k.as_str(), *w)).collect();
@@ -365,7 +400,14 @@ fn approach(f: &Fields, t: &act::Site, place: &'static act::RemotePlace, centre:
                 }
             }
             "span" => {
-                if let Some([shore, landing]) = span(f, centre, a.reach) {
+                // A causeway crosses the sea (a lake too for a lake-causeway culture) from an
+                // islet to the land of the parent place; any other span is a bridge over a river.
+                let over = if kind == "causeway" {
+                    Over::Tidal { lake: super::roads::profile::PROFILES[super::roads::profile::profile_for(culture)].causeway }
+                } else {
+                    Over::River
+                };
+                if let Some([shore, landing]) = span(f, centre, a.reach, over, parent) {
                     return (kind, drawn(vec![shore, landing]), landing, class);
                 }
             }
@@ -429,7 +471,7 @@ fn build(seed: &str, s: &Settlement, c: &Candidate, f: &Fields) -> Option<Activi
     if rng.chance(place.ruined) {
         buildings = act::ruined(&id, culture, buildings);
     }
-    let (kind, line, access, class) = approach(f, t, place, centre, front, up, &mut rng);
+    let (kind, line, access, class) = approach(f, t, place, culture, s.center, centre, front, up, &mut rng);
     let mut installations = installations::lay_site(&sites::allowed_installations(t, culture), &id, culture, centre, &mut buildings, f, None, &|_| false);
     installations.extend(line);
     Some(ActivitySite {
@@ -571,6 +613,58 @@ mod tests {
         let h: Vec<f32> = (0..n * n).map(|i| height((i % n) as f64 * cell + 0.5 * cell, (i / n) as f64 * cell + 0.5 * cell) as f32).collect();
         let (water, rivers, ids) = (vec![0u8; n * n], vec![0.0f32; n * n], vec![-1i32; n * n]);
         Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids })
+    }
+
+    /// An islet (120 m) ringed by water out to 280 m: a lake is spanned only by a causeway of a
+    /// lake-causeway culture, a river ring by any span.
+    #[test]
+    fn spans_cross_a_lake_only_on_a_causeway_culture() {
+        let (n, width) = (120, 6000.0);
+        let cell = width / n as f64;
+        let centre = Point { x: 3025.0, y: 3025.0 };
+        let ring = |class: u8| -> Fields {
+            let h = vec![20.0f32; n * n];
+            let water: Vec<u8> = (0..n * n).map(|i| {
+                let r = Point { x: (i % n) as f64 * cell + 0.5 * cell, y: (i / n) as f64 * cell + 0.5 * cell }.distance(centre);
+                if (120.0..280.0).contains(&r) { class } else { 0 }
+            }).collect();
+            let level: Vec<f32> = water.iter().map(|&w| if w == 0 { 20.0 } else { 22.0 }).collect();
+            let (rivers, ids) = (vec![3.0f32; n * n], vec![0i32; n * n]);
+            Fields::new(Raster { width, n, height: &h, water: &water, water_level: &level, river_width: &rivers, river_ids: &ids })
+        };
+        // The parent place stands on the land beyond the ring, east of the islet.
+        let home = Point { x: 5000.0, y: 3025.0 };
+        let lake = ring(2);
+        assert!(span(&lake, centre, 400.0, Over::River, home).is_none(), "a rope bridge over a lake");
+        assert!(span(&lake, centre, 400.0, Over::Tidal { lake: false }, home).is_none(), "a causeway over a lake");
+        assert!(span(&lake, centre, 400.0, Over::Tidal { lake: true }, home).is_some(), "no causeway over a shallow lake for a causeway culture");
+        assert!(span(&ring(3), centre, 400.0, Over::River, home).is_some(), "no span over a river");
+        // The sea: a causeway from the islet to the parent's land, never a rope bridge.
+        let sea = ring(1);
+        assert!(span(&sea, centre, 400.0, Over::River, home).is_none(), "a rope bridge over the sea");
+        let [shore, landing] = span(&sea, centre, 400.0, Over::Tidal { lake: false }, home).expect("a tidal causeway from the islet");
+        assert!(shore.distance(centre) < 170.0 && landing.distance(centre) > 240.0 && landing.x > centre.x, "{shore:?} {landing:?}");
+        let causeway = |culture: &str| super::super::roads::profile::PROFILES[super::super::roads::profile::profile_for(culture)].causeway;
+        assert!(!causeway("european-organic"), "a European culture builds lake causeways");
+    }
+
+    /// A place on the mainland shore of a bay 250 m wide (the sea runs in from the south between
+    /// two headlands of one land): it is reached over land, so no causeway crosses the bay to
+    /// the headland opposite, whatever the side its parent stands on.
+    #[test]
+    fn no_causeway_crosses_a_bay_to_a_place_on_the_mainland() {
+        let (n, width) = (120, 6000.0);
+        let h = vec![20.0f32; n * n];
+        // The bay: x 2900..3150, y 0..4000; the land joins round its head, north of it.
+        let water: Vec<u8> = (0..n * n).map(|i| if (58..63).contains(&(i % n)) && i / n < 80 { 1 } else { 0 }).collect();
+        let level: Vec<f32> = water.iter().map(|&w| if w == 0 { 20.0 } else { 0.0 }).collect();
+        let (rivers, ids) = (vec![0.0f32; n * n], vec![-1i32; n * n]);
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &level, river_width: &rivers, river_ids: &ids });
+        let place = Point { x: 2825.0, y: 2025.0 };
+        for home in [Point { x: 5000.0, y: 2025.0 }, Point { x: 800.0, y: 2025.0 }, Point { x: 3025.0, y: 5500.0 }] {
+            assert!(span(&f, place, 400.0, Over::Tidal { lake: true }, home).is_none(), "a causeway across the bay towards {home:?}");
+            assert!(span(&f, place, 400.0, Over::River, home).is_none(), "a rope bridge across the bay towards {home:?}");
+        }
     }
 
     /// One village in the south-west corner of the region.

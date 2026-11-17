@@ -20,6 +20,8 @@ use magna_urbis_random::Rng;
 use magna_urbis_terrain::noise::Noise;
 pub use raster::{Window, vectorize};
 pub use rural::generate_rural;
+// The regional road stage ends its field tracks inside the land these rules farm.
+pub(crate) use rural::{holding_ha, rural_households, working_reach};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -319,6 +321,61 @@ pub(crate) fn biome_kind(
     }
 }
 
+/// Width (m) a river needs before its banks keep a meadow in this biome: in arid climates runoff keeps grass only
+/// beside large perennial rivers, never along a wadi or a dry bed.
+fn meadow_river_width(biome: &str) -> f64 {
+    match biome {
+        "desert" => 30.0,
+        "steppe" => 10.0,
+        _ => 0.0,
+    }
+}
+/// Riverside meadow (floodplain) cells: the valley floor beside a real river, not a fixed buffer. A cell belongs to it
+/// when it lies within the reach of its nearest river (wider for a wider river: 120 m + 12 widths, at most 1.5 km) and
+/// no higher above that river's channel than its flood stage (1 m + 4 % of the width, with a seeded irregularity), on
+/// gentle ground. The edge follows the relief. River size comes from the displayed river widths of the geometry
+/// (`terrain.rivers`: path and per-vertex width, metres); the stage receives no discharge or flow regime, so the width
+/// stands for them. Without river geometry there is no riverside meadow.
+pub(crate) fn floodplain_meadow(input: &Input, w: usize, h: usize, cell: f64) -> Vec<bool> {
+    let total = w * h;
+    let mut src = vec![0_u8; total];
+    let mut width = vec![0_f32; total];
+    for rv in arr(&input.geometry["terrain"]["rivers"]) {
+        let path = poly(&rv["path"]);
+        let widths: Vec<f64> = arr(&rv["width"]).iter().map(num).collect();
+        if path.len() < 2 || widths.len() != path.len() {
+            continue;
+        }
+        for k in 1..path.len() {
+            let wv = (0.5 * (widths[k - 1] + widths[k])) as f32;
+            raster::near_line(&path[k - 1..=k], w, h, cell, 0.75 * cell, |i| {
+                src[i] = 1;
+                width[i] = width[i].max(wv);
+            });
+        }
+    }
+    let min_width = meadow_river_width(&input.biome);
+    if !src.iter().zip(&width).any(|(&s, &wv)| s == 1 && wv as f64 > min_width) {
+        return vec![false; total];
+    }
+    let level: Vec<f32> = (0..total).map(|i| if src[i] == 1 { input.height[i] } else { 0.0 }).collect();
+    let (d, near_width) = raster::distance_field(&src, w, h, cell, Some(&width));
+    let (_, near_level) = raster::distance_field(&src, w, h, cell, Some(&level));
+    let noise = Noise::new(Rng::new(&input.seed).fork("floodplain"));
+    (0..total)
+        .map(|i| {
+            let wv = near_width[i] as f64;
+            if input.water[i] != 0 || wv <= min_width || input.slope[i] as f64 > 0.08 {
+                return false;
+            }
+            let (x, y) = ((i % w) as f64 + 0.5, (i / w) as f64 + 0.5);
+            let rough = noise.fbm(x * cell / 260.0, y * cell / 260.0, 3);
+            let reach = (120.0 + 12.0 * wv).min(1500.0) * (1.0 + 0.35 * rough);
+            let stage = (1.0 + 0.04 * wv) * (1.0 + 0.6 * rough);
+            (d[i] as f64) <= reach && (input.height[i] - near_level[i]) as f64 <= stage
+        })
+        .collect()
+}
 pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
     input.validate(false)?;
     let Input { w, h, cell, .. } = input;
@@ -331,6 +388,7 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
         .collect();
     let (d_water, _) = raster::distance_field(&mask, w, h, cell, None);
     let noise = Noise::new(Rng::new(&input.seed).fork("natural-cover"));
+    let flood = floodplain_meadow(input, w, h, cell);
     let mut classes = vec![0_u8; n];
     for y in 0..h {
         for x in 0..w {
@@ -347,53 +405,36 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
             let d = d_water[i] as f64;
             let wet = d < 100.0 && sl < 0.055;
             let low = d < 250.0 && sl < 0.09;
+            // No settlement works this land: it is wild. Only natural cover is classed (woods, coastal marsh and the
+            // floodplain meadow of real rivers); the rest stays unclassified (0), never commons, pasture or meadow.
             let mut k = if input.biome == "underdark" {
                 if low && n > -0.2 { 7 } else { 8 }
             } else if wet && input.height[i] as f64 - input.sea_level < 8.0 && n > -0.2 {
                 7
+            } else if flood[i] {
+                2
             } else {
                 match input.biome.as_str() {
-                    "desert" => {
-                        if low {
-                            if n > 0.15 { 3 } else { 2 }
-                        } else {
-                            8
-                        }
-                    }
-                    "tundra" => {
-                        if low {
-                            2
-                        } else if n > 0.2 {
-                            3
-                        } else {
-                            8
-                        }
-                    }
+                    "desert" | "tundra" => 0,
                     "steppe" => {
-                        if low {
-                            2
-                        } else if n > 0.45 && d < 500.0 {
+                        if n > 0.45 && d < 500.0 {
                             4
                         } else {
-                            3
+                            0
                         }
                     }
                     "forest" | "tropical" => {
-                        if low && n < -0.35 {
-                            2
-                        } else if sl > 0.5 {
-                            8
+                        if sl > 0.5 {
+                            0
                         } else {
                             4
                         }
                     }
                     _ => {
-                        if low {
-                            2
-                        } else if sl > 0.2 || n > 0.16 {
+                        if sl > 0.2 || n > 0.16 {
                             4
                         } else {
-                            3
+                            0
                         }
                     }
                 }
@@ -401,7 +442,7 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
             // Underdark: no trees grow without light; the climate forest field does not apply.
             if !input.natural_forest.is_empty() && !input.biome.starts_with("underdark") {
                 if k == 4 {
-                    k = 8;
+                    k = 0;
                 }
                 if input.natural_forest[i] as f64 >= 0.22 && k != 7 {
                     k = 4;
@@ -411,7 +452,11 @@ pub fn generate_natural_cover(input: &Input) -> Result<Layer, String> {
         }
     }
     let mut layer = Layer::default();
-    let lakes = ground::lake_regions(input);
+    // The drawn water (rivers with their widths, lakes, water domains) is cut out of every natural class.
+    let lakes = ground::tile_water(
+        &ground::water_regions(input),
+        geom::bbox(&[geom::p(0.0, 0.0), geom::p(w as f64 * cell, h as f64 * cell)]),
+    );
     let lake_index = boolean::cut_index(&lakes);
     let pieces = par::map(&[4_u8, 2, 3, 8, 7], |&k| {
         let mut areas = Vec::new();

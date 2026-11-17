@@ -86,7 +86,8 @@ pub(super) fn spans(f: &Fields, path: &[Point], class: usize) -> Vec<Span> {
             let t = s as f64 / steps as f64;
             let p = (lerp(seg[0], seg[1], t), along + len * t);
             let i = f.index(p.0);
-            let w = f.r.water[i];
+            // Cave rock is a dug tunnel, not a crossing (`tunnelling`).
+            let w = if f.cave.is_some() && f.is_rock(i) { 0 } else { f.r.water[i] };
             if w == 2 || w == 3 {
                 if !run.is_empty() && w != kind {
                     flush(&mut run, dry, kind, widest, &mut out);

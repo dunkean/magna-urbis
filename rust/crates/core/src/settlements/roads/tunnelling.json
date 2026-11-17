@@ -1,0 +1,12 @@
+{
+  "about": "Road tunnels dug through Underdark cave rock. cost: one metre dug, relative to one metre of open ground, for the cultures that dig (a culture not listed never digs). maxLength: longest dug stretch (m). maxGrade: steepest grade between its two mouths. perMap: dug tunnels on a 10 km map at amount 1 (scaled by the square root of the map width).",
+  "cost": {
+    "duergar-hold": 5.0,
+    "dwarven": 5.0,
+    "gnomish": 6.0,
+    "drow-enclave": 12.0
+  },
+  "maxLength": 900.0,
+  "maxGrade": 0.1,
+  "perMap": 3.0
+}

@@ -170,6 +170,10 @@ pub(super) struct Fields {
     pub dl: Vec<f64>,
     /// Dry land whose 4-connected component never reaches the map edge.
     pub island: Vec<bool>,
+    /// Land masses: 4-connected components separated by sea and lakes (`u32::MAX` on either),
+    /// and their dry areas (m²). Crossable rivers and streams, and cave rock, join surrounding land.
+    pub land_part: Vec<u32>,
+    pub land_area: Vec<f64>,
     pub sat: Vec<u32>,
     /// Dry-land height range, for the elevation preference.
     pub dry_range: (f32, f32),
@@ -178,9 +182,150 @@ pub(super) struct Fields {
     pub long_grades: std::sync::OnceLock<Vec<f32>>,
     /// Allowed road moves per cell (bit per direction), without and with causeways; computed by
     /// the first road search on this terrain.
-    pub move_masks: [std::sync::OnceLock<Vec<u32>>; 2],
+    /// The third variant is for the cultures that dig through cave rock (`roads::tunnelling`).
+    pub move_masks: [std::sync::OnceLock<Vec<u32>>; 3],
+    /// Underdark maps only (cave rock marked by the bridge, `CAVE_ROCK_MARK`): placement's view of water.
+    pub cave: Option<Cave>,
+}
+/// Cave rock: water class 2 whose level lies more than this far (m) below the ground. The bridge
+/// marks the Underdark cave mask so (`CAVE_ROCK_DEPTH`, 1000 m); no lake or sea sits there, so
+/// surface water at ground level (a lagoon, a lake margin) is never taken for rock.
+pub const CAVE_ROCK_MARK: f32 = 500.0;
+/// Underdark: cave rock is class 2 far below its level (`CAVE_ROCK_MARK`). It is
+/// neither a shore nor a flood line, so placement measures water and flood height against real
+/// water only; `dw`/`hab` keep the raw meaning for the road search.
+pub(super) struct Cave {
+    /// Open-floor share of the map (dry cells over all cells).
+    pub floor: f64,
+    /// Distance to sea, lake or river water, the rock excluded.
+    pub dw: Vec<f64>,
+    /// Height above that water (99 when none is on the map).
+    pub hab: Vec<f64>,
+    /// Connected open ground (4-neighbours, everything but rock): the component of each cell
+    /// (`u32::MAX` on rock) and the dry floor of each component (m²).
+    pub component: Vec<u32>,
+    pub component_floor: Vec<f64>,
+}
+impl Cave {
+    /// Dry floor (m²) of the cave system around cell `i`: its whole connected component.
+    pub fn reachable_floor(&self, i: usize) -> f64 {
+        self.component_floor.get(self.component[i] as usize).copied().unwrap_or(0.0)
+    }
 }
 impl Fields {
+    /// Cave rock: class 2 with the bridge's rock mark (`CAVE_ROCK_MARK`).
+    pub fn is_rock(&self, i: usize) -> bool {
+        self.r.water[i] == 2 && self.r.water_level[i] < self.r.height[i] - CAVE_ROCK_MARK
+    }
+    /// Distance to water as placement reads it: real water only in the Underdark.
+    pub fn place_dw(&self, i: usize) -> f64 {
+        self.cave.as_ref().map_or(self.dw[i], |c| c.dw[i])
+    }
+    /// Height above water as placement reads it: real water only in the Underdark.
+    pub fn place_hab(&self, i: usize) -> f64 {
+        self.cave.as_ref().map_or(self.hab[i], |c| c.hab[i])
+    }
+    /// The cave rock as one even/odd ring group on the cell corners (rock masses with their
+    /// chambers as holes), in metres, for the urban geometry: towns then clip to the open floor.
+    /// A diagonal rock contact is closed first (its floor pair becomes rock: never more floor
+    /// than the raster has), so every ring corner has a single way on.
+    pub fn rock_rings(&self) -> Vec<Vec<[f64; 2]>> {
+        let n = self.r.n;
+        let base: Vec<bool> = (0..n * n).map(|i| self.is_rock(i)).collect();
+        // One planning cell of margin: the drawn wall follows the finer cave field, up to half a
+        // cell either side of a planning cell edge, so a town keeps one cell clear of the rock
+        // and no house reaches into the drawn wall.
+        let mut rock = base.clone();
+        for y in 0..n {
+            for x in 0..n {
+                let i = y * n + x;
+                if !base[i]
+                    && ((x > 0 && base[i - 1])
+                        || (x + 1 < n && base[i + 1])
+                        || (y > 0 && base[i - n])
+                        || (y + 1 < n && base[i + n]))
+                {
+                    rock[i] = true;
+                }
+            }
+        }
+        loop {
+            let mut changed = false;
+            for y in 0..n.saturating_sub(1) {
+                for x in 0..n - 1 {
+                    let (a, b, c, d) = (y * n + x, y * n + x + 1, (y + 1) * n + x, (y + 1) * n + x + 1);
+                    if rock[a] == rock[d] && rock[b] == rock[c] && rock[a] != rock[b] {
+                        if rock[a] {
+                            rock[b] = true;
+                            rock[c] = true;
+                        } else {
+                            rock[a] = true;
+                            rock[d] = true;
+                        }
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let side = n + 1;
+        let mut next = vec![usize::MAX; side * side];
+        let mut starts = vec![];
+        let at = |x: usize, y: usize| rock[y * n + x];
+        for y in 0..n {
+            for x in 0..n {
+                if !at(x, y) {
+                    continue;
+                }
+                let mut edge = |a: (usize, usize), b: (usize, usize)| {
+                    next[a.1 * side + a.0] = b.1 * side + b.0;
+                    starts.push(a.1 * side + a.0);
+                };
+                if y == 0 || !at(x, y - 1) {
+                    edge((x, y), (x + 1, y));
+                }
+                if x + 1 == n || !at(x + 1, y) {
+                    edge((x + 1, y), (x + 1, y + 1));
+                }
+                if y + 1 == n || !at(x, y + 1) {
+                    edge((x + 1, y + 1), (x, y + 1));
+                }
+                if x == 0 || !at(x - 1, y) {
+                    edge((x, y + 1), (x, y));
+                }
+            }
+        }
+        let mut used = vec![false; side * side];
+        let mut rings = vec![];
+        for &start in &starts {
+            if used[start] {
+                continue;
+            }
+            let mut corners = vec![];
+            let mut c = start;
+            while c != usize::MAX && !used[c] {
+                used[c] = true;
+                corners.push((c % side, c / side));
+                c = next[c];
+            }
+            // Only the turns: a staircase keeps its corners, a straight wall its two ends.
+            let k = corners.len();
+            let ring: Vec<[f64; 2]> = (0..k)
+                .filter(|&j| {
+                    let (a, b, c) = (corners[(j + k - 1) % k], corners[j], corners[(j + 1) % k]);
+                    (b.0 as i64 - a.0 as i64) * (c.1 as i64 - b.1 as i64)
+                        != (b.1 as i64 - a.1 as i64) * (c.0 as i64 - b.0 as i64)
+                })
+                .map(|j| [corners[j].0 as f64 * self.cell, corners[j].1 as f64 * self.cell])
+                .collect();
+            if ring.len() >= 3 {
+                rings.push(ring);
+            }
+        }
+        rings
+    }
     pub fn new(r: Raster<'_>) -> Self {
         let r = Land {
             width: r.width,
@@ -254,13 +399,95 @@ impl Fields {
                 }
             })
             .collect();
+        // Underdark (the cave rock the bridge marks, `CAVE_ROCK_MARK`): one more distance field,
+        // to real water only. Ordinary maps have no rock and keep every field as it was.
+        let is_rock = |i: usize| r.water[i] == 2 && r.water_level[i] < r.height[i] - CAVE_ROCK_MARK;
+        let rock_cells = (0..n * n).filter(|&i| is_rock(i)).count();
+        let cave = (rock_cells > 0).then(|| {
+            let (dw, nearest) = distance(n, cell, |i| r.water[i] != 0 && !is_rock(i));
+            let hab = (0..n * n)
+                .map(|i| {
+                    if nearest[i] == usize::MAX {
+                        99.0
+                    } else {
+                        r.height[i] as f64 - r.water_level[nearest[i]] as f64
+                    }
+                })
+                .collect();
+            let floor = r.water.iter().filter(|&&w| w == 0).count() as f64 / (n * n) as f64;
+            let mut component = vec![u32::MAX; n * n];
+            let mut component_floor = vec![];
+            let mut stack = vec![];
+            for start in 0..n * n {
+                if component[start] != u32::MAX || is_rock(start) {
+                    continue;
+                }
+                let id = component_floor.len() as u32;
+                let mut dry = 0usize;
+                component[start] = id;
+                stack.push(start);
+                while let Some(i) = stack.pop() {
+                    dry += usize::from(r.water[i] == 0);
+                    let (x, y) = (i % n, i / n);
+                    for j in [
+                        (x > 0).then(|| i - 1),
+                        (x + 1 < n).then(|| i + 1),
+                        (y > 0).then(|| i - n),
+                        (y + 1 < n).then(|| i + n),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
+                        if component[j] == u32::MAX && !is_rock(j) {
+                            component[j] = id;
+                            stack.push(j);
+                        }
+                    }
+                }
+                component_floor.push(dry as f64 * cell * cell);
+            }
+            Cave { floor, dw, hab, component, component_floor }
+        });
+        let buildable_hab = cave.as_ref().map_or(&hab, |c| &c.hab);
         let island = islands(n, &r.water);
+        let mut land_part = vec![u32::MAX; n * n];
+        let mut land_area = vec![];
+        let mut stack = vec![];
+        let separates_land = |i: usize| r.water[i] == 1 || (r.water[i] == 2 && !is_rock(i));
+        for start in 0..n * n {
+            if land_part[start] != u32::MAX || separates_land(start) {
+                continue;
+            }
+            let id = land_area.len() as u32;
+            let mut dry = 0usize;
+            land_part[start] = id;
+            stack.push(start);
+            while let Some(i) = stack.pop() {
+                dry += usize::from(r.water[i] == 0);
+                let (x, y) = (i % n, i / n);
+                for j in [
+                    (x > 0).then(|| i - 1),
+                    (x + 1 < n).then(|| i + 1),
+                    (y > 0).then(|| i - n),
+                    (y + 1 < n).then(|| i + n),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if land_part[j] == u32::MAX && !separates_land(j) {
+                        land_part[j] = id;
+                        stack.push(j);
+                    }
+                }
+            }
+            land_area.push(dry as f64 * cell * cell);
+        }
         let mut sat = vec![0; (n + 1) * (n + 1)];
         for y in 0..n {
             let mut row = 0;
             for x in 0..n {
                 let i = y * n + x;
-                row += u32::from(r.water[i] == 0 && slope[i] < 0.2 && hab[i] >= 1.0);
+                row += u32::from(r.water[i] == 0 && slope[i] < 0.2 && buildable_hab[i] >= 1.0);
                 sat[(y + 1) * (n + 1) + x + 1] = sat[y * (n + 1) + x + 1] + row;
             }
         }
@@ -278,10 +505,13 @@ impl Fields {
             hab,
             dl,
             island,
+            land_part,
+            land_area,
             sat,
             dry_range,
             long_grades: std::sync::OnceLock::new(),
             move_masks: Default::default(),
+            cave,
         }
     }
     /// Bilinear road height (ground, bridge decks over rivers) at a point.

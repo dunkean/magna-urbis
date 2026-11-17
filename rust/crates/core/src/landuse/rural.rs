@@ -89,6 +89,38 @@ fn component(c: &[u8], seen: &mut [bool], seed: usize, n: usize) -> Vec<usize> {
     }
     comp
 }
+/// Smoothed stand score from which dense wood claims cultivated land (natural classes turn to wood from 0.22).
+pub(crate) const DENSE_WOOD: f32 = 0.45;
+/// Cultivated classes (fields, orchards, gardens, enclosed fields) that dense wood takes back.
+pub(crate) fn cultivated(k: u8) -> bool {
+    [1, 5, 6, 9].contains(&k)
+}
+/// Cells where the wood wins over cultivation: the smoothed stand score and all its 8 neighbours are at least
+/// DENSE_WOOD, so a field is never riddled with single forest cells and only the inside of a dense wood converts.
+pub(crate) fn dense_wood(stands: &[f32], n: usize) -> Vec<bool> {
+    (0..stands.len())
+        .map(|i| stands[i] >= DENSE_WOOD && neighbours(i, n).all(|j| stands[j] >= DENSE_WOOD))
+        .collect()
+}
+/// Cultivated cells the wood takes back: whole connected holdings of one class (4-connected components of the class
+/// raster) whose cells are mostly dense wood. A holding is kept or given up entire, so the rule never carves a parcel
+/// border cell by cell; the fields and parcels drawn later keep their own geometry.
+pub(crate) fn wood_claims(cls: &[u8], dense: &[bool], n: usize) -> Vec<bool> {
+    let mut claimed = vec![false; cls.len()];
+    let mut seen = vec![false; cls.len()];
+    for i in 0..cls.len() {
+        if seen[i] || !cultivated(cls[i]) {
+            continue;
+        }
+        let comp = component(cls, &mut seen, i, n);
+        if 2 * comp.iter().filter(|&&j| dense[j]).count() > comp.len() {
+            for j in comp {
+                claimed[j] = true;
+            }
+        }
+    }
+    claimed
+}
 fn neighbours(i: usize, n: usize) -> impl Iterator<Item = usize> {
     let (x, y) = ((i % n) as isize, (i / n) as isize);
     D8.into_iter().filter_map(move |(dx, dy)| {
@@ -135,6 +167,17 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         );
     }
     let (d_road, road_ang) = distance_field(&road_m, n, n, cell, Some(&road_ang_c));
+    // The drawn water is the one water authority (ground::water_regions): no class is decided on a cell whose centre
+    // lies in it or in the water raster (sea, lake and river cells alike), and every traced region is cut by it below.
+    let water_geo = ground::water_regions(input);
+    let mut drawn = vec![0_u8; total];
+    raster_regions(&water_geo, n, n, cell, &mut drawn);
+    // A river cell of the raster is water only without drawn water: the coarse raster channel strays from the drawn
+    // river, and the drawn one decides. Sea, lake and cave-rock cells always stay out.
+    let geo = !water_geo.is_empty();
+    let wet: Vec<u8> = (0..total)
+        .map(|i| u8::from(drawn[i] != 0 || (input.water[i] != 0 && (input.water[i] != 3 || !geo))))
+        .collect();
     lap.lap("roads");
     let secondary: Vec<_> = arr(&g["settlements"])
         .iter()
@@ -486,13 +529,15 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             2
         }
     };
+    // Riverside meadow: the floodplain of real rivers, sized by the river (floodplain_meadow), not a d_water buffer.
+    let flood = floodplain_meadow(input, n, n, cell);
+    // Working reach: rural classes are human use and exist only within the travel cost u4 (0.55 lm, the outer ring
+    // of the settlements' land); beyond it the land is wild, unclassified unless it is wood.
+    let beyond = |u: f64, soil: f64| u > u4 * (1.0 + 0.2 * soil);
     par::for_each2(&mut cls, &mut cultivation, |i, class, cultivated| {
         let (x, y) = (i % n, i / n);
-        let water = input.water[i];
         let dw = input.d_water[i] as f64;
-        if water == 1
-            || water == 2
-            || dw < 0.6 * cell && water == 0
+        if wet[i] != 0
             || cover_reserve.as_ref().unwrap_or(&reserve)[i] != 0
             || farm_mask[i] == 1
         {
@@ -550,7 +595,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                         0.0
                     } {
             7
-        } else if hab < 4.5 && dw < 240.0 && sl < 0.5 * field_max && (dw < 130.0 || soil < 0.1) {
+        } else if flood[i] && sl < 0.5 * field_max {
             2
         } else if sl > pasture_max || (prom > prom_hi * 1.15 && sl > field_max) {
             4
@@ -586,8 +631,10 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             } else {
                 2
             }
-        } else if multi && u > u4 * (1.0 + 0.2 * soil) {
-            if soil > -0.45 { 4 } else { 8 }
+        } else if beyond(u, soil) {
+            // Wild land: wood where the soil carries it (the forest pass below refines it from the stand score).
+            let wooded = if multi { soil > -0.45 } else { soil > 0.0 };
+            if !input.natural_forest.is_empty() || wooded { 4 } else { 0 }
         } else if sl > field_max {
             if soil > 0.15 { 4 } else { 3 }
         } else if u < u3 * (1.0 + 0.28 * soil) && soil > -0.6 {
@@ -599,7 +646,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         } else {
             3
         };
-        if b != "temperate" {
+        if b != "temperate" && k != 0 {
             k = biome_kind(k, b, dw, hab, sl, soil, u, u3);
         }
         if k == 1 {
@@ -729,13 +776,10 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         let carry: Vec<_> = cls.iter().map(|&k| k as f32).collect();
         let (_, nearest) = distance_field(&src, n, n, cell, Some(&carry));
         for i in 0..total {
-            let w = input.water[i];
             let dw = input.d_water[i] as f64;
             if mask[i] == 0
                 || cls[i] != 0
-                || w == 1
-                || w == 2
-                || dw < 0.6 * cell && w == 0
+                || wet[i] != 0
                 || excl[i] != 0
                 || farm_mask[i] == 1
             {
@@ -790,6 +834,7 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
         let relief = 0.5_f64.max(2.2 * sum / (count.max(1) as f64));
+        let claimed = wood_claims(&cls, &dense_wood(&stands, n), n);
         par::for_each(&mut cls, |i, class| {
             let spur = ((input.height[i] as f64 - local[i] as f64) / relief).clamp(-1.0, 1.0);
             let score = (stands[i] as f64
@@ -808,11 +853,16 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                 if sl > field_cap || !cost[i].is_finite() && secondary.is_empty() {
                     *class = 3;
                 } else {
+                    // The wood wins: a holding lying mostly in dense wood is given up whole.
+                    if claimed[i] {
+                        *class = 4;
+                    }
                     return;
                 }
             }
             if *class == 4 && (score as f64) < 0.22 {
-                *class = if sl > pasture_max { 8 } else { 3 };
+                // Thin stands beyond the working reach are wild open land, not commons or pasture.
+                *class = if u_dist[i] as f64 > u4 { 0 } else if sl > pasture_max { 8 } else { 3 };
             } else if u_dist[i] as f64 > u4 && *class != 7 && score as f64 >= 0.22 {
                 *class = 4;
             }
@@ -874,16 +924,18 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     }
     lap.lap("forest+wet");
     // Invariants on cultivated land (fields, enclosed fields, orchards, gardens):
-    // - it is worked by people living within walking distance: a village works its open fields
-    //   up to ~2.5 km, a farmstead its land up to ~1.5 km;
+    // - it is worked by people living within walking distance: a place works its fields up to
+    //   `working_reach` of its size (farmstead 0.8 km ... town 2.5 km), a farm its land up to
+    //   `FARM_REACH`;
     // - its area follows the settled population (towns, villages, hamlets, placed farmsteads):
-    //   budget = people x BASE_HA_PER_HEAD x (1 + plan.cropSurplus); 0 = subsistence, ~2 = export.
+    //   budget = people x BASE_HA_PER_HEAD x (1 + plan.cropSurplus); 0 = subsistence, ~2 = export;
+    // - and the hands that work it: one `holding_ha` per farming household (`rural_households`).
     // Within the budget, the cells nearest to their farmers are kept. Suited land that no farmer
-    // reaches gets new farmsteads (they do not raise the budget); unsuited out-of-reach land
-    // returns to forest or pasture, and the surplus becomes pasture.
+    // reaches gets new farmsteads, one holding each, while farming households remain; unsuited
+    // out-of-reach land returns to forest or pasture, and the surplus becomes pasture. A farm
+    // that cannot be built leaves its holding to pasture: no field without its farmer.
     {
-        const VILLAGE_REACH: f64 = 2500.0;
-        const FARM_REACH: f64 = 1500.0;
+        const FARM_REACH: f64 = 800.0;
         const BASE_HA_PER_HEAD: f64 = 0.7;
         let crop_surplus = pl["cropSurplus"].as_f64().unwrap_or(0.2).clamp(0.0, 3.0);
         let crop = |k: u8| [1, 5, 6, 9].contains(&k);
@@ -905,12 +957,45 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         let people = main_pop + secondary.iter().map(|st| num(&st["population"])).sum::<f64>();
         let budget =
             (people * BASE_HA_PER_HEAD * (1.0 + crop_surplus) * 1e4 / (cell * cell)).ceil() as usize;
+        // The places that work fields from their reserve (farmstead places farm from `farm_m`):
+        // centre and walking reach by size. The nearest centre sets a cell's reach.
+        let places: Vec<(Point, f64)> = arr(&g["settlements"])
+            .iter()
+            .filter(|st| s(&st["detail"]) != "farmstead")
+            .filter_map(|st| {
+                let c: Point = serde_json::from_value(st["center"].clone()).ok()?;
+                let pop = if yes(&st["main"]) { main_pop } else { num(&st["population"]) };
+                Some((c, working_reach(pop)))
+            })
+            .collect();
+        let main_reach = working_reach(main_pop);
+        let reach_at = |i: usize| -> f64 {
+            let q = p(((i % n) as f64 + 0.5) * cell, ((i / n) as f64 + 0.5) * cell);
+            places
+                .iter()
+                .min_by(|a, b| dist(a.0, q).total_cmp(&dist(b.0, q)))
+                .map_or(main_reach, |&(_, r)| r)
+        };
+        // Farming households and the land they work: one holding each.
+        let households = rural_households(
+            arr(&g["settlements"])
+                .iter()
+                .map(|st| if yes(&st["main"]) { main_pop } else { num(&st["population"]) })
+                .chain((arr(&g["settlements"]).iter().all(|st| !yes(&st["main"]))).then_some(main_pop)),
+        );
+        let holding = ((holding_ha(b, s(&input.options["climate"])) * 1e4 / (cell * cell)).round() as usize).max(1);
+        let labour = (households * holding as f64).ceil() as usize;
+        // Uncropped land of the settlements: pasture on the surface, the wild cave floor (8) in the Underdark, where
+        // there is no pasture, meadow or forest.
+        let under = b.starts_with("underdark");
+        let grazed = if under { 8 } else { 3 };
         let (mut worked, mut far) = (vec![], vec![]);
         for i in 0..total {
             if !crop(cls[i]) {
                 continue;
             }
-            let reach = (d_village[i] as f64 / VILLAGE_REACH).min(d_farmer[i] as f64 / FARM_REACH);
+            let near = d_farmer[i] as f64 / FARM_REACH;
+            let reach = if near <= 1.0 { near } else { near.min(d_village[i] as f64 / reach_at(i)) };
             if reach <= 1.0 {
                 worked.push((reach as f32, i));
             } else {
@@ -918,14 +1003,20 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
         worked.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        let keep = worked.len().min(budget);
+        // Food need and farming hands both bound the worked land.
+        let keep = worked.len().min(budget).min(labour);
         let mut surplus = worked.len() - keep;
         for &(_, i) in &worked[keep..] {
-            cls[i] = 3;
+            cls[i] = grazed;
         }
-        let mut left = budget - keep;
+        let mut left = budget.saturating_sub(keep);
+        // Households left for new farms: those not already busy on worked land, less the farms
+        // already drawn.
+        let free_households = (households - (keep as f64 / holding as f64).ceil()).max(0.0) as usize;
+        let max_farms = free_households.saturating_sub(farmsteads.len());
         // Out of reach: suited land (good soil, gentle slope, dry, habitable) gets farmers while
-        // the budget lasts, nearest to the market first; each new farm claims its working radius.
+        // the budget and the households last, nearest to the market first; each new farm claims
+        // one holding within its reach (`claim_holdings`).
         let suited = |i: usize| {
             input.water[i] == 0
                 && input.d_water[i] >= 40.0
@@ -942,50 +1033,29 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
             }
         }
         cand.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        let r = (FARM_REACH / cell).ceil() as isize;
-        let mut sites = vec![];
-        let mut ring = vec![];
-        for &(_, c) in &cand {
-            if left == 0 {
-                break;
-            }
-            if state[c] != 1 {
-                continue;
-            }
-            let (cx, cy) = ((c % n) as isize, (c / n) as isize);
-            sites.push(p((cx as f64 + 0.5) * cell, (cy as f64 + 0.5) * cell));
-            ring.clear();
-            for y in (cy - r).max(0)..=(cy + r).min(n as isize - 1) {
-                for x in (cx - r).max(0)..=(cx + r).min(n as isize - 1) {
-                    let j = y as usize * n + x as usize;
-                    let d = ((x - cx) as f64).hypot((y - cy) as f64) * cell;
-                    if state[j] == 1 && d <= FARM_REACH {
-                        ring.push((d, j));
-                    }
-                }
-            }
-            ring.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-            for &(_, j) in ring.iter().take(left) {
-                state[j] = 2;
-            }
-            left -= ring.len().min(left);
-        }
+        let order: Vec<usize> = cand.iter().map(|&(_, c)| c).collect();
+        let claims = claim_holdings(&order, &mut state, n, cell, FARM_REACH, holding, max_farms, &mut left);
+        let sites: Vec<Point> = claims
+            .iter()
+            .map(|(c, _)| p(((c % n) as f64 + 0.5) * cell, ((c / n) as f64 + 0.5) * cell))
+            .collect();
         let mut unreached = 0;
         for &i in &far {
             match state[i] {
                 2 => {}
                 1 => {
-                    cls[i] = 3;
+                    cls[i] = grazed;
                     surplus += 1;
                 }
                 _ => {
-                    cls[i] = if soil_at((i % n) as f64, (i / n) as f64) > 0.0 { 4 } else { 3 };
+                    // No farmer reaches it: wood or wild land.
+                    cls[i] = if !under && soil_at((i % n) as f64, (i / n) as f64) > 0.0 { 4 } else { 0 };
                     unreached += 1;
                 }
             }
         }
-        let added = if sites.is_empty() {
-            vec![]
+        let (added, built) = if sites.is_empty() {
+            (vec![], vec![])
         } else {
             super::rural_farms::add_for_demand(
                 input,
@@ -1000,6 +1070,15 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                 &sites,
             )
         };
+        // A holding whose farm could not be built is nobody's field: back to pasture.
+        let mut orphan = 0usize;
+        for ((_, cells), _) in claims.iter().zip(&built).filter(|(_, ok)| !**ok) {
+            for &j in cells {
+                cls[j] = grazed;
+                orphan += 1;
+            }
+        }
+        surplus += orphan;
         if !added.is_empty() {
             let mut mask = vec![0_u8; total];
             let lots: Vec<_> = added.iter().map(|f| poly(&f["lot"])).collect();
@@ -1025,7 +1104,44 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         stats.insert("field.surplusHa".into(), (surplus as f64 * ha).round());
         stats.insert("field.demandSites".into(), sites.len() as f64);
         stats.insert("field.demandFarms".into(), added.len() as f64);
+        stats.insert("field.households".into(), households.round());
+        stats.insert("field.holdingHa".into(), (holding as f64 * ha * 10.0).round() / 10.0);
+        stats.insert("field.labourHa".into(), (labour as f64 * ha).round());
+        stats.insert("field.orphanHa".into(), (orphan as f64 * ha).round());
         farmsteads.extend(added);
+    }
+    // Under the drawn water next to land, cells take the class of the nearest land cell: traced regions then run under
+    // the banks and the exact water cut below draws every land/water limit, along the drawn bank instead of a staircase
+    // of cells beside it. Only cells inside the drawn water: a water cell of the raster alone has no geometry to cut it
+    // and stays unclassified. Done after the budget, so water never counts as cultivated area.
+    if !water_geo.is_empty() {
+        let src: Vec<u8> = cls.iter().map(|&k| u8::from(k != 0)).collect();
+        let carry: Vec<f32> = cls.iter().map(|&k| k as f32).collect();
+        let (d, near) = distance_field(&src, n, n, cell, Some(&carry));
+        let held = cover_reserve.as_ref().unwrap_or(&reserve);
+        for i in 0..total {
+            if cls[i] == 0
+                && drawn[i] != 0
+                && (d[i] as f64) <= 1.5 * cell
+                && held[i] == 0
+                && farm_mask[i] != 1
+            {
+                cls[i] = near[i] as u8;
+            }
+        }
+    }
+    // Road verges likewise: a cultivated holding runs under the verge cells of its road and the exact road cut below
+    // draws its limit along the road, instead of a staircase of verge cells (the verge stays on wild land).
+    {
+        let src: Vec<u8> = (0..total).map(|i| u8::from(cls[i] != 0 && excl[i] == 0)).collect();
+        let carry: Vec<f32> = cls.iter().map(|&k| k as f32).collect();
+        let (d, near) = distance_field(&src, n, n, cell, Some(&carry));
+        for i in 0..total {
+            let k = near[i] as u8;
+            if excl[i] != 0 && cls[i] != 0 && !cultivated(cls[i]) && cultivated(k) && (d[i] as f64) <= 2.0 * cell {
+                cls[i] = k;
+            }
+        }
     }
     stats.insert("ms.lu.classes".into(), class_clock.ms());
     lap.lap("budget");
@@ -1111,7 +1227,20 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     let road_index = bo::cut_index(&road_cuts);
     let foot_index = bo::cut_index(&cover_foot);
     let ground_index = bo::cut_index(&cover_ground);
-    let lakes = ground::lake_regions(input);
+    // The drawn water, tiled over the land-use extent: every class is cut by it (fields never on a river or a lake).
+    let lakes = windows
+        .iter()
+        .flatten()
+        .map(|w| {
+            bbox(&[
+                p(w.x0 as f64 * cell, w.y0 as f64 * cell),
+                p((w.x1 + 1) as f64 * cell, (w.y1 + 1) as f64 * cell),
+            ])
+            .grow(3.0 * cell + wamp)
+        })
+        .reduce(|a, b| bbox(&[p(a.x0, a.y0), p(a.x1, a.y1), p(b.x0, b.y0), p(b.x1, b.y1)]))
+        .map(|focus| ground::tile_water(&water_geo, focus))
+        .unwrap_or_default();
     let lake_index = bo::cut_index(&lakes);
     let pieces = par::map(&(1..10_u8).collect::<Vec<_>>(), |&k| {
         let Some(win) = windows[k as usize] else {
@@ -1181,9 +1310,8 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
                     }
                 }
             }
-            if natural(k) {
-                result = bo::clear_roads(&result, &road_cuts, &road_index, &mut failures);
-            }
+            // Every class meets roads and water along their drawn geometry, never along raster cells.
+            result = bo::clear_roads(&result, &road_cuts, &road_index, &mut failures);
             result = ground::exclude_lakes(result, &lakes, &lake_index);
             (result, failures, clip_dropped)
         });
@@ -1568,4 +1696,144 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         },
         stats,
     })
+}
+/// People per farming household.
+const HOUSEHOLD: f64 = 5.5;
+/// How far (m) the people of a place walk to their fields, by its size: a farmstead 0.8 km,
+/// a hamlet 1.2 km, a village 2 km, a town or city 2.5 km.
+pub(crate) fn working_reach(pop: f64) -> f64 {
+    if pop < 15.0 {
+        800.0
+    } else if pop < 150.0 {
+        1200.0
+    } else if pop < 1000.0 {
+        2000.0
+    } else {
+        2500.0
+    }
+}
+/// Cultivated land (ha, rotation fallow included) one farming household works: 12 ha of open
+/// field, 6 ha in a cold climate (short season), 4 ha on terraces in the Underdark.
+pub(crate) fn holding_ha(biome: &str, climate: &str) -> f64 {
+    let cold = |t: &str| ["nordic", "taiga", "tundra", "boreal", "arctic", "alpine", "snow", "ice"].iter().any(|k| t.contains(k));
+    if biome.starts_with("underdark") {
+        4.0
+    } else if cold(biome) || cold(climate) {
+        6.0
+    } else {
+        12.0
+    }
+}
+/// Farming households of a region: the share of each place's people who farm (a farmstead all
+/// of them, a hamlet 85 %, a village 70 %, then a smooth decline to a quarter at 5,000 and a tenth
+/// from 20,000: town dwellers who farm keep a real field belt around large towns), in households.
+pub(crate) fn rural_households(populations: impl IntoIterator<Item = f64>) -> f64 {
+    let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t.clamp(0.0, 1.0);
+    populations
+        .into_iter()
+        .map(|pop| {
+            let share = if pop < 15.0 {
+                1.0
+            } else if pop < 150.0 {
+                0.85
+            } else if pop < 1000.0 {
+                0.7
+            } else if pop < 5000.0 {
+                lerp(0.7, 0.25, (pop - 1000.0) / 4000.0)
+            } else {
+                lerp(0.25, 0.1, (pop - 5000.0) / 15000.0)
+            };
+            pop.max(0.0) * share / HOUSEHOLD
+        })
+        .sum()
+}
+/// New farms on suited land no farmer reaches (`state` 1, in `order`, best first): each new farm
+/// claims at most one holding (`holding` cells, nearest first, within `reach` m), while
+/// `max_farms` and the cell budget `left` last. Claimed cells become `state` 2. Returns each
+/// farm's site cell and its claimed cells.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn claim_holdings(
+    order: &[usize],
+    state: &mut [u8],
+    n: usize,
+    cell: f64,
+    reach: f64,
+    holding: usize,
+    max_farms: usize,
+    left: &mut usize,
+) -> Vec<(usize, Vec<usize>)> {
+    let r = (reach / cell).ceil() as isize;
+    let mut claims = vec![];
+    let mut ring = vec![];
+    for &c in order {
+        if *left == 0 || claims.len() >= max_farms {
+            break;
+        }
+        if state[c] != 1 {
+            continue;
+        }
+        let (cx, cy) = ((c % n) as isize, (c / n) as isize);
+        ring.clear();
+        for y in (cy - r).max(0)..=(cy + r).min(n as isize - 1) {
+            for x in (cx - r).max(0)..=(cx + r).min(n as isize - 1) {
+                let j = y as usize * n + x as usize;
+                let d = ((x - cx) as f64).hypot((y - cy) as f64) * cell;
+                if state[j] == 1 && d <= reach {
+                    ring.push((d, j));
+                }
+            }
+        }
+        ring.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let take = ring.len().min(holding).min(*left);
+        let cells: Vec<usize> = ring[..take].iter().map(|&(_, j)| j).collect();
+        for &j in &cells {
+            state[j] = 2;
+        }
+        *left -= take;
+        claims.push((c, cells));
+    }
+    claims
+}
+
+#[cfg(test)]
+mod holding_tests {
+    use super::*;
+
+    /// A wide zone of suited land (2 km × 2 km, 400 ha) far from every place: each new farm
+    /// takes one holding, the farms stop at the households available, and the rest stays
+    /// unclaimed (pasture), never one farm for the whole zone.
+    #[test]
+    fn each_new_farm_works_one_holding_and_farms_follow_households() {
+        let (n, cell) = (40, 50.0);
+        let holding = (12.0 * 1e4 / (cell * cell)) as usize;
+        let order: Vec<usize> = (0..n * n).collect();
+        for (max_farms, budget) in [(5, usize::MAX), (100, 3 * holding + 7)] {
+            let mut state = vec![1_u8; n * n];
+            let mut left = budget;
+            let claims = claim_holdings(&order, &mut state, n, cell, 800.0, holding, max_farms, &mut left);
+            assert!(claims.len() <= max_farms);
+            assert!(claims.iter().all(|(_, cells)| !cells.is_empty() && cells.len() <= holding));
+            let claimed: usize = claims.iter().map(|(_, cells)| cells.len()).sum();
+            assert_eq!(claimed, state.iter().filter(|&&s| s == 2).count());
+            assert_eq!(claimed, budget.min(max_farms * holding).min(n * n));
+            assert!(state.iter().filter(|&&s| s == 1).count() > n * n / 2, "most of the zone stays unclaimed");
+        }
+    }
+
+    #[test]
+    fn reach_and_households_follow_place_size() {
+        assert!(working_reach(5.0) < working_reach(100.0) && working_reach(100.0) < working_reach(500.0));
+        assert_eq!(working_reach(5000.0), 2500.0);
+        assert_eq!(holding_ha("forest", "nordic"), 6.0);
+        assert_eq!(holding_ha("temperate", ""), 12.0);
+        // A 650-person village and a 5-person farm: about 83 farming households.
+        let h = rural_households([650.0, 5.0]);
+        assert!((h - (650.0 * 0.7 + 5.0) / HOUSEHOLD).abs() < 1e-9);
+        // The farming share declines smoothly with size: 0.7 up to 1,000, 0.25 at 5,000, 0.1 from
+        // 20,000.
+        let share = |pop: f64| rural_households([pop]) * HOUSEHOLD / pop;
+        assert!((share(1000.0) - 0.7).abs() < 1e-9 && (share(5000.0) - 0.25).abs() < 1e-9);
+        assert!((share(20000.0) - 0.1).abs() < 1e-9 && (share(50000.0) - 0.1).abs() < 1e-9);
+        assert!(share(2000.0) < share(1000.0) && share(3000.0) > share(5000.0));
+    }
 }

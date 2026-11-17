@@ -126,11 +126,12 @@ impl Router<'_> {
             profile: &PROFILES[profile],
             class,
             tight: true,
+            dig: self.dig_of(site),
         };
-        let mut found = self.search.few_crossings(f, &self.net, &self.costs, &query);
+        let mut found = self.search_route(&query);
         if found.is_none() {
             query.tight = false;
-            found = self.search.few_crossings(f, &self.net, &self.costs, &query);
+            found = self.search_route(&query);
         }
         let mut cells = found?;
         if cells.len() < 2 || cells.last().copied() != Some(border.cell) {

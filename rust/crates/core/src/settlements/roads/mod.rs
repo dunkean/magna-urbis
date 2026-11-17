@@ -10,6 +10,7 @@ mod exits;
 mod network;
 pub mod profile;
 mod search;
+mod tunnelling;
 
 use super::grid::Fields;
 use super::{Point, extent_radius};
@@ -17,6 +18,7 @@ use crate::{noise::Noise, rng::Rng};
 use network::{Graph, Routed};
 pub use exits::{ExitCounts, ExitReport};
 pub use profile::{CLASSES, LEVELS, PROFILES, SURFACES};
+pub use tunnelling::Tunnel;
 use profile::{Profile, class_index, level_by_id, profile_by_id, profile_for, surface_index};
 use search::{Costs, Net, Query, Search};
 use serde::{Deserialize, Serialize};
@@ -52,6 +54,9 @@ pub struct RoadConfig {
     pub activity_access: bool,
     /// Place network nodes (tolls, ferries, inns, border posts) along the finished network.
     pub network_nodes: bool,
+    /// Dug road tunnels through Underdark cave rock, for the cultures that dig (`tunnelling.json`):
+    /// 0 none, 1 a few (default), up to 3.
+    pub tunnels: f64,
 }
 impl Default for RoadConfig {
     fn default() -> Self {
@@ -69,6 +74,7 @@ impl Default for RoadConfig {
             grid: 512,
             activity_access: true,
             network_nodes: true,
+            tunnels: 1.0,
         }
     }
 }
@@ -131,6 +137,9 @@ pub struct RoadSegment {
     pub grade: f64,
     /// Population of the smaller end of the most important trip using this segment.
     pub importance: u32,
+    /// Stretches dug through Underdark cave rock (not crossings: no bridge or causeway there).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tunnels: Vec<Tunnel>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -287,10 +296,12 @@ fn validate(sites: &[RoadSite], cfg: &RoadConfig, width: f64) -> Result<(), Stri
         cfg.crossing_cost,
         cfg.wobble,
         cfg.sharing,
+        cfg.tunnels,
     ];
     if values.iter().any(|v| !v.is_finite() || *v < 0.0)
         || cfg.density > 1.0
         || cfg.sharing > 1.0
+        || cfg.tunnels > 3.0
         || cfg.grade_weight > 10.0
         || cfg.max_grade > 1.0
         || !(0.05..=10.0).contains(&cfg.crossing_cost)
@@ -303,19 +314,23 @@ fn validate(sites: &[RoadSite], cfg: &RoadConfig, width: f64) -> Result<(), Stri
     {
         return Err("Invalid road parameters".into());
     }
-    if sites.len() > 1000
-        || sites.iter().any(|s| {
-            !s.center.x.is_finite()
-                || !s.center.y.is_finite()
-                || s.center.x < 0.0
-                || s.center.y < 0.0
-                || s.center.x >= width
-                || s.center.y >= width
-                || !s.radius.is_finite()
-                || s.radius < 0.0
-        })
-    {
-        return Err("Invalid road endpoints".into());
+    if sites.len() > 1000 {
+        return Err(format!("Invalid road endpoints: {} places, at most 1000", sites.len()));
+    }
+    if let Some((i, s)) = sites.iter().enumerate().find(|(_, s)| {
+        !s.center.x.is_finite()
+            || !s.center.y.is_finite()
+            || s.center.x < 0.0
+            || s.center.y < 0.0
+            || s.center.x >= width
+            || s.center.y >= width
+            || !s.radius.is_finite()
+            || s.radius < 0.0
+    }) {
+        return Err(format!(
+            "Invalid road endpoints: place {} ({}) at ({:.1}, {:.1}), radius {:.1}, on a {:.0} m map",
+            i, s.key, s.center.x, s.center.y, s.radius, width
+        ));
     }
     Ok(())
 }
@@ -335,6 +350,8 @@ struct Router<'a> {
     marked: Vec<bool>,
     uf: Union,
     routed: Vec<Routed>,
+    /// Dug tunnels still allowed on this map (0 off the Underdark).
+    tunnel_budget: usize,
 }
 impl Router<'_> {
     fn add_road_cell(&mut self, cell: usize, site: usize) {
@@ -348,6 +365,29 @@ impl Router<'_> {
             profile_by_id(&self.cfg.culture).unwrap_or(0)
         }
     }
+    /// Cost of a dug metre for the culture of this place's roads (0: never digs).
+    fn dig_of(&self, site: usize) -> f64 {
+        if self.tunnel_budget == 0 { 0.0 } else { tunnelling::cost(&self.sites[site].culture) }
+    }
+    /// The road search, digging through cave rock when the query allows it. A path whose new dug
+    /// stretches break a bound (two mouths, length, grade) or exceed the map's budget is searched
+    /// again without digging, so no road ever carries an unbounded tunnel.
+    fn search_route(&mut self, query: &Query<'_>) -> Option<Vec<usize>> {
+        let f = self.f;
+        if query.dig > 0.0 && self.tunnel_budget > 0 {
+            if let Some(cells) = self.search.few_crossings(f, &self.net, &self.costs, query) {
+                match tunnelling::new_stretches(f, &cells, &self.marked) {
+                    Some(stretches) if stretches.len() <= self.tunnel_budget => {
+                        self.tunnel_budget -= stretches.len();
+                        return Some(cells);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let plain = Query { dig: 0.0, ..*query };
+        self.search.few_crossings(f, &self.net, &self.costs, &plain)
+    }
     fn radius(&self, site: usize) -> f64 {
         let s = &self.sites[site];
         if s.radius > 0.0 {
@@ -360,7 +400,9 @@ impl Router<'_> {
     /// A route ends on the target's existing network when it has one.
     fn connect(&mut self, from: Option<usize>, to: usize, start: Point, importance: u32) -> bool {
         let f = self.f;
-        let target = &self.sites[to];
+        // Through the slice itself, not `self`: the search below borrows the router mutably.
+        let sites = self.sites;
+        let target = &sites[to];
         let comp = self.uf.find(to);
         let same = from.is_some_and(|k| self.uf.find(k) == comp);
         let goal = f.index(target.center);
@@ -388,8 +430,9 @@ impl Router<'_> {
             profile: &PROFILES[profile],
             class,
             tight: false,
+            dig: self.dig_of(to),
         };
-        let Some(cells) = self.search.few_crossings(f, &self.net, &self.costs, &query) else {
+        let Some(cells) = self.search_route(&query) else {
             return false;
         };
         if let Some(from) = from {
@@ -442,6 +485,7 @@ impl Router<'_> {
             profile: &PROFILES[profile],
             class: class_index(importance, self.level),
             tight: false,
+            dig: 0.0,
         };
         let trunk_discount = self.costs.discount;
         // A cross-country shortcut must be allowed to leave the existing spokes;
@@ -500,6 +544,12 @@ impl Router<'_> {
             let center = self.sites[site].center;
             let radius = self.radius(site);
             let population = self.sites[site].population;
+            // A field track ends in the fields of its place: never past the land its
+            // households farm (`farmed_reach`), and a place too small to farm that far has none.
+            let farmed = farmed_reach(population, radius);
+            if farmed < radius + MIN_FIELD_TRACK {
+                continue;
+            }
             let count = if population >= 150 {
                 (2.0 + 4.0 * density).round() as usize
             } else {
@@ -514,7 +564,8 @@ impl Router<'_> {
                 let angle = phase
                     + std::f64::consts::TAU * (direction as f64 + rng.range(-0.2, 0.2))
                         / count as f64;
-                let reach = radius + rng.range(700.0, 2200.0) * (0.6 + density);
+                // Somewhere in the outer half of the farmed belt, not all on its rim.
+                let reach = radius + (farmed - radius) * rng.range(0.45, 1.0);
                 let p = Point {
                     x: center.x + reach * angle.cos(),
                     y: center.y + reach * angle.sin(),
@@ -611,8 +662,10 @@ impl Router<'_> {
         if cut.distance(line[k]) > 1e-6 {
             kept.push(cut);
         }
+        // The last step onto the road cell centre is laid only over dry ground: no connector
+        // crosses water outside the costed search.
         let end = f.pos(road);
-        if cut.distance(end) > 0.25 * f.cell {
+        if cut.distance(end) > 0.25 * f.cell && dry_hop(f, cut, end) {
             kept.push(end);
         }
         Some((road, kept))
@@ -657,6 +710,7 @@ impl Router<'_> {
                 profile: &PROFILES[profile],
                 class: class_index(importance, self.level),
                 tight: false,
+                dig: 0.0,
             };
             let Some(cells) = self.search.few_crossings(f, &self.net, &self.costs, &query) else {
                 continue;
@@ -694,11 +748,49 @@ pub(super) fn route(
     };
     let sites = &places[..];
     validate(sites, cfg, f.r.width)?;
-    let inside = |p: &Point| (0.0..f.r.width).contains(&p.x) && (0.0..f.r.width).contains(&p.y);
-    if activity.len() > 1000 || activity.iter().any(|s| !inside(&s.center) || s.approach.len() > 256 || !s.approach.iter().all(inside)) {
-        return Err("Invalid road endpoints".into());
+    // Activity access is best effort, never a reason to refuse the region: a site outside the map
+    // is dropped, an approach is thinned to 256 points and kept inside the map, each said once.
+    let width = f.r.width;
+    let inside = |p: &Point| (0.0..width).contains(&p.x) && (0.0..width).contains(&p.y);
+    let mut access_warnings = vec![];
+    if activity.len() > 1000 {
+        access_warnings.push(format!("{} activity sites beyond 1000 get no access path", activity.len() - 1000));
     }
+    let kept: Vec<RoadSite> = activity
+        .iter()
+        .take(1000)
+        .filter_map(|s| {
+            if !inside(&s.center) {
+                access_warnings.push(format!(
+                    "Activity site {} outside the map at ({:.1}, {:.1}): no access path",
+                    s.key, s.center.x, s.center.y
+                ));
+                return None;
+            }
+            let mut s = (*s).clone();
+            s.approach.retain(|p| p.x.is_finite() && p.y.is_finite());
+            for p in &mut s.approach {
+                p.x = p.x.clamp(0.0, width - 0.5);
+                p.y = p.y.clamp(0.0, width - 0.5);
+            }
+            if s.approach.len() > 256 {
+                let (len, step) = (s.approach.len(), s.approach.len().div_ceil(255));
+                let last = s.approach[len - 1];
+                s.approach = s.approach.iter().copied().step_by(step).collect();
+                if s.approach.last() != Some(&last) {
+                    s.approach.push(last);
+                }
+                access_warnings.push(format!(
+                    "Activity site {}: approach of {} points thinned to {}",
+                    s.key, len, s.approach.len()
+                ));
+            }
+            Some(s)
+        })
+        .collect();
+    let activity: Vec<&RoadSite> = kept.iter().collect();
     let mut out = RoadOutput::default();
+    out.warnings.extend(access_warnings);
     let k = sites.len();
     if k == 0 {
         exits::without_sites(cfg.exits, &mut out);
@@ -775,6 +867,7 @@ pub(super) fn route(
         marked: vec![false; size],
         uf: Union::new(k),
         routed: vec![],
+        tunnel_budget: tunnelling::budget(f, cfg.tunnels),
     };
     // Shortcut threshold from the density: 0 → tree only, 0.5 → 1.6, 1 → 1.15.
     let density = (cfg.density * level.density).min(1.0);
@@ -851,6 +944,16 @@ pub(super) fn route(
     }
     graph.planarize(f);
     graph.drop_triangles(f);
+    // Every road end is a destination or a junction: a place, a map exit, an activity site, or
+    // the fields a track leads into (`access`). The tail a field track keeps past the junction
+    // where another way joined it serves nothing that junction does not: it goes, and so does
+    // any end without a destination.
+    let stub = (STUB_CELLS * f.cell).max(STUB_METRES);
+    graph.prune_dead_ends(|label, length| match label {
+        None => false,
+        Some("access") => length >= stub,
+        Some(_) => true,
+    });
     let mut links = graph.links();
     let site_vertex: Vec<_> = sites
         .iter()
@@ -922,6 +1025,7 @@ pub(super) fn route(
             a: junction_of[&link.vertices[0]],
             b: junction_of[link.vertices.last().unwrap()],
             crossings: crossings(f, &path, class),
+            tunnels: tunnelling::spans(f, &path),
             grade: measured_grade(f, &path),
             importance: link.importance,
             length,
@@ -957,6 +1061,127 @@ pub(super) fn route(
         ));
     }
     Ok(out)
+}
+
+/// Shortest field track worth laying past the edge of its place (m).
+const MIN_FIELD_TRACK: f64 = 250.0;
+/// A dead-end tail of a field track shorter than this (cells, and metres at least) is a stub.
+const STUB_CELLS: f64 = 4.0;
+const STUB_METRES: f64 = 150.0;
+/// Longest run over the sea or a lake, in routing cells, that the finished network may keep
+/// outside a causeway: what a path smoothed along a shore, or a creek narrower than the routing
+/// grid sees, can clip. Anything longer is a road over open water.
+const OPEN_WATER_CELLS: f64 = 2.0;
+
+/// How far from its centre (m) a place farms: its edge plus the belt its farming households
+/// work, one holding each (the land-use stage's own rules), within their working reach. The
+/// fields are laid nearest first, so a track ending inside this distance ends among them.
+fn farmed_reach(population: u32, radius: f64) -> f64 {
+    let people = f64::from(population);
+    let hectares = crate::landuse::rural_households([people]) * crate::landuse::holding_ha("", "");
+    let belt = (hectares * 1e4 / std::f64::consts::PI).sqrt();
+    radius + belt.min(crate::landuse::working_reach(people))
+}
+
+/// Every sample from `a` to `b`, a fifth of a cell apart, on dry ground.
+fn dry_hop(f: &Fields, a: Point, b: Point) -> bool {
+    let steps = (a.distance(b) / (0.2 * f.cell)).ceil().max(1.0) as usize;
+    (0..=steps).all(|k| {
+        let t = k as f64 / steps as f64;
+        f.r.water[f.index(Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })] == 0
+    })
+}
+
+/// Longest stretch of a finished road over the sea or a lake (m), on the terrain `f`: sea
+/// always counts, a lake unless the road crosses it on a causeway; river water and cave rock
+/// do not (bridges, fords and tunnels have their own bounds). A run ends on dry ground.
+fn open_water_run(f: &Fields, s: &RoadSegment) -> f64 {
+    let causeway = s.crossings.iter().any(|c| c.kind == "causeway");
+    let (mut longest, mut run) = (0.0_f64, 0.0_f64);
+    for w in s.path.windows(2) {
+        let len = w[0].distance(w[1]);
+        let steps = (len / (0.25 * f.cell)).ceil().max(1.0) as usize;
+        for k in 0..steps {
+            let t = (k as f64 + 0.5) / steps as f64;
+            let p = Point { x: w[0].x + (w[1].x - w[0].x) * t, y: w[0].y + (w[1].y - w[0].y) * t };
+            if !(0.0..f.r.width).contains(&p.x) || !(0.0..f.r.width).contains(&p.y) {
+                continue;
+            }
+            let i = f.index(p);
+            match f.r.water[i] {
+                0 => run = 0.0,
+                1 => run += len / steps as f64,
+                2 if !causeway && f.r.lake_depth(i) > 0.0 && !f.is_rock(i) => run += len / steps as f64,
+                _ => {}
+            }
+            longest = longest.max(run);
+        }
+    }
+    longest
+}
+
+/// Safety net of the road chain, run on the finished network against the full-resolution
+/// terrain (`route_cell`: the cell the routes were searched on). The search and the access
+/// lines already keep these invariants; whatever still breaks one is removed here and said:
+/// - no road section runs over the sea or a lake but on a causeway (`OPEN_WATER_CELLS`);
+/// - every road end is a destination (a place, a map exit, an activity site, fields) or a
+///   junction: a section left hanging on a bare end goes too, back to the next junction.
+/// Junctions left without a road are dropped and the others renumbered.
+pub(super) fn enforce(f: &Fields, route_cell: f64, out: &mut RoadOutput) {
+    let allowance = OPEN_WATER_CELLS * route_cell.max(f.cell);
+    let mut keep: Vec<bool> = out.segments.iter().map(|s| open_water_run(f, s) <= allowance).collect();
+    let wet = keep.iter().filter(|k| !**k).count();
+    let mut dead = 0;
+    loop {
+        let mut degree = vec![0_usize; out.junctions.len()];
+        for (s, _) in out.segments.iter().zip(&keep).filter(|(_, k)| **k) {
+            degree[s.a] += 1;
+            degree[s.b] += 1;
+        }
+        let bare = |j: usize| degree[j] == 1 && out.junctions[j].site.is_none();
+        let hanging: Vec<usize> = (0..out.segments.len())
+            .filter(|&i| keep[i] && out.segments[i].a != out.segments[i].b && (bare(out.segments[i].a) || bare(out.segments[i].b)))
+            .collect();
+        if hanging.is_empty() {
+            break;
+        }
+        for i in hanging {
+            keep[i] = false;
+            dead += 1;
+        }
+    }
+    if wet == 0 && dead == 0 {
+        return;
+    }
+    let mut kept = keep.iter();
+    out.segments.retain(|_| *kept.next().unwrap());
+    let mut degree = vec![0_usize; out.junctions.len()];
+    for s in &out.segments {
+        degree[s.a] += 1;
+        degree[s.b] += 1;
+    }
+    let mut index = vec![usize::MAX; out.junctions.len()];
+    let mut junctions = vec![];
+    for (j, junction) in out.junctions.drain(..).enumerate() {
+        if degree[j] > 0 {
+            index[j] = junctions.len();
+            junctions.push(Junction { degree: degree[j], ..junction });
+        }
+    }
+    out.junctions = junctions;
+    out.length_by_class.clear();
+    out.length_by_surface.clear();
+    for s in &mut out.segments {
+        (s.a, s.b) = (index[s.a], index[s.b]);
+        *out.length_by_class.entry(s.class.clone()).or_default() += s.length;
+        *out.length_by_surface.entry(s.surface.clone()).or_default() += s.length;
+    }
+    if wet > 0 {
+        out.warnings.push(format!("{} road sections over open water removed", wet));
+    }
+    if dead > 0 {
+        out.warnings.push(format!("{} dead-end road sections without a destination removed", dead));
+    }
 }
 
 fn clear(f: &Fields, p: &Profile, a: Point, b: Point) -> bool {
@@ -1235,5 +1460,168 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A river 250 m wide (five cells, `river_width` 250) across the whole map.
+    fn wide_river() -> Fields {
+        let (n, width) = (120, 6000.0);
+        let h = vec![20.0f32; n * n];
+        let water: Vec<u8> = (0..n * n).map(|i| if (57..=61).contains(&(i % n)) { 3 } else { 0 }).collect();
+        let rivers: Vec<f32> = water.iter().map(|&w| if w == 3 { 250.0 } else { 0.0 }).collect();
+        let ids: Vec<i32> = water.iter().map(|&w| if w == 3 { 0 } else { -1 }).collect();
+        Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids })
+    }
+
+    /// Bridge limits by road class: two towns bridge a 250 m river, and a trail site on the far
+    /// bank joins that road without a crossing of its own; two hamlets on either bank, whose
+    /// track cannot pay such a bridge, stay unlinked instead of getting a road over the water.
+    #[test]
+    fn a_wide_river_is_bridged_by_a_strong_road_only() {
+        let f = wide_river();
+        let cfg = RoadConfig { density: 0.0, exits: ExitCounts::default(), ..Default::default() };
+        let place = |key: &str, x: f64, population: u32| RoadSite { key: key.into(), population, culture: "european-organic".into(), center: Point { x, y: 3000.0 }, ..Default::default() };
+        let wet = |s: &RoadSegment| s.path.iter().any(|&p| f.r.water[f.index(p)] != 0);
+        let mill = RoadSite {
+            key: "mill".into(),
+            culture: "european-organic".into(),
+            center: Point { x: 4500.0, y: 800.0 },
+            access: Some("trail".into()),
+            parent: Some("west".into()),
+            ..Default::default()
+        };
+        let out = route("wide-river", &f, &[place("west", 1000.0, 3000), place("east", 5000.0, 3000), mill.clone()], &cfg).unwrap();
+        assert!(out.unreachable.is_empty(), "the towns are not linked: {:?}", out.unreachable);
+        let crossings: Vec<&str> = out.segments.iter().flat_map(|s| &s.crossings).map(|c| c.kind.as_str()).collect();
+        assert_eq!(crossings, ["bridge"], "one bridge, built by the town road");
+        assert!(out.junctions.iter().any(|j| j.site.as_deref() == Some("mill")), "the trail site has no path on its own bank");
+        // Hamlets: a track never opens a 250 m crossing, and no road lies in the water.
+        let out = route("wide-river", &f, &[place("west", 1000.0, 60), place("east", 5000.0, 60), mill], &cfg).unwrap();
+        assert_eq!(out.unreachable, ["east"], "a track bridged the wide river");
+        assert!(!out.segments.iter().any(wet), "a road in the water");
+        assert!(out.segments.iter().all(|s| s.crossings.is_empty()));
+    }
+
+    /// Every road end is a destination or a junction: the field tracks of a town end inside the
+    /// land it farms, none keeps a stub past a junction, and no end is left without a label.
+    #[test]
+    fn road_ends_are_destinations_and_field_tracks_end_in_the_fields() {
+        let (n, width) = (120, 6000.0);
+        let h = vec![20.0f32; n * n];
+        let (water, rivers, ids) = (vec![0u8; n * n], vec![0.0f32; n * n], vec![-1i32; n * n]);
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids });
+        let centre = Point { x: 3000.0, y: 3000.0 };
+        let town = RoadSite { key: "town".into(), population: 600, culture: "european-organic".into(), center: centre, ..Default::default() };
+        let farm = RoadSite { key: "farm".into(), population: 5, culture: "european-organic".into(), center: Point { x: 800.0, y: 800.0 }, ..Default::default() };
+        let cfg = RoadConfig { density: 1.0, exits: ExitCounts::default(), ..Default::default() };
+        let out = route("field-tracks", &f, &[town, farm], &cfg).unwrap();
+        let reach = farmed_reach(600, extent_radius(600));
+        let stub = (STUB_CELLS * f.cell).max(STUB_METRES);
+        let mut tracks = 0;
+        for (index, j) in out.junctions.iter().enumerate() {
+            let label = j.site.as_deref();
+            assert!(j.degree != 1 || label.is_some(), "a road end without a destination at {:?}", j.point);
+            // The ends of the field tracks (some are joined by cross-country links).
+            if label != Some("access") {
+                continue;
+            }
+            tracks += 1;
+            assert!(j.point.distance(centre) <= reach + f.cell, "a field track ends {:.0} m out, past the farmed land ({reach:.0} m)", j.point.distance(centre));
+            if j.degree == 1 {
+                let tail = out.segments.iter().find(|s| s.a == index || s.b == index).unwrap();
+                assert!(tail.length >= 0.8 * stub, "a {:.0} m stub", tail.length);
+            }
+        }
+        assert!(tracks > 0, "the town has no field track");
+        // A single farm works its own yard: too little land for a field track of its own.
+        assert!(farmed_reach(5, extent_radius(5)) < extent_radius(5) + MIN_FIELD_TRACK);
+    }
+
+    /// The final validation pass: a section over 400 m of sea goes, the section it leaves
+    /// hanging on a bare junction goes with it, both are said; a causeway over a lake stays.
+    #[test]
+    fn the_final_pass_removes_roads_over_open_water_and_bare_dead_ends() {
+        let (n, width) = (120, 6000.0);
+        let h = vec![20.0f32; n * n];
+        // Sea: x 2000..2400 over the whole map. Lake: x 4000..4400, 3 m deep.
+        let water: Vec<u8> = (0..n * n).map(|i| if (40..48).contains(&(i % n)) { 1 } else if (80..88).contains(&(i % n)) { 2 } else { 0 }).collect();
+        let level: Vec<f32> = water.iter().map(|&w| match w { 1 => 0.0, 2 => 23.0, _ => 20.0 }).collect();
+        let (rivers, ids) = (vec![0.0f32; n * n], vec![-1i32; n * n]);
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &level, river_width: &rivers, river_ids: &ids });
+        let at = |x: f64| Point { x, y: 3000.0 };
+        let junction = |x: f64, degree: usize, site: Option<&str>| Junction { point: at(x), degree, site: site.map(str::to_string) };
+        let segment = |a: usize, b: usize, from: f64, to: f64, crossings: Vec<Crossing>| RoadSegment {
+            class: "track".into(), surface: "dirt".into(), profile: "medieval".into(), width: 3.0, a, b,
+            path: vec![at(from), at(0.5 * (from + to)), at(to)], crossings, length: (to - from).abs(), grade: 0.0, importance: 15, tunnels: vec![],
+        };
+        let causeway = vec![Crossing { kind: "causeway".into(), path: vec![at(3950.0), at(4450.0)] }];
+        let mut out = RoadOutput {
+            junctions: vec![junction(500.0, 1, Some("west")), junction(1500.0, 2, None), junction(3000.0, 2, Some("mid")), junction(5000.0, 1, Some("east"))],
+            segments: vec![segment(0, 1, 500.0, 1500.0, vec![]), segment(1, 2, 1500.0, 3000.0, vec![]), segment(2, 3, 3000.0, 5000.0, causeway)],
+            ..Default::default()
+        };
+        enforce(&f, f.cell, &mut out);
+        assert_eq!(out.segments.len(), 1, "the causeway road alone is left");
+        assert_eq!((out.segments[0].a, out.segments[0].b), (0, 1));
+        assert_eq!(out.junctions.iter().map(|j| (j.site.as_deref(), j.degree)).collect::<Vec<_>>(), [(Some("mid"), 1), (Some("east"), 1)]);
+        assert!(out.warnings.iter().any(|w| w == "1 road sections over open water removed"), "{:?}", out.warnings);
+        assert!(out.warnings.iter().any(|w| w == "1 dead-end road sections without a destination removed"), "{:?}", out.warnings);
+        assert_eq!(out.length_by_class.get("track"), Some(&2000.0));
+        // A network that keeps the invariants is left as it is, without a word.
+        let before = out.segments.len();
+        enforce(&f, f.cell, &mut out);
+        assert!(out.segments.len() == before && out.warnings.len() == 2);
+    }
+
+    /// A narrow river rasterised as a diagonal chain of cells (touching by their corners only)
+    /// between two villages, and a trail site on the far bank a few hundred metres from the
+    /// road: every passage from one bank to the other is a recorded crossing (no diagonal move
+    /// threads between two river corners unseen and unpriced), and the trail joins the bridged
+    /// road instead of opening its own crossing.
+    #[test]
+    #[ignore = "open: the village link still passes the diagonal river with no wet vertex and no crossing (see report)"]
+    fn a_diagonal_river_is_crossed_once_and_on_a_crossing() {
+        let (n, width) = (120, 6000.0);
+        let cell = width / n as f64;
+        let h = vec![20.0f32; n * n];
+        let water: Vec<u8> = (0..n * n).map(|i| if i % n + i / n == n { 3 } else { 0 }).collect();
+        let rivers: Vec<f32> = water.iter().map(|&w| if w == 3 { 3.0 } else { 0.0 }).collect();
+        let ids: Vec<i32> = water.iter().map(|&w| if w == 3 { 0 } else { -1 }).collect();
+        let f = Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids });
+        // The river runs along x + y = (n + 1) cells through its cell centres.
+        let bank = |p: Point| (p.x + p.y) / cell - (n + 1) as f64;
+        let village = |key: &str, at: f64| RoadSite { key: key.into(), population: 400, culture: "european-organic".into(), center: Point { x: at, y: at }, ..Default::default() };
+        let site = RoadSite {
+            key: "mill".into(),
+            culture: "european-organic".into(),
+            center: Point { x: 3800.0, y: 2600.0 },
+            access: Some("trail".into()),
+            parent: Some("west".into()),
+            ..Default::default()
+        };
+        assert!(bank(site.center) > 0.0 && bank(Point { x: 2000.0, y: 2000.0 }) < 0.0);
+        let cfg = RoadConfig { density: 0.0, exits: ExitCounts::default(), ..Default::default() };
+        let out = route("diagonal-river", &f, &[village("west", 2000.0), village("east", 4200.0), site], &cfg).unwrap();
+        let mut passages = 0;
+        for s in &out.segments {
+            let (mut side, mut here) = (0.0_f64, 0);
+            for w in s.path.windows(2) {
+                let steps = (w[0].distance(w[1]) / (0.1 * cell)).ceil().max(1.0) as usize;
+                for k in 0..=steps {
+                    let t = k as f64 / steps as f64;
+                    let b = bank(Point { x: w[0].x + (w[1].x - w[0].x) * t, y: w[0].y + (w[1].y - w[0].y) * t });
+                    if b.abs() > 0.05 {
+                        if side != 0.0 && b.signum() != side {
+                            here += 1;
+                        }
+                        side = b.signum();
+                    }
+                }
+            }
+            assert!(s.crossings.len() >= here, "{here} passages over the river, {} crossings", s.crossings.len());
+            passages += here;
+        }
+        let crossings: usize = out.segments.iter().map(|s| s.crossings.len()).sum();
+        assert_eq!(passages, 1, "the network passes the river {passages} times");
+        assert_eq!(crossings, 1, "{crossings} crossings of one river");
     }
 }

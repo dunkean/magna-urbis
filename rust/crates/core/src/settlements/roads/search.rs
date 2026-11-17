@@ -77,6 +77,11 @@ const MAX_TURN: [f64; 5] = [45.0, 45.0, 46.0, 64.0, 64.0];
 /// Turning cost by class, in metres of road per 45-degree turn on flat ground: what a hairpin's
 /// platform and retaining walls cost compared with plain road.
 const TURN_METRES: [f64; 5] = [120.0, 90.0, 60.0, 35.0, 15.0];
+/// Widest river (m) a road of each class (highway … trail) may open a new crossing over: the
+/// bridge a road of that rank can pay for. A wider reach (an estuary, a great river) is crossed
+/// on a bridge a stronger road already built, or not at all: a track to a farm or an isolated
+/// building goes round or stops, it never spans a bay. Sea and lakes are closed to every class.
+pub(super) const BRIDGE_SPAN: [f64; 5] = [400.0, 300.0, 200.0, 100.0, 40.0];
 
 pub(super) fn dir_between(n: usize, a: usize, b: usize) -> Option<usize> {
     let dx = (b % n) as isize - (a % n) as isize;
@@ -169,6 +174,9 @@ pub(super) struct Query<'a> {
     pub class: usize,
     /// Narrow corridor around the straight line (long routes to a known goal).
     pub tight: bool,
+    /// Cost of one metre dug through Underdark cave rock, relative to open ground (`tunnelling`);
+    /// 0: the search never enters the rock.
+    pub dig: f64,
 }
 
 /// One search state, `cell * HEADINGS + sector`, kept together for locality (16 bytes).
@@ -306,19 +314,47 @@ pub(super) fn move_ok(
         if !passable(f, p, at(xx, y)) || !passable(f, p, at(x, yy)) {
             return None;
         }
+        // From dry to dry ground between two wet corners (a river rasterised as a diagonal chain):
+        // the move would cross the water through their shared vertex without entering it, so the
+        // crossing would be neither priced nor seen by the crossing pass. It must step in instead.
+        let wet = |c: usize| f.r.water[c] != 0;
+        if wet(at(xx, y)) && wet(at(x, yy)) && !wet(at(x, y)) && !wet(j) {
+            return None;
+        }
     } else if dx.abs() + dy.abs() >= 3 {
-        // Long moves stay on dry land along their whole line.
-        let steps = 4 * dx.abs().max(dy.abs());
-        for k in 0..=steps {
-            let t = k as f64 / steps as f64;
-            let cx = (x as f64 + 0.5 + dx as f64 * t).floor() as isize;
-            let cy = (y as f64 + 0.5 + dy as f64 * t).floor() as isize;
-            if f.r.water[at(cx.clamp(0, n - 1), cy.clamp(0, n - 1))] != 0 {
-                return None;
+        // Long moves stay on dry land along their whole line: every cell the line passes through,
+        // however short the stretch. Point samples miss a clip through a wet corner, and a river or
+        // lake rasterised as a diagonal chain is then crossed unpriced and unseen.
+        for cy in y.min(yy)..=y.max(yy) {
+            for cx in x.min(xx)..=x.max(xx) {
+                if f.r.water[at(cx, cy)] != 0 && segment_enters(x, y, dx, dy, cx, cy) {
+                    return None;
+                }
             }
         }
     }
     Some(j)
+}
+
+/// Whether the line between the centres of cells (x, y) and (x + dx, y + dy) passes through the
+/// interior of cell (cx, cy) (touching its edge or corner only does not count).
+fn segment_enters(x: isize, y: isize, dx: isize, dy: isize, cx: isize, cy: isize) -> bool {
+    const EPS: f64 = 1e-9;
+    let (ox, oy) = (x as f64 + 0.5, y as f64 + 0.5);
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    for (o, d, lo) in [(ox, dx as f64, cx as f64), (oy, dy as f64, cy as f64)] {
+        let (lo, hi) = (lo + EPS, lo + 1.0 - EPS);
+        if d == 0.0 {
+            if o <= lo || o >= hi {
+                return false;
+            }
+            continue;
+        }
+        let (a, b) = ((lo - o) / d, (hi - o) / d);
+        t0 = t0.max(a.min(b));
+        t1 = t1.min(a.max(b));
+    }
+    t1 > t0
 }
 
 /// Bit d set: [`move_ok`] allows `DIRS[d]` from this cell, for profiles without (`[0]`) and with
@@ -332,6 +368,58 @@ fn move_masks(f: &Fields, causeway: bool) -> &[u32] {
                 .map(|x| {
                     (0..DIRS.len()).fold(0_u32, |mask, d| {
                         if move_ok(f, causeway, &dry_around, x as isize, y as isize, d).is_some() {
+                            mask | 1 << d
+                        } else {
+                            mask
+                        }
+                    })
+                })
+                .collect::<Vec<u32>>()
+        });
+        rows.concat()
+    })
+}
+
+/// A move for a culture that digs: [`move_ok`], or a single step whose cells are all open floor or
+/// cave rock with at least one end in the rock (a diagonal never cuts a rock corner between two
+/// open cells, so every dug metre is in a rock cell of the path). Causeways are not combined with
+/// digging.
+fn dig_ok(f: &Fields, dry_around: &[bool], x: isize, y: isize, d: usize) -> Option<usize> {
+    if let Some(j) = move_ok(f, false, dry_around, x, y, d) {
+        return Some(j);
+    }
+    if d >= LONG {
+        return None;
+    }
+    let n = f.r.n as isize;
+    let (dx, dy) = DIRS[d];
+    let (xx, yy) = (x + dx, y + dy);
+    if xx < 0 || yy < 0 || xx >= n || yy >= n {
+        return None;
+    }
+    let at = |x: isize, y: isize| (y * n + x) as usize;
+    let (i, j) = (at(x, y), at(xx, yy));
+    let rock = |c: usize| super::tunnelling::rock(f, c);
+    let floor_or_rock = |c: usize| f.r.water[c] == 0 || rock(c);
+    if !floor_or_rock(i) || !floor_or_rock(j) || !(rock(i) || rock(j)) {
+        return None;
+    }
+    if dx != 0 && dy != 0 && !(floor_or_rock(at(xx, y)) && floor_or_rock(at(x, yy))) {
+        return None;
+    }
+    Some(j)
+}
+
+/// [`move_masks`] for the cultures that dig, on Underdark maps only (third cached variant).
+fn dig_masks(f: &Fields) -> &[u32] {
+    f.move_masks[2].get_or_init(|| {
+        let n = f.r.n;
+        let dry_around = Costs::dry_around(f);
+        let rows = crate::urban::par::range(n, |y| {
+            (0..n)
+                .map(|x| {
+                    (0..DIRS.len()).fold(0_u32, |mask, d| {
+                        if dig_ok(f, &dry_around, x as isize, y as isize, d).is_some() {
                             mask | 1 << d
                         } else {
                             mask
@@ -489,6 +577,7 @@ impl Search {
         let class = q.class.min(4);
         let turn_cost = TURN_METRES[class] * (1.0 + 2.0 * q.profile.straightness);
         let max_turn = MAX_TURN[class] + 0.5;
+        let max_span = BRIDGE_SPAN[class];
         let long = long_grades(f);
         let turns = turns();
 
@@ -510,7 +599,9 @@ impl Search {
                 }
             }
         }
-        let moves = move_masks(f, q.profile.causeway);
+        // Rock is searched only on Underdark maps and for a culture that digs.
+        let dig = q.dig > 0.0 && f.cave.is_some();
+        let moves = if dig { dig_masks(f) } else { move_masks(f, q.profile.causeway) };
         let per = DIRS.len() - LONG;
 
         let queue = &mut self.queue;
@@ -561,10 +652,19 @@ impl Search {
                 if self.slots[next].stamp == closed || !inside(j) {
                     continue;
                 }
+                // A new crossing stays within the bridge of the road's class (`BRIDGE_SPAN`).
+                if !road && f.r.water[j] == 3 && f64::from(f.r.river_width[j]) > max_span {
+                    continue;
+                }
                 let dist = dist[d];
                 let wet = wet_i || f.r.water[j] != 0;
+                // A dug floor is laid at its own grade (bounded between the mouths after the search).
+                let rock_i = dig && super::tunnelling::rock(f, i);
+                let rock_j = dig && super::tunnelling::rock(f, j);
                 // Over water the road height is the bridge deck or causeway (see `deck_height`).
-                let grade = if d >= LONG {
+                let grade = if rock_i || rock_j {
+                    0.0
+                } else if d >= LONG {
                     long[i * per + d - LONG] as f64
                 } else {
                     (height_i - f.route_height[j]).abs() as f64 / dist
@@ -579,11 +679,14 @@ impl Search {
                     0.0
                 } else {
                     let angle = if came == NO_VIA { 0.0 } else { turns.angle[came as usize][d] };
-                    turn_cost * steep * (angle / 45.0).powi(2)
+                    // A dug tunnel is surveyed: straight reaches, bends at stations.
+                    turn_cost * steep * (angle / 45.0).powi(2) * if rock_i && rock_j { 4.0 } else { 1.0 }
                 };
                 let mut m = if road {
                     // An existing road move (with its bridge, if any).
                     costs.discount * if wet { 2.0 } else { 1.0 }
+                } else if rock_j {
+                    q.dig
                 } else if self.cell_cost[j].0 == e {
                     self.cell_cost[j].1
                 } else {
