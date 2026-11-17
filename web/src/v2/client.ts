@@ -125,6 +125,10 @@ export class StudioClient {
   private benchMiniTimer?: ReturnType<typeof setTimeout>;
   /** Intermediate invalidations may redraw the live map while its new look is still compiling. */
   private benchPreparing = 0;
+  /** Latest show(): a show still awaiting its renderer (bench set-up, geometry, worker) never installs an older look over a newer one. */
+  private showRequest = 0;
+  /** The bench set() in flight, if any. */
+  private benchSetting?: Promise<void>;
   private classicBackground?:{world:World;key:string;url:string};
   private retained?:{id:number;world:World};
   private pendingDraw: { gen:number; resolve:()=>void; reject:(e:Error)=>void; timer:ReturnType<typeof setTimeout> } | null = null;
@@ -281,7 +285,7 @@ export class StudioClient {
     this.viewer.clear();
     this.minimalActive=false;this.minimal?.dispose();this.minimal=undefined;this.minimalBackground=undefined;
     this.resolutions=[];this.presentations=new WeakMap();this.resourceCache=undefined;
-    this.benchActive=false;this.appearanceRevision++;this.bench?.dispose();this.bench=undefined;this.classicBackground=undefined;
+    this.benchActive=false;this.appearanceRevision++;this.bench?.dispose();this.bench=undefined;this.benchSetting=undefined;this.classicBackground=undefined;
     this.invalidateRetained();this.world=null;this.syncRenderer?.dispose();this.syncRenderer=null;
     if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
     this.render?.terminate();this.render=null;await this.init();
@@ -289,6 +293,9 @@ export class StudioClient {
   async show(world: World, keepView = false, requested?: RenderReadiness): Promise<void> {
     const nextRequest = requested ?? new RenderReadiness(this.view3dActive ? '3d' : '2d');
     this.readiness = nextRequest;
+    // A preference redraw (language, units) or a new world may start while a style switch is still preparing its
+    // renderer: whichever show() started last owns the map, an older one returns once its await is over.
+    const showRequest = ++this.showRequest, superseded = (): boolean => showRequest !== this.showRequest;
     const mapChanged = this.world?.mapSize !== world.mapSize;
     if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
     this.world = world;
@@ -297,19 +304,21 @@ export class StudioClient {
     const minimalSettings = this.appearanceSettings;
     const minimalAppearance = minimalSettings && this.resolve(minimalSettings, world, true);
     if (minimalSettings && minimalAppearance?.path === 'minimal') {
-      this.benchActive=false;this.bench?.dispose();this.bench=undefined;
+      this.benchActive=false;this.bench?.dispose();this.bench=undefined;this.benchSetting=undefined;
       this.syncRenderer?.dispose();this.syncRenderer=null;
       this.render?.terminate();this.render=null;
       const { MinimalRenderer } = await import('./minimalRenderer');
+      if (superseded()) return;
       this.minimal ??= new MinimalRenderer(() => this.viewer.invalidate());
       await this.minimal.set(world, minimalSettings, minimalAppearance, {}, nextRequest);
+      if (superseded()) return;
       this.minimalBackground=undefined;this.minimalActive=true;
       this.viewer.setDirectSource({ element: this.minimal.element, draw: frame => this.drawMinimal(frame) });
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
       return;
     }
     this.minimalActive=false;this.minimal?.dispose();this.minimal=undefined;this.minimalBackground=undefined;
-    if (!renderGeometryReady()) await loadRenderGeometry();
+    if (!renderGeometryReady()) { await loadRenderGeometry(); if (superseded()) return; }
     world = this.presentWorld(world);
     this.syncRenderer?.dispose(); this.syncRenderer = null;
     const settings=this.appearanceSettings;
@@ -317,12 +326,19 @@ export class StudioClient {
     const useBench=!!settings&&resolved!.path==='composite';
     if(useBench){
       const {BenchRenderer}=await import('./benchRenderer');
+      if(superseded())return;
       this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world){this.benchMiniRevision=-1;}if(this.benchActive&&this.world&&!this.view3dActive)this.viewer.contentChanged(this.world.mapSize,true);});
       this.bench.setSuspended(this.view3dActive);
       this.bench.resourceSource=w=>this.resources(w);
+      // One bench set() at a time: two interleaved sets (style switch + language redraw) share the renderer's passes and
+      // could leave the older look on screen. A newer show() waits for the one in flight; a superseded one gives up.
+      while(this.benchSetting){await this.benchSetting.catch(()=>{});if(superseded())return;}
       this.benchPreparing++;
       const request = nextRequest;
-      try{await this.bench.set(world,settings!,resolved!,{},this.view3dActive ? new RenderReadiness('2d') : request);}finally{this.benchPreparing--;}
+      const setting=this.bench.set(world,settings!,resolved!,{},this.view3dActive ? new RenderReadiness('2d') : request);this.benchSetting=setting;
+      try{await setting;}finally{this.benchPreparing--;if(this.benchSetting===setting)this.benchSetting=undefined;}
+      // A newer show() already installed its look (e.g. parchment through the render worker): never put this older one back.
+      if(superseded())return;
       if(!this.benchActive)this.render?.postMessage({type:'release'});
       this.benchActive=true;
       this.viewer.setDirectSource({element:this.bench.element,draw:frame=>this.drawBench(frame)});
@@ -330,7 +346,7 @@ export class StudioClient {
       return;
     }
     this.benchActive=false;
-    if (!this.render) await this.init();
+    if (!this.render) { await this.init(); if (superseded()) return; }
     if(this.render)this.viewer.setSource({request:frame=>this.render!.postMessage({type:'view',...frame})});
     if (this.render) {
       const channel = new MessageChannel();

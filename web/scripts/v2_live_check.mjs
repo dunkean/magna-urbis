@@ -216,16 +216,34 @@ try {
   await page.locator('#language-select').selectOption('en');
   await page.locator('#language-select').selectOption('fr');
   await record('3d-styles-locale');
-  await recipe(value => { value.options.seed = `${value.options.seed}-cancel-inference`; });
+  // Seeds unique to this run: the persistent profile keeps finished reliefs on disk, and a fixed seed would replay
+  // the previous run's relief ("Relief et hydrologie réutilisés · disk") without any inference to cancel or run offline.
+  const runTag = Date.now().toString(36);
+  await recipe(value => { value.options.seed = `${value.options.seed}-cancel-${runTag}`; });
   await page.locator('#family-tab-region').click();
+  const cancelRun = log => log.slice(log.lastIndexOf(`-cancel-${runTag}`));
   await page.locator('#generate-region').click();
-  await page.waitForFunction(() => document.querySelector('#progress-label').textContent.includes('calcul coarse'), null, { timeout: 120000 });
-  await page.locator('#cancel-job').click();
-  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
+  // 'Neuronal WASM · calcul coarse → base → decoder' (rust/bridge/neuralBrowser.ts) is posted right before GPU inference;
+  // fast GPUs may finish the whole run before it can be caught: then cancellation is skipped with its reason.
+  const inference = await page.waitForFunction(() => {
+    if (/calcul coarse|computing coarse/.test(document.querySelector('#progress-label')?.textContent ?? '')) return 'inference';
+    return document.querySelector('#app')?.getAttribute('aria-busy') === 'false' && 'finished';
+  }, null, { timeout: 120000, polling: 20 }).then(handle => handle.jsonValue());
+  if (inference === 'inference') {
+    await page.locator('#cancel-job').click();
+    await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
+    const cancelled = await record('gpu-inference-cancelled');
+    assert.match(cancelled.toast, /annulé|cancelled/i, 'Cancel was not acknowledged');
+    assert.doesNotMatch(cancelRun(cancelled.log), /Terminé|Finished/, 'Cancel did not stop the inference');
+  } else {
+    const finished = await record('gpu-cancel-skipped', { reason: 'Inference finished before its progress message could be caught' });
+    console.log('gpu-cancel-skipped: inference finished before it could be cancelled');
+    assert.doesNotMatch(cancelRun(finished.log), /réutilisés|reused/, 'Cancel step replayed a cached relief instead of inferring');
+  }
   await run('05-after-gpu-cancel');
   const count = weights().length;
   await page.route('**/neural/**', route => route.abort('internetdisconnected'));
-  await recipe(value => { value.options.seed = `${value.options.seed}-offline`; });
+  await recipe(value => { value.options.seed = `${value.options.seed}-offline-${runTag}`; });
   await run('06-model-cache-offline');
   assert.equal(weights().length, count, 'Offline inference transferred model weights');
   assert.deepEqual(report.errors, []);
