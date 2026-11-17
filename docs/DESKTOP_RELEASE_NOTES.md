@@ -1,3 +1,14 @@
+## Alpha 0.3.8
+
+- Faster display: the GPU vector engine no longer demotes itself to the CPU for the whole session (its tile timing was inflated by a synchronous error read). On a 40 km map, switching to parchment drops from about 35 s to 17 s and parchment pan/zoom stalls are halved; on a 10 km map the parchment switch drops from 6 s to 3 s.
+- Lighter 3D opening and town plans: one water clipper per ground, indexed ring tests for moats and footings, memoised wall ground samples, building meshes written straight into typed arrays, plan clipping on the building workers.
+
+Source validation: TypeScript type-check and the render suites passed (city parity, vector engine, city ground, building ground, 3D heights). Each engine's output is pixel-identical before and after; keeping the GPU engine instead of the CPU fallback changes anti-aliasing slightly (satellite 0.4–0.6 % of pixels, parchment line edges).
+
+Package validation: pending on the published assets.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.7
 
 - Fix procedural relief on the in-app browser engine with WebGPU: the erosion shader no longer uses `from`, which recent WebView2/Chromium versions reserve ("485: 'from' is a reserved keyword"). A test now rejects reserved words in every WGSL source.
