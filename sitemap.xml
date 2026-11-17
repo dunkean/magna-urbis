@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://magna-urbis.org/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=fr</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=es</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=pt</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=zh</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=ar</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=ru</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/?lang=ja</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://magna-urbis.org/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://magna-urbis.org/?lang=fr"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://magna-urbis.org/?lang=es"/>
+    <xhtml:link rel="alternate" hreflang="pt" href="https://magna-urbis.org/?lang=pt"/>
+    <xhtml:link rel="alternate" hreflang="zh" href="https://magna-urbis.org/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://magna-urbis.org/?lang=ar"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://magna-urbis.org/?lang=ru"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://magna-urbis.org/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://magna-urbis.org/"/>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/gallery/v2/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/scientific/index.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://magna-urbis.org/scientific/fr.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+</urlset>
