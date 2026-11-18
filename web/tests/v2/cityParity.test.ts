@@ -11,7 +11,7 @@ import { resolveRustUrbanControls, townRoadStreets, townSiteArchetypes } from '.
 import { regionalStreets } from '../../../rust/bridge/urban';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 import type { World } from '../../src/gen/types';
-import { citySiteArchetypes, cityTownRoads } from '../../src/render/cityGeneration';
+import { citySiteArchetypes, cityFixedSites, cityTownRoads } from '../../src/render/cityGeneration';
 import { urbanSeed } from '../../src/v2/urbanSeeds';
 import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { siteVisualScene, silhouetteScene, type CityPlacementRequest } from '../../src/ui/urbanSilhouettes';
@@ -493,6 +493,21 @@ describe('V2 and City Bench stay in sync', () => {
     expect(benchSource).toContain('message.layoutConfig.siteArchetypes = citySiteArchetypes(selected);');
     expect(benchSource).toContain('message.roads = cityTownRoads(roads);');
     expect(read('../../src/v2/urban3d.ts')).toContain('roads = townRoadStreets(world);');
+  });
+
+  it('carries manual foundations into both city consumers', () => {
+    expect(cityFixedSites([{ key: 'main', fixed: true }, { key: 'auto' }])).toEqual(['main']);
+    expect(
+      cityFixedSites([
+        { key: 'main', position: { x: 120, y: 340 } },
+        { key: 'auto', position: null },
+      ]),
+    ).toEqual(['main']);
+    expect(cityFixedSites([{ key: 'main', scores: { manual: true } }])).toEqual(['main']);
+    const saved = { ...defaultLayoutConfig(), fixedSites: ['main'] };
+    expect(normalizeLayoutConfig(saved).fixedSites).toEqual(['main']);
+    expect(read('../../src/ui/terrainUrban.ts')).toContain('message.layoutConfig.fixedSites = cityFixedSites(selected);');
+    expect(read('../../src/v2/rustUrban.ts')).toContain('fixedSites: cityFixedSites([place])');
   });
 
   it('draws every stage from the one general seed when no variation is set', () => {

@@ -98,7 +98,7 @@ import { updateUrbanBuildingSelection } from './urbanBuildingSelection';
 import { buildingSettings, workshopSettings, appliedWorkshopSnapshot, mergeCityWorkshop, mergeWorkshopCities } from './urbanSnapshot';
 import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
 import { DEFAULT_CITY_ARCHITECTURE, CITY_DISPLAY_DEFAULTS, cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
-import { citySettlementRaster, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
+import { citySettlementRaster, citySiteArchetypes, cityFixedSites, cityTownRoads } from '../render/cityGeneration';
 import { openMethodNote } from './methodNotes';
 import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
 import { createUrbanMainPanel } from './urbanMainPanel';
@@ -2123,6 +2123,7 @@ export function createTerrainUrban(options: {
       message.layoutConfig = layoutWithEdits(clone(appliedLayout), edits);
       message.sites = selected.map(s => cityNamedSite({ key: s.key, name: s.name, population: s.population, culture: s.culture, center: s.center, radius: s.radius }, options.getSeed()));
       message.layoutConfig.siteArchetypes = citySiteArchetypes(selected);
+      message.layoutConfig.fixedSites = cityFixedSites(selected);
       message.roads = cityTownRoads(roads);
     } else {
       // The engine retains the exact serialized layouts of its last quarter response:

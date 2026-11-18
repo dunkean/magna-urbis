@@ -391,6 +391,8 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   /** Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`…); absent = unknown. */
   siteArchetype?: string;
   siteArchetypes?: Record<string, string>;
+  /** Foundations placed by the user: never relocate these settlement centres. */
+  fixedSites?: string[];
   footprint: FootprintConfig;
   tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters';
   accessMode: 'adaptive' | 'cultural' | 'none';
@@ -542,6 +544,7 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   if (saved?.programme?.functions !== undefined) config.programme.functions = saved.programme.functions === null ? null : normalizeProgrammeFunctions(saved.programme.functions);
   if (saved?.siteArchetype) config.siteArchetype = saved.siteArchetype;
   if (saved?.siteArchetypes) config.siteArchetypes = { ...saved.siteArchetypes };
+  if (saved?.fixedSites) config.fixedSites = [...saved.fixedSites];
   config.footprint = contractFields(defaults.footprint, saved?.footprint);
   // Missing controls in an existing scene retain the former geometry.
   if (saved) {

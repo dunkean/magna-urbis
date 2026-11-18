@@ -598,6 +598,8 @@ pub struct LayoutConfig {
     pub site_archetype: String,
     /// Placement context per settlement when a request contains several towns.
     pub site_archetypes: std::collections::BTreeMap<String, String>,
+    /// User-placed foundations. Every urban stage keeps the supplied centre.
+    pub fixed_sites: std::collections::BTreeSet<String>,
     pub suburbs: String,
     /// Informal peripheral quarters: 0 disables, 1 cultural default, up to 3.
     pub shanty_scale: f64,
@@ -946,6 +948,7 @@ impl Default for LayoutConfig {
             settlement_form: "auto".into(),
             site_archetype: String::new(),
             site_archetypes: std::collections::BTreeMap::new(),
+            fixed_sites: std::collections::BTreeSet::new(),
             suburbs: "auto".into(),
             shanty_scale: 1.0,
             phases: 0,
@@ -1886,7 +1889,8 @@ pub fn generate_quarters(
         // places it reserves become cores of land it flows around.
         let cored = neighbours::reserve_cores(seed, site, config, surface, roads);
         let site = cored.as_ref().unwrap_or(site);
-        let relocated = neighbours::relocate(site, surface);
+        let fixed = config.fixed_sites.contains(&site.key);
+        let relocated = if fixed { None } else { neighbours::relocate(site, surface) };
         let site = relocated.as_ref().unwrap_or(site);
         let joined_roads = neighbours::roads(site, roads);
         let roads = joined_roads.as_deref().unwrap_or(roads);
@@ -1910,7 +1914,10 @@ pub fn generate_quarters(
         // Resolve the effective shore once for every plan/finish path, including
         // small kinds and quarter edits. The programme must see the same ground.
         let physical_surface = surface;
-        let stilt = geography::stilt_ground(site, culture, surface);
+        let stilt = geography::stilt_ground(site, culture, surface).map(|mut ground| {
+            if fixed { ground.site.center = site.center; }
+            ground
+        });
         let (site, surface) = stilt
             .as_ref()
             .map_or((site, surface), |ground| (&ground.site, ground.surface(surface)));
@@ -1944,7 +1951,7 @@ pub fn generate_quarters(
         let plan_at = |config: &LayoutConfig, site: &Site| -> Result<Layout, String> {
             // One lap per call, each with its own duration (`URBAN_PROFILE`).
             let mut laps = network::Lap::new("tail");
-            let small = (kind.small() && config.footprint.mechanism != "legacy")
+            let small = (kind.small() && !fixed && config.footprint.mechanism != "legacy")
                 .then(|| kinds::lay_out(&key_seed, site, config, kind, &morph, surface, roads))
                 .flatten();
             let mut layout = match small {
@@ -2124,7 +2131,10 @@ pub fn generate_quarters(
         let relaxable = config.programme.slope_relax == 0.0
             && (config.programme.intent == "settlement" || roles::is_isolated(&config.programme.intent))
             && site.population > 0;
-        let ahead = if relaxable && !kind.small() { footprint::slope_relax_ahead(&key_seed, site, config, surface, roads) } else { 0.0 };
+        let mountain_village = (15..1000).contains(&site.population) && slopes::eligible(site, config, surface, kind);
+        let ahead = if relaxable && (!kind.small() || fixed || mountain_village) {
+            footprint::slope_relax_ahead(&key_seed, site, config, surface, roads)
+        } else { 0.0 };
         #[cfg(not(target_arch = "wasm32"))]
         if ahead > 0.0 && std::env::var("URBAN_PROFILE").is_ok() {
             eprintln!("  slope_relax.ahead: {ahead}");
@@ -2144,7 +2154,7 @@ pub fn generate_quarters(
         // every other place keeps the normal layout and the flank ladder
         // below, unchanged.
         let mut sloped = false;
-        if slopes::eligible(site, config, surface, kind) && slopes::short(&layout) {
+        if slopes::eligible(site, config, surface, kind) && (slopes::short(&layout) || site.population < 1000) {
             // After a ward is added to a finished layout: access and programme
             // for each trial; the rest of the `finish` tail once, on the
             // adopted layout (`last`). `trim::finish` is not rerun: its

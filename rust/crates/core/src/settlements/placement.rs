@@ -51,6 +51,7 @@ fn archetype(f: &Fields, i: usize, pop: u32, relief: &str) -> &'static str {
 /// resolved once per request instead of once per candidate cell. Same values, same order of use.
 struct SitePrep {
     mountain: f64,
+    terraces: bool,
     /// `log_weight(site_weight(..))` of each archetype, in `ARCHETYPES` order.
     archetype: [f64; 5],
     /// `site_weight(..)` of each special site, in `SPECIAL_SITES` order.
@@ -66,6 +67,7 @@ struct SitePrep {
 impl SitePrep {
     fn new(s: &SettlementSpec, cfg: &Config) -> Self {
         Self {
+            terraces: (15..1000).contains(&s.population),
             shore: site_weight(s, cfg, "harbor").clamp(0.0, 2.0),
             mountain: s
                 .site_prefs
@@ -178,8 +180,9 @@ fn rural_flexibility(pop: u32) -> f64 {
     1.0 - smooth((pop.max(1) as f64).ln(), 80.0_f64.ln(), 1000.0_f64.ln())
 }
 fn raw_grade_limit(s: &SettlementSpec, prep: &SitePrep) -> f64 {
-    0.16 + 0.25 * prep.mountain + 0.08 * s.site_prefs.woodland
-        + 0.24 * rural_flexibility(s.population)
+    let ordinary = 0.16 + 0.25 * prep.mountain + 0.08 * s.site_prefs.woodland
+        + 0.24 * rural_flexibility(s.population);
+    if prep.terraces { ordinary.max(1.0) } else { ordinary }
 }
 fn minimum_buildable_fraction(pop: u32, mountain: f64) -> f64 {
     let minimum = if pop >= 1000 {
@@ -204,8 +207,10 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, prep: &SitePrep, cfg: &Config
     let wood = prefs.woodland;
     let rural = rural_flexibility(pop);
     let cap_s = 0.11 + 0.18 * mountain + 0.06 * wood + 0.18 * rural;
+    let cap_s = if prep.terraces { cap_s.max(1.0) } else { cap_s };
     let cap_r = raw_grade_limit(s, prep);
-    let bf = f.fraction(p, (0.8 * ext).max(f.cell));
+    let bf = if prep.terraces { f.terrace_fraction(p, (0.8 * ext).max(f.cell)) }
+        else { f.fraction(p, (0.8 * ext).max(f.cell)) };
     let dw = f.place_dw(i);
     let sl = f.slope_s[i] as f64;
     let hab = f.place_hab(i);
@@ -339,6 +344,9 @@ fn site_need(s: &SettlementSpec) -> f64 {
 /// (disc ≈ π/4 of its square) away from water; counted cell by cell near water, where another
 /// land mass or the sea may share the square. `f64::INFINITY` when nothing is needed.
 fn site_room(f: &Fields, i: usize, pop: u32, need: f64) -> f64 {
+    site_room_on(f, i, pop, need, false)
+}
+fn site_room_on(f: &Fields, i: usize, pop: u32, need: f64, terraces: bool) -> f64 {
     if need <= 0.0 {
         return f64::INFINITY;
     }
@@ -350,16 +358,17 @@ fn site_room(f: &Fields, i: usize, pop: u32, need: f64) -> f64 {
     let (cx, cy) = (i % n, i / n);
     let (x0, x1) = (cx.saturating_sub(r), (cx + r).min(n - 1));
     let (y0, y1) = (cy.saturating_sub(r), (cy + r).min(n - 1));
-    let square = (f.sat[(y1 + 1) * k + x1 + 1] as i64 - f.sat[y0 * k + x1 + 1] as i64
-        - f.sat[(y1 + 1) * k + x0] as i64
-        + f.sat[y0 * k + x0] as i64) as f64
+    let sat = if terraces { &f.terrace_sat } else { &f.sat };
+    let square = (sat[(y1 + 1) * k + x1 + 1] as i64 - sat[y0 * k + x1 + 1] as i64
+        - sat[(y1 + 1) * k + x0] as i64
+        + sat[y0 * k + x0] as i64) as f64
         * cell2;
     if square < need {
         return square;
     }
     // A hamlet (many places, a small need) reads the table only: its few thousand m² are there
     // or not; the exact count is for the villages and towns a shore pocket would squeeze.
-    if pop < 150 || f.place_dw(i) > reach + f.cell {
+    if (!terraces && pop < 150) || f.place_dw(i) > reach + f.cell {
         return square * std::f64::consts::FRAC_PI_4;
     }
     let p = f.pos(i);
@@ -369,11 +378,13 @@ fn site_room(f: &Fields, i: usize, pop: u32, need: f64) -> f64 {
     for y in y0..=y1 {
         for x in x0..=x1 {
             let j = y * n + x;
-            if f.land_part[j] != part || f.r.water[j] != 0 || f.slope[j] >= 0.2 || f.place_hab(j) < 1.0 {
+            let grade = if terraces { 1.0 } else { 0.2 };
+            if f.land_part[j] != part || f.r.water[j] != 0 || f.slope[j] as f64 >= grade || f.place_hab(j) < 1.0 {
                 continue;
             }
             let d = f.pos(j).distance(p);
-            if d <= reach && (f.r.height[j] as f64 - h0).abs() <= ROOM_RISE * d + ROOM_RISE_FREE {
+            let rise = if terraces { 1.0 } else { ROOM_RISE };
+            if d <= reach && (f.r.height[j] as f64 - h0).abs() <= rise * d + ROOM_RISE_FREE {
                 room += cell2;
             }
         }
@@ -893,7 +904,8 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                     {
                         return None;
                     }
-                    let room = site_room(f, i, pop, need);
+                    let room = if (15..1000).contains(&pop) { site_room_on(f, i, pop, need, true) }
+                        else { site_room(f, i, pop, need) };
                     if room < need {
                         return None;
                     }
@@ -1059,6 +1071,21 @@ mod tests {
         let rivers = vec![0.0f32; n * n];
         let ids = vec![-1i32; n * n];
         Fields::new(Raster { width, n, height: &h, water: &water, water_level: &h, river_width: &rivers, river_ids: &ids })
+    }
+
+    #[test]
+    fn an_automatic_village_can_found_on_a_terraced_mountainside() {
+        let (n, width) = (64, 4000.0);
+        let height: Vec<f32> = (0..n * n).map(|i| (100.0 + 0.8 * (i % n) as f64 * width / n as f64) as f32).collect();
+        let dry = vec![0; n * n];
+        let level = vec![0.0; n * n];
+        let ids = vec![-1; n * n];
+        let f = Fields::new(Raster { width, n, height: &height, water: &dry, water_level: &level, river_width: &level, river_ids: &ids });
+        let spec = SettlementSpec { key: "mountain-village".into(), population: 300, culture: "byzantine-greek".into(), ..Default::default() };
+        let cfg = Config { mode: "list".into(), list: vec![spec], relief: "high-mountains".into(), ..Default::default() };
+        let output = place("mountain-village", &f, &cfg);
+        assert_eq!(output.settlements.len(), 1, "{:?}", output.warnings);
+        assert_eq!(output.settlements[0].spec.population, 300, "a village's terrace land must count before shrinking it");
     }
 
     /// A steep cone (grade 2): no cell can hold a town, nor a hamlet. The request is announced,

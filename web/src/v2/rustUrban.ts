@@ -7,7 +7,7 @@ import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint } from '.
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { CAVE_ROCK_DEPTH, settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
-import { cityRasterSide, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
+import { cityRasterSide, citySiteArchetypes, cityFixedSites, cityTownRoads } from '../render/cityGeneration';
 import type { RustRegionSnapshot } from './region';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
@@ -399,7 +399,7 @@ export async function generateRustTown(
     local = settings.urban?.local?.[key];
   // Same site archetype as City Bench's quarters request (kinds.rs reads it for the village form and the defences).
   const geometry = geometryConfigs(resolved.layout, resolved.parcels);
-  const config = { ...resolved, ...geometry, layout: { ...geometry.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes) } };
+  const config = { ...resolved, ...geometry, layout: { ...geometry.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes), fixedSites: cityFixedSites([place]) } };
   const target = through ?? local?.through ?? settings.urban?.through ?? 'buildings';
   const stageIndex = ['layout', 'parcels', 'programme', 'buildings'].indexOf(target);
   if (stageIndex < 0) throw new Error('Étape urbaine inconnue.');
