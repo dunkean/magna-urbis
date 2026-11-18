@@ -139,4 +139,22 @@ describe('viewer camera tilt', () => {
     tick();
     expect(frames.at(-1)!.view).toEqual({ cx: 2000, cy: 2000, scale: 0.5, pitch: 0.7, yaw: -1 });
   });
+
+  it('never moves the camera because content loads; a map of another size refits and keeps the tilt', () => {
+    const { viewer, frames, tick } = setup(true);
+    viewer.setView({ cx: 1200, cy: 900, scale: 0.8, pitch: 0.9, yaw: 0.5 });
+    tick();
+    const pose = viewer.getView();
+    viewer.contentChanged(4000, true);
+    tick();
+    expect(viewer.getView()).toEqual(pose);
+    // A map of another size: centre and scale fit it, pitch and yaw stay.
+    viewer.contentChanged(8000, true);
+    tick();
+    const refit = viewer.getView();
+    expect(refit.cx).not.toBe(pose.cx);
+    expect(refit.pitch).toBe(0.9);
+    expect(refit.yaw).toBe(0.5);
+    expect(frames.at(-1)!.view.pitch).toBe(0.9);
+  });
 });

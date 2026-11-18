@@ -11,6 +11,11 @@
  *
  * Only the composed view draws a tilted camera (render/world/): the element says so to the viewer
  * (`data-camera="tilt"`), which then lets the camera tilt; under the fallback view the camera stays the top view.
+ *
+ * Loading never moves the camera nor changes the view in charge. The fallback view takes over for its own cases only
+ * (no hardware WebGL2, a CPU or illustrated ground, a lost context, `?display=fallback`); a wait that ends by itself
+ * (the ground of a new terrain baking its first tiles) leaves the composed view in charge with its last picture on
+ * screen, whole, until it can compose again: the new terrain is never drawn with what the previous one left.
  */
 import { noteFallbackFrame } from '../../render/live/liveStats';
 import { fallbackForced } from '../../render/live/policy';
@@ -92,6 +97,14 @@ export class MapView implements AppearanceListener, ViewStatus {
       if (this.presenter === 'fallback') this.fallback.leave();
       this.present('composed');
       this.composed.draw(view, w, h, dpr, moved, now);
+      return;
+    }
+    // The composed view is on screen and only waits for the first tiles of a new ground: its last picture stays (the
+    // compositor's canvas keeps what it presented), the camera keeps its pose, and its preparation goes on; the
+    // frame is asked again when the tiles are there.
+    if (blocked === GROUND_WARMING && this.presenter === 'composed') {
+      map.stats.live = `holding: ${blocked}`;
+      this.composed.syncWork();
       return;
     }
     if (this.presenter === 'composed') this.composed.leave();
@@ -206,7 +219,8 @@ export class MapView implements AppearanceListener, ViewStatus {
   }
   private followFrozen(view: View, w: number, h: number): void {
     const previous = this.frozen;
-    if (!previous) return;
+    // A tilted picture stays where it is: a 2D transform cannot follow a perspective.
+    if (!previous || isTilted(previous.view) || isTilted(view)) return;
     const k = view.scale / previous.view.scale,
       tx = (w - previous.w) / 2 + (previous.view.cx - view.cx) * view.scale,
       ty = (h - previous.h) / 2 + (previous.view.cy - view.cy) * view.scale;

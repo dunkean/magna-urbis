@@ -13,8 +13,8 @@ import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
 import { TREES_BLOCK, treeBlockSteps, treeDrawCount, treeInputsKey, treeLathe } from './treesBlocks';
-import { TREE_LATHES, WORLD_TREE_VS, latheVertices, worldTreeFs } from './treesShader';
-import { VOLUME_LIGHT, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumesShown, type VolumeLayer } from './volumes';
+import { TREE_LATHES, WORLD_TREE_FS, WORLD_TREE_VS, latheVertices } from './treesShader';
+import { VOLUME_LIGHT, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
 export interface WorldTreesOptions {
   /** The inputs of the near trees of the satellite looks, as the 3D view makes them (ui/view3d/terrain/trees.ts),
@@ -24,6 +24,8 @@ export interface WorldTreesOptions {
   terrain(): TerrainHeights | undefined;
   /** Tree distance (m), the 3D view's slider (clampTreeDistance). */
   distance(): number;
+  /** The "3D trees" switch: off, nothing is drawn or built, and the blocks already built are kept for the next time. */
+  shown(): boolean;
   /** Night ambience: the trees take the night tint. */
   night?(): boolean;
   /** GPU memory the blocks may use, in bytes. */
@@ -35,7 +37,7 @@ export interface WorldTreesOptions {
 const BUDGET_BYTES = 32 * 1024 * 1024;
 /** Blocks a frame may want or draw: (2 x 1500 m / 96 m + 2)^2. */
 const MAX_BLOCKS = 1100;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uLathe', 'uCrown', 'eye', 'treeLight', 'fogDistance', 'uNight', 'uShown'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uLathe', 'uCrown', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 const CROWNS = TREE_LATHES.map(lathe => Int32Array.from({ length: 6 }, (_, i) => lathe.crown[i] ?? 5));
 const VERTICES = TREE_LATHES.map(latheVertices);
@@ -75,7 +77,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     drawnCountTotal = 0,
     tick = 0,
     bytes = 0;
-  let plain: Program | undefined, fading: Program | undefined;
+  let program: Program | undefined;
   let source: Omit<TreeInputs, 'height'> | undefined,
     sourceKey = '',
     heights: TerrainHeights | undefined,
@@ -159,9 +161,9 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     }
   };
 
-  const link = (fade: boolean): Program => {
-    const program = linkVolumeProgram(gl, WORLD_TREE_VS, worldTreeFs(fade), 'World trees');
-    return { program, u: uniformsOf(gl, program, UNIFORMS) };
+  const link = (): Program => {
+    const linked = linkVolumeProgram(gl, WORLD_TREE_VS, WORLD_TREE_FS, 'World trees');
+    return { program: linked, u: uniformsOf(gl, linked, UNIFORMS) };
   };
   const slice = (started: number, pending: boolean): boolean => {
     const ms = performance.now() - started;
@@ -173,13 +175,15 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     name: 'trees',
     tilts: true,
     ready: () => true,
-    restExact: frame => !volumesShown(frame.camera) || (!wanted && !building),
+    restExact: frame => !volumesDrawn(frame.camera) || !options.shown() || (!wanted && !building),
     work(budgetMs, frame) {
       const started = performance.now();
       sync();
       if (!inputs) return false;
-      plain ??= link(false);
-      fading ??= link(true);
+      if (!program) {
+        program = link();
+        return slice(started, true);
+      }
       for (;;) {
         if (!building) {
           // The nearest block the last frame wanted that is not built yet.
@@ -212,12 +216,12 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     draw(frame: LiveFrame) {
       const started = performance.now(),
         camera = frame.camera,
-        shown = volumesShown(camera);
+        standing = volumesDrawn(camera) && options.shown();
       tick++;
       stats.drawCalls = stats.triangles = stats.instances = stats.blocks = 0;
       drawnCountTotal = 0;
       const relief = heights;
-      if (shown > 0 && relief && inputs && plain && fading) {
+      if (standing && relief && inputs && program) {
         if (options.distance() !== distance) {
           distance = options.distance();
           limits = treeLimits(distance);
@@ -275,13 +279,9 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             }
         }
         if (drawnCountTotal) {
-          const { program, u } = shown < 1 ? fading : plain;
-          gl.useProgram(program);
-          gl.disable(gl.BLEND);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LESS);
-          gl.depthMask(true);
-          gl.disable(gl.CULL_FACE);
+          const u = program.u;
+          gl.useProgram(program.program);
+          volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform2f(u.uRelief, drawnPerMetre, rise);
           gl.uniform4f(u.uFade, ex - tx, ey - ty, limits.near, limits.far);
@@ -289,7 +289,6 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           gl.uniform3f(u.treeLight, LIGHT[0], LIGHT[1], LIGHT[2]);
           gl.uniform1f(u.fogDistance, hazeDistance(camera));
           gl.uniform1i(u.uNight, options.night?.() ? 1 : 0);
-          gl.uniform1f(u.uShown, shown);
           for (let lathe = 0; lathe < TREE_LATHES.length; lathe++) {
             let set = false;
             for (let i = 0; i < drawnCountTotal; i++) {
@@ -312,8 +311,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           }
           stats.blocks = drawnCountTotal;
           gl.bindVertexArray(null);
-          gl.disable(gl.DEPTH_TEST);
-          gl.enable(gl.BLEND);
+          volumeDepthEnd(gl);
         }
       } else wanted = 0;
       stats.bytes = bytes;
@@ -326,15 +324,14 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       // Every handle is dead: forget them without deleting (the block being built goes on).
       slots.clear();
       bytes = 0;
-      plain = fading = undefined;
+      program = undefined;
       drawnCountTotal = 0;
     },
     stats: () => stats,
     dispose() {
       dropAll();
-      if (plain) gl.deleteProgram(plain.program);
-      if (fading) gl.deleteProgram(fading.program);
-      plain = fading = undefined;
+      if (program) gl.deleteProgram(program.program);
+      program = undefined;
       source = heights = inputs = undefined;
     },
   };

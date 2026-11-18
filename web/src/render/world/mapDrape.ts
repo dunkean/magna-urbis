@@ -10,13 +10,21 @@
  * memory is that of one pyramid. The price: a change of one source bakes the tiles again with all of them.
  *
  * The tiling is the ground's (512 pixel tiles, tier k = 2^k x 2^k tiles), so the terrain picks one tier per square for
- * both. All the tiles live in one texture array: the terrain keeps drawing once per page of ground tiles. It is
- * allocated when a frame first tilts and freed after RELEASE_MS back in the top view.
+ * both. All the tiles live in one texture array, allocated whole when a frame first tilts and freed after RELEASE_MS
+ * back in the top view: the terrain keeps drawing once per page of ground tiles. Its size is the budget
+ * (`drapeLayers`): a square of the terrain asks for a tile of its own, and a tilted view of 1600 x 1000 CSS pixels
+ * over a 40 km map draws up to 100 squares at one device pixel per CSS pixel and 134 at two (58 and 84 at 55 degrees;
+ * tests/world.drapeBudget.test.ts), in either quality, plus the 5 coarse tiles and the layer a bake goes into. A
+ * view of 2560 x 1440 asks for up to 174 at one device pixel; at two (228) it keeps the nearest tiles and shows the
+ * far squares by their ancestors (`stats.full`).
  *
  * Baking: `work` bakes what the squares of the last tilted frame asked for (tilePyramid.ts: tier 0 first, then the
- * nearest square first), at most a few tiles per slice and one while the view moves; a tile is baked by each source
- * drawing its picture of the tile's square with its own GPU renderer in this context. Tiles are stale when a source's
- * revision changes, and keep showing until baked again. Least recently shown tiles are evicted; tiers 0 and 1 never.
+ * nearest square first), and only while the view rests: a tile costs a recording of the cartography and a draw of
+ * the town, which no frame of a moving view can afford. A tile is baked by each source in turn painting its picture
+ * of the tile's square with its own GPU renderer in this context, into a layer no tile is shown from; a source whose
+ * picture is long to make paints it in steps, and the bake then spans several slices (`baking`). Tiles are stale when
+ * a source's revision changes, and keep showing until baked again. Least recently shown tiles are evicted; tiers 0
+ * and 1 never, nor a tile the last frame shows.
  *
  * Line widths: tier k has 512 * 2^k / mapSize pixels per metre, and the terrain picks for a square the coarsest tier
  * at least as dense as the screen at the square's nearest corner (footprint.ts): across the view axis a tile texel is
@@ -37,17 +45,21 @@ import { TilePyramid } from './tilePyramid';
 const TILE = 512;
 /** How much wider than in a top view of the tile's own density the sources draw what is sized in screen pixels. */
 const DRAPE_LINE_SCALE = 4 / 3;
-/** Tiles the drape holds (1 MiB each): the squares of a tilted frame ask for 20 to 160. */
-const LAYERS_FULL = 128,
-  LAYERS_LIGHT = 48;
 const TILE_BYTES = TILE * TILE * 4;
 /** Tiers 0 and 1 (5 tiles) are baked whatever the view and never evicted. */
-const COARSE_TIERS = 2;
+export const DRAPE_COARSE_TIERS = 2;
 const MAX_TIER = 20;
 /** A source that is not ready is asked again after this delay. */
-const RETRY_MS = 100;
+const RETRY_MS = 50;
 /** The tiles are freed once the view has been the top view this long. */
 const RELEASE_MS = 30000;
+/** Tiles baked to their end in one slice, when the slice has the time. */
+const TILES_PER_SLICE = 4;
+
+/** Layers of the drape's texture array (1 MiB each): one is kept for the bake under way, the others hold tiles. The
+ * light quality draws as many squares at these sizes; it holds the 1600 x 1000 view and no more. WebGL2 guarantees
+ * arrays of 256 layers. */
+export const drapeLayers = (quality: 'full' | 'light'): number => (quality === 'light' ? 144 : 192);
 
 const PUT_VS = `#version 300 es
 uniform vec4 uRect;
@@ -79,14 +91,19 @@ interface GlState {
 }
 
 export interface MapDrapeStats {
-  /** Tiles baked, and the GPU bytes of the drape. */
+  /** Tiles baked (stale ones included) and tiles the drape can hold. */
   tiles: number;
+  capacity: number;
+  /** GPU bytes of the texture array: allocated whole, whatever the number of tiles baked. */
   bytes: number;
   /** Tiles the last tilted frame wanted (and coarse tiles) still to bake. */
   pending: number;
-  /** Bakes since the context was created, and the main-thread time of the last one. */
+  /** 1 when the last slice found no layer for a tile: the frame shows more tiles than the drape holds. */
+  full: number;
+  /** Tiles baked since the context was created, the main-thread time of the last one, and the longest step. */
   baked: number;
   bakeMs: number;
+  stepMs: number;
 }
 
 interface MapDrapeOptions {
@@ -94,6 +111,18 @@ interface MapDrapeOptions {
   mapSize(): number;
   /** Asks for a new frame (a tile arrived). */
   invalidate(): void;
+}
+
+/** The tile being baked, across slices: its key, the layer it goes into, the source it has reached and how many times
+ * that source has painted, the main-thread time spent so far. */
+interface Baking {
+  tier: number;
+  ix: number;
+  iy: number;
+  slot: number;
+  source: number;
+  step: number;
+  ms: number;
 }
 
 function link(gl: WebGL2RenderingContext): WebGLProgram {
@@ -114,11 +143,11 @@ function link(gl: WebGL2RenderingContext): WebGLProgram {
 }
 
 export class MapDrape {
-  readonly stats: MapDrapeStats = { tiles: 0, bytes: 0, pending: 0, baked: 0, bakeMs: 0 };
+  readonly stats: MapDrapeStats = { tiles: 0, capacity: 0, bytes: 0, pending: 0, full: 0, baked: 0, bakeMs: 0, stepMs: 0 };
   /** The tiles as the terrain of a tilted frame reads them. */
   readonly tiles: DrapeTiles;
   private state?: GlState;
-  private readonly pyramid = new TilePyramid(COARSE_TIERS);
+  private readonly pyramid = new TilePyramid(DRAPE_COARSE_TIERS);
   private readonly group: ReturnType<typeof createIsolatedGroup>;
   /** Map side the tiles were baked for; they are dropped when it changes. */
   private gridSize = 0;
@@ -129,9 +158,10 @@ export class MapDrape {
   private tiltedAt = 0;
   /** A source whose `paint` threw is reported once. */
   private warned = false;
+  private baking?: Baking;
   /** The tile being baked, as the sources see it. */
   private readonly rect = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
-  private readonly canvas: DrapeCanvas & { scale: number; dpr: number; light: boolean };
+  private readonly canvas: DrapeCanvas & { scale: number; dpr: number; light: boolean; step: number };
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
@@ -149,7 +179,17 @@ export class MapDrape {
       pageCount: () => (this.state ? 1 : 0),
       page: () => this.state!.array,
     };
-    this.canvas = { rect: this.rect, pixels: TILE, scale: 1, dpr: 1, light: false, put: (texture, uWest, vNorth, uEast, vSouth, opacity) => this.put(texture, uWest, vNorth, uEast, vSouth, opacity), group: () => this.openGroup(), putGroup: opacity => this.putGroup(opacity) };
+    this.canvas = {
+      rect: this.rect,
+      pixels: TILE,
+      scale: 1,
+      dpr: 1,
+      light: false,
+      step: 0,
+      put: (texture, uWest, vNorth, uEast, vSouth, opacity, uMin, vMin, uMax, vMax) => this.put(texture, uWest, vNorth, uEast, vSouth, opacity, uMin, vMin, uMax, vMax),
+      group: () => this.openGroup(),
+      putGroup: opacity => this.putGroup(opacity),
+    };
   }
 
   /** Finest tier baked at this pixel ratio: the ground's (the zoom limit of the 2D map). */
@@ -195,21 +235,24 @@ export class MapDrape {
       this.group.drop();
     }
     this.state = undefined;
+    this.baking = undefined;
     this.pyramid.reset(0);
-    this.stats.tiles = this.stats.bytes = this.stats.pending = 0;
+    this.stats.tiles = this.stats.capacity = this.stats.bytes = this.stats.pending = this.stats.full = 0;
   }
 
   // --- the tile being baked, as the sources paint it (DrapeCanvas) ---------------------------------------------------
 
-  private put(texture: WebGLTexture, uWest: number, vNorth: number, uEast: number, vSouth: number, opacity: number): void {
+  private put(texture: WebGLTexture, uWest: number, vNorth: number, uEast: number, vSouth: number, opacity: number, uMin = 0, vMin = 0, uMax = 1, vMax = 1): void {
     const gl = this.gl,
       s = this.state;
     if (!s || uEast === uWest || vSouth === vNorth) return;
-    // The part of the tile the texture covers: its coordinates clipped to 0..1 along each axis.
-    const a = Math.max(0, Math.min(1, Math.min((0 - uWest) / (uEast - uWest), (1 - uWest) / (uEast - uWest)))),
-      b = Math.max(0, Math.min(1, Math.max((0 - uWest) / (uEast - uWest), (1 - uWest) / (uEast - uWest)))),
-      c = Math.max(0, Math.min(1, Math.min((0 - vNorth) / (vSouth - vNorth), (1 - vNorth) / (vSouth - vNorth)))),
-      d = Math.max(0, Math.min(1, Math.max((0 - vNorth) / (vSouth - vNorth), (1 - vNorth) / (vSouth - vNorth))));
+    // The part of the tile the texture covers: where its coordinates are inside the window, along each axis.
+    const du = uEast - uWest,
+      dv = vSouth - vNorth,
+      a = Math.max(0, Math.min(1, Math.min((uMin - uWest) / du, (uMax - uWest) / du))),
+      b = Math.max(0, Math.min(1, Math.max((uMin - uWest) / du, (uMax - uWest) / du))),
+      c = Math.max(0, Math.min(1, Math.min((vMin - vNorth) / dv, (vMax - vNorth) / dv))),
+      d = Math.max(0, Math.min(1, Math.max((vMin - vNorth) / dv, (vMax - vNorth) / dv)));
     if (!(b > a && d > c)) return;
     resetLiveState(gl, s.layer, TILE, TILE);
     gl.useProgram(s.program);
@@ -218,7 +261,7 @@ export class MapDrape {
     // Row 0 of a tile is its north edge, as in the ground tiles: the north of the picture goes to the bottom of the
     // framebuffer.
     gl.uniform4f(s.uRect, a * 2 - 1, c * 2 - 1, b * 2 - 1, d * 2 - 1);
-    gl.uniform4f(s.uUv, uWest + (uEast - uWest) * a, vNorth + (vSouth - vNorth) * c, uWest + (uEast - uWest) * b, vNorth + (vSouth - vNorth) * d);
+    gl.uniform4f(s.uUv, uWest + du * a, vNorth + dv * c, uWest + du * b, vNorth + dv * d);
     gl.uniform1f(s.uOpacity, opacity);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindTexture(gl.TEXTURE_2D, null);
@@ -252,63 +295,91 @@ export class MapDrape {
 
   // --- baking ----------------------------------------------------------------------------------------------------------
 
-  /** Bakes the tile `next` of the pyramid found. 'wait': a source is not ready; 'full': no layer is free. */
-  private bake(s: GlState, frame: LiveFrame, sources: readonly DrapeSource[]): 'ok' | 'wait' | 'full' {
+  /** Gives up the bake under way: its layer is free again. */
+  private abandon(): void {
+    if (this.baking) this.pyramid.discard(this.baking.slot);
+    this.baking = undefined;
+  }
+
+  /** One step of baking: starts the tile `next` of the pyramid names when none is under way, then lets the source it
+   * has reached paint once. 'baked': the tile is complete; 'more': it goes on; 'none': nothing to bake; 'wait': a
+   * source is not ready; 'full': no layer can be freed for the tile. */
+  private step(s: GlState, frame: LiveFrame, sources: readonly DrapeSource[], finest: number): 'baked' | 'more' | 'none' | 'wait' | 'full' {
     const gl = this.gl,
       pyramid = this.pyramid,
-      canvas = this.canvas,
-      rect = this.rect,
-      { tier, ix, iy } = pyramid,
-      side = this.gridSize / 2 ** tier;
-    rect.minX = ix * side;
-    rect.minY = iy * side;
-    rect.maxX = rect.minX + side;
-    rect.maxY = rect.minY + side;
-    canvas.scale = TILE / DRAPE_LINE_SCALE / side / frame.dpr;
-    canvas.dpr = frame.dpr;
-    canvas.light = frame.quality === 'light';
-    // Asked first: a tile is baked with all its sources or not at all, and a refusal must not cost an eviction.
-    for (let i = 0; i < sources.length; i++) if (!sources[i].ready(canvas)) return 'wait';
-    const slot = pyramid.slotFor(tier, ix, iy);
-    if (slot < 0) return 'full';
-    gl.bindFramebuffer(gl.FRAMEBUFFER, s.layer);
-    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, s.array, 0, slot);
-    resetLiveState(gl, s.layer, TILE, TILE);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    for (let i = 0; i < sources.length; i++) {
+      canvas = this.canvas;
+    let baking = this.baking;
+    if (!baking) {
+      if (!pyramid.next(finest)) return 'none';
+      const { tier, ix, iy } = pyramid,
+        rect = this.rect,
+        side = this.gridSize / 2 ** tier;
+      rect.minX = ix * side;
+      rect.minY = iy * side;
+      rect.maxX = rect.minX + side;
+      rect.maxY = rect.minY + side;
+      canvas.scale = TILE / DRAPE_LINE_SCALE / side / frame.dpr;
+      canvas.dpr = frame.dpr;
+      canvas.light = frame.quality === 'light';
+      canvas.step = 0;
+      // Asked first: a tile is baked with all its sources or not at all, and a refusal must not cost an eviction.
+      for (let i = 0; i < sources.length; i++) if (!sources[i].ready(canvas)) return 'wait';
+      const slot = pyramid.spare(tier, ix, iy);
+      if (slot < 0) return 'full';
+      gl.bindFramebuffer(gl.FRAMEBUFFER, s.layer);
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, s.array, 0, slot);
       resetLiveState(gl, s.layer, TILE, TILE);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      baking = this.baking = { tier, ix, iy, slot, source: 0, step: 0, ms: 0 };
+    }
+    if (baking.source < sources.length) {
+      // A source that starts after another is asked again: the bake spans slices, and the source's own work between
+      // them may have changed what it was ready with (the town's tables), which `paint` would then make in one go.
+      canvas.step = baking.step;
+      if (baking.source > 0 && baking.step === 0 && !sources[baking.source].ready(canvas)) return 'wait';
+      resetLiveState(gl, s.layer, TILE, TILE);
+      let more = false;
       try {
-        sources[i].paint(canvas);
+        more = sources[baking.source].paint(canvas) === true;
       } catch (error) {
-        // The tile is kept without that source rather than baked again at every slice.
+        // The tile is kept without (the rest of) that source rather than baked again at every slice.
         if (!this.warned) console.warn('Map drape: a layer could not be painted into a tile.', error);
         this.warned = true;
       }
+      if (more) baking.step++;
+      else {
+        baking.source++;
+        baking.step = 0;
+      }
+      if (baking.source < sources.length) return 'more';
     }
-    pyramid.baked(tier, ix, iy, slot);
-    return 'ok';
+    pyramid.baked(baking.tier, baking.ix, baking.iy, baking.slot);
+    this.baking = undefined;
+    return 'baked';
   }
 
   /** One slice of baking for the last frame, with the sources of the flat layers in their order, bottom first. True
-   * while tiles are pending. Only a tilted frame has tiles baked. */
+   * while tiles are pending. Only a tilted frame at rest has tiles baked. A slice always makes one step, whatever
+   * time it is given: its units are indivisible, and a caller that has little time left must not starve the drape. */
   work(budgetMs: number, frame: LiveFrame | undefined, sources: readonly DrapeSource[]): boolean {
     const gl = this.gl,
-      started = performance.now(),
+      now = performance.now(),
       pyramid = this.pyramid,
       stats = this.stats;
     if (gl.isContextLost()) return false;
     if (!frame?.camera.tilted) {
-      if (this.state && started - this.tiltedAt > RELEASE_MS) this.release();
+      if (this.state && now - this.tiltedAt > RELEASE_MS) this.release();
       return false;
     }
-    this.tiltedAt = started;
+    this.tiltedAt = now;
     const size = this.options.mapSize();
     if (!(size > 0)) return false;
-    const s = this.ensure(frame.quality === 'light' ? LAYERS_LIGHT : LAYERS_FULL);
+    const s = this.ensure(drapeLayers(frame.quality));
     if (!s) return false;
     if (size !== this.gridSize) {
       this.gridSize = size;
+      this.baking = undefined;
       pyramid.reset(s.layers);
     }
     const seen = this.seen,
@@ -322,43 +393,68 @@ export class MapDrape {
     }
     seen.length = seenRevision.length = sources.length;
     if (!same) pyramid.stale();
-    if (started < this.blockedUntil) return true;
-    const finest = this.finestTier(frame.dpr),
-      limit = frame.moving ? 1 : 4;
-    let baked = 0,
-      pending = false;
-    try {
-      while (pyramid.next(finest)) {
-        if (baked >= limit || performance.now() - started >= budgetMs) {
-          pending = true;
-          break;
+    // A bake under way was started for other sources, or for another pixel ratio or quality: it starts again.
+    if (this.baking && (!same || this.canvas.dpr !== frame.dpr || this.canvas.light !== (frame.quality === 'light'))) this.abandon();
+    const finest = this.finestTier(frame.dpr);
+    stats.capacity = s.layers - 1;
+    stats.bytes = s.layers * TILE_BYTES;
+    let pending = false,
+      baked = 0;
+    if (frame.moving || now < this.blockedUntil) pending = !!this.baking || pyramid.pending(finest) > 0;
+    else {
+      const started = performance.now();
+      stats.full = 0;
+      try {
+        for (let steps = 0; ; steps++) {
+          const t = performance.now();
+          if (steps > 0 && (baked >= TILES_PER_SLICE || t - started >= budgetMs)) {
+            pending = !!this.baking || pyramid.next(finest);
+            break;
+          }
+          const before = this.baking?.ms ?? 0,
+            result = this.step(s, frame, sources, finest);
+          if (result === 'none') break;
+          if (result === 'wait') {
+            this.blockedUntil = performance.now() + RETRY_MS;
+            pending = true;
+            break;
+          }
+          // No layer can be freed before the next frame marks what it still shows.
+          if (result === 'full') {
+            stats.full = 1;
+            break;
+          }
+          const ms = performance.now() - t;
+          if (ms > stats.stepMs) stats.stepMs = ms;
+          if (result === 'more') this.baking!.ms = before + ms;
+          else {
+            stats.bakeMs = before + ms;
+            stats.baked++;
+            baked++;
+          }
         }
-        const t = performance.now(),
-          result = this.bake(s, frame, sources);
-        if (result === 'wait') {
-          this.blockedUntil = performance.now() + RETRY_MS;
-          pending = true;
-          break;
-        }
-        // No layer can be freed before the next frame marks what it still shows.
-        if (result === 'full') break;
-        baked++;
-        stats.baked++;
-        stats.bakeMs = performance.now() - t;
+      } finally {
+        resetLiveState(gl, null, frame.width, frame.height);
       }
-    } finally {
-      resetLiveState(gl, null, frame.width, frame.height);
     }
     stats.tiles = pyramid.size;
-    stats.bytes = s.layers * TILE_BYTES;
     stats.pending = pyramid.pending(finest);
     if (baked) this.options.invalidate();
     return pending;
   }
 
+  /** The ground is another terrain: no tile baked over the previous one may show on it, not even while its own are
+   * baked (a stale tile is a fair stand-in for another look of the same terrain only). The texture array stays. */
+  forget(): void {
+    this.baking = undefined;
+    this.pyramid.reset(this.state?.layers ?? 0);
+    this.stats.tiles = this.stats.pending = 0;
+  }
+
   /** Every GL handle is dead; the next tilted frame builds them again. */
   contextLost(): void {
     this.state = undefined;
+    this.baking = undefined;
     this.group.contextLost();
     this.pyramid.reset(0);
     this.gridSize = 0;

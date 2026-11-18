@@ -210,7 +210,8 @@ export class ComposedView {
     }
     if (!live.hasLayer('ground')) return 'no ground layer';
     // No baked tile covers the view yet and nothing stands in for the ground: a composed frame would show bare paper.
-    if (!live.layerReady('ground', view, w, h, Math.min(2, dpr)) && !ground.miniGround()) return GROUND_WARMING;
+    // The miniature's capture stands in for the top view only; a tilted frame draws no stand-in.
+    if (!live.layerReady('ground', view, w, h, Math.min(2, dpr)) && (isTilted(view) || !ground.miniGround())) return GROUND_WARMING;
     return undefined;
   }
 
@@ -607,6 +608,9 @@ export class ComposedView {
     const shown = this.motion.frame,
       live = this.live;
     if (!this.onPage || !shown || !live?.active()) return undefined;
+    // The ground of a new terrain has no tile yet (the view holds its last picture, mapView.ts): a frame drawn now
+    // would be bare paper. Nothing is frozen: the canvases stay as they are through the passes.
+    if (!live.layerReady('ground', shown.view, shown.w, shown.h, Math.min(2, shown.dpr))) return undefined;
     if (!live.draw(shown.view, shown.w, shown.h, Math.min(2, shown.dpr), false)) return undefined;
     const sources = [live.canvas];
     if (atOrAbove('overlay', this.shownFrom) && this.overlayOnPage) sources.push(this.overlayOnPage);

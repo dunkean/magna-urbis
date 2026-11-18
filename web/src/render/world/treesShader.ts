@@ -3,12 +3,10 @@
  * TREE_3D_GLSL: the same instance of 12 floats, crown profiles, stem girth, snow, clumps and light), with the number of
  * segments around and of rings along the tree set per draw, so far blocks draw coarser trees; standing on TerrainHeights.
  *
- * The fragment shader is the 3D view's, unchanged but for the screen-door fade of the volumes (volumes.ts) while the
- * relief rises. It works in the 3D view's frame (x east, up, y south): the vertex shader hands it positions and normals
+ * The fragment shader is the 3D view's, unchanged. It works in the 3D view's frame (x east, up, y south): the vertex shader hands it positions and normals
  * in that frame, relative to the target, with the eye and the light in the same frame.
  */
 import { TREE_3D_GLSL, TREE_PROFILE_GLSL } from '../../ui/terrain3dTrees';
-import { VOLUME_FADE_GLSL } from './volumes';
 
 /** A level of detail of the lathe: segments around (even, for the alternating bough tips of a spire), the stem rings
  * (3: foot, breast height, crown base; 2: foot and crown base) and the crown rings, as indices of the profile tables. */
@@ -97,12 +95,5 @@ void main(){
   gl_Position=uProjection*vec4(position,1.);
 }`;
 
-/** The 3D view's tree fragment shader; `fading` adds the screen-door fade (`uShown`). */
-export function worldTreeFs(fading: boolean): string {
-  const source = TREE_3D_GLSL.fragment,
-    main = 'void main(){',
-    end = 'color=vec4(base,1.);';
-  if (!source.includes(main) || !source.includes(end)) throw new Error('World trees: the tree fragment shader changed shape');
-  if (!fading) return source;
-  return source.replace(main, `uniform float uShown;${VOLUME_FADE_GLSL}\n${main}`).replace(end, `${end}if(volumeHidden(uShown))discard;`);
-}
+/** The 3D view's tree fragment shader, as it is. */
+export const WORLD_TREE_FS = TREE_3D_GLSL.fragment;

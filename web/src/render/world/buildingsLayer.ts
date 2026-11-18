@@ -17,10 +17,10 @@ import type { Building3dScene } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
-import { BlockGrouping, blockLevel, blockPart, joinParts, worldPaint, worldSeat, type BuildingBlock } from './buildingsBlocks';
-import { WORLD_BUILDING_VS, worldBuildingFs } from './buildingsShader';
+import { BlockGrouping, blockHidden, blockLevel, blockPart, joinParts, worldPaint, worldSeat, type BuildingBlock } from './buildingsBlocks';
+import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
-import { VOLUME_HAZE, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumesShown, type VolumeLayer } from './volumes';
+import { VOLUME_HAZE, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -40,7 +40,7 @@ export interface WorldBuildingsOptions {
 const BUILD_CHUNK = 8;
 /** The separate 3D view's cache budget. */
 const BUDGET_BYTES = 96 * 1024 * 1024;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uEye', 'uShown', 'uAir', 'uHaze', 'uNight'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uEye', 'uAir', 'uHaze', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
 interface Level {
@@ -73,7 +73,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     bytes = 0,
     missing = false,
     dirty = true;
-  let plain: Program | undefined, fading: Program | undefined;
+  let program: Program | undefined;
   let scene: Building3dScene | undefined,
     heights: TerrainHeights | undefined,
     appearanceKey = '',
@@ -177,16 +177,16 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     return pending;
   };
 
-  const link = (fade: boolean): Program => {
-    const program = linkVolumeProgram(gl, WORLD_BUILDING_VS, worldBuildingFs(fade), 'World buildings');
-    return { program, u: uniformsOf(gl, program, UNIFORMS) };
+  const link = (): Program => {
+    const linked = linkVolumeProgram(gl, WORLD_BUILDING_VS, WORLD_BUILDING_FS, 'World buildings');
+    return { program: linked, u: uniformsOf(gl, linked, UNIFORMS) };
   };
 
   return {
     name: 'buildings',
     tilts: true,
     ready: () => true,
-    restExact: frame => !volumesShown(frame.camera) || !missing,
+    restExact: frame => !volumesDrawn(frame.camera) || !missing,
     work(budgetMs, frame) {
       // Each step below is bounded: the grouping and the meshes go a chunk at a time, a program link is one step.
       const started = performance.now(),
@@ -194,21 +194,14 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       sync();
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
+        paint = worldPaint(scene!, appearance!, grouping.altitudes);
         slots = grouping.blocks.map(block => ({ block, levels: new Array<Level | undefined>(block.levels).fill(undefined), want: block.levels - 1, shown: -1, depth: Infinity, seen: -1 }));
         grouping = undefined;
         return slice(started, true);
       }
-      if (!slots.length || !scene || !appearance) return slice(started, false);
-      if (!paint) {
-        paint = worldPaint(scene, appearance);
-        return slice(started, true);
-      }
-      if (!plain) {
-        plain = link(false);
-        return slice(started, true);
-      }
-      if (!fading) {
-        fading = link(true);
+      if (!slots.length || !paint) return slice(started, false);
+      if (!program) {
+        program = link();
         return slice(started, true);
       }
       let built = false;
@@ -217,7 +210,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           // The level the last frame wanted for the nearest block that lacks it; else the overview of a block that
           // has nothing yet (built in the background, before the first tilt and while the view rests).
           let next: Slot | undefined;
-          for (const slot of slots) if (slot.seen === tick && !slot.levels[slot.want] && (!next || slot.depth < next.depth)) next = slot;
+          for (const slot of slots) if (slot.seen === tick && slot.want < slot.block.levels && !slot.levels[slot.want] && (!next || slot.depth < next.depth)) next = slot;
           if (next) pending = { slot: next, level: next.want, next: 0, parts: [] };
           else {
             const bare = slots.find(slot => !slot.levels.some(Boolean));
@@ -249,12 +242,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     draw(frame: LiveFrame) {
       const started = performance.now(),
         camera = frame.camera,
-        shown = volumesShown(camera);
+        drawn = volumesDrawn(camera);
       tick++;
       stats.drawCalls = stats.triangles = stats.blocks = 0;
       visibleCount = 0;
       missing = false;
-      if (shown > 0 && plain && fading) {
+      if (drawn && program) {
         volume.set(camera);
         const tx = camera.target[0],
           ty = camera.target[1],
@@ -276,6 +269,11 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           if (depth > radius && (radius * focal) / depth < 0.35) continue;
           const want = blockLevel(b, (b.width * focal) / Math.max(1, depth - radius), slot.shown >= 0 ? slot.shown : slot.want);
           slot.want = want;
+          // Under a pixel: the drape shows the town plan.
+          if (want === blockHidden(b)) {
+            slot.shown = want;
+            continue;
+          }
           slot.depth = depth;
           slot.seen = tick;
           let index = want;
@@ -294,17 +292,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           visible[visibleCount++] = slot;
         }
         if (visibleCount) {
-          const { program, u } = shown < 1 ? fading : plain;
-          gl.useProgram(program);
-          gl.disable(gl.BLEND);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LESS);
-          gl.depthMask(true);
-          gl.disable(gl.CULL_FACE);
+          const u = program.u;
+          gl.useProgram(program.program);
+          volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform1f(u.uRise, rise);
           gl.uniform3f(u.uEye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
-          gl.uniform1f(u.uShown, shown);
           gl.uniform2f(u.uAir, hazeDistance(camera), rise);
           gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
           gl.uniform1i(u.uNight, night);
@@ -319,8 +312,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           }
           stats.blocks = visibleCount;
           gl.bindVertexArray(null);
-          gl.disable(gl.DEPTH_TEST);
-          gl.enable(gl.BLEND);
+          volumeDepthEnd(gl);
         }
       }
       stats.bytes = bytes;
@@ -333,16 +325,15 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       // Every handle is dead: forget them without deleting.
       for (const slot of slots) slot.levels.fill(undefined);
       bytes = 0;
-      plain = fading = undefined;
+      program = undefined;
       pending = undefined;
       visibleCount = 0;
     },
     stats: () => stats,
     dispose() {
       dropAll();
-      if (plain) gl.deleteProgram(plain.program);
-      if (fading) gl.deleteProgram(fading.program);
-      plain = fading = undefined;
+      if (program) gl.deleteProgram(program.program);
+      program = undefined;
       scene = heights = undefined;
     },
   };

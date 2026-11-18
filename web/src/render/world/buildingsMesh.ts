@@ -70,7 +70,8 @@ export const viewSeat: BuildingSeat = (_building, ground, _x, _y, z, faceGround,
 export interface BuildingPaint {
   appearance: UrbanBuildingAppearance;
   materials: readonly HouseMaterial[];
-  snowAltitudes: ReadonlyMap<string, number>;
+  /** Mean ground of the town of a building (by id), which sets its snow (roofSnow.ts townRoofAltitudes). */
+  snowAltitudes: { get(id: string): number | undefined };
 }
 /** One group of faces drawn with one program state. `palette`: distinct colours of its faces (inspection). */
 export interface BuildingBatchData {

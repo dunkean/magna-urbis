@@ -18,9 +18,14 @@
  * at full quality once the view rests.
  * Recording, upload and bake happen in `work`, one step per call (more when the budget allows); `draw` only submits.
  *
- * A tilted frame (render/world/contract.ts) shows the overlay on the terrain: the layer is not drawn, and no region is
- * made for such a frame; it gives the map drape a `DrapeSource` that records the map for a tile's square at the tile's
- * scale, as a band is recorded, and rasterizes the whole list once into the tile.
+ * A tilted frame (render/world/contract.ts) shows the overlay on the terrain: the layer is not drawn; it gives the map
+ * drape a `DrapeSource` that paints the overlay of a tile's square. The region of the frame's top view is still made
+ * (its centre and scale are the tilted camera's), and where it holds a tile at about the tile's scale, the nearest
+ * tiles of a tilted view, its lists are replayed into the tile: nothing is recorded for them. The other tiles (far
+ * ones at coarser scales, the closest at finer ones) are recorded for their own square and scale, as a band is, and
+ * rasterized, in horizontal bands, one per call: the cost of a recording follows the content under it, so each band
+ * is as high as the cost per row of the band before allows within DRAPE_BAND_MS. All of it only while the view rests
+ * (the drape's rule).
  */
 import { resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerStats } from './contract';
 import type { Rect4, View } from '../view';
@@ -81,6 +86,16 @@ const SNAPSHOT_RATIO = 1.5;
 const SNAPSHOT_AHEAD = 1.25;
 /** A region under way survives the scale steps of a zoom while it stays this close (octaves) to the view's scale. */
 const KEEP_OCTAVES = 1.25;
+
+/** Scale of a drape tile over the scale of the region shown, between which the region's lists paint the tile. The
+ * tiles of the view's own tier are within 0.75 to 1.5 of the view's scale, and the region within a quarter octave. */
+const REUSE_MIN = 0.6,
+  REUSE_MAX = 1.7;
+/** Main-thread time a band of a drape tile aims at (recording, rasterization, laying), and the bounds of its height
+ * in recorded rows: the first band of the first tile (no cost known yet), and the least worth a recording. */
+const DRAPE_BAND_MS = 6,
+  DRAPE_FIRST_ROWS = 48,
+  DRAPE_MIN_ROWS = 8;
 
 const NOTHING: DisplayList = { width: 0, height: 0, ops: [], stats: { calls: 0, ops: 0, paths: 0, sprites: 0, recordMs: 0 } };
 
@@ -230,6 +245,46 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
    * changes besides its scale (its key). */
   let drapeRevision = 0,
     drapeKey: string | undefined;
+  /** The drape tile recorded in bands: the recorded row its next band starts at, and what the last band cost per row. */
+  let drapeRow = 0,
+    drapeMsPerRow = 0;
+  /** The region the last `work` wanted for its frame, while it is not shown yet: the square of the frame's top view,
+   * the scale and the pixel ratio it is made for. */
+  const due = { wanted: false, minX: 0, minY: 0, maxX: 0, maxY: 0, scale: 1, dpr: 1 };
+  const reusable = (ratio: number): boolean => ratio >= REUSE_MIN && ratio <= REUSE_MAX;
+  /** The region shown, when its lists are the overlay of the tile: current, complete, holding the tile's square, and
+   * recorded at about the tile's scale. */
+  const regionFor = (tile: DrapeCanvas): Region | undefined => {
+    const r = shown;
+    return r && !r.stale && !r.draft && r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) && r.key === host.key(r.scale, r.dpr, r.light) ? r : undefined;
+  };
+  /** Replays the lists of `r` into the tile, as `draw` replays them into a frame; false when the tile has no group. */
+  const replayInto = (tile: DrapeCanvas, r: Region): boolean => {
+    const target = tile.group();
+    if (!target) return false;
+    // Map metres -> pixels of the tile, and recorded pixels of the region -> pixels of the tile.
+    const s = tile.pixels / (tile.rect.maxX - tile.rect.minX),
+      tx = -tile.rect.minX * s,
+      ty = -tile.rect.minY * s,
+      k = s / (r.scale * r.dpr);
+    for (const b of r.parts) {
+      const part = b.part,
+        post = part.post,
+        scissor = part.scissor;
+      post[0] = post[3] = k;
+      post[4] = b.cx * s + tx - (k * b.w) / 2;
+      post[5] = b.cy * s + ty - (k * b.h) / 2;
+      scissor[0] = b.rect.minX * s + tx;
+      scissor[1] = b.rect.minY * s + ty;
+      scissor[2] = b.rect.maxX * s + tx;
+      scissor[3] = b.rect.maxY * s + ty;
+      part.baked = b.baked;
+      part.list = b.suffix;
+    }
+    raster.replayLive(r.live as readonly LivePart[], target, tile.pixels, tile.pixels);
+    tile.putGroup(1);
+    return true;
+  };
   const drape: DrapeSource = {
     revision(): number {
       const key = failed || raster.lost || !host.active() ? undefined : host.key(1, 1, false);
@@ -240,36 +295,65 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       return drapeRevision;
     },
     // Nothing to paint (the vector engine is off, the layer failed) is ready; else the programs must be linked.
-    ready(): boolean {
+    ready(tile: DrapeCanvas): boolean {
       if (failed || raster.lost || !host.active()) return true;
       try {
-        return raster.warm();
+        if (!raster.warm()) return false;
       } catch {
         // A program that cannot be linked is the layer's to report (its `work` meets the same error): the drape goes on.
         return true;
       }
+      // The region of the view is wanted or under way and will hold this tile: the tile waits for its lists rather
+      // than being recorded as well.
+      return !(due.wanted && due.dpr === tile.dpr && covers(due, tile.rect) && reusable(tile.scale / due.scale)) || !!regionFor(tile);
     },
-    paint(tile: DrapeCanvas): void {
-      if (failed || raster.lost || !host.active()) return;
+    /** An error here is the drape's to report: it costs this tile its overlay, not the top view its live layer. */
+    paint(tile: DrapeCanvas): boolean {
+      if (failed || raster.lost || !host.active()) return false;
+      if (tile.step === 0) {
+        const r = regionFor(tile);
+        if (r && replayInto(tile, r)) return false;
+      }
       const side = tile.rect.maxX - tile.rect.minX,
         // Recorded pixels of the tile's side: a whole number, so the edges of the tile are texel edges of the bake.
         // The recorder rounds its size up: a scale a hair under keeps that number.
         recorded = Math.max(1, Math.round(side * tile.scale * tile.dpr)),
         scale = (recorded - 1e-6) / (side * tile.dpr),
         key = host.key(scale, tile.dpr, tile.light);
-      if (key === undefined) return;
-      // An error here is the drape's to report: it costs this tile its overlay, not the top view its live layer.
-      const made = host.record({ key, rect: tile.rect, scale, dpr: tile.dpr, bands: [tile.rect] }, tile.rect, tile.light);
-      if (!made) return;
+      if (key === undefined) return false;
+      // Horizontal bands of whole recorded rows, one per call, from the north. A band's height is what the last one
+      // cost per row allows within DRAPE_BAND_MS: the cost follows the content under the band, which the recorder
+      // cannot tell beforehand (a town's farm roofs cost tens of milliseconds over a tile of open country).
+      const started = performance.now();
+      if (tile.step === 0) drapeRow = 0;
+      const top = drapeRow,
+        left = recorded - top,
+        want = Math.max(DRAPE_MIN_ROWS, drapeMsPerRow > 0 ? Math.floor(DRAPE_BAND_MS / drapeMsPerRow) : DRAPE_FIRST_ROWS),
+        // A remainder too thin for a recording of its own goes with this band.
+        rows = left - want < DRAPE_MIN_ROWS ? left : want,
+        metres = side / recorded,
+        band: Rect4 = { minX: tile.rect.minX, maxX: tile.rect.maxX, minY: tile.rect.minY + top * metres, maxY: tile.rect.minY + (top + rows) * metres },
+        made = host.record({ key, rect: tile.rect, scale, dpr: tile.dpr, bands: [band] }, band, tile.light);
+      if (!made) return false;
       const list = cullList(made.list, boxOf(made));
       raster.prepare(list);
       const baked = raster.bake(list, tile.pixels / made.w, { samples: 4 });
-      if (!baked) return;
-      // The bake holds the recorded square and a gutter, drawn with y up: its north is at the top of the texture.
-      const w = baked.box[2] - baked.box[0],
-        h = baked.box[3] - baked.box[1];
-      tile.put(baked.texture, -baked.box[0] / w, 1 + baked.box[1] / h, (made.w - baked.box[0]) / w, 1 - (made.h - baked.box[1]) / h, 1);
-      raster.releaseBaked(baked);
+      if (baked) {
+        // The bake holds the recorded band and a gutter, drawn with y up: its north is at the top of the texture.
+        // The tile's north edge is `top` rows above the band's, its south edge the rows after it below; only the band
+        // itself is laid, not its gutter, which the next band paints.
+        const w = baked.box[2] - baked.box[0],
+          h = baked.box[3] - baked.box[1],
+          u0 = -baked.box[0] / w,
+          u1 = (made.w - baked.box[0]) / w,
+          v0 = 1 - (made.h - baked.box[1]) / h,
+          v1 = 1 + baked.box[1] / h;
+        tile.put(baked.texture, u0, 1 - (-top - baked.box[1]) / h, u1, 1 - (recorded - top - baked.box[1]) / h, 1, u0, v0, u1, v1);
+        raster.releaseBaked(baked);
+      }
+      drapeMsPerRow = (performance.now() - started) / rows;
+      drapeRow = top + rows;
+      return drapeRow < recorded;
     },
   };
   const bandOf = (made: OverlayBand, light: boolean): Band => {
@@ -512,10 +596,17 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       let more = false;
       try {
         // The programs start compiling at the first call and are polled at each one; nothing is shown before.
-        const warm = raster.warm();
-        // A tilted frame shows the overlay through the map drape: no region of its top view is recorded meanwhile.
-        if (frame.camera.tilted) return !warm;
-        more = regions(frame, start, budgetMs) || !warm;
+        const warm = raster.warm(),
+          wanted = regions(frame, start, budgetMs);
+        // For the map drape of a tilted frame: the region this frame waits for.
+        due.wanted = wanted;
+        due.minX = frame.rect.minX;
+        due.minY = frame.rect.minY;
+        due.maxX = frame.rect.maxX;
+        due.maxY = frame.rect.maxY;
+        due.scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
+        due.dpr = frame.dpr;
+        more = wanted || !warm;
         // Then, for the region shown now (the one this call may just have completed): its snapshots, as soon as the
         // view drifts from its scale and before it is far, so that no frame replays its lists there.
         const r = shown;

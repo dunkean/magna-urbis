@@ -322,10 +322,12 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   stats.drape = drape.stats;
   /** The sources of the flat layers shown, bottom first: refilled at each slice. */
   const drapeSources: DrapeSource[] = [];
-  /** Tiles of the drape are still to bake; the drape got no time in the last slice (the ground took it). */
+  /** Tiles of the drape are still to bake; the drape got no time in the last slice (the layers took it all). */
   let drapePending = false,
     drapeWaited = false;
-  /** One slice of the drape's baking for the last frame, with what is `left` of the slice. True while tiles are pending. */
+  /** One slice of the drape's baking for the last frame, with what is `left` of the slice. True while tiles are
+   * pending. The drape comes after the layers in a slice; when they left it nothing it comes first in the next one:
+   * layers with long preparation (a large town, the volumes) would otherwise keep it waiting for as long as it lasts. */
   const drapeWork = (left: number, last: LiveFrame | undefined, refine: boolean): boolean => {
     const tilted = !!last?.camera.tilted;
     drapeSources.length = 0;
@@ -334,7 +336,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         const source = layers[name]?.drape;
         if (source && shown[name]) drapeSources.push(source);
       }
-    // Behind the display's pace, as the ground: the tiles wait. Out of time: the drape goes before the ground next time.
+    // Behind the display's pace, as the ground: the tiles wait. Out of time: the drape goes first next time.
     if (tilted && (!refine || left <= 0.2)) {
       drapeWaited = refine;
       return (drapePending = true);
@@ -381,6 +383,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     if (last && !group.failed && !group.target) group.ensure(last.width, last.height, last.quality === 'light' ? 0 : Math.min(4, maxSamples));
     let pending = false,
       othersPending = false;
+    const drapeFirst = drapeWaited;
+    if (drapeFirst && drapeWork(budgetMs, last, refine)) pending = true;
     for (let i = 1; i < LIVE_LAYER_ORDER.length; i++) othersPending ||= !!stats.pending[LIVE_LAYER_ORDER[i]];
     for (let i = 0; i < LIVE_LAYER_ORDER.length; i++) {
       const name = LIVE_LAYER_ORDER[i],
@@ -389,8 +393,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         stats.pending[name] = false;
         continue;
       }
-      // The ground's tiles and the drape's refine the same picture: the one that waited through the last slice goes first.
-      if ((!refine || drapeWaited) && name === 'ground') {
+      if (!refine && name === 'ground') {
         pending ||= !!stats.pending[name];
         continue;
       }
@@ -421,7 +424,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       stats.pending[name] = more;
       pending ||= more;
     }
-    if (drapeWork(budgetMs - (performance.now() - started), last, refine)) pending = true;
+    if (!drapeFirst && drapeWork(budgetMs - (performance.now() - started), last, refine)) pending = true;
     // Stand-ins go up between frames, one per slice, so the first frame of a gesture finds them on the GPU.
     let uploaded = false;
     for (const name of LIVE_LAYER_ORDER) {
@@ -523,6 +526,9 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (previous === layer) return;
       layers[name] = layer;
       states[name].ready = false;
+      // A new ground layer is the ground of another terrain (composedView.ts contentChanged): the map drape's tiles
+      // were baked over the previous one.
+      if (name === 'ground') drape.forget();
       stats.pending[name] = !!layer?.work;
       if (stats.errors) delete stats.errors[name];
       try {

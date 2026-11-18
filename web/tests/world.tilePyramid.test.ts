@@ -7,7 +7,7 @@ const tile = (): DrapeTile => ({ page: 0, layer: 0, u0: 0, v0: 0, span: 1 });
 function bakeAll(pyramid: TilePyramid, finest: number): string[] {
   const baked: string[] = [];
   while (pyramid.next(finest)) {
-    const slot = pyramid.slotFor(pyramid.tier, pyramid.ix, pyramid.iy);
+    const slot = pyramid.spare(pyramid.tier, pyramid.ix, pyramid.iy);
     if (slot < 0) break;
     pyramid.baked(pyramid.tier, pyramid.ix, pyramid.iy, slot);
     baked.push(`${pyramid.tier}/${pyramid.ix}/${pyramid.iy}`);
@@ -31,8 +31,8 @@ describe('tile pyramid of the map drape', () => {
     const pyramid = new TilePyramid(2);
     pyramid.reset(16);
     const out = tile();
-    pyramid.baked(0, 0, 0, pyramid.slotFor(0, 0, 0));
-    pyramid.baked(2, 3, 1, pyramid.slotFor(2, 3, 1));
+    pyramid.baked(0, 0, 0, pyramid.spare(0, 0, 0));
+    pyramid.baked(2, 3, 1, pyramid.spare(2, 3, 1));
     pyramid.begin();
     // Tile (4, 13, 6) lies in (2, 3, 1): its quarter of a quarter, at (1/4, 2/4) of it.
     expect(pyramid.resolve(4, 13, 6, 1, out)).toBe(true);
@@ -57,16 +57,41 @@ describe('tile pyramid of the map drape', () => {
     expect(pyramid.resolve(2, 1, 1, 10, out)).toBe(true);
     const layer = out.layer;
     expect(out.span).toBe(1);
-    expect(bakeAll(pyramid, 8)).toEqual(['0/0/0', '2/1/1']);
-    pyramid.begin();
+    // Baked again into another layer (the one it shows from is on screen meanwhile), which then takes its place.
+    const slot = pyramid.spare(2, 1, 1);
+    expect(slot).not.toBe(layer);
+    expect(slot).toBeGreaterThanOrEqual(0);
     pyramid.resolve(2, 1, 1, 10, out);
     expect(out.layer).toBe(layer);
+    pyramid.baked(2, 1, 1, slot);
+    pyramid.resolve(2, 1, 1, 10, out);
+    expect(out.layer).toBe(slot);
+    expect(pyramid.needs(2, 1, 1)).toBe(false);
+    expect(bakeAll(pyramid, 8)).toEqual(['0/0/0']);
     expect(pyramid.size).toBe(2);
+  });
+
+  it('keeps one layer free for the bake under way, and takes back the layer of a bake given up', () => {
+    const pyramid = new TilePyramid(1);
+    pyramid.reset(3);
+    const out = tile();
+    pyramid.begin();
+    pyramid.resolve(2, 0, 0, 1, out);
+    pyramid.resolve(2, 1, 0, 2, out);
+    // Three layers hold two tiles: tier 0 and the nearest one.
+    expect(bakeAll(pyramid, 8)).toEqual(['0/0/0', '2/0/0']);
+    expect(pyramid.size).toBe(2);
+    pyramid.stale();
+    const slot = pyramid.spare(0, 0, 0);
+    expect(slot).toBeGreaterThanOrEqual(0);
+    expect(pyramid.spare(2, 0, 0)).toBe(-1);
+    pyramid.discard(slot);
+    expect(pyramid.spare(2, 0, 0)).toBe(slot);
   });
 
   it('evicts the least recently shown tile, never a coarse one nor one the last frame shows', () => {
     const pyramid = new TilePyramid(1);
-    pyramid.reset(3);
+    pyramid.reset(4);
     const out = tile();
     // Frame 1 shows (3, 0, 0), frame 2 shows (3, 1, 0): the table is full with tier 0.
     pyramid.begin();
@@ -85,6 +110,6 @@ describe('tile pyramid of the map drape', () => {
     expect(pyramid.needs(3, 0, 0)).toBe(true);
     expect(pyramid.needs(3, 1, 0)).toBe(false);
     expect(pyramid.needs(0, 0, 0)).toBe(false);
-    expect(pyramid.slotFor(3, 3, 0)).toBe(-1);
+    expect(pyramid.spare(3, 3, 0)).toBe(-1);
   });
 });

@@ -450,6 +450,8 @@ export class StudioClient {
     const showRequest = ++this.showRequest,
       superseded = (): boolean => showRequest !== this.showRequest;
     const mapChanged = this.world?.mapSize !== world.mapSize;
+    // The same map again (another stage of its generation, an edit, a redraw): the camera stays where the user put it.
+    if (this.world && this.world.seed === world.seed && !mapChanged) keepView = true;
     if (this.world !== world) {
       this.benchMiniRevision = -1;
       this.resolutions = [];

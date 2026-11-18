@@ -22,6 +22,20 @@ describe('view motion', () => {
     expect(sameFrame(motion.frame, view(10), 900, 600, 1)).toBe(true);
   });
 
+  it('counts a change of pitch or yaw as a move, and keeps the whole pose of the frame', () => {
+    const motion = new ViewMotion();
+    expect(motion.note({ cx: 10, cy: 20, scale: 2 }, 800, 600, 1, 0)).toBe(false);
+    expect(motion.note({ cx: 10, cy: 20, scale: 2 }, 800, 600, 1, 10)).toBe(false);
+    // The camera tilts in place: the frame moved, and a picture redrawn from it is the tilted one.
+    expect(motion.note({ cx: 10, cy: 20, scale: 2, pitch: 0.8, yaw: 0.3 }, 800, 600, 1, 20)).toBe(true);
+    expect(motion.frame!.view).toMatchObject({ cx: 10, cy: 20, scale: 2, pitch: 0.8, yaw: 0.3 });
+    expect(motion.phase(30)).toBe('moving');
+    expect(motion.note({ cx: 10, cy: 20, scale: 2, pitch: 0.8, yaw: 0.3 }, 800, 600, 1, 40)).toBe(false);
+    // Back to the top view: a view without pitch and yaw is the same as one with zeros.
+    expect(motion.note({ cx: 10, cy: 20, scale: 2 }, 800, 600, 1, 50)).toBe(true);
+    expect(sameFrame(motion.frame, { cx: 10, cy: 20, scale: 2, pitch: 0, yaw: 0 }, 800, 600, 1)).toBe(true);
+  });
+
   it('owes the picture at rest from the first moving frame until the view says it is made', () => {
     const motion = new ViewMotion(),
       rest = vi.fn();

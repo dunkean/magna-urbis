@@ -6,15 +6,17 @@
  * Blocks are 256 m squares (the separate 3D view's sector size), lot boundaries in blocks of their own; a building
  * belongs to the block of the centre of what it covers. Levels of detail are those of that view: a building block is
  * detailed or an overview (capped bodies) by the pixels its mean building spans; a block of lot boundaries has the
- * three yard levels (mesh, ribbon, wide ribbon). Small structural features are kept at every level (the 3D view drops
- * them by metres per pixel, a rebuild per zoom octave).
+ * three yard levels (mesh, ribbon, wide ribbon). Farther than the 3D view drew, two more steps keep a large town cheap:
+ * boxes (each building its footprint extruded to its height under a flat roof in its roof colour, about ten
+ * triangles) once a building spans a few pixels, then nothing once it spans under a pixel: the map drape carries the
+ * town plan there. Small structural features are kept at the detailed levels (the 3D view drops them by metres per
+ * pixel, a rebuild per zoom octave).
  *
  * Everything here runs in slices: the grouping (BlockGrouping.step) and the vertices of a block (blockPart, a range of
  * its buildings at a time), so a large town never holds the main thread for more than a few milliseconds.
  */
-import { isYardMesh, yardLod, type Building3dScene, type Building3dVisual } from '../urbanBuildingGeometry';
+import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, type Building3dScene, type Building3dVisual } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
-import { townRoofAltitudes } from '../roofSnow';
 import { buildingBatches, buildingBounds, buildingGround, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import type { WorldRelief } from './contract';
 
@@ -35,7 +37,8 @@ export interface BuildingBlock {
   maxY: number;
   low: number;
   high: number;
-  /** Levels of detail: 2 for buildings (0 detailed, 1 overview), 3 for yards. */
+  /** Levels of detail that have vertices: 0 detailed, 1 overview, 2 boxes; for yards the three yard levels. The level
+   * `levels` (BLOCK_HIDDEN) draws nothing. */
   readonly levels: number;
 }
 
@@ -46,6 +49,8 @@ const GROUP_CHUNK = 64;
  * slices. */
 export class BlockGrouping {
   readonly blocks: BuildingBlock[] = [];
+  /** Town altitudes (TownAltitudes), gathered with the blocks. */
+  readonly altitudes = new TownAltitudes();
   private readonly byKey = new Map<string, BuildingBlock>();
   private next = 0;
 
@@ -71,10 +76,11 @@ export class BlockGrouping {
         key = `${origin}${yard ? '/yard' : ''}`;
       let block = this.byKey.get(key);
       if (!block) {
-        this.byKey.set(key, (block = { origin, buildings: [], yard, width: 0, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, low: Infinity, high: -Infinity, levels: yard ? 3 : 2 }));
+        this.byKey.set(key, (block = { origin, buildings: [], yard, width: 0, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, low: Infinity, high: -Infinity, levels: 3 }));
         this.blocks.push(block);
       }
       block.buildings.push(building);
+      this.altitudes.add(building);
       block.width += yard ? 1 : Math.max(1, Math.min(box[3] - box[0], box[4] - box[1]));
       block.minX = Math.min(block.minX, box[0]);
       block.minY = Math.min(block.minY, box[1]);
@@ -130,16 +136,40 @@ export function worldSeat(relief: WorldRelief, exaggeration: number): BuildingSe
   };
 }
 
+/** The mean ground of each town, which sets the snow of its roofs: townRoofAltitudes (roofSnow.ts) gathered one
+ * building at a time with the grouping, rather than in one pass over the scene (20 ms for 10,000 buildings). A
+ * building of a layout (parcel id `layout-.../...`) belongs to that town, any other building is its own. */
+export class TownAltitudes {
+  private readonly towns = new Map<string, { sum: number; count: number }>();
+  private readonly owners = new Map<string, string>();
+  add(building: Building3dVisual): void {
+    const prefix = building.parcel_id?.split('/')[0],
+      owner = prefix?.startsWith('layout-') ? prefix : building.id;
+    let town = this.towns.get(owner);
+    if (!town) this.towns.set(owner, (town = { sum: 0, count: 0 }));
+    if (Number.isFinite(building.ground_z_m)) {
+      town.sum += building.ground_z_m;
+      town.count++;
+    }
+    this.owners.set(building.id, owner);
+  }
+  get(id: string): number | undefined {
+    const owner = this.owners.get(id),
+      town = owner === undefined ? undefined : this.towns.get(owner);
+    return town ? (town.count ? town.sum / town.count : 0) : undefined;
+  }
+}
+
 /** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's). */
-export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance): BuildingPaint {
-  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], snowAltitudes: townRoofAltitudes(scene.buildings) };
+export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes): BuildingPaint {
+  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], snowAltitudes: altitudes };
 }
 
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
  * is built in parts over several work slices, then joined (joinParts) into one buffer and one draw. */
 export function blockPart(block: BuildingBlock, level: number, paint: BuildingPaint, seat: BuildingSeat, from: number, to: number): Float32Array {
   const buildings = block.buildings.slice(from, to),
-    batches = block.yard ? buildingBatches(buildings, block.origin, paint, level > 0, undefined, level, seat) : buildingBatches(buildings, block.origin, paint, level > 0, undefined, undefined, seat);
+    batches = block.yard ? buildingBatches(buildings, block.origin, paint, level > 0, undefined, level, seat) : buildingBatches(level === BOX_LEVEL ? buildings.map(buildingBox) : buildings, block.origin, paint, level > 0, undefined, undefined, seat);
   return joinParts(batches.map(batch => batch.data));
 }
 export function joinParts(parts: readonly Float32Array[]): Float32Array {
@@ -155,9 +185,33 @@ export function joinParts(parts: readonly Float32Array[]): Float32Array {
   return out;
 }
 
+/** The level of a building block drawn as boxes. */
+const BOX_LEVEL = 2;
+/** The level that draws nothing: `block.levels`. */
+export const blockHidden = (block: BuildingBlock): number => block.levels;
+
+/** A building as a box: its footprint extruded from its ground to its height, with a flat roof of its roof cover (a
+ * cartographic projection, which eachBuildingTriangle draws so, with the same id, culture and use, so the same paint).
+ * Terrain structures (walls, bridges, quays) and projections stay as they are at their overview. */
+function buildingBox(building: Building3dVisual): Building3dVisual {
+  if (isBuildingProjection(building) || !Number.isFinite(buildingGround(building)) || !building.volumes.length) return building;
+  return { ...building, projection: 'native-building-visual-1', height_m: building3dHeight(building), materials: building.volumes[0].materials, volumes: undefined, structural_features: undefined, structural_foundations: undefined } as unknown as Building3dVisual;
+}
+
+/** Pixels a building block's mean building spans below which it goes one level coarser (detailed, overview, boxes,
+ * nothing); it comes back finer above the next value (hysteresis). Detailed / overview are the 3D view's 7 / 10 px. */
+const COARSER = [7, 4, 0.7],
+  FINER = [10, 5.5, 1];
+/** Yards (pixels per metre): no lot boundary once a metre spans under a quarter pixel. */
+const YARD_HIDDEN = 0.25,
+  YARD_SHOWN = 0.35;
+
 /** Level a block wants for `pixels`, the screen size of its mean building (CSS px; per metre for yards), given the level
- * it shows now (hysteresis, as the 3D view: overview below 7 px, back to detailed above 10). */
+ * it shows now. */
 export function blockLevel(block: BuildingBlock, pixels: number, current: number): number {
-  if (block.yard) return yardLod(pixels, current);
-  return (current === 1 ? pixels < 10 : pixels < 7) ? 1 : 0;
+  const hidden = blockHidden(block);
+  if (block.yard) return pixels < (current === hidden ? YARD_SHOWN : YARD_HIDDEN) ? hidden : yardLod(pixels, Math.min(current, hidden - 1));
+  let level = 0;
+  for (let i = 0; i < COARSER.length; i++) if (pixels < (current > i ? FINER[i] : COARSER[i])) level = i + 1;
+  return level;
 }

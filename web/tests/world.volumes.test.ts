@@ -3,7 +3,7 @@ import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArch
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 import { city3dBuildings, city3dBuildingsSteps } from '../src/render/city3d/display';
 import type { LiveFrame } from '../src/render/live/contract';
-import { BUILDING_BLOCK, BlockGrouping, blockLevel, blockPart, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
+import { BUILDING_BLOCK, BlockGrouping, TownAltitudes, blockLevel, blockPart, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
 import { createWorldBuildingsLayer } from '../src/render/world/buildingsLayer';
 import { BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
 import { createFrameCamera, frameCamera } from '../src/render/world/camera';
@@ -99,7 +99,7 @@ describe('world buildings', () => {
     expect(blocks.every(block => block.origin[0] >= BUILDING_BLOCK && block.origin[1] >= BUILDING_BLOCK)).toBe(true);
     for (const block of blocks) expect(block.origin[0] % BUILDING_BLOCK).toBe(0);
     const seat = worldSeat(heights, heights.exaggeration),
-      paint = worldPaint(scene, { style: 'cartographic', diagnostic: 'none' }),
+      paint = worldPaint(scene, { style: 'cartographic', diagnostic: 'none' }, new TownAltitudes()),
       block = blocks[0],
       house = block.buildings[0],
       data = blockPart(block, 0, paint, seat, 0, 1);
@@ -165,8 +165,6 @@ describe('world buildings', () => {
     expect(vi.mocked(gl.drawArrays).mock.calls.length - drawCalls).toBe(stats.drawCalls);
     expect(stats.drawCalls).toBeGreaterThan(0);
     expect(layer.restExact!(tilted)).toBe(true);
-    // Every work call stays a slice (the budget was 8 ms; the first ones pay the compiler's warm-up).
-    expect(stats.sliceMs).toBeLessThan(40);
     // A frame uploads nothing.
     const uploads = vi.mocked(gl.bufferData).mock.calls.length;
     layer.draw(tilted);
@@ -228,7 +226,7 @@ describe('world trees', () => {
     const heights = relief(2400),
       inputs = stand(220, 100, 120),
       gl = mockGl(),
-      layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 600, invalidate: () => {} });
+      layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 600, shown: () => true, invalidate: () => {} });
     const view = { cx: 1200, cy: 1400, scale: 2, pitch: 1.1, yaw: 0.3 },
       tilted = frame(gl, view, heights);
     const started = performance.now();
@@ -249,5 +247,54 @@ describe('world trees', () => {
     console.info(
       `world trees: ${stats.blocks} blocks drawn, ${stats.drawCalls} draws, ${stats.instances} trees, ${Math.round(stats.triangles)} triangles (${Math.round(stats.triangles * 3)} vertices), ${(stats.bytes / 1048576).toFixed(1)} MiB, built in ${Math.round(buildMs)} ms (block ${stats.blockMs.toFixed(1)} ms, longest slice ${stats.sliceMs.toFixed(1)} ms), draw ${stats.ms.toFixed(2)} ms`,
     );
+  });
+});
+
+describe('world buildings by distance', () => {
+  /** Builds what a view wants, as the compositor's slices would, then draws it once more for the stats. */
+  function settle(layer: ReturnType<typeof createWorldBuildingsLayer>, view: LiveFrame) {
+    for (let pass = 0; pass < 6; pass++) {
+      layer.draw(view);
+      while (layer.work!(8, view));
+    }
+    layer.draw(view);
+    return { ...layer.stats!() };
+  }
+
+  it('draws a large town as boxes far away, nothing under a pixel, roofs in a turned top view', () => {
+    const heights = relief(40000, 128),
+      scene = city3dBuildings(batch(sources(10000, 22, 18900)), { heightAt: rawOf(heights) })!,
+      gl = mockGl(),
+      layer = createWorldBuildingsLayer(gl, { scene: () => scene, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), terrain: () => heights, invalidate: () => {} });
+    const slices: number[] = [];
+    let more = true;
+    while (more) {
+      const started = performance.now();
+      more = layer.work!(8, undefined);
+      slices.push(performance.now() - started);
+    }
+    const views = {
+      whole: frame(gl, { cx: 20000, cy: 20000, scale: 0.04, pitch: Math.PI / 4 }, heights),
+      town: frame(gl, { cx: 20000, cy: 20000, scale: 0.6, pitch: (55 * Math.PI) / 180 }, heights),
+      close: frame(gl, { cx: 20000, cy: 20000, scale: 4, pitch: (70 * Math.PI) / 180 }, heights),
+      turned: frame(gl, { cx: 20000, cy: 20000, scale: 2, pitch: 0, yaw: 0.5 }, heights),
+    };
+    const out: Record<string, { drawCalls: number; triangles: number }> = {};
+    for (const [name, view] of Object.entries(views)) out[name] = settle(layer, view);
+    // The first slices pay the compiler's warm-up; then a slice overruns its budget by one unit of work at most.
+    const longest = Math.max(...slices.slice(3));
+    expect(longest).toBeLessThan(16);
+    console.info(
+      `world buildings, 10000 houses on a 40 km map: ${Object.entries(out)
+        .map(([name, s]) => `${name} ${s.drawCalls} draws ${Math.round(s.triangles)} triangles`)
+        .join(', ')}; longest work slice ${longest.toFixed(1)} ms`,
+    );
+    expect(out.whole.triangles).toBeLessThan(100000);
+    expect(out.whole.drawCalls).toBeLessThan(40);
+    expect(out.town.triangles).toBeLessThan(out.close.triangles + 400000);
+    // A turned top view is a tilted frame at rise 0: the houses lie as roofs on the flat terrain, never missing.
+    expect(views.turned.camera.tilted).toBe(true);
+    expect(views.turned.camera.rise).toBe(0);
+    expect(out.turned.drawCalls).toBeGreaterThan(0);
   });
 });

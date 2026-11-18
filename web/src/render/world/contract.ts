@@ -116,9 +116,12 @@ export interface DrapeCanvas {
   readonly dpr: number;
   /** Light display quality: sources drop optional detail. */
   readonly light: boolean;
+  /** How many times the source being asked has already painted this tile in this bake (see DrapeSource.paint). */
+  readonly step: number;
   /** Lays a premultiplied texture over the tile with source-over: the tile's west edge reads `uWest`, its north edge
-   * `vNorth`, and so on (a texture rendered with y up has its north at v = 1). Parts outside 0..1 are left untouched. */
-  put(texture: WebGLTexture, uWest: number, vNorth: number, uEast: number, vSouth: number, opacity: number): void;
+   * `vNorth`, and so on (a texture rendered with y up has its north at v = 1). Only the part of the texture inside
+   * `uMin`..`vMax` (the whole of it by default) is laid; the rest of the tile is left untouched. */
+  put(texture: WebGLTexture, uWest: number, vNorth: number, uEast: number, vSouth: number, opacity: number, uMin?: number, vMin?: number, uMax?: number, vMax?: number): void;
   /** A cleared, transparent, multisampled target of `pixels` x `pixels` (RGBA8 + depth24/stencil8), bound, with the
    * state of `resetLiveState`: the isolated group of a source that needs its own blending, stencil or opacity. The
    * source draws the tile's square into the whole target, north at the top, then calls `putGroup`. Undefined when the
@@ -136,9 +139,11 @@ export interface DrapeSource {
   /** False while the source cannot paint this tile yet (programs linking, data not on the GPU): the tile is baked
    * later, and until then the drape bakes nothing. A source with nothing to show is ready and paints nothing. Cheap. */
   ready(canvas: DrapeCanvas): boolean;
-  /** Paints the source's picture of the tile. Only called when every source answered `ready`. The state on entry is
-   * `resetLiveState` with the tile bound; the source may leave any state behind. */
-  paint(canvas: DrapeCanvas): void;
+  /** Paints the source's picture of the tile, or a part of it: a source whose picture is long to make answers true
+   * to be called again for the same tile (`canvas.step` counts its calls), in this work slice or a later one, before
+   * the next source paints. Only called when every source answered `ready`, and never while the view moves. The state
+   * on entry is `resetLiveState` with the tile bound; the source may leave any state behind. */
+  paint(canvas: DrapeCanvas): boolean | void;
 }
 
 /** What the draped ground did in its last frame. */

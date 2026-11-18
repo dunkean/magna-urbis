@@ -596,9 +596,9 @@ export function createViewer(o: ViewerOptions): Viewer {
       const sizeChanged = size2 !== mapSize;
       renderer = r;
       mapSize = size2;
+      // New content never tilts the camera back: a refit changes the centre and the scale only.
       if (!keepView || sizeChanged) {
         zoomTarget = null;
-        level();
         view = fitView(mapSize, w, h);
       }
       invalidate();
@@ -672,9 +672,9 @@ export function createViewer(o: ViewerOptions): Viewer {
       const sizeChanged = size2 !== mapSize;
       mapSize = size2;
       if (markerColor) marker = markerColor;
+      // New content never tilts the camera back: a refit changes the centre and the scale only.
       if (!keepView || sizeChanged) {
         zoomTarget = null;
-        level();
         view = fitView(mapSize, w, h);
       }
       force = true;

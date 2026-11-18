@@ -17,6 +17,7 @@ import { townUrban } from '../edits';
 import { dualCameras } from '../../render/live/policy';
 import { isTilted } from '../../render/world/camera';
 import { $ } from './dom';
+import { mountWorldTreeControls } from './worldTrees';
 
 /** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
 const BUTTON_PITCH = 1;
@@ -66,6 +67,7 @@ export function mountView3d(state: PageState, actions: PageActions): void {
 
   if (!dualCameras()) {
     mountTiltButton(state, actions);
+    mountWorldTreeControls(state, actions);
     return;
   }
 

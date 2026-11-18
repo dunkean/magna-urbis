@@ -16,9 +16,9 @@
  * stilt houses (they stand on the ground), no exact meshes swapped in by the detail service, canals without their own
  * water surface (the map drape shows it).
  *
- * The trees are the near trees of the satellite looks. Their switch and distance are controls of the separate 3D
- * view's toolbar, which the 2D page does not show: here they are on whenever the look has them, at the distance of
- * the appearance (600 m by default).
+ * The trees are the near trees of the satellite looks (worldTreesAvailable), shown when the appearance's `trees3d` is
+ * on, at its `treeDistance`: the "3D trees" switch and the distance of the map toolbar while the view is tilted
+ * (v2/page/view3d.ts), the same settings the separate 3D view's toolbar wrote.
  */
 import type { World } from '../../gen/types';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
@@ -39,6 +39,8 @@ import type { City3dGround } from '../../ui/city3d';
 import { clampTreeDistance, TREE_DISTANCE_DEFAULT, type TreeInputs } from '../../ui/terrain3dTrees';
 import { renderV2ZoneUniform } from '../../../../rust/bridge/terrainRenderV2Zones';
 import { activityScene } from '../activitySites';
+import { resolveSettingsAppearance } from '../appearance';
+import type { V2Settings } from '../contracts';
 import { v2DisplayForest, v2ForestOccupation } from '../displayForest';
 import { rustSettlementRaster, townRoadStreets, type RustTownSnapshot } from '../rustUrban';
 import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2Resolved3d, v2Terrain3dGround, withV2ActivityScene } from '../urban3d';
@@ -46,6 +48,15 @@ import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
 
 type TreeSource = Omit<TreeInputs, 'height'>;
+type Ground = ReturnType<typeof v2Terrain3dGround>;
+/** The satellite looks model their near trees; the others paint or draw their forest. */
+const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy;
+/** Whether the look of the map has modelled trees: the page offers the "3D trees" switch only then. */
+export function worldTreesAvailable(world: World | undefined, settings: V2Settings | undefined): boolean {
+  if (!world || !settings) return false;
+  const resolved = resolveSettingsAppearance(settings, world, 'view2d');
+  return treesInLook(v2Terrain3dGround(world, settings, resolved.traits.ground3d ? (resolved.styleId as City3dGround) : 'map'), resolved);
+}
 /** Time a composition slice may take (ms), and how long an idle callback may wait before it runs anyway. */
 const SLICE_MS = 4,
   IDLE_TIMEOUT_MS = 300;
@@ -59,6 +70,7 @@ export class WorldVolumes {
   private appearance: UrbanBuildingAppearance = { style: 'cartographic', diagnostic: 'none' };
   private treeSource?: TreeSource;
   private distance = TREE_DISTANCE_DEFAULT;
+  private treesOn = false;
   private night = false;
   /** What the products were made for: the map (`content`: MapState.townContent, bumped by every set()), the relief. */
   private madeFor: { world?: World; content: number; resolved?: ResolvedAppearance; heights?: TerrainHeights } = { content: -1 };
@@ -92,6 +104,7 @@ export class WorldVolumes {
       },
       terrain: relief,
       distance: () => this.distance,
+      shown: () => this.treesOn,
       night: () => this.night,
       invalidate: map.compose,
     };
@@ -143,7 +156,7 @@ export class WorldVolumes {
 
   private *compose(world: World, r: ResolvedAppearance, resolved: ResolvedAppearance, heights: TerrainHeights, ground: ReturnType<typeof v2Terrain3dGround>): Generator<void, void> {
     yield* this.composeTown(world, r, heights, ground);
-    this.refreshTrees(world, resolved, ground);
+    this.refreshTrees(world, r, resolved, ground);
   }
 
   private *composeTown(world: World, r: ResolvedAppearance, heights: TerrainHeights, ground: ReturnType<typeof v2Terrain3dGround>): Generator<void, void> {
@@ -164,7 +177,9 @@ export class WorldVolumes {
     const cities = v2NativeCities(world),
       lots = shown && yards ? (this.parts.town.city?.scenes() ?? []).flatMap(scene => scene.lotEnclosures ?? []) : [],
       of = this.townOf,
-      key = JSON.stringify([shown, yards, lots.length, plan.waterColor, plan.palette, r.keys.city]);
+      // The city key of the appearance (keys.city) without the trees' switch and distance: they change no building.
+      town = { ...r.city, trees3d: undefined, treeDistance: undefined },
+      key = JSON.stringify([shown, yards, lots.length, plan.waterColor, plan.palette, r.underdark, town, r.palette.colors, r.composition.ambience]);
     // The same town on the same relief keeps its scene object: the buildings layer starts again for a new one.
     if (world === of.world && heights === of.heights && key === of.key && sameV2NativeInputs(of.cities, cities, 'scene') && sameV2NativeInputs(of.cities, cities, 'layouts')) {
       this.appearance = appearance;
@@ -198,10 +213,10 @@ export class WorldVolumes {
     this.display = city3dWithExtras(display, [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks, ...enclosures, ...groves, ...ornaments, ...farms]);
   }
 
-  private refreshTrees(world: World, resolved: ResolvedAppearance, ground: ReturnType<typeof v2Terrain3dGround>): void {
-    this.distance = clampTreeDistance(resolved.city.treeDistance);
-    // The satellite looks model their near trees; the others paint or draw their forest.
-    const field = ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy ? v2DisplayForest(world, this.map.settings!, resolved, this.forestReady) : undefined;
+  private refreshTrees(world: World, r: ResolvedAppearance, resolved: ResolvedAppearance, ground: ReturnType<typeof v2Terrain3dGround>): void {
+    this.treesOn = r.city.trees3d;
+    this.distance = clampTreeDistance(r.city.treeDistance);
+    const field = treesInLook(ground, resolved) ? v2DisplayForest(world, this.map.settings!, resolved, this.forestReady) : undefined;
     if (!ground || !field || !(Number.isInteger(field.n) && field.n > 0 && Number.isFinite(field.width) && field.width > 0 && field.rgba instanceof Uint8Array && field.rgba.length === field.n ** 2 * 4)) {
       this.treeSource = undefined;
       return;

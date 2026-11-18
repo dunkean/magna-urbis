@@ -7,12 +7,11 @@
  * World program: a vertex is (block-local x, height above its seat, block-local y) with the seat, the terrain height
  * under the building as TerrainHeights gives it at full relief (buildingsMesh.ts, worldSeat in buildingsLayer.ts).
  * Seat and height rise with the relief (`uRise`), so the volumes stand on the drawn terrain at every pitch and lie
- * flat in the top view; the screen-door fade of volumes.ts hides them while they rise. Light: the roof light of the 2D
+ * flat at a pitch of 0 (roofs seen from above, never hidden: volumes.ts). Light: the roof light of the 2D
  * plan (buildingLight, roofPlaneLight.ts), so a roof keeps the tone the map gives it; haze as the draped ground.
  */
 import { MOONLIGHT_GLSL } from '../materialLook';
 import { ROOF_PLANE_LIGHT_GLSL } from '../roofPlaneLight';
-import { VOLUME_FADE_GLSL } from './volumes';
 
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
@@ -169,19 +168,16 @@ void main(){
   gl_Position=uProjection*vec4(world,1.);
 }`;
 
-/** `fading`: the volumes are rising (screen-door fade); otherwise no discard, so early depth stays on. */
-export const worldBuildingFs = (fading: boolean): string => `#version 300 es
+export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; in float vDistance;
-// Share of the volumes shown while they rise; haze distance (m) and share; haze colour.
-uniform float uShown;
+// Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
 uniform vec3 uHaze;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
 ${BUILDING_COVER_LIGHT_GLSL}
-${VOLUME_FADE_GLSL}
 void main(){
   vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
   // Class 32 marks a lit window (no grain of its own).
@@ -189,5 +185,5 @@ void main(){
   float light=coverLight(buildingLight(N,N),cls,N);
   vec3 rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
   float haze=min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
-  color=vec4(mix(rgb,uHaze,haze),1.);${fading ? '\n  if(volumeHidden(uShown))discard;' : ''}
+  color=vec4(mix(rgb,uHaze,haze),1.);
 }`;
