@@ -14,9 +14,11 @@
  *
  * The `water` layer is the compositor's own: the vector water raster of the page (a world-region image).
  *
- * The frame has one camera (render/world/camera.ts): the top view, or the same world tilted. A tilted frame is drawn
- * by the layers that take the camera (`LiveLayer.tilts`: the ground, for now); the others and the stand-ins wait for
- * the top view.
+ * The frame has one camera (render/world/camera.ts): the top view, or the same world tilted. A tilted frame is one
+ * scene (contract.ts): the layers that take the camera (`LiveLayer.tilts`) draw it in their order into one target with
+ * one depth buffer, the multisampled group when the quality allows, resolved once. The layers that lie flat on the
+ * ground are in the terrain of the ground layer: the compositor owns the map drape (render/world/mapDrape.ts), gives
+ * it their `DrapeSource` and bakes its tiles in the work slices, in turn with the ground's.
  *
  * This file is one unit: the frame, the layer table with its stand-ins, the work loop with its pacing and the context
  * loss all share the state of one compositor. What stands alone is beside it: rasterQuad.ts (textured quads and
@@ -31,7 +33,8 @@ import { createRasterQuad, dropRaster, uploadRaster, type Raster, type RasterQua
 import { SOFTWARE_GL } from '../softwareGl';
 import type { View } from '../view';
 import { createFrameCamera, frameCamera, isTilted, topViewMapping } from '../world/camera';
-import type { WorldRelief } from '../world/contract';
+import type { DrapeSource, WorldRelief } from '../world/contract';
+import { MapDrape } from '../world/mapDrape';
 
 const WORK_MOVING_MS = 3,
   WORK_REST_MS = 8;
@@ -40,8 +43,8 @@ const GROUND_SHARE = 0.6;
 /** A moving frame newer than this means the per-frame slices own the work: idle callbacks stay out of the gesture. */
 const GESTURE_MS = 120;
 
-const WORK_UNIT: Record<LiveLayerName, string> = { ground: 'work:ground', water: 'work:water', overlay: 'work:overlay', city: 'work:city', text: 'work:text' };
-const DRAW_UNIT: Record<LiveLayerName, string> = { ground: 'draw:ground', water: 'draw:water', overlay: 'draw:overlay', city: 'draw:city', text: 'draw:text' };
+const WORK_UNIT: Record<LiveLayerName, string> = { ground: 'work:ground', water: 'work:water', overlay: 'work:overlay', city: 'work:city', buildings: 'work:buildings', trees: 'work:trees', text: 'work:text' };
+const DRAW_UNIT: Record<LiveLayerName, string> = { ground: 'draw:ground', water: 'draw:water', overlay: 'draw:overlay', city: 'draw:city', buildings: 'draw:buildings', trees: 'draw:trees', text: 'draw:text' };
 const stats = liveStats();
 
 interface LiveCompositorOptions {
@@ -50,6 +53,8 @@ interface LiveCompositorOptions {
   quality(): 'full' | 'light';
   /** The relief the camera of a tilted frame stands on; undefined: a flat map. Only asked for a tilted view. */
   relief(): WorldRelief | undefined;
+  /** Side of the map in metres (0: no map), for the tiles of the map drape. */
+  mapSize(): number;
 }
 /** World square of a raster, in map metres. */
 interface LiveRasterRegion {
@@ -124,7 +129,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     paused = false,
     paper = '';
   const layers: Partial<Record<LiveLayerName, LiveLayer>> = {};
-  const shown: Record<LiveLayerName, boolean> = { ground: true, water: true, overlay: true, city: true, text: true };
+  const shown: Record<LiveLayerName, boolean> = { ground: true, water: true, overlay: true, city: true, buildings: true, trees: true, text: true };
   const standIns: Partial<Record<LiveLayerName, Raster>> = {};
   const states = {} as Record<LiveLayerName, LiveLayerState>;
   for (const name of LIVE_LAYER_ORDER) {
@@ -147,6 +152,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     worldToClip: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
     worldToPixel: [1, 1, 0, 0],
     camera,
+    drape: undefined,
     target: null,
     now: 0,
     moving: false,
@@ -184,6 +190,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     frame.rect.maxY = view.cy + hh;
     topViewMapping(view, width, height, dpr, frame.worldToClip, frame.worldToPixel);
     frameCamera(camera, view, cssW, cssH, width, height, dpr, isTilted(view) ? options.relief() : undefined);
+    frame.drape = camera.tilted ? drape.tiles : undefined;
     frame.target = null;
     frame.now = now;
     frame.moving = moving;
@@ -223,9 +230,32 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
 
   // --- the water layer: the page's vector water raster ---------------------------------------------------------------
   const water: Raster = { pending: false, mipmaps: true, minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  /** The raster and the square the tiles of the map drape were last baked with, and their revision. The top view
+   * changes its raster with the zoom; only the one a tilted frame has counts. */
+  let waterRevision = 0,
+    drapedWater: TexImageSource | undefined,
+    drapedSquare = '';
   const waterStats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0 };
   const waterLayer: LiveLayer = {
     name: 'water',
+    // In a tilted frame the raster lies on the terrain: the part of it over each tile of the map drape.
+    drape: {
+      revision: () => {
+        const square = `${water.minX},${water.minY},${water.maxX},${water.maxY}`;
+        if (water.source !== drapedWater || square !== drapedSquare) {
+          drapedWater = water.source;
+          drapedSquare = square;
+          waterRevision++;
+        }
+        return waterRevision;
+      },
+      ready: () => !water.pending,
+      paint: tile => {
+        const w = water.maxX - water.minX,
+          h = water.maxY - water.minY;
+        if (water.texture && w > 0 && h > 0) tile.put(water.texture, (tile.rect.minX - water.minX) / w, (tile.rect.minY - water.minY) / h, (tile.rect.maxX - water.minX) / w, (tile.rect.maxY - water.minY) / h, 1);
+      },
+    },
     // No water raster (the GPU ground draws natural water itself): ready, and nothing to draw.
     ready: () => !water.source || !!water.texture,
     draw: () => {
@@ -239,6 +269,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     contextLost: () => {
       water.texture = undefined;
       water.pending = !!water.source;
+      waterRevision++;
     },
     stats: () => waterStats,
     dispose: () => {
@@ -286,6 +317,41 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     fence = null;
     return false;
   };
+  // --- the map drape of the tilted frames ----------------------------------------------------------------------------
+  const drape = new MapDrape(gl, { mapSize: options.mapSize, invalidate: options.invalidate });
+  stats.drape = drape.stats;
+  /** The sources of the flat layers shown, bottom first: refilled at each slice. */
+  const drapeSources: DrapeSource[] = [];
+  /** Tiles of the drape are still to bake; the drape got no time in the last slice (the ground took it). */
+  let drapePending = false,
+    drapeWaited = false;
+  /** One slice of the drape's baking for the last frame, with what is `left` of the slice. True while tiles are pending. */
+  const drapeWork = (left: number, last: LiveFrame | undefined, refine: boolean): boolean => {
+    const tilted = !!last?.camera.tilted;
+    drapeSources.length = 0;
+    if (tilted)
+      for (const name of LIVE_LAYER_ORDER) {
+        const source = layers[name]?.drape;
+        if (source && shown[name]) drapeSources.push(source);
+      }
+    // Behind the display's pace, as the ground: the tiles wait. Out of time: the drape goes before the ground next time.
+    if (tilted && (!refine || left <= 0.2)) {
+      drapeWaited = refine;
+      return (drapePending = true);
+    }
+    drapeWaited = false;
+    try {
+      resetLiveState(gl, null, frame.width, frame.height);
+      const unit = performance.now();
+      drapePending = drape.work(left, last, drapeSources);
+      if (tilted) noteLiveUnit('work:drape', unit);
+    } catch (error) {
+      console.warn('Live compositor: the map drape failed.', error);
+      drapePending = false;
+    }
+    return drapePending;
+  };
+
   const runWork = (budgetMs: number, refine = true): boolean => {
     if (lost || disposed) return false;
     // Still behind: the slice is due, later (the caller schedules it again).
@@ -323,11 +389,12 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         stats.pending[name] = false;
         continue;
       }
-      if (!refine && name === 'ground') {
+      // The ground's tiles and the drape's refine the same picture: the one that waited through the last slice goes first.
+      if ((!refine || drapeWaited) && name === 'ground') {
         pending ||= !!stats.pending[name];
         continue;
       }
-      const left = (i === 0 && othersPending ? budgetMs * GROUND_SHARE : budgetMs) - (performance.now() - started);
+      const left = (i === 0 && (othersPending || drapePending) ? budgetMs * GROUND_SHARE : budgetMs) - (performance.now() - started);
       // Out of time: its answer is unknown, so the loop comes back for it.
       if (left <= 0.2) {
         stats.pending[name] = true;
@@ -354,6 +421,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       stats.pending[name] = more;
       pending ||= more;
     }
+    if (drapeWork(budgetMs - (performance.now() - started), last, refine)) pending = true;
     // Stand-ins go up between frames, one per slice, so the first frame of a gesture finds them on the GPU.
     let uploaded = false;
     for (const name of LIVE_LAYER_ORDER) {
@@ -397,6 +465,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     quad = undefined;
     group.contextLost();
     timer.contextLost();
+    drape.contextLost();
+    drapePending = drapeWaited = false;
     for (const name of LIVE_LAYER_ORDER) {
       try {
         layers[name]?.contextLost?.();
@@ -622,6 +692,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         stats.pending[name] = false;
       }
       if (!lost) {
+        drape.dispose();
         group.drop();
         quad?.dispose();
         timer.dispose();
@@ -670,6 +741,14 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     gl.clearDepth(1);
     gl.clearStencil(0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+    // A tilted frame is one scene: its layers draw into one target and share its depth. The multisampled group when
+    // the frame has samples (the terrain's silhouettes and the volumes are then antialiased), else the canvas.
+    const tilted = camera.tilted,
+      scene = tilted && samples > 0 && group.ensure(width, height, samples) ? group.target! : undefined;
+    if (scene) {
+      resetLiveState(gl, scene.fbo, width, height);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+    }
     for (let i = 0; i < LIVE_LAYER_ORDER.length; i++) {
       const name = LIVE_LAYER_ORDER[i],
         state = states[name];
@@ -682,18 +761,19 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         continue;
       }
       const t = performance.now(),
-        // A tilted frame is drawn by the layers that take its camera; the others (and every stand-in, a flat raster
-        // of the top view) are left out of it.
-        layer = !camera.tilted || layers[name]?.tilts ? layers[name] : undefined;
+        // A tilted frame is drawn by the layers that take its camera; the others are in the map drape of the terrain
+        // or left out, as is every stand-in (a flat raster of the top view).
+        layer = !tilted || layers[name]?.tilts ? layers[name] : undefined,
+        target = scene ? scene.fbo : null;
       let ready = false,
         standIn = false;
-      frame.target = null;
-      resetLiveState(gl, null, width, height);
+      frame.target = target;
+      resetLiveState(gl, target, width, height);
       if (layer) {
         try {
           ready = layer.ready(frame);
           if (ready) {
-            if (!layer.isolated) layer.draw(frame);
+            if (tilted || !layer.isolated) layer.draw(frame);
             else if (group.ensure(width, height, samples)) {
               noteLiveUnit('group', t);
               drawIsolated(layer, width, height);
@@ -704,7 +784,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
           ready = false;
         }
       }
-      if (!ready && !camera.tilted) {
+      if (!ready && !tilted) {
         const raster = standIns[name];
         if (raster) {
           if (raster.pending) {
@@ -733,6 +813,17 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       state.ms = performance.now() - t;
       pushSample(stats.layerMs![name]!, state.ms);
       noteLiveUnit(DRAW_UNIT[name], t);
+    }
+    frame.target = null;
+    if (scene) {
+      // The blit obeys the scissor and the colour mask a layer may have left.
+      gl.disable(gl.SCISSOR_TEST);
+      gl.colorMask(true, true, true, true);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, scene.fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, scene.resolve);
+      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      resetLiveState(gl, null, width, height);
+      quad!.draw(scene.texture, -1, -1, 1, 1, 1);
     }
     resetLiveState(gl, null, width, height);
     timer.end();

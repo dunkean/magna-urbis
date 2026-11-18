@@ -1,15 +1,13 @@
 /**
  * The ground of a tilted frame (contract.ts): the terrain as a displaced grid, draped with the baked tiles of the
- * live ground layer. Owned by that layer (render/live/groundLayer.ts), which calls `prepare` from its work slices and
- * `draw` for every frame whose camera is tilted, and keeps drawing the top view itself.
+ * live ground layer and, over them, with the tiles of the map drape of the frame (`LiveFrame.drape`: water,
+ * cartography, town plan). Owned by the ground layer (render/live/groundLayer.ts), which calls `prepare` from its work
+ * slices and `draw` for every frame whose camera is tilted, and keeps drawing the top view itself.
  *
- * A frame costs one instanced draw per tile page it shows and builds nothing: the mesh is one grid, the heights one
- * texture uploaded once per terrain (`prepare`), and the only data sent while the camera moves is the list of the
- * squares to draw, a few kilobytes; a frame whose camera and tiles are those of the previous one sends nothing.
- *
- * The overlay, the town and the names are not draped yet: they are hidden while the camera is tilted
- * (v2/display/composedView.ts). Draping them is the next step of the single view: each gets `LiveFrame.camera` and
- * draws with `targetViewProjection`, on the heights of `TerrainHeights`.
+ * A frame costs one instanced draw per page of ground tiles it shows and builds nothing: the mesh is one grid, the
+ * heights one texture uploaded once per terrain (`prepare`), the drape one texture array, and the only data sent while
+ * the camera moves is the list of the squares to draw, a few kilobytes; a frame whose camera and tiles are those of
+ * the previous one sends nothing.
  */
 import type { LiveFrame } from '../live/contract';
 import type { DrapedGroundStats, DrapeTile, DrapeTiles } from './contract';
@@ -39,6 +37,9 @@ export class DrapedGround {
   private readonly patches = new PatchList();
   private readonly query: PatchQuery = { mapSize: 1, levels: 1, ratio: 3, low: 0, high: 0, tanX: 1, tanY: 1 };
   private readonly tile: DrapeTile = { page: 0, layer: 0, u0: 0, v0: 0, span: 1 };
+  private readonly drapeTile: DrapeTile = { page: 0, layer: 0, u0: 0, v0: 0, span: 1 };
+  /** The squares in the buffer name tiles of the map drape. */
+  private draped = false;
   /** The squares in selection order with their pages, then grouped by page as the instance buffer holds them. */
   private readonly found = new Float32Array(MAX_PATCHES * SQUARE_FLOATS);
   private readonly pageOf = new Uint8Array(MAX_PATCHES);
@@ -51,7 +52,7 @@ export class DrapedGround {
   private anchorX = 0;
   private anchorY = 0;
   /** What the squares in the buffer were selected for: a frame with the same values draws them again as they are. */
-  private readonly selectedFor = new Float64Array(16 + 3 + 6).fill(NaN);
+  private readonly selectedFor = new Float64Array(16 + 3 + 7).fill(NaN);
   private selectedHeights?: TerrainHeights;
 
   constructor(
@@ -97,6 +98,7 @@ export class DrapedGround {
     note(22, frame.quality === 'light' ? 1 : 0);
     note(23, this.tiles.revision());
     note(24, this.tiles.mapSize());
+    note(25, frame.drape ? frame.drape.revision() : -1);
     this.selectedHeights = heights;
     return same;
   }
@@ -125,10 +127,15 @@ export class DrapedGround {
     this.anchorY = anchorY * coarsest - camera.target[1];
     const finest = tiles.finestTier(frame.dpr),
       tile = this.tile,
+      drapeTile = this.drapeTile,
       found = this.found,
       pageOf = this.pageOf;
+    // The map drape, when it holds tiles of this map in the ground's tiling: a square then names the same tile in both.
+    const drape = frame.drape && frame.drape.pageCount() > 0 && frame.drape.mapSize() === mapSize && frame.drape.tilePixels === tiles.tilePixels ? frame.drape : undefined;
+    this.draped = !!drape;
     let count = 0;
     tiles.begin();
+    drape?.begin();
     for (let i = 0; i < list.count; i++) {
       const tier = list.tier[i],
         ix = list.ix[i],
@@ -146,6 +153,12 @@ export class DrapedGround {
       found[o + 4] = tile.u0 + (ix - ((ix >> shift) << shift)) * part * tile.span;
       found[o + 5] = tile.v0 + (iy - ((iy >> shift) << shift)) * part * tile.span;
       found[o + 6] = tile.span * part;
+      if (drape?.resolve(shown, ix >> shift, iy >> shift, list.depth[i], drapeTile)) {
+        found[o + 7] = drapeTile.u0 + (ix - ((ix >> shift) << shift)) * part * drapeTile.span;
+        found[o + 8] = drapeTile.v0 + (iy - ((iy >> shift) << shift)) * part * drapeTile.span;
+        found[o + 9] = drapeTile.span * part;
+        found[o + 10] = drapeTile.layer;
+      } else found[o + 10] = -1;
       pageOf[count++] = tile.page;
     }
     const squares = this.squares,
@@ -210,14 +223,21 @@ export class DrapedGround {
     gl.uniform3f(u.uHaze, HAZE[0], HAZE[1], HAZE[2]);
     gl.uniform1i(u.uTiles, 0);
     gl.uniform1i(u.uHeights, 1);
+    gl.uniform1i(u.uDrape, 2);
+    const ranges = this.ranges,
+      drape = this.draped && frame.drape && frame.drape.pageCount() > 0 ? frame.drape.page(0) : undefined;
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, (heights && this.heightTexture) || this.flat!);
+    // Without a drape no square reads it (its layer is negative): a page of ground tiles keeps the sampler complete.
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, drape ?? this.tiles.page(ranges[0]));
     gl.activeTexture(gl.TEXTURE0);
-    const ranges = this.ranges;
     for (let d = 0; d < this.draws; d++) {
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tiles.page(ranges[d * 3]));
       mesh.drawSquares(ranges[d * 3 + 1], ranges[d * 3 + 2]);
     }
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, null);

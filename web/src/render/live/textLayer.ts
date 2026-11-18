@@ -6,10 +6,23 @@
  * of a placement follow the map while the view moves. They are the picture at rest (`restExact`) once they come from
  * a placement made for the frame's own view; while the instances of a new placement are prepared, those of the
  * previous one stay on screen.
+ *
+ * A tilted frame (render/world/contract.ts) draws the same instances with the camera of the frame, through a second
+ * program (the top view keeps its own, untouched). Each instance carries the height of the terrain under its anchor,
+ * read once when the instance is made:
+ *  - a name with one anchor (a town, a place, a symbol) stands at its anchor on the terrain: the anchor is projected,
+ *    the glyphs keep their size and their offsets in screen pixels;
+ *  - a name along a path (a river, a street: one anchor per glyph) lies flat on the ground, each glyph a quad in the
+ *    world at the placement's scale: it follows its path as the map does, foreshortened with it. Screen-sized glyphs
+ *    on projected anchors would overlap wherever the path runs away from the eye.
+ * The names are those placed for the top view of the frame's centre and scale; they fade out where the ground is seen
+ * at less than about half that scale (far away, towards the horizon), where they would pile up, and are dropped
+ * behind the eye. They are not hidden by the relief in front of them.
  */
 import { fontString } from '../labelStyles';
 import type { GlyphPos, PlacedMapLabel } from '../mapLabels';
-import type { LiveLayer, LiveLayerStats, LiveTextOptions, LiveTextPlacement } from './contract';
+import type { LiveFrame, LiveLayer, LiveLayerStats, LiveTextOptions, LiveTextPlacement } from './contract';
+import type { WorldRelief } from '../world/contract';
 import { GLYPH_ATLAS_SIZE, GlyphAtlas, type AtlasSprite, type TextColour } from './glyphAtlas';
 
 type PlacementView = Pick<LiveTextPlacement, 'view' | 'w' | 'h'>;
@@ -34,7 +47,13 @@ export function liveSymbolAnchor(source: PlacementView, symbol: NonNullable<Plac
   return { worldX: (symbol.x - source.w / 2) / source.view.scale + source.view.cx, worldY: (symbol.y - source.h / 2) / source.view.scale + source.view.cy, offsetX: 0, offsetY: 0, angle: 0 };
 }
 
-const INSTANCE_FLOATS = 17;
+/** Floats of an instance: anchor (2), offset (2), angle, bounds (4), atlas rectangle (4), colour (4), then for the
+ * tilted frames the height of the terrain at the anchor (m, at full relief) and 1 for a glyph that lies on the ground. */
+const INSTANCE_FLOATS = 19;
+const ATTRIBUTE_SIZES = [2, 2, 1, 4, 4, 4, 2];
+/** Scale of the ground under a name over the scale at the centre of the view: names fade out between these. */
+const FADE_FROM = 0.58,
+  FADE_TO = 0.4;
 const VERTEX = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 aWorld;
@@ -58,6 +77,40 @@ void main() {
   vUV = aUV.xy + corner * aUV.zw;
   vColour = aColour;
 }`;
+const TILTED_VERTEX = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aWorld;
+layout(location=1) in vec2 aOffset;
+layout(location=2) in float aAngle;
+layout(location=3) in vec4 aBounds;
+layout(location=4) in vec4 aUV;
+layout(location=5) in vec4 aColour;
+layout(location=6) in vec2 aGround;
+// Positions relative to the camera's target -> clip space.
+uniform mat4 uProjection;
+// The origin of the anchors relative to the target (x, y), and minus the height of the target.
+uniform vec3 uOrigin;
+// Share of the relief shown, CSS pixels per metre of the placement, device pixels per CSS pixel, depth of the target.
+uniform vec4 uScale;
+uniform vec2 uViewport;
+out vec2 vUV;
+out vec4 vColour;
+void main() {
+  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  vec2 local = aBounds.xy + corner * aBounds.zw;
+  float c = cos(aAngle), s = sin(aAngle);
+  vec2 placed = aOffset + vec2(c * local.x - s * local.y, s * local.x + c * local.y);
+  vec3 anchor = vec3(aWorld + uOrigin.xy, aGround.x * uScale.x + uOrigin.z);
+  vec4 clip = uProjection * vec4(anchor, 1.0);
+  // clip.w is the depth of the anchor: the ground there is seen at (depth of the target / depth) of the view's scale.
+  float fade = clip.w > 0.0 ? smoothstep(${FADE_TO}, ${FADE_FROM}, uScale.w / clip.w) : 0.0;
+  if (fade <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  // On the ground: the pixels of the placement are metres of the map (x east, y south), at the anchor's height.
+  else if (aGround.y > 0.5) gl_Position = uProjection * vec4(anchor.xy + placed / uScale.y, anchor.z, 1.0);
+  else gl_Position = vec4(clip.xy / clip.w + placed * uScale.z * vec2(2.0, -2.0) / uViewport, 0.0, 1.0);
+  vUV = aUV.xy + corner * aUV.zw;
+  vColour = aColour * fade;
+}`;
 const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D uAtlas;
@@ -72,6 +125,14 @@ interface TextProgram {
   world: WebGLUniformLocation | null;
   viewport: WebGLUniformLocation | null;
   dpr: WebGLUniformLocation | null;
+  atlas: WebGLUniformLocation | null;
+}
+interface TiltedProgram {
+  handle: WebGLProgram;
+  projection: WebGLUniformLocation | null;
+  origin: WebGLUniformLocation | null;
+  scale: WebGLUniformLocation | null;
+  viewport: WebGLUniformLocation | null;
   atlas: WebGLUniformLocation | null;
 }
 interface CpuBatch {
@@ -96,6 +157,8 @@ interface LabelWork {
 }
 interface TextWork {
   source: LiveTextPlacement;
+  /** The relief the heights of the anchors are read from. */
+  relief: WorldRelief | undefined;
   dpr: number;
   label: number;
   current?: LabelWork;
@@ -107,12 +170,12 @@ interface TextWork {
   symbols: number;
 }
 
-function createProgram(gl: WebGL2RenderingContext): TextProgram {
+function linkProgram(gl: WebGL2RenderingContext, vertex: string): WebGLProgram {
   const shaders: WebGLShader[] = [];
   let program: WebGLProgram | null = null;
   try {
     for (const [kind, source] of [
-      [gl.VERTEX_SHADER, VERTEX],
+      [gl.VERTEX_SHADER, vertex],
       [gl.FRAGMENT_SHADER, FRAGMENT],
     ] as const) {
       const shader = gl.createShader(kind);
@@ -127,13 +190,29 @@ function createProgram(gl: WebGL2RenderingContext): TextProgram {
     for (const shader of shaders) gl.attachShader(program, shader);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(`Live text link: ${gl.getProgramInfoLog(program)}`);
-    return { handle: program, world: gl.getUniformLocation(program, 'uWorldToPixel'), viewport: gl.getUniformLocation(program, 'uViewport'), dpr: gl.getUniformLocation(program, 'uDpr'), atlas: gl.getUniformLocation(program, 'uAtlas') };
+    return program;
   } catch (error) {
     if (program) gl.deleteProgram(program);
     throw error;
   } finally {
     for (const shader of shaders) gl.deleteShader(shader);
   }
+}
+
+function createProgram(gl: WebGL2RenderingContext): TextProgram {
+  const program = linkProgram(gl, VERTEX);
+  return { handle: program, world: gl.getUniformLocation(program, 'uWorldToPixel'), viewport: gl.getUniformLocation(program, 'uViewport'), dpr: gl.getUniformLocation(program, 'uDpr'), atlas: gl.getUniformLocation(program, 'uAtlas') };
+}
+function createTiltedProgram(gl: WebGL2RenderingContext): TiltedProgram {
+  const program = linkProgram(gl, TILTED_VERTEX);
+  return {
+    handle: program,
+    projection: gl.getUniformLocation(program, 'uProjection'),
+    origin: gl.getUniformLocation(program, 'uOrigin'),
+    scale: gl.getUniformLocation(program, 'uScale'),
+    viewport: gl.getUniformLocation(program, 'uViewport'),
+    atlas: gl.getUniformLocation(program, 'uAtlas'),
+  };
 }
 
 function uploadBatch(gl: WebGL2RenderingContext, cpu: CpuBatch): GpuBatch {
@@ -148,13 +227,12 @@ function uploadBatch(gl: WebGL2RenderingContext, cpu: CpuBatch): GpuBatch {
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cpu.values), gl.STATIC_DRAW);
-    const sizes = [2, 2, 1, 4, 4, 4];
     let offset = 0;
-    for (let attribute = 0; attribute < sizes.length; attribute++) {
+    for (let attribute = 0; attribute < ATTRIBUTE_SIZES.length; attribute++) {
       gl.enableVertexAttribArray(attribute);
-      gl.vertexAttribPointer(attribute, sizes[attribute], gl.FLOAT, false, INSTANCE_FLOATS * 4, offset * 4);
+      gl.vertexAttribPointer(attribute, ATTRIBUTE_SIZES[attribute], gl.FLOAT, false, INSTANCE_FLOATS * 4, offset * 4);
       gl.vertexAttribDivisor(attribute, 1);
-      offset += sizes[attribute];
+      offset += ATTRIBUTE_SIZES[attribute];
     }
     gl.bindVertexArray(null);
     return { vao, buffer, page: cpu.page, count: cpu.values.length / INSTANCE_FLOATS };
@@ -165,7 +243,8 @@ function uploadBatch(gl: WebGL2RenderingContext, cpu: CpuBatch): GpuBatch {
   }
 }
 
-function appendInstance(pass: Map<number, number[]>, sprite: AtlasSprite, anchor: LiveGlyphAnchor, colour: TextColour, origin: PlacementView['view']): void {
+/** `height`: the terrain under the anchor; `lies`: the glyph is one of a name along a path (it has its own anchor). */
+function appendInstance(pass: Map<number, number[]>, sprite: AtlasSprite, anchor: LiveGlyphAnchor, colour: TextColour, origin: PlacementView['view'], height: number, lies: boolean): void {
   let values = pass.get(sprite.page);
   if (!values) pass.set(sprite.page, (values = []));
   // Retain metre anchors about one fixed placement origin, avoiding large float32 products at street zoom.
@@ -187,6 +266,8 @@ function appendInstance(pass: Map<number, number[]>, sprite: AtlasSprite, anchor
     colour[1],
     colour[2],
     colour[3],
+    height,
+    lies ? 1 : 0,
   );
 }
 
@@ -196,6 +277,13 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
   let program: TextProgram | undefined,
     batches: GpuBatch[] = [],
     pending: TextWork | undefined;
+  /** The program of the tilted frames, made in the first work slice of a tilted frame. A failure only costs the names
+   * of the tilted frames: the top view does not use it. */
+  let tilted: TiltedProgram | undefined,
+    tiltedFailed = false;
+  /** The relief the heights of the shown instances were read from, and the scale of their placement (CSS px / m). */
+  let relief: WorldRelief | undefined,
+    placedScale = 1;
   let complete = false,
     revision = -1,
     density = -1,
@@ -263,8 +351,9 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       }
       const font = fontString(st, Math.round(glyph.size * 10) / 10, st.family ?? source.family);
       const sprites = atlas.glyph(font, glyph.ch, item.pass === 0 ? item.halo : 0, state.dpr);
-      const anchor = liveGlyphAnchor(source, placed, glyph, item.followWorld);
-      for (const sprite of sprites) appendInstance(state.passes[item.pass], sprite, anchor, item.pass === 0 ? item.stroke : item.fill, source.view);
+      const anchor = liveGlyphAnchor(source, placed, glyph, item.followWorld),
+        height = state.relief ? state.relief.heightAt(anchor.worldX, anchor.worldY) : 0;
+      for (const sprite of sprites) appendInstance(state.passes[item.pass], sprite, anchor, item.pass === 0 ? item.stroke : item.fill, source.view, height, item.followWorld);
       if (item.pass === 0) item.pass = 1;
       else {
         item.pass = 0;
@@ -275,8 +364,9 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     }
     if (placed.symbol && !item.symbolDone) {
       const sprites = atlas.symbol(st.symbol, placed.symbol.r, state.dpr),
-        anchor = liveSymbolAnchor(source, placed.symbol);
-      for (const sprite of sprites) appendInstance(state.passes[2], sprite, anchor, item.fill, source.view);
+        anchor = liveSymbolAnchor(source, placed.symbol),
+        height = state.relief ? state.relief.heightAt(anchor.worldX, anchor.worldY) : 0;
+      for (const sprite of sprites) appendInstance(state.passes[2], sprite, anchor, item.fill, source.view, height, false);
       item.symbolDone = true;
       state.symbols++;
       return;
@@ -293,10 +383,25 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     counters.pendingLabels = pending ? pending.source.placed.length - pending.label : 0;
   }
 
+  /** The program of a tilted frame and its camera: the batches are then drawn as in the top view. */
+  function useTilted(frame: LiveFrame, p: TiltedProgram): void {
+    const camera = frame.camera,
+      target = camera.target,
+      eye = camera.eye;
+    gl.useProgram(p.handle);
+    gl.uniformMatrix4fv(p.projection, false, camera.targetViewProjection);
+    gl.uniform3f(p.origin, originX - target[0], originY - target[1], -target[2]);
+    gl.uniform4f(p.scale, camera.rise, placedScale, frame.dpr, Math.hypot(eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]));
+    gl.uniform2f(p.viewport, frame.width, frame.height);
+    gl.uniform1i(p.atlas, 0);
+  }
+
   return {
     name: 'text',
     isolated: false,
+    tilts: true,
     ready(frame): boolean {
+      if (frame.camera.tilted && !tilted) return false;
       return !options.placement() || (!disposed && complete && frame.dpr === density);
     },
     restExact(frame): boolean {
@@ -316,13 +421,22 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
         return false;
       }
       if (!frame) return true;
-      if (complete && source.revision === revision && frame.dpr === density) return false;
+      if (frame.camera.tilted && !tilted && !tiltedFailed) {
+        try {
+          tilted = createTiltedProgram(gl);
+        } catch (error) {
+          tiltedFailed = true;
+          console.warn('Live names: no program for the tilted view, the names are hidden while the map is tilted.', error);
+        }
+      }
+      const ground = options.terrain();
+      if (complete && source.revision === revision && frame.dpr === density && ground === relief) return false;
       if (failedRevision === source.revision && failedDpr === frame.dpr) return false;
       if (!(budgetMs > 0)) return true;
       const started = performance.now(),
         deadline = started + budgetMs;
       try {
-        if (!pending || pending.source.revision !== source.revision || pending.dpr !== frame.dpr) {
+        if (!pending || pending.source.revision !== source.revision || pending.dpr !== frame.dpr || pending.relief !== ground) {
           const nextPaletteKey = JSON.stringify(source.palette);
           // Another style or pixel ratio: the sprites of the shown instances go with the atlas. Otherwise the shown
           // instances stay until those of this placement replace them.
@@ -333,7 +447,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
           paletteKey = nextPaletteKey;
           family = source.family;
           density = frame.dpr;
-          pending = { source, dpr: frame.dpr, label: 0, passes: [new Map(), new Map(), new Map()], upload: 0, batches: [], glyphs: 0, symbols: 0 };
+          pending = { source, relief: ground, dpr: frame.dpr, label: 0, passes: [new Map(), new Map(), new Map()], upload: 0, batches: [], glyphs: 0, symbols: 0 };
         }
         while (pending && performance.now() < deadline) {
           if (!program) {
@@ -361,6 +475,8 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
             complete = true;
             originX = state.source.view.cx;
             originY = state.source.view.cy;
+            placedScale = state.source.view.scale;
+            relief = state.relief;
             counters.glyphs = state.glyphs;
             counters.symbols = state.symbols;
             counters.instances = 0;
@@ -386,7 +502,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       const started = performance.now();
       counters.drawCalls = 0;
       counters.triangles = 0;
-      if (disposed || !options.placement() || !complete || !program || batches.length === 0) {
+      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || (frame.camera.tilted && !tilted)) {
         counters.ms = performance.now() - started;
         return;
       }
@@ -401,14 +517,17 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       gl.enable(gl.BLEND);
       gl.blendEquation(gl.FUNC_ADD);
       gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.useProgram(program.handle);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindSampler(0, null);
-      const m = frame.worldToPixel;
-      gl.uniform4f(program.world, m[0], m[1], m[2] + originX * m[0], m[3] + originY * m[1]);
-      gl.uniform2f(program.viewport, frame.width, frame.height);
-      gl.uniform1f(program.dpr, frame.dpr);
-      gl.uniform1i(program.atlas, 0);
+      if (frame.camera.tilted) useTilted(frame, tilted!);
+      else {
+        const m = frame.worldToPixel;
+        gl.useProgram(program.handle);
+        gl.uniform4f(program.world, m[0], m[1], m[2] + originX * m[0], m[3] + originY * m[1]);
+        gl.uniform2f(program.viewport, frame.width, frame.height);
+        gl.uniform1f(program.dpr, frame.dpr);
+        gl.uniform1i(program.atlas, 0);
+      }
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         gl.bindTexture(gl.TEXTURE_2D, atlas.texture(batch.page));
@@ -428,6 +547,8 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     contextLost(): void {
       dropInstances(false);
       program = undefined;
+      tilted = undefined;
+      tiltedFailed = false;
       atlas.reset(false);
       refreshAtlasStats();
       failedRevision = undefined;
@@ -443,7 +564,8 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       atlas.dispose();
       refreshAtlasStats();
       if (program) gl.deleteProgram(program.handle);
-      program = undefined;
+      if (tilted) gl.deleteProgram(tilted.handle);
+      program = tilted = undefined;
     },
   };
 }

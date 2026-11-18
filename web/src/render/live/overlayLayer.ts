@@ -17,9 +17,14 @@
  * Whatever is baked while the view moves is bounded (pixels, two samples); a region made then is a draft, made again
  * at full quality once the view rests.
  * Recording, upload and bake happen in `work`, one step per call (more when the budget allows); `draw` only submits.
+ *
+ * A tilted frame (render/world/contract.ts) shows the overlay on the terrain: the layer is not drawn, and no region is
+ * made for such a frame; it gives the map drape a `DrapeSource` that records the map for a tile's square at the tile's
+ * scale, as a band is recorded, and rasterizes the whole list once into the tile.
  */
 import { resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerStats } from './contract';
 import type { Rect4, View } from '../view';
+import type { DrapeCanvas, DrapeSource } from '../world/contract';
 import { CRISP_MARK, type DisplayList } from '../gpu/contract';
 import { createLiveRasterizer } from '../gpu/liveRasterizer';
 import type { BakedPrefix, LivePart } from '../gpu/contract';
@@ -220,6 +225,53 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     return Math.min(1, side / w, side / h, Math.sqrt(pixels / (w * h)));
   };
   const boxOf = (b: { w: number; h: number }): readonly [number, number, number, number] => [-CULL_PAD, -CULL_PAD, b.w + CULL_PAD, b.h + CULL_PAD];
+
+  /** The map drape's tiles hold the overlay of this revision: bumped by `invalidate`, and when what the host records
+   * changes besides its scale (its key). */
+  let drapeRevision = 0,
+    drapeKey: string | undefined;
+  const drape: DrapeSource = {
+    revision(): number {
+      const key = failed || raster.lost || !host.active() ? undefined : host.key(1, 1, false);
+      if (key !== drapeKey) {
+        drapeKey = key;
+        drapeRevision++;
+      }
+      return drapeRevision;
+    },
+    // Nothing to paint (the vector engine is off, the layer failed) is ready; else the programs must be linked.
+    ready(): boolean {
+      if (failed || raster.lost || !host.active()) return true;
+      try {
+        return raster.warm();
+      } catch {
+        // A program that cannot be linked is the layer's to report (its `work` meets the same error): the drape goes on.
+        return true;
+      }
+    },
+    paint(tile: DrapeCanvas): void {
+      if (failed || raster.lost || !host.active()) return;
+      const side = tile.rect.maxX - tile.rect.minX,
+        // Recorded pixels of the tile's side: a whole number, so the edges of the tile are texel edges of the bake.
+        // The recorder rounds its size up: a scale a hair under keeps that number.
+        recorded = Math.max(1, Math.round(side * tile.scale * tile.dpr)),
+        scale = (recorded - 1e-6) / (side * tile.dpr),
+        key = host.key(scale, tile.dpr, tile.light);
+      if (key === undefined) return;
+      // An error here is the drape's to report: it costs this tile its overlay, not the top view its live layer.
+      const made = host.record({ key, rect: tile.rect, scale, dpr: tile.dpr, bands: [tile.rect] }, tile.rect, tile.light);
+      if (!made) return;
+      const list = cullList(made.list, boxOf(made));
+      raster.prepare(list);
+      const baked = raster.bake(list, tile.pixels / made.w, { samples: 4 });
+      if (!baked) return;
+      // The bake holds the recorded square and a gutter, drawn with y up: its north is at the top of the texture.
+      const w = baked.box[2] - baked.box[0],
+        h = baked.box[3] - baked.box[1];
+      tile.put(baked.texture, -baked.box[0] / w, 1 + baked.box[1] / h, (made.w - baked.box[0]) / w, 1 - (made.h - baked.box[1]) / h, 1);
+      raster.releaseBaked(baked);
+    },
+  };
   const bandOf = (made: OverlayBand, light: boolean): Band => {
     const box = boxOf(made),
       at = markIndex(made.list, CRISP_MARK);
@@ -369,6 +421,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
   return {
     name: 'overlay',
     isolated: true,
+    drape,
     ready(frame: LiveFrame): boolean {
       const r = shown;
       // A region keeps showing at any scale while its replacement is made, as long as it was recorded for this pixel
@@ -460,6 +513,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       try {
         // The programs start compiling at the first call and are polled at each one; nothing is shown before.
         const warm = raster.warm();
+        // A tilted frame shows the overlay through the map drape: no region of its top view is recorded meanwhile.
+        if (frame.camera.tilted) return !warm;
         more = regions(frame, start, budgetMs) || !warm;
         // Then, for the region shown now (the one this call may just have completed): its snapshots, as soon as the
         // view drifts from its scale and before it is far, so that no frame replays its lists there.
@@ -478,6 +533,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       if (shown) shown.stale = true;
       dropPending();
       failedKey = undefined;
+      drapeRevision++;
     },
     contextLost(): void {
       // Every handle is dead: forget them without deleting anything; the next `work` records and uploads again.

@@ -3,16 +3,13 @@
  * Reads/writes: Reads source scenes, layouts and ground samplers; writes display batches, derivation caches and structure statistics on the supplied context, then updates Terrain3d.
  */
 import { updateYardEnclosures } from '../../render/cityLotEnclosures';
-import { city3dLotEnclosures, city3dBridges, city3dScene, city3dProjectionScene, city3dWalls } from '../../render/city3dMeshes';
+import { city3dLotEnclosures } from '../../render/city3dMeshes';
+import { city3dBuildings, city3dFarmBuildings, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
 import { UrbanGroundCuts } from '../urbanGroundCuts';
-import { city3dBoardwalks } from '../../render/city3dBoardwalks';
 import { city3dCanopy, cityCanopy } from '../../render/cityGrove';
 import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/underdarkOrnaments';
-import { city3dQuays, city3dWaterways } from '../../render/city3dQuays';
-import { cityBridgeStreets } from '../../render/cityBridges';
 
 import { type Building3dVisual } from '../../render/urbanBuildingGeometry';
-import { farmPlacedBuildings } from '../../render/farmRoofs';
 import type { Point } from '../../../../rust/bridge/housesContract';
 import type { City3dContext } from './cityContext';
 // ------------------------------------------------------------ buildings
@@ -85,17 +82,15 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     clearTimeout(cityContext.detailTimer);
     cityContext.pendingSwaps.clear();
     const started = performance.now();
-    cityContext.display = scene ? ('projection' in scene ? city3dProjectionScene(scene, { details: cityContext.details }) : city3dScene(scene, { heightAt: cityContext.heightAt, waterAt: cityContext.stiltWaterAt, details: cityContext.details })) : undefined;
+    cityContext.display = city3dBuildings(scene, { heightAt: cityContext.heightAt, waterAt: cityContext.stiltWaterAt, details: cityContext.details });
     if (nextStructureInputs.some((input, i) => input !== cityContext.structureInputs[i])) {
       cityContext.structureInputs = nextStructureInputs;
       // Architecture edits/colours do not change bridges, walls or quays.
       // Retain these exact meshes until their actual terrain/network changes.
-      const bridgeStreets = cityBridgeStreets(layouts ?? [], regional ?? []);
-      const bridges = city3dBridges(bridgeStreets, cityContext.heightAt, cityContext.bridgeWaterAt);
-      cityContext.bridgeStats = { count: bridges.length, first: bridges[0] && cityContext.center(bridges[0]) };
-      const wallStarted = performance.now();
       // heightAt is the undug ground (Terrain3d.groundAt): moat water and gate bridges are not dug a second time.
-      const walls = (layouts ?? []).flatMap((l, li) => city3dWalls(l.enclosures ?? [], cityContext.heightAt, String(li), l.culture, waterColor));
+      const wallStarted = performance.now(),
+        { bridges, walls, quays, boardwalks } = city3dStructures(layouts ?? [], regional ?? [], { height: cityContext.heightAt, bridgeWater: cityContext.bridgeWaterAt, quayHeight: cityContext.quayHeightAt, quayWater: cityContext.quayWaterAt }, waterColor, !canalMaterial);
+      cityContext.bridgeStats = { count: bridges.length, first: bridges[0] && cityContext.center(bridges[0]) };
       const enclosures = new Set(walls.map(w => w.id.split(':').slice(1, 3).join(':'))),
         gate = walls.find(w => w.id.includes(':gate:') && !w.variant_id.endsWith(':water'));
       cityContext.wallStats = {
@@ -106,8 +101,6 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
         first: walls[0] && cityContext.center(walls[0]),
         gate: gate && cityContext.center(gate),
       };
-      const quays = [...city3dQuays(layouts ?? [], cityContext.quayHeightAt, cityContext.quayWaterAt), ...city3dWaterways(layouts ?? [], waterColor, !canalMaterial)],
-        boardwalks = city3dBoardwalks(bridgeStreets, cityContext.heightAt, cityContext.bridgeWaterAt);
       cityContext.quayCount = quays.length + boardwalks.length;
       cityContext.structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
     }
@@ -132,18 +125,8 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     // Farm buildings and the stand-in houses of places still waiting for their plan stand as meshes like every
     // other building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain
     // under its own footprint.
-    cityContext.farmBuildings ??=
-      farmsteads?.length || placeholders?.length
-        ? city3dScene(
-            { schema_version: '1', generator_version: 'silhouette', buildings: [...(farmsteads?.length ? farmPlacedBuildings(farmsteads, cityContext.heightAt ?? (() => 0)) : []), ...(placeholders ?? [])], refusals: [], open_spaces: [] },
-            { heightAt: cityContext.heightAt },
-          ).buildings
-        : [];
-    const extra = [...cityContext.structureBuildings, ...yardMeshes, ...cityContext.canopyBuildings, ...cityContext.ornamentBuildings, ...cityContext.farmBuildings];
-    if (extra.length)
-      cityContext.display = cityContext.display
-        ? { ...cityContext.display, buildings: [...cityContext.display.buildings, ...extra], ...(cityContext.display.occupationBuildings ? { occupationBuildings: [...cityContext.display.occupationBuildings, ...extra] } : {}) }
-        : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
+    cityContext.farmBuildings ??= city3dFarmBuildings(farmsteads, placeholders, cityContext.heightAt);
+    cityContext.display = city3dWithExtras(cityContext.display, [...cityContext.structureBuildings, ...yardMeshes, ...cityContext.canopyBuildings, ...cityContext.ornamentBuildings, ...cityContext.farmBuildings]);
     cityContext.displayMs = performance.now() - started;
   }
   const appearance = cityContext.options.getBuildingAppearance?.(),

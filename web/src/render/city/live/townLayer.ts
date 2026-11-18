@@ -20,8 +20,14 @@
  * `restExact` says whether a frame of this layer is the picture of the town at rest: only where the look's
  * townRestGaps finds nothing the Canvas town would paint differently (render/city/restCoverage.ts lists what is left).
  * Otherwise the exact Canvas 2D town (cityCanvas drawCitySteps) repaints the view at rest, as it does captures and exports.
+ *
+ * A tilted frame (render/world/contract.ts) shows the town plan on the terrain: the layer gives the map drape a
+ * `DrapeSource` that draws the plan of a tile's square with the same renderer, without the far rasters and the
+ * canopy, and without the buildings, which stand on the plan as volumes (render/world/buildingsLayer.ts); flat
+ * footprints (the silhouette style, which has no volumes) stay on the plan.
  */
 import type { LiveCityEnv, LiveFrame, LiveLayer, LiveLayerStats } from '../../live/contract';
+import type { DrapeCanvas, DrapeSource } from '../../world/contract';
 import type { ResolvedAppearance } from '../../appearanceRecipe';
 import type { ExportLayers } from '../../exportLayers';
 import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityScene } from '../model/contract';
@@ -151,7 +157,11 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     rest = { look: l, level, dpr: frame.dpr, farRaster, snow, content: held, gaps: townRestGaps(state) };
     return rest.gaps;
   }
+  /** The map drape's tiles hold the plan of this revision: bumped whenever the plan a tile shows may have changed
+   * (look, scene, enclosures, water: all of them drop the prepared tables). */
+  let drapeRevision = 0;
   const unprepare = (): void => {
+    drapeRevision++;
     preparedLods.clear();
     warmedLods.clear();
     preparing?.steps.return();
@@ -346,6 +356,44 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     gl.viewport(0, 0, frame.width, frame.height);
   }
 
+  /** The town plan of a tilted frame, for the map drape: everything of the town that lies flat on the ground. */
+  const drape: DrapeSource = {
+    revision(): number {
+      // A new appearance is a new look, which drops the tables.
+      lookNow();
+      return drapeRevision;
+    },
+    ready(tile: DrapeCanvas): boolean {
+      // Nothing to paint (a failed layer, a look the layer does not cover, a hidden town) is ready.
+      if (disposed || broken) return true;
+      const l = lookNow();
+      if (l.reason || l.opacity <= 0) return true;
+      if (!renderer || !renderer.programsLinked || !requested || !renderer.ready || renderer.pendingUpload) return false;
+      if (l.base.palette === 'terrain' && l.base.live?.grain && !grainMeansReady()) return false;
+      return preparedLods.has(selectCityLod(1 / tile.scale));
+    },
+    paint(tile: DrapeCanvas): void {
+      const l = lookNow();
+      if (disposed || broken || !renderer || l.reason || l.opacity <= 0) return;
+      const target = tile.group();
+      if (!target) return;
+      const mpp = 1 / tile.scale,
+        options: CityGlDrawOptions = {
+          ...l.base,
+          buildingsVisible: !!l.base.buildingsVisible && l.base.buildingStyle === 'silhouette',
+          viewport: tile.rect,
+          metresPerPixel: mpp,
+          lod: selectCityLod(mpp),
+          water: env.water?.(),
+          target: { framebuffer: target, width: tile.pixels, height: tile.pixels },
+        };
+      // The tables of the plan without buildings are the renderer's to keep per state; this is a work slice.
+      if (renderer.check(options)) renderer.prepare(options);
+      renderer.draw(options);
+      tile.putGroup(l.opacity);
+    },
+  };
+
   /** Why `draw` cannot show the towns of this frame ('' when it can). Checks that the draw will create nothing. */
   const notReady = (frame: LiveFrame): string => {
     if (disposed) return 'disposed';
@@ -380,6 +428,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   return {
     name: 'city',
     isolated: true,
+    drape,
     opacity: () => lookNow().opacity,
     ready(frame) {
       const why = notReady(frame);

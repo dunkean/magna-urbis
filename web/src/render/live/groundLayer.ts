@@ -26,7 +26,8 @@
  *
  * A tilted camera (frame.camera.tilted) sees the same tiles draped on the relief: the layer hands that frame to its
  * draped ground (render/world/drapedGround.ts), which reads the tiles through `DrapeTiles` and names the ones its
- * squares want; those are then what the layer bakes first.
+ * squares want; those are then what the layer bakes first. The same terrain shows the map drape of the frame over
+ * them (`LiveFrame.drape`: water, cartography, town plan), whose tiles the compositor bakes.
  *
  * One unit although long: the pyramid, its baking order, its eviction and both ways of showing it share the one
  * table of tiles.

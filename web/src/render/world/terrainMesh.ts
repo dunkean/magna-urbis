@@ -6,12 +6,12 @@
 import { LATTICE, MAX_PATCHES } from './patches';
 import { TERRAIN_FS, TERRAIN_VS } from './terrainShader';
 
-/** Floats of an instance: aSquare (4), aTile (3), one of padding. */
-export const SQUARE_FLOATS = 8;
+/** Floats of an instance: aSquare (4), aTile (3), aDrape (4), one of padding. */
+export const SQUARE_FLOATS = 12;
 const INDICES = LATTICE * LATTICE * 6;
 export const SQUARE_TRIANGLES = LATTICE * LATTICE * 2;
 
-const UNIFORMS = ['uProjection', 'uAnchor', 'uTarget', 'uEye', 'uLevel', 'uGrid', 'uHeights', 'uTiles', 'uLight', 'uAir', 'uHaze'] as const;
+const UNIFORMS = ['uProjection', 'uAnchor', 'uTarget', 'uEye', 'uLevel', 'uGrid', 'uHeights', 'uTiles', 'uDrape', 'uLight', 'uAir', 'uHaze'] as const;
 type UniformName = (typeof UNIFORMS)[number];
 
 function link(gl: WebGL2RenderingContext): WebGLProgram {
@@ -75,7 +75,7 @@ export class TerrainMesh {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, triangles, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instances);
     gl.bufferData(gl.ARRAY_BUFFER, MAX_PATCHES * SQUARE_FLOATS * 4, gl.DYNAMIC_DRAW);
-    for (const location of [1, 2]) {
+    for (const location of [1, 2, 3]) {
       gl.enableVertexAttribArray(location);
       gl.vertexAttribDivisor(location, 1);
     }
@@ -104,6 +104,7 @@ export class TerrainMesh {
       stride = SQUARE_FLOATS * 4;
     gl.vertexAttribPointer(1, 4, gl.FLOAT, false, stride, first * stride);
     gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, first * stride + 16);
+    gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, first * stride + 28);
     gl.drawElementsInstanced(gl.TRIANGLES, INDICES, gl.UNSIGNED_SHORT, 0, count);
   }
   unbind(): void {

@@ -20,10 +20,13 @@
  * The furniture (frame, cartouche, legend, scale bar) is screen-space: the live overlay layer does not draw it, a
  * small 2D canvas on top does.
  *
- * The map has one camera (render/world/): a view with a pitch or a yaw is the same world seen tilted. The compositor
- * draws such a frame with the layers that take the camera, the ground on its relief for now (`drawTilted`); the
- * overlay, the town, the names and the furniture return with the top view. This view gives the compositor and the
- * ground layer the relief of the map (`relief`).
+ * The map has one camera (render/world/): a view with a pitch or a yaw is the same world seen tilted, and one
+ * compositor frame (`drawTilted`): the terrain with the water, the overlay and the town plan draped on it, the names
+ * standing on it. No picture at rest is made for it and no exact canvas is shown (they are pictures of the top view);
+ * the furniture is hidden (a scale bar measures nothing in perspective). This view gives the compositor, the ground
+ * layer and the names the relief of the map (`relief`), and places the names of a tilted view at rest. The town's
+ * buildings and the modelled trees stand on the terrain as volumes (render/world/volumes.ts): two more layers, fed by
+ * worldVolumes.ts, which draw nothing in the top view.
  */
 import { createLiveCompositor, type LiveCompositor } from '../../render/live/compositor';
 import { liveStats, noteLiveUnit } from '../../render/live/liveStats';
@@ -35,7 +38,9 @@ import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
 import { dualCameras } from '../../render/live/policy';
 import { isTilted } from '../../render/world/camera';
+import { createWorldBuildingsLayer } from '../../render/world/buildingsLayer';
 import { TerrainHeights } from '../../render/world/heights';
+import { createWorldTreesLayer } from '../../render/world/treesLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
 import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
@@ -47,6 +52,7 @@ import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
 import type { DisplayReadiness } from './readiness';
 import { SETTLE_MS, type ViewMotion } from './viewMotion';
+import { WorldVolumes } from './worldVolumes';
 
 /** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
@@ -58,6 +64,12 @@ const FURNITURE_MS = 100;
 const WHOLE_VIEW: View = { cx: 0, cy: 0, scale: 1 };
 /** The slice of glyph work the text layer gets in the frame that places the names of a view at rest. */
 const NAMES_SLICE_MS = 2;
+/** The names of a tilted view are those of the top view of its centre and scale, placed over a square this many
+ * times the larger side of the viewport: a tilted camera sees further than the top view's rectangle, towards the
+ * horizon and on both sides of it. Beyond, the names would fade anyway (render/live/textLayer.ts). */
+const TILTED_NAMES_REACH = 1.6;
+/** The whole map in this many pixels: the view the water raster of a tilted frame is asked for. */
+const DRAPED_WATER_PIXELS = 1024;
 
 /** The layers an exact canvas can show, bottom to top. */
 const EXACT_LAYERS = ['overlay', 'city', 'text'] as const;
@@ -85,7 +97,7 @@ export class ComposedView {
   /** No WebGL2, a software renderer or a layer factory that threw: `blocked` for good. */
   private refused = false;
   /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
-  private owners: { gpu?: TerrainRenderer; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
+  private owners: { gpu?: TerrainRenderer; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
   /** The compositor's canvas and the exact canvases are in the page. */
   private onPage = false;
   /** Off the page, waiting for the first tile of the ground layer: its baking goes on. */
@@ -120,8 +132,12 @@ export class ComposedView {
    * the view (viewMotion.ts) follows the centre and the scale only. */
   private tiltMovingUntil = 0;
   private tiltTimer?: ReturnType<typeof setTimeout>;
+  /** What the names of the tilted view were last placed for (`revision`: MapState.paintRevision; -1: not placed). */
+  private readonly tiltedNames = { cx: 0, cy: 0, scale: 0, side: 0, revision: -1 };
 
   private readonly cityEnv: LiveCityEnv;
+  /** The town in volume and the trees of the tilted map, for the two volume layers. */
+  private readonly volumes: WorldVolumes;
 
   constructor(
     private readonly map: MapState,
@@ -132,6 +148,7 @@ export class ComposedView {
   ) {
     const { water, town } = parts;
     this.cityEnv = { appearance: () => map.resolved!, visibility: () => town.shownLayers(), water: () => water.cityWater, invalidate: map.compose };
+    this.volumes = new WorldVolumes(map, parts, () => this.relief());
   }
 
   /** Inside a compositor frame or work slice: a frame request raised now comes from a live layer. */
@@ -176,7 +193,7 @@ export class ComposedView {
     if (r.target !== 'view2d') return 'not the 2D view';
     if (!ground.gpuActive || !ground.gpu) return 'CPU ground';
     if (ground.fantasy || isFantasyStyle(r.ground.style)) return 'illustrated ground';
-    const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality, relief: () => this.relief() }));
+    const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality, relief: () => this.relief(), mapSize: () => map.world?.mapSize ?? 0 }));
     if (!live) {
       this.refused = true;
       return 'no hardware WebGL2';
@@ -215,7 +232,13 @@ export class ComposedView {
     // One text layer for the page: it reads the placement of whichever cartography is current.
     if (!owners.text) {
       owners.text = true;
-      live.setLayer('text', createLiveTextLayer(gl, { placement: () => cartography.renderer?.liveText(), invalidate: map.compose }));
+      live.setLayer('text', createLiveTextLayer(gl, { placement: () => cartography.renderer?.liveText(), terrain: () => this.relief(), invalidate: map.compose }));
+    }
+    // One pair of volume layers for the page: they read the town and the trees of whichever map is on display.
+    if (!owners.volumes) {
+      owners.volumes = true;
+      live.setLayer('buildings', createWorldBuildingsLayer(gl, this.volumes.buildings));
+      live.setLayer('trees', createWorldTreesLayer(gl, this.volumes.trees));
     }
     if (owners.cartography !== cartography.renderer) {
       owners.cartography = cartography.renderer;
@@ -344,6 +367,7 @@ export class ComposedView {
       return;
     }
     this.pitch = this.yaw = 0;
+    this.tiltedNames.revision = -1;
     if (this.motion.phase(now) === 'moving') {
       // A frame of a gesture: the compositor alone. No exact renderer runs; their canvases are hidden.
       this.show(undefined);
@@ -361,10 +385,10 @@ export class ComposedView {
   private viewRested = (): void => {
     if (!this.map.disposed && this.map.world) this.map.repaint();
   };
-  /** One frame of a tilted camera: the compositor alone, which draws the ground on its relief. No picture at rest
-   * is made: the layers that only know the top view (overlay, town, names, furniture) are not shown, and the next
-   * frame of the top view makes its picture at rest anew. DRAPING THEM IS THE NEXT STEP: each live layer takes the
-   * camera of the frame (LiveLayer.tilts) and then needs no branch here. */
+  /** One frame of a tilted camera: the compositor alone, whose terrain shows the water, the overlay and the town
+   * plan draped on the relief, with the names standing on it. The exact canvases are pictures of the top view: none
+   * is shown and no picture at rest is made; the next frame of the top view makes its own anew. When the tilted view
+   * comes to rest its names are placed. */
   private drawTilted(live: LiveCompositor, view: View, w: number, h: number, dpr: number, moved: boolean, now: number): void {
     const pitch = view.pitch ?? 0,
       yaw = view.yaw ?? 0,
@@ -379,7 +403,30 @@ export class ComposedView {
       clearTimeout(this.tiltTimer);
       this.tiltTimer = setTimeout(this.viewRested, SETTLE_MS + 1);
     }
-    this.composeFrame(live, view, w, h, dpr, now < this.tiltMovingUntil, now);
+    const moving = now < this.tiltMovingUntil;
+    if (!moving) {
+      this.placeTiltedNames(view, w, h);
+      this.volumes.refresh();
+    }
+    this.composeFrame(live, view, w, h, dpr, moving, now);
+  }
+  /** The names of a tilted view at rest: the placement of the top view of its centre and scale (the names then keep
+   * the sizes and the spacing of the map the camera tilts from), over a wider square. Placing for the perspective
+   * itself would need the collisions of the projected names; the text layer fades the far ones instead. Placed once
+   * per view and content; while the view moves, the names of the last placement follow the terrain. */
+  private placeTiltedNames(view: View, w: number, h: number): void {
+    const renderer = this.parts.cartography.renderer,
+      placed = this.tiltedNames,
+      side = TILTED_NAMES_REACH * Math.max(w, h),
+      revision = this.map.paintRevision;
+    if (!renderer || (placed.cx === view.cx && placed.cy === view.cy && placed.scale === view.scale && placed.side === side && placed.revision === revision)) return;
+    placed.cx = view.cx;
+    placed.cy = view.cy;
+    placed.scale = view.scale;
+    placed.side = side;
+    placed.revision = revision;
+    renderer.placeText({ cx: view.cx, cy: view.cy, scale: view.scale }, side, side);
+    reportDrawnLabels(renderer.lastPlaced().map(p => p.label.id));
   }
 
   /** One compositor frame: ground, water, and the live layers whose exact canvas is not shown. */
@@ -389,20 +436,22 @@ export class ComposedView {
       { ground, water } = this.parts,
       tilted = isTilted(view);
     // The water raster of this frame; a moving view keeps the one it has (a finer one is rasterized at rest). A
-    // tilted frame does not show it and keeps the one of the top view for its return.
-    const vectors = tilted ? undefined : water.vectorRaster(view, w, h, dpr, !moving);
-    if (!tilted) live.setWater(vectors?.image, vectors?.region);
+    // tilted frame drapes it on the terrain as far as the horizon: it takes the raster of the whole map, and keeps it
+    // while it is tilted (another raster would bake every tile of the map drape again).
+    const size = map.world!.mapSize,
+      vectors = tilted ? water.vectorRaster({ cx: size / 2, cy: size / 2, scale: DRAPED_WATER_PIXELS / size }, DRAPED_WATER_PIXELS, DRAPED_WATER_PIXELS, 1, false) : water.vectorRaster(view, w, h, dpr, !moving);
+    live.setWater(vectors?.image, vectors?.region);
     live.setPaper(map.groundPaper);
     live.setLayerShown('overlay', !atOrAbove('overlay', this.shownFrom));
     live.setLayerShown('text', !atOrAbove('text', this.shownFrom));
     live.setLayerShown('city', !atOrAbove('city', this.shownFrom) && (map.exportLayers.city !== false || map.exportLayers.streets !== false));
+    live.setLayerShown('buildings', map.exportLayers.city !== false);
     live.draw(view, w, h, ratio, moving);
     // Ground tiles not baked yet (the first frames of a map or of a look) and nothing to stand in for them: the
     // whole-map capture of the miniature does, uploaded once, and the frame is composed again in this task.
     const baked = liveStats().layers.ground;
     if (baked && !baked.ready && !baked.standIn) {
-      const coarse = ground.miniGround(),
-        size = map.world!.mapSize;
+      const coarse = ground.miniGround();
       if (coarse) {
         live.setStandIn('ground', coarse, { cx: size / 2, cy: size / 2, scale: 1 }, size, size);
         live.draw(view, w, h, ratio, moving);
@@ -425,7 +474,7 @@ export class ComposedView {
       renderer = this.parts.cartography.renderer,
       hidden = canvas.style.visibility === 'hidden';
     // The exact overlay canvas holds the furniture, and so does its raster when it stands in for the live layer.
-    // The furniture belongs to the top view (its scale bar measures it).
+    // The furniture belongs to the top view (its scale bar measures nothing in perspective).
     if (!renderer || isTilted(view) || this.shownFrom === 'overlay' || liveStats().layers.overlay?.standIn) {
       if (!hidden) canvas.style.visibility = 'hidden';
       return;

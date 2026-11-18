@@ -1,16 +1,13 @@
-import { buildingPaint, type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
-import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
-import { layerExtent, loadMaterialImages, uploadMaterialArrays, coverLayer, wallLayer, roofGrain, MATERIALS, type CoverGrain, type MaterialImages } from '../render/buildingMaterials';
+import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
+import { isBuildingProjection, isYardMesh, yardLod, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
+import { loadMaterialImages, uploadMaterialArrays, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
-import { mapGroundSnow, roofSeasonKey } from '../render/seasonPalette';
-import { buildingHeat, roofSnowShare, snowRoofTint, townRoofAltitudes } from '../render/roofSnow';
-import type { BuildingTriangle } from '../render/urbanBuildingGeometry';
-import { buildingTint } from '../render/buildingPalette';
-import { MOONLIGHT_GLSL } from '../render/materialLook';
-import { ROOF_PLANE_LIGHT_GLSL } from '../render/roofPlaneLight';
+import { roofSeasonKey } from '../render/seasonPalette';
+import { townRoofAltitudes } from '../render/roofSnow';
+import { buildingBatches, buildingBounds, type BuildingBounds, type Vec3 } from '../render/world/buildingsMesh';
+import { BUILDING_COVER_LIGHT_GLSL, BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL } from '../render/world/buildingsShader';
 
-type Vec3 = [number, number, number];
-type Bounds = [number, number, number, number, number, number];
+type Bounds = BuildingBounds;
 export interface BuildingFrame {
   matrix: Float32Array;
   cameraX: number;
@@ -56,136 +53,6 @@ export interface Sector {
 }
 const SECTOR = 256,
   MAX_CACHE_BYTES = 96 * 1024 * 1024;
-// Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
-// works (city walls, bridges: facadePosition.y = -10000) are left as they are.
-const nightWindows = `
-float baseOcclusion(vec3 normal,vec3 p){
-  if(abs(normalize(normal).y)>.5||p.y<-1000.)return 1.;
-  return mix(.72,1.,smoothstep(0.,2.4,p.y));
-}
-uniform int uNight;
-${MOONLIGHT_GLSL}
-${ROOF_PLANE_LIGHT_GLSL}
-// Night: moonlight on every face; the mesh's own lit windows (LIT_CLASS faces, p on the facade in metres) glow,
-// fading out once a window is no longer resolved (from .45 to 1.2 m per pixel).
-vec3 buildingNight(vec3 color,vec3 p,bool lit){
-  if(uNight==0)return color;
-  color=moonlight(color);
-  if(!lit||uNight==2)return color;
-  return mix(color,vec3(1.,.61,.22),.93*(1.-smoothstep(.45,1.2,length(fwidth(p)))));
-}
-// Underdark: no sky. The town's own lanterns light it (warm, dimmed by the darkness), its lit openings glow, and
-// far buildings dissolve into the cave's darkness like the ground. uCave: on, light, fog start and end (m); uCaveEye: x, z, height.
-uniform vec4 uCave; uniform vec3 uCaveEye;
-vec3 buildingCave(vec3 color,vec3 p,bool lit,vec3 N){
-  if(uCave.x<.5)return color;
-  // No sky: roofs (faces turned up) get only the lanterns' side light, darker than the walls.
-  color*=vec3(1.,.84,.66)*uCave.y*mix(1.,.5,smoothstep(.45,.8,normalize(N).y));
-  if(lit&&uCave.x<1.5)color=mix(color,vec3(1.,.64,.28),.9*(1.-smoothstep(.45,1.2,length(fwidth(p)))));
-  vec2 d=p.xz-uCaveEye.xy;
-  return mix(color,vec3(.005,.005,.007),smoothstep(uCave.z,uCave.w,sqrt(dot(d,d)+uCaveEye.z*uCaveEye.z)));
-}
-`;
-/** Procedural grain of roof covers and wall materials for the flat-colour program: only the material's own units
- * (course and column joints, the tone of each tile / slab / board / stone, fibres, clumps or stains at that scale), as
- * factors around 1 (zero mean) whose sum stays within about ±10 %, so a building keeps its flat colour and its own
- * light and shade. `cls` is the material class of the face (ROOF_CLASS, WALL_CLASS), `p` its position in metres
- * (x, height, z; sector-local), `fp` the metres one pixel covers on it: every unit term fades out before its unit
- * reaches about four pixels, and the weathering of the material takes over at the scale of the pixel (speckle for
- * fired clay and stone, streaks down the slope for straw, reed and shingles, along the boards for timber), so every
- * material keeps a grain of its own until a metre per pixel. */
-const materialGrain = `
-float grainHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-float grainNoise(vec2 p){
-  vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
-  return mix(mix(grainHash(i),grainHash(i+vec2(1.,0.)),f.x),mix(grainHash(i+vec2(0.,1.)),grainHash(i+vec2(1.,1.)),f.x),f.y)*2.-1.;
-}
-float grainKeep(float wavelength,float fp){return 1.-smoothstep(.12,.3,fp/wavelength);}
-// Dark band over the last share w of a cell, minus its mean.
-float grainJoint(float f,float w){return smoothstep(1.-w,.98,f)-(.01+.5*w);}
-vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
-  // Past a metre per pixel no unit is resolved: far buildings pay nothing.
-  if(cls<.5||fp>1.)return color;
-  // Face coordinates in metres: x along the ridge or the wall; y down the slope of a pitched or flat face, up a
-  // vertical one (walls, gables, the foot of a dome).
-  float h=length(N.xz);
-  vec2 d=vec2(1.,0.);
-  if(h>.02)d=N.xz/h;
-  vec2 q=vec2(dot(p.xz,vec2(-d.y,d.x)),p.y);
-  if(N.y>.3)q.y=dot(p.xz,d)/N.y;
-  // cw: one unit along and across the courses (m), then the width of the course and column joints as a share of it;
-  // k: course joint, column joint, unit tone, soft term; run: scale (m) of the soft term along x and y; bond: shift of
-  // every other course (broken bond), none where ribs, canes, seams or posts run through.
-  int c=int(cls+.5);
-  vec4 cw=vec4(.2,.4,.2,.12),k=vec4(.035,.012,.035,0.);vec2 run=vec2(1.);float bond=.5;                          // plain clay tiles: courses
-  if(c==2){bond=0.;cw=vec4(.2,.4,.15,.35);k=vec4(.012,.035,.035,0.);}                                       // half-round tiles: ribs
-  else if(c==3){bond=0.;cw=vec4(.2,.4,.12,.35);k=vec4(.006,.04,.012,0.);}                                   // glazed tiles: even ribs
-  else if(c==4){cw=vec4(.25,.22,.15,.1);k=vec4(.03,.012,.02,0.);}                                   // slates
-  else if(c==5){cw=vec4(.55,.4,.15,.1);k=vec4(.04,.03,.04,0.);}                                     // stone slabs, dressed courses
-  else if(c==6){cw=vec4(.7,.7,.07,.07);k=vec4(.035,.035,.03,0.);}                                   // paved terrace
-  else if(c==7){cw=vec4(.08,1.5,.12,.3);k=vec4(.02,0.,.03,.03);run=vec2(.12,1.2);}                  // straw thatch: strands, ledges
-  else if(c==8){cw=vec4(.05,2.,.1,.3);k=vec4(.006,0.,.02,.015);run=vec2(.08,1.6);}                  // reed: fine, smooth
-  else if(c==9){cw=vec4(.35,.8,.3,.2);k=vec4(.05,.012,.03,.02);run=vec2(.1,.5);}                    // palm fronds: shaggy rows
-  else if(c==10){cw=vec4(.4,.4,.1,.1);k=vec4(0.,0.,0.,.05);run=vec2(.3);}                           // turf: clumps
-  else if(c==11){cw=vec4(.14,.3,.2,.12);k=vec4(.035,.012,.04,0.);}                                  // shingles
-  else if(c==12){cw=vec4(1.4,.8,.08,.06);k=vec4(.035,.03,.03,.012);run=vec2(.5,.07);}               // bark sheets
-  else if(c==13){bond=0.;cw=vec4(.1,2.2,.05,.35);k=vec4(.012,.04,.02,0.);}                                  // split bamboo canes
-  else if(c==14){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.045);run=vec2(.5);}                          // earthen terrace: stains
-  else if(c==15){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.02);run=vec2(.6);}                           // lime, plaster domes
-  else if(c==16){bond=0.;cw=vec4(.6,2.4,.03,.08);k=vec4(.02,.05,.012,0.);}                                  // lead, copper: seams, laps
-  else if(c==17){bond=0.;cw=vec4(1.5,.8,.08,.05);k=vec4(.03,.025,0.,.012);run=vec2(.4);}                    // felt: strips, girth ropes
-  else if(c==18){cw=vec4(1.4,1.3,.05,.05);k=vec4(.03,.03,.03,0.);}                                  // stitched hides
-  else if(c==19){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.025);run=vec2(.3,2.2);}                      // plaster wall: rain streaks
-  else if(c==20){bond=0.;cw=vec4(1.2,2.8,.06,.11);k=vec4(.05,.05,0.,.012);run=vec2(.3,2.2);}                // timber frame: posts, rails
-  else if(c==21){cw=vec4(2.4,.25,.18,.04);k=vec4(.035,.012,.03,.01);run=vec2(1.2,.06);}             // boards, logs
-  else if(c==22){cw=vec4(.22,.075,.2,.1);k=vec4(.025,.01,.035,0.);}                                 // brick
-  else if(c==23){cw=vec4(.5,.3,.15,.1);k=vec4(.04,.02,.04,0.);}                                     // stone courses
-  else if(c==24){cw=vec4(.4,.14,.2,.1);k=vec4(.015,0.,.012,.03);run=vec2(.35,2.2);}                 // adobe, rammed earth: eroded
-  else if(c==25){cw=vec4(.5,.9,.1,.1);k=vec4(0.,.012,.02,.03);run=vec2(.4);}                        // wattle and daub
-  else if(c==26){bond=0.;cw=vec4(.1,2.2,.05,.35);k=vec4(.012,.04,.02,0.);}                                  // bamboo wall: upright canes
-  else if(c==27){cw=vec4(.4,.3,.15,.1);k=vec4(.015,.01,.03,.02);run=vec2(.5);}                      // coral rag under lime
-  else if(c==28){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.03);run=vec2(.6);}                             // snow: a faint even grain, the same on every roof
-  else if(c==29){cw=vec4(.9,.45,.06,.05);k=vec4(.03,.02,.025,0.);}                                   // ashlar: large dressed courses
-  else if(c==30){bond=0.;cw=vec4(1.2,2.6,.03,.03);k=vec4(.012,.012,.01,.03);run=vec2(.5,2.2);}       // concrete: formwork panels, stains
-  else if(c==31){bond=0.;cw=vec4(1.5,3.2,.05,.06);k=vec4(.05,.05,.012,0.);}                          // glass: mullion grid
-  // Weathering once the units are no longer resolved: w.x its strength, w.yz its stretch along and down the face.
-  vec3 w=vec3(.035,1.,1.);                                                                               // fired clay, stone, earth, hides: speckle
-  if(c==3||c==16||c==17)w=vec3(.014,1.,2.5);                                                             // glazed tiles, metal, felt: even
-  else if(c==4||c==15||c==19||c==22)w=vec3(.02,1.,1.);                                                   // slate, lime, plaster, brick: little
-  else if(c==7||c==9||c==11||c==24)w=vec3(.035,.4,2.5);                                                  // straw, fronds, shingles, eroded earth: streaks down
-  else if(c==8||c==13||c==26)w=vec3(.02,.3,3.);                                                          // reed, canes: fine streaks down
-  else if(c==10)w=vec3(.05,1.,1.);                                                                       // turf: clumps
-  else if(c==12||c==21)w=vec3(.03,2.5,.4);                                                               // bark sheets, boards, logs: along
-  else if(c==29)w=vec3(.02,1.,1.);                                                                       // ashlar: little
-  else if(c==31)w=vec3(.008,1.,1.);                                                                      // glass: smooth
-  else if(c==28)w.x=0.;                                                                                  // snow keeps its own drifts
-  float row=floor(q.y/cw.y);
-  vec2 u=vec2(q.x/cw.x+bond*mod(row,2.),q.y/cw.y),f=fract(u);
-  float keepRow=grainKeep(cw.y,fp),keepColumn=grainKeep(cw.x,fp);
-  float g=-k.x*grainJoint(f.y,cw.z)*keepRow-k.y*grainJoint(f.x,cw.w)*keepColumn;
-  g+=k.z*(grainHash(floor(u)+cls*17.)*2.-1.)*min(keepRow,keepColumn);
-  g+=k.w*grainNoise(q/run+cls)*grainKeep(min(run.x,run.y),fp);
-  // Two octaves around six pixels, cross-faded: the tone of groups of units, as fine as the pixel at every distance.
-  float level=log2(max(fp,.002)*6.),lo=floor(level);vec2 s=q/w.yz;
-  g+=w.x*(1.-min(keepRow,keepColumn))*(1.-smoothstep(.5,1.,fp))*mix(grainNoise(s*exp2(-lo)+cls*3.7),grainNoise(s*exp2(-lo-1.)+cls*9.1),level-lo);
-  return color*(1.+g);
-}
-`;
-/** Light of a roof face capped by what its cover can reflect, as the 2D plan does (planPanLight in
- * roofPlaneLight.ts): around the level of a flat roof (1), with the same smooth knee. Matte covers (thatch, reed,
- * palm, turf, shingle, bark, bamboo, earth, lime, felt, hide: classes 7 to 15, 17, 18) lighten by 9 % at most and
- * darken by 14 %; tiles, slates and stone (1 to 6) by 14 % and 20 %; metal (16), snow, walls and faces without a
- * class keep the full light. */
-const coverLight = `
-float coverLight(float light,float cls,vec3 N){
-  if(N.y<.05||cls<.5||cls>18.5||abs(cls-16.)<.5)return light;
-  float up=.09,down=.14;
-  if(cls<6.5){up=.14;down=.2;}
-  float d=light-1.;
-  if(d>0.)return 1.+up*(1.-exp(-d/up));
-  return 1.-down*(1.-exp(d/down));
-}
-`;
 const vertexColor = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 position;
@@ -205,9 +72,9 @@ const fragmentColor = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass;
 out vec4 color;
-${nightWindows}
-${materialGrain}
-${coverLight}
+${BUILDING_NIGHT_GLSL}
+${BUILDING_GRAIN_GLSL}
+${BUILDING_COVER_LIGHT_GLSL}
 void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
@@ -239,7 +106,7 @@ uniform float softFrom;
 uniform highp sampler2DArray albedoTex;
 uniform highp sampler2DArray normalTex;
 out vec4 color;
-${nightWindows}
+${BUILDING_NIGHT_GLSL}
 void main(){
   vec3 N=normalize(n), dp1=dFdx(wp), dp2=dFdy(wp);
   if(dot(N,normalize(cross(dp1,dp2)))<0.) N=-N;
@@ -301,41 +168,6 @@ function program(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
   }
   return p;
 }
-function rgb(color: string): Vec3 {
-  if (color.startsWith('rgb'))
-    return color
-      .match(/[\d.]+/g)!
-      .slice(0, 3)
-      .map(Number)
-      .map(v => v / 255) as Vec3;
-  return [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255) as Vec3;
-}
-function bounds(building: Building3dVisual): Bounds {
-  const box: Bounds = [Infinity, Infinity, building.ground_z_m, -Infinity, -Infinity, building.ground_z_m + building3dHeight(building)];
-  const features = isBuildingProjection(building) ? [] : building.structural_features;
-  for (const surface of [building.footprint, building.roof_footprint, ...features.map(f => f.surface)])
-    for (const shape of surface)
-      for (const p of shape.outer) {
-        box[0] = Math.min(box[0], p.x);
-        box[1] = Math.min(box[1], p.y);
-        box[3] = Math.max(box[3], p.x);
-        box[4] = Math.max(box[4], p.y);
-      }
-  if (!isBuildingProjection(building)) for (const foundation of [...building.volumes.map(v => v.foundation), ...(building.structural_foundations ?? [])]) if (foundation) box[2] = Math.min(box[2], foundation.z_min_m);
-  for (const feature of features) {
-    box[2] = Math.min(box[2], feature.z_m);
-    box[5] = Math.max(box[5], feature.z_m + feature.height_m);
-  }
-  for (const feature of features)
-    for (const p of feature.vertices3d) {
-      const point = [p.x, p.y, p.z];
-      for (let i = 0; i < 3; i++) {
-        box[i] = Math.min(box[i], point[i]);
-        box[i + 3] = Math.max(box[i + 3], point[i]);
-      }
-    }
-  return box;
-}
 function rayBox(origin: Vec3, direction: Vec3, box: Bounds, maximum: number): boolean {
   let near = 0,
     far = maximum;
@@ -351,87 +183,6 @@ function rayBox(origin: Vec3, direction: Vec3, box: Bounds, maximum: number): bo
     if (far < near) return false;
   }
   return true;
-}
-
-/** Material layer of a display material id `city3d:<cover|wall|road>:<key>` (city3dMeshes.ts); -1 for any other material. */
-function materialLayer(id: string | undefined): number {
-  const m = /^city3d:(cover|wall|road):(.+)$/.exec(id ?? '');
-  if (!m) return -1;
-  return m[1] === 'cover' ? coverLayer(m[2]) : m[1] === 'wall' ? wallLayer(m[2]) : (MATERIALS.road[m[2]] ?? -1);
-}
-/** Procedural grain classes of the flat-colour program (materialGrain). Roof covers take the class of the family the
- * 2D plan gives the same pan (`roofGrain`: cover, flatness, culture), so both views show one cover; wall materials
- * follow. At most 31 (all in use): the class is stored in thirty-seconds on the normal's length. */
-const ROOF_CLASS: Record<CoverGrain, number> = { tile: 1, pantile: 2, glazed: 3, slate: 4, slab: 5, paving: 6, thatch: 7, reed: 8, palm: 9, turf: 10, shingle: 11, bark: 12, bamboo: 13, earth: 14, lime: 15, metal: 16, felt: 17, hide: 18 };
-/** Walls: lime plaster (rain streaks), timber frame (posts and rails under the plaster), boards and logs, brick, stone
- * courses, adobe and rammed earth, wattle and daub, upright bamboo, coral rag, hide (the stitched skins of the tent roof). */
-const WALL_CLASS: Record<string, number> = {
-  plaster: 19,
-  timber: 20,
-  wood: 21,
-  brick: 22,
-  stone: 23,
-  earth: 24,
-  wattle: 25,
-  bamboo: 26,
-  coral: 27,
-  hide: 18,
-  // Modern walls: cut limestone in large dressed courses, board-marked concrete (formwork panels, stains), curtain
-  // wall (a regular grid of mullions on a smooth surface), steel cladding (the standing-seam class: upright joints).
-  ashlar: 29,
-  concrete: 30,
-  glass: 31,
-  steel: 16,
-};
-/** Class of a roof face under snow: the mantle is uneven, thinner in places (materialGrain). */
-const SNOW_CLASS = 28;
-/** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
- * grain classes, it only tells the shaders which faces glow (buildingNight). */
-const LIT_CLASS = 32;
-/** The matches of the two material id patterns read for every triangle, kept per id (a scene has a few dozen ids). */
-const displayMaterials = new Map<string, RegExpExecArray | null>(),
-  materialTints = new Map<string, RegExpExecArray | null>();
-function displayMaterial(id: string): RegExpExecArray | null {
-  let m = displayMaterials.get(id);
-  if (m === undefined) {
-    if (displayMaterials.size > 4096) displayMaterials.clear();
-    displayMaterials.set(id, (m = /^city3d:(cover|wall):([a-z]+)$/.exec(id)));
-  }
-  return m;
-}
-/** The `@rrggbb` / `@rgb` tint suffix of a material id. */
-function materialTint(raw: string | undefined): RegExpExecArray | null {
-  const key = raw ?? '';
-  let m = materialTints.get(key);
-  if (m === undefined) {
-    if (materialTints.size > 4096) materialTints.clear();
-    materialTints.set(key, (m = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(key)));
-  }
-  return m;
-}
-/** Grain class of a face from its display material id `city3d:<cover|wall>:<key>`; 0 (no grain) for openings, roads,
- * trees, snow huts, ruins and native materials. */
-function materialClass(id: string | undefined, normal: readonly number[], culture: string): number {
-  const m = displayMaterial(id ?? '');
-  if (!m) return 0;
-  if (m[1] === 'wall') return WALL_CLASS[m[2]] ?? 0;
-  const grain = roofGrain(m[2], Math.abs(normal[2]) > 0.995 * (Math.hypot(normal[0], normal[1], normal[2]) || 1), culture);
-  return grain ? ROOF_CLASS[grain] : 0;
-}
-/** Texture coordinates (in tiles) of a point of a face, in world metres: vertical faces along the face and down (image upright),
- * pitched faces u along the ridge and v down the slope (stretched by the slope), flat faces on the plan. */
-function faceUv(p: readonly number[], normal: readonly number[], layer: number): [number, number] {
-  if (layer < 0) return [0, 0];
-  const e = layerExtent(layer),
-    nx = normal[0],
-    ny = normal[1],
-    nz = Math.abs(normal[2]),
-    h = Math.hypot(nx, ny);
-  if (nz < 0.3 && h > 1e-6) return [(p[0] * -ny + p[1] * nx) / h / e, -p[2] / e];
-  if (h < 0.02) return [p[0] / e, p[1] / e];
-  const dx = nx / h,
-    dy = ny / h;
-  return [(-p[0] * dy + p[1] * dx) / e, (p[0] * dx + p[1] * dy) / Math.max(nz, 0.2) / e];
 }
 
 /** Native instances, with lazy material/sector buffers and a roof overview LOD.
@@ -476,7 +227,7 @@ export class UrbanBuildingPass {
     this.snowAltitudes = townRoofAltitudes(scene?.buildings ?? []);
     const sectors = new Map<string, Sector>();
     for (const building of scene?.buildings ?? []) {
-      const box = bounds(building);
+      const box = buildingBounds(building);
       const p = isBuildingProjection(building) ? { x: (box[0] + box[3]) / 2, y: (box[1] + box[4]) / 2 } : building.transform.origin;
       const yard = isYardMesh(building),
         origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR],
@@ -513,7 +264,7 @@ export class UrbanBuildingPass {
         continue;
       }
       entry.building = building;
-      entry.bounds = bounds(building);
+      entry.bounds = buildingBounds(building);
       touched.add(sector);
     }
     for (const sector of touched) {
@@ -540,130 +291,19 @@ export class UrbanBuildingPass {
   }
   private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod, yardLevel?: number): void {
     this.release(sector);
-    // Vertices go straight into one growing Float32Array per batch: the values the number list held, rounded to
-    // single precision as its conversion did. `seen` holds the colour objects already checked against the palette
-    // (a building's faces share a few of them), so the palette is scanned once per colour, not once per triangle.
-    const groups = new Map<string, { batch: Batch; data: Float32Array; length: number; seen: Set<Vec3> }>(),
-      textured = !!this.appearance.textured;
-    const catalogue = { materials: this.source?.materials ?? [] };
-    for (const { building } of sector.entries) {
-      const colors = new Map<string, Map<string, Vec3>>(),
-        culture = building.culture?.culture ?? '';
-      let h = 2166136261;
-      for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
-      const tone = Math.round(((h >>> 0) / 0xffffffff) * 15) / 15;
-      const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
-      const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
-      // Terrain structures follow the relief whole; a building keeps its real height above its ground.
-      const ground = /^city3d-(wall|bridge|quay|harbour)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
-      const paintFace = (face: BuildingTriangle, snow = 0): void => {
-        const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating),
-          tm = materialTint(raw);
-        const id = tm ? raw.slice(0, tm.index) : raw;
-        // Thin enclosures already carry their final yard colours. A roof/wall
-        // atlas and its normal-map highlights turn subpixel copings into white
-        // parcel outlines; retain the same matte material at every yard LOD.
-        const layer = textured && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
-        let surfaceColors = colors.get(face.surface);
-        if (!surfaceColors) colors.set(face.surface, (surfaceColors = new Map()));
-        let c = surfaceColors.get(String(raw));
-        if (!c) {
-          // The paint is read for the first face of each material and surface only.
-          const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, catalogue);
-          c = rgb(face.surface === 'roof' ? paint.roof : paint.wall);
-          if (this.appearance.diagnostic === 'none' || face.surface === 'yard') {
-            if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
-            else if (tm) c = c.map((v, i) => Math.min(1, (v * parseInt(tm[1][i], 16)) / 8)) as Vec3;
-            else if (culture && !building.id.startsWith('city3d-')) {
-              const material = (s: string): string => /(?:^|[:/_-])(timber|wood|brick|stone|earth|plaster|bamboo|wattle|hide|coral|tile|slate|thatch|reed|palm|shingle|bark|turf|felt|snow|metal|lead)(?:$|[:/_-])/.exec(s)?.[1] ?? '';
-              const w = material(face.materials.coating || face.materials.infill),
-                r = material(face.materials.cladding);
-              const p = buildingTint(culture, w, r, tone, role + (/tower|minaret|stone/.test(id) ? ' monument' : ''));
-              c = face.surface === 'roof' ? p.roof : p.wall;
-            }
-          }
-          if (face.surface === 'roof' && this.appearance.diagnostic === 'none' && this.appearance.colors?.building) c = rgb(this.appearance.colors.building);
-          const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? ''); // switch treeHouseGreens: forest greens, whatever the colour mode
-          if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36'); // a canopy layer may carry its own green
-          if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
-          surfaceColors.set(String(raw), c);
-        }
-        if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4);
-        const recolored = this.appearance.diagnostic === 'none' && ((!!this.appearance.colors?.building && face.surface === 'roof') || tm?.[1].length === 6 || (!!culture && !building.id.startsWith('city3d-')));
-        // Flat-colour program only: the material class rides on the normal's length (see materialGrain); a snowed face
-        // takes the snow class in place of its cover's.
-        const cls = !textured && face.surface !== 'yard' && this.appearance.style === 'cartographic' && this.appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : materialClass(id, face.normal, culture)) : 0;
-        const unit = (1 + (id === 'city3d:wall:lit' ? LIT_CLASS : cls) / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
-        const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
-        let group = groups.get(color);
-        if (!group) {
-          const mean = MATERIALS.layers[layer]?.mean_rgb,
-            shade = c;
-          const tint = mean && recolored ? (shade.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3) : tm?.[1].length === 3 ? ([...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3) : ([1, 1, 1] as Vec3);
-          group = { batch: { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }, data: new Float32Array(4096), length: 0, seen: new Set() };
-          groups.set(color, group);
-        }
-        const batch = group.batch,
-          points = face.points;
-        // A snowed face has a colour of its own (never seen before): it is compared by value, as every colour was.
-        if (batch.palette && (snow || !group.seen.has(c))) {
-          if (!snow) group.seen.add(c);
-          if (!batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
-        }
-        if (group.length + points.length * 10 > group.data.length) {
-          const grown = new Float32Array(Math.max(group.data.length * 2, group.length + points.length * 10));
-          grown.set(group.data.subarray(0, group.length));
-          group.data = grown;
-        }
-        const data = group.data;
-        let at = group.length;
-        for (let i = 0; i < points.length; i++) {
-          const p = points[i];
-          data[at++] = p[0] - sector.origin[0];
-          data[at++] = p[2];
-          data[at++] = p[1] - sector.origin[1];
-          data[at++] = face.normal[0] * unit;
-          data[at++] = face.normal[2] * unit;
-          data[at++] = face.normal[1] * unit;
-          if (textured) {
-            const [u, v] = faceUv(p, face.normal, layer);
-            data[at++] = u;
-            data[at++] = v;
-            data[at++] = layer;
-          } else {
-            data[at++] = c[0];
-            data[at++] = c[1];
-            data[at++] = c[2];
-          }
-          data[at++] = face.ground?.[i] ?? Math.min(p[2], ground);
-        }
-        group.length = at;
-      };
-      const snow = this.appearance.style !== 'silhouette' && this.appearance.diagnostic === 'none' ? mapGroundSnow(this.snowAltitudes.get(building.id) ?? building.ground_z_m, this.appearance.roofSnow) : 0;
-      const heat = snow ? buildingHeat(building.function) : 0;
-      eachBuildingTriangle(
-        building,
-        face => {
-          // Snow whitens the roof triangle itself: no inset overlay per triangle, so neither triangulation seams nor
-          // a border draw stripes, and nothing needs a depth bias. Walls, steep faces and cover-only geometry
-          // (chimneys, parapets, walls, trees, civil works) keep their material. Each face keeps its own share of the
-          // mantle (pitch, cover, exposure, the heat of the building's use: roofSnowShare, one rule for every roof), in
-          // eighths so the batches stay few.
-          const material = face.material ?? face.materials.cladding;
-          const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
-          const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
-          paintFace(face, (snow * Math.round(share * 8)) / 8);
-        },
-        overview,
-        featureLod,
-        yardLevel,
-      );
-    }
+    const paint = { appearance: this.appearance, materials: this.source?.materials ?? [], snowAltitudes: this.snowAltitudes };
     const batches: Batch[] = [];
-    for (const { batch, data, length } of groups.values()) {
-      if (!length) continue;
-      this.upload(batch, data.slice(0, length));
-      batch.count = length / batch.stride;
+    for (const built of buildingBatches(
+      sector.entries.map(e => e.building),
+      sector.origin,
+      paint,
+      overview,
+      featureLod,
+      yardLevel,
+    )) {
+      const batch: Batch = { color: built.color, tint: built.tint, recolored: built.recolored, values: [], count: 0, stride: built.stride, vcolor: built.vcolor, palette: built.palette };
+      this.upload(batch, built.data);
+      batch.count = built.data.length / batch.stride;
       batches.push(batch);
     }
     batches.sort((a, b) => Number(a.snow) - Number(b.snow));

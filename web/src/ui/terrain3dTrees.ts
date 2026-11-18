@@ -53,6 +53,8 @@ export function treeLimits(distance: number): TreeLimits {
 }
 /** Soft upper bound: ~x for small x, never above `cap` (natural variation survives, no pile of identical stands). */
 const softCap = (x: number, cap: number): number => cap * Math.tanh(x / cap);
+/** Side of the blocks a stream visits (m): a crown belongs to the block that holds its centre. */
+export const TREE_BLOCK = 24;
 /** World blocks between two partial installs of a stream that is still being built (nearest blocks first). */
 const PARTIAL_BLOCKS = 96;
 /** Lathe of one tree: 10 segments around (even, for the alternating conifer bough tips), 8 bands between 9 rings: three
@@ -87,6 +89,9 @@ export interface TreeView {
   forwardX: number;
   forwardY: number;
   /** Render distance (m); the default when absent. */ distance?: number;
+  /** Every tree whose centre lies in this square instead, its corners on the TREE_BLOCK grid: no distance, direction,
+   * thinning or cap (the world view builds its trees per block of the map, render/world/treesBlocks.ts). */
+  area?: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
 const V2_ZONE_FOREST: readonly (readonly [number, number, number])[] = [
@@ -280,6 +285,20 @@ function wayRoomOf(ways: NonNullable<ForestOccupation['ways']>): ForestRoom {
   if (!room) wayRooms.set(ways, (room = new ForestRoom(ways as readonly ForestCorridor[], [])));
   return room;
 }
+const clearingRooms = new WeakMap<object, ForestClearingRoom>(),
+  orchardRooms = new WeakMap<object, ForestRoom>();
+/** The point indexes of clearings and orchards, kept with the occupation that carries them: the world view builds
+ * its trees in many small blocks, each of which would index the whole map again. */
+function clearingRoomOf(clearings: NonNullable<ForestOccupation['clearings']>): ForestClearingRoom {
+  let room = clearingRooms.get(clearings);
+  if (!room) clearingRooms.set(clearings, (room = new ForestClearingRoom(clearings)));
+  return room;
+}
+function orchardRoomOf(orchards: NonNullable<NonNullable<ForestOccupation['detail']>['orchards']>): ForestRoom {
+  let room = orchardRooms.get(orchards);
+  if (!room) orchardRooms.set(orchards, (room = new ForestRoom([], orchards)));
+  return room;
+}
 /** Same instance order and arithmetic, with one bounded world block per step. Blocks run nearest first; `partial`
  * receives the stream built so far every PARTIAL_BLOCKS blocks, so trees appear around the eye before the rest. That
  * partial stream is a view of the buffer being filled: valid during the call only (the uploads copy it). */
@@ -313,7 +332,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     }
     return { cover, height: (px[1] / 255) * 50 * (zone && inputs.zone === 6 ? 0.35 : 1), needle };
   };
-  const clearingRoom = occ?.clearings?.length ? new ForestClearingRoom(occ.clearings) : undefined;
+  const clearingRoom = occ?.clearings?.length ? clearingRoomOf(occ.clearings) : undefined;
   const occCell = occ ? occ.width / occ.n : 1;
   // Exact ways: no trunk stands on a road or a street, whatever the raster resolution (crowns may still overhang an earth way).
   const wayRoom = occ?.ways?.length ? wayRoomOf(occ.ways) : undefined;
@@ -413,7 +432,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   // the finished stream a copy cut to length.
   let out = new Float32Array(1024 * TREE_STRIDE),
     count = 0;
-  const cap = TREE_MAX * TREE_STRIDE;
+  const area = view.area,
+    cap = area ? Infinity : TREE_MAX * TREE_STRIDE;
+  const inArea = (x: number, y: number): boolean => x >= area!.minX && x < area!.maxX && y >= area!.minY && y < area!.maxY;
   const emit = (x: number, y: number, z: number, r: number, h: number, depth: number, needle: number, phase: number, cr: number, cg: number, cb: number, w: number): void => {
     if (count + TREE_STRIDE > out.length) {
       const grown = new Float32Array(out.length * 2);
@@ -438,7 +459,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   // Decode the same nearest detail texel and use the shader's hash/grid, including its crown setback.
   const detail = occ?.detail;
   // Exact parcel boundaries supplement the categorical raster along sub-texel edges.
-  const orchardRoom = detail?.orchards?.length ? new ForestRoom([], detail.orchards) : undefined;
+  const orchardRoom = detail?.orchards?.length ? orchardRoomOf(detail.orchards) : undefined;
   const inside = (ring: readonly { x: number; y: number }[], x: number, y: number): boolean => {
     let hit = false;
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -452,12 +473,19 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     const [ca, sa] = patch.along;
     const us = patch.poly.map(p => p.x * ca + p.y * sa),
       vs = patch.poly.map(p => -p.x * sa + p.y * ca);
-    const eyeU = view.x * ca + view.y * sa,
-      eyeV = -view.x * sa + view.y * ca;
-    const i0 = Math.floor(Math.max(Math.min(...us), eyeU - TREE_FAR - 1) / 8),
-      i1 = Math.ceil(Math.min(Math.max(...us), eyeU + TREE_FAR + 1) / 8);
-    const j0 = Math.floor(Math.max(Math.min(...vs), eyeV - TREE_FAR - 1) / 8),
-      j1 = Math.ceil(Math.min(Math.max(...vs), eyeV + TREE_FAR + 1) / 8);
+    // The lattice range around the eye, or around the area (its corners in the orchard's frame).
+    const corners = area ? [area.minX, area.minY, area.maxX, area.minY, area.minX, area.maxY, area.maxX, area.maxY] : [view.x, view.y],
+      cu: number[] = [],
+      cv: number[] = [];
+    for (let k = 0; k < corners.length; k += 2) {
+      cu.push(corners[k] * ca + corners[k + 1] * sa);
+      cv.push(-corners[k] * sa + corners[k + 1] * ca);
+    }
+    const reach = area ? 1 : TREE_FAR + 1;
+    const i0 = Math.floor(Math.max(Math.min(...us), Math.min(...cu) - reach) / 8),
+      i1 = Math.ceil(Math.min(Math.max(...us), Math.max(...cu) + reach) / 8);
+    const j0 = Math.floor(Math.max(Math.min(...vs), Math.min(...cv) - reach) / 8),
+      j1 = Math.ceil(Math.min(Math.max(...vs), Math.max(...cv) + reach) / 8);
     for (let j = j0; j <= j1; j++) {
       yield;
       for (let i = i0; i <= i1; i++) {
@@ -470,8 +498,12 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           dx = x - view.x,
           dy = y - view.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 > TREE_FAR * TREE_FAR || dx * view.forwardX + dy * view.forwardY < -48) continue;
-        if (d2 > full2 && u8(forestHash(i, j, 879, seed), 0) >= full2 / d2) continue;
+        if (area) {
+          if (!inArea(x, y)) continue;
+        } else {
+          if (d2 > TREE_FAR * TREE_FAR || dx * view.forwardX + dy * view.forwardY < -48) continue;
+          if (d2 > full2 && u8(forestHash(i, j, 879, seed), 0) >= full2 / d2) continue;
+        }
         if (!inside(patch.poly, x, y) || patch.holes?.some(hole => inside(hole, x, y)) || occAt(x, y)?.[2] !== 4) continue;
         const di = clamp(Math.floor(((x - detail!.x) / detail!.width) * detail!.n), 0, detail!.n - 1),
           dj = clamp(Math.floor(((y - detail!.y) / detail!.width) * detail!.n), 0, detail!.n - 1);
@@ -498,21 +530,23 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     }
   }
   const far2 = TREE_FAR * TREE_FAR,
-    block = 24;
+    block = TREE_BLOCK;
   const bx0 = Math.floor((view.x - TREE_FAR) / block),
     bx1 = Math.floor((view.x + TREE_FAR) / block);
   const by0 = Math.floor((view.y - TREE_FAR) / block),
     by1 = Math.floor((view.y + TREE_FAR) / block);
   // Visible blocks, nearest first: partial streams and the instance cap both keep the trees around the eye.
   const blocks: [number, number, number][] = [];
-  for (let by = by0; by <= by1; by++)
-    for (let bx = bx0; bx <= bx1; bx++) {
-      const dx = (bx + 0.5) * block - view.x,
-        dy = (by + 0.5) * block - view.y,
-        d2 = dx * dx + dy * dy;
-      if (d2 > (TREE_FAR + block) ** 2 || dx * view.forwardX + dy * view.forwardY < -2 * block) continue;
-      blocks.push([d2, bx, by]);
-    }
+  if (area) for (let by = Math.round(area.minY / block); by < Math.round(area.maxY / block); by++) for (let bx = Math.round(area.minX / block); bx < Math.round(area.maxX / block); bx++) blocks.push([0, bx, by]);
+  else
+    for (let by = by0; by <= by1; by++)
+      for (let bx = bx0; bx <= bx1; bx++) {
+        const dx = (bx + 0.5) * block - view.x,
+          dy = (by + 0.5) * block - view.y,
+          d2 = dx * dx + dy * dy;
+        if (d2 > (TREE_FAR + block) ** 2 || dx * view.forwardX + dy * view.forwardY < -2 * block) continue;
+        blocks.push([d2, bx, by]);
+      }
   blocks.sort((a, b) => a[0] - b[0]);
   const social: ForestSocial = { share: 1, width: 1, rank: 4 },
     form: TreeForm = { height: 1, crown: 0.5, shape: 0, tone: 1 };
@@ -548,8 +582,10 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           const ex = cx - view.x,
             ey = cy - view.y;
           const e2 = ex * ex + ey * ey;
-          if (e2 > far2) continue;
-          if (e2 > full2 && u8(forestHash(i, j, level * 2 + 61, crownSeed), 0) >= full2 / e2) continue;
+          if (!area) {
+            if (e2 > far2) continue;
+            if (e2 > full2 && u8(forestHash(i, j, level * 2 + 61, crownSeed), 0) >= full2 / e2) continue;
+          }
           if (orchardRoom && !orchardRoom.keeps(cx, cy, 0)) continue;
           if (wayRoom && !wayRoom.keeps(cx, cy, 0.5)) continue;
           const h2 = forestHash(i, j, level * 2 + 1, crownSeed);
@@ -701,6 +737,19 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   return out.slice(0, count);
 }
 
+/** Crown profiles of the lathe, shared by the tree shaders of the 3D view (below) and of the world view
+ * (render/world/treesShader.ts). */
+export const TREE_PROFILE_GLSL = `// Crown profiles, from the crown base (u 0) to the top (u 1), radius over the crown radius; a 0 radius closes on the
+// stem. Broadleaf: an ovoid widest below the middle of the crown with a rounded underside, as forest broadleaf crowns
+// (crown shape models, e.g. Pretzsch 2009). Conifer: three stacked whorl tiers of a
+// spire. Parasol: the flat-topped crown of savanna acacias and Mediterranean umbrella pines, widest near the top.
+const float BROAD_U[6]=float[6](0.,.1,.3,.55,.8,1.);
+const float BROAD_R[6]=float[6](0.,.72,.98,.9,.68,0.);
+const float NEEDLE_U[6]=float[6](0.,.3,.33,.62,.65,1.);
+const float NEEDLE_R[6]=float[6](1.,.6,.78,.4,.52,0.);
+const float PARASOL_U[6]=float[6](0.,.3,.62,.86,.96,1.);
+const float PARASOL_R[6]=float[6](0.,.55,.88,1.,.92,0.);
+`;
 /** Instanced low-poly trees, one lathe per instance from gl_VertexID: a flared, tapering stem, then stacked cones
  * (conifers), a lumpy ovoid (broadleaf) or a flat-topped parasol (savanna acacias, umbrella pines). Translated to WGSL by web/scripts/wgsl_shaders_3d.ts. */
 export const TREE_3D_GLSL = {
@@ -722,17 +771,7 @@ out float treeLevel;
 // crown radius. Info: x needle, y no foliage (trunk, leafless crown), z snow share, w rim distance (0 top, 1 rim).
 out vec4 crownChart;
 out vec4 crownInfo;
-// Crown profiles, from the crown base (u 0) to the top (u 1), radius over the crown radius; a 0 radius closes on the
-// stem. Broadleaf: an ovoid widest below the middle of the crown with a rounded underside, as forest broadleaf crowns
-// (crown shape models, e.g. Pretzsch 2009). Conifer: three stacked whorl tiers of a
-// spire. Parasol: the flat-topped crown of savanna acacias and Mediterranean umbrella pines, widest near the top.
-const float BROAD_U[6]=float[6](0.,.1,.3,.55,.8,1.);
-const float BROAD_R[6]=float[6](0.,.72,.98,.9,.68,0.);
-const float NEEDLE_U[6]=float[6](0.,.3,.33,.62,.65,1.);
-const float NEEDLE_R[6]=float[6](1.,.6,.78,.4,.52,0.);
-const float PARASOL_U[6]=float[6](0.,.3,.62,.86,.96,1.);
-const float PARASOL_R[6]=float[6](0.,.55,.88,1.,.92,0.);
-void main(){
+${TREE_PROFILE_GLSL}void main(){
   int v=int(gl_VertexID),quad=v/6,corner=v-quad*6;
   int band=quad/${SEGMENTS},seg=quad-band*${SEGMENTS};
   int dseg=corner==1||corner==2||corner==4?1:0,dring=corner==2||corner==4||corner==5?1:0;

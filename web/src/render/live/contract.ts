@@ -8,6 +8,7 @@
  *   ground  : baked world-space tiles of the terrain material (render/live/groundLayer.ts)
  *   overlay : the cartography overlay, retained display lists replayed in this context (CanvasRenderer.createLiveLayer)
  *   city    : town meshes (NativeCityMap.createLiveLayer)
+ *   buildings, trees : the volumes of a tilted frame (render/world/volumes.ts); they draw nothing in the top view
  *   text    : names and symbols from a glyph atlas (render/live/textLayer.ts)
  *
  * The compositor (render/live/compositor.ts) owns the canvas, the context, the frame, the isolated group target and
@@ -30,19 +31,27 @@
  *
  * One camera (render/world/contract.ts): a frame is the top view of the map, or the same world seen tilted
  * (`frame.camera.tilted`). The 2D mapping of a frame (`rect`, `worldToClip`, `worldToPixel`) describes the top view of
- * its centre and scale; a layer that only knows it is not drawn in a tilted frame (the page hides it). The ground
- * draws both.
+ * its centre and scale. A tilted frame is one scene with one depth buffer:
+ *  - the ground draws the terrain, which shows the map drape over its tiles (`frame.drape`);
+ *  - a layer that lies flat on the ground (water, overlay, the town plan) is not drawn: it gives the drape a
+ *    `DrapeSource` (`LiveLayer.drape`) that paints its picture into world tiles, between frames;
+ *  - a layer with `tilts` draws after the terrain, in the order of the layers, into `frame.target`, which holds the
+ *    depth of what was drawn before it. Volumes (buildings, trees) draw with `frame.camera.targetViewProjection`
+ *    (positions relative to `camera.target`, heights times `camera.rise`), depth test LESS and depth writes on; names
+ *    draw last, without depth. The target is multisampled when the quality allows; no layer is isolated in a tilted
+ *    frame (`isolated` and `opacity` describe the top view), so such a layer may only use source-over there;
+ *  - stand-ins (flat rasters of a top view) are not shown.
  */
 import type { Rect4, View } from '../view';
-import type { FrameCamera } from '../world/contract';
+import type { DrapeSource, DrapeTiles, FrameCamera, WorldRelief } from '../world/contract';
 import type { TerrainHeights } from '../world/heights';
 
 /** Context attributes of the compositor canvas. `getContext('webgl2', ...)` on that canvas returns this context. */
 export const LIVE_CONTEXT_ATTRIBUTES: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: false, depth: true, stencil: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
 
-export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'text';
+export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'buildings' | 'trees' | 'text';
 /** Bottom to top. */
-export const LIVE_LAYER_ORDER: readonly LiveLayerName[] = ['ground', 'water', 'overlay', 'city', 'text'];
+export const LIVE_LAYER_ORDER: readonly LiveLayerName[] = ['ground', 'water', 'overlay', 'city', 'buildings', 'trees', 'text'];
 
 export interface LiveFrame {
   readonly gl: WebGL2RenderingContext;
@@ -63,7 +72,10 @@ export interface LiveFrame {
   /** The camera of the frame: the top view, where the 2D mapping above is the whole projection, or a tilted
    * perspective with its 4x4 view-projection. */
   readonly camera: FrameCamera;
-  /** Framebuffer the layer draws into: null (the canvas) or the isolated group. */
+  /** The map drape of a tilted frame: the tiles of the flat layers, which the ground's terrain shows over its own.
+   * Undefined in the top view. */
+  readonly drape: DrapeTiles | undefined;
+  /** Framebuffer the layer draws into: null (the canvas), the isolated group, or the scene of a tilted frame. */
   readonly target: WebGLFramebuffer | null;
   /** `performance.now()` of the frame. */
   readonly now: number;
@@ -86,8 +98,12 @@ export interface LiveLayer {
    * source-over, for stencil use, and for a group opacity. */
   readonly isolated?: boolean;
   /** The layer draws the frames of a tilted camera (`frame.camera.tilted`) as well as the top view, with
-   * `frame.camera`. A layer without it only knows the 2D mapping: the compositor leaves it out of a tilted frame. */
+   * `frame.camera`, as the header says. A layer without it only knows the 2D mapping: the compositor leaves it out of
+   * a tilted frame. */
   readonly tilts?: boolean;
+  /** What the layer shows that lies flat on the ground, for the map drape of the tilted frames: the layer's picture
+   * of a tilted frame when it has no `tilts`, the flat part of it when it has. */
+  readonly drape?: DrapeSource;
   /** Group opacity 0..1 of an isolated layer (default 1). Read per frame. */
   opacity?(): number;
   /** True when `draw` can show the layer for this frame from data already on the GPU. False: the compositor shows the
@@ -182,6 +198,8 @@ export interface LiveTextPlacement {
 export interface LiveTextOptions {
   /** Undefined: no names to show (the layer is ready and draws nothing). */
   placement(): LiveTextPlacement | undefined;
+  /** The relief the names of a tilted frame stand on; undefined: a flat map. */
+  terrain(): WorldRelief | undefined;
   invalidate(): void;
 }
 // export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTextOptions): LiveLayer        (render/live/textLayer.ts)
@@ -232,6 +250,8 @@ export interface LiveStats {
   layers: Partial<Record<LiveLayerName, LiveLayerState>>;
   /** Background work still pending per layer (tiles to bake, meshes to upload). */
   pending: Partial<Record<LiveLayerName, boolean>>;
+  /** The map drape of the tilted frames (render/world/mapDrape.ts): its tiles, bytes and bakes. */
+  drape?: import('../world/mapDrape').MapDrapeStats;
   /** CPU time of each layer in the last frames it was shown in (live draw or stand-in), oldest first (at most 4000). */
   layerMs?: Partial<Record<LiveLayerName, number[]>>;
   /** A layer whose `ready`, `draw` or `work` threw: the compositor dropped it (its stand-in shows instead). */
