@@ -1,5 +1,16 @@
 /** English source, followed by French and every other V2 locale. */
 export const neuralDownloadMessages = [
+  ['Stored for this browser profile and site. App updates reuse unchanged models. Other browsers and site addresses have separate storage. Clearing site data removes the models. These files do not install Python/CUDA models.',
+    'Conservés pour ce profil de navigateur et ce site. Les mises à jour de l’application réutilisent les modèles inchangés. Les autres navigateurs et adresses de site ont un stockage séparé. Effacer les données du site supprime les modèles. Ces fichiers n’installent pas les modèles Python/CUDA.',
+    'Se guardan para este perfil de navegador y este sitio. Las actualizaciones reutilizan los modelos sin cambios. Otros navegadores y direcciones de sitio tienen su propio almacenamiento. Borrar los datos del sitio elimina los modelos. Estos archivos no instalan modelos Python/CUDA.',
+    'Armazenados para este perfil de navegador e este site. As atualizações reutilizam os modelos sem alterações. Outros navegadores e endereços de site têm armazenamento separado. Limpar os dados do site remove os modelos. Estes arquivos não instalam modelos Python/CUDA.',
+    '模型保存在此浏览器配置文件和站点中。应用更新会复用未更改的模型。其他浏览器和站点地址使用独立存储。清除站点数据会删除模型。这些文件不会安装 Python/CUDA 模型。',
+    'تُحفظ لهذا الملف الشخصي للمتصفح وهذا الموقع. تعيد تحديثات التطبيق استخدام النماذج التي لم تتغير. للمتصفحات وعناوين المواقع الأخرى تخزين منفصل. يؤدي مسح بيانات الموقع إلى حذف النماذج. لا تثبّت هذه الملفات نماذج Python/CUDA.',
+    'Сохраняются для этого профиля браузера и сайта. Обновления приложения используют неизменённые модели повторно. Другие браузеры и адреса сайтов имеют отдельное хранилище. Очистка данных сайта удаляет модели. Эти файлы не устанавливают модели Python/CUDA.',
+    'このブラウザープロファイルとサイトに保存されます。アプリの更新後も変更のないモデルは再利用されます。他のブラウザーやサイトのアドレスでは保存領域が異なります。サイトデータを消去するとモデルも削除されます。これらのファイルは Python/CUDA モデルをインストールしません。'],
+  ['These files do not match the models in the current catalogue.','Ces fichiers ne correspondent pas aux modèles du catalogue actuel.',
+    'Estos archivos no coinciden con los modelos del catálogo actual.','Estes arquivos não correspondem aos modelos do catálogo atual.','这些文件与当前目录中的模型不匹配。',
+    'لا تتطابق هذه الملفات مع النماذج في الكتالوج الحالي.','Эти файлы не соответствуют моделям в текущем каталоге.','これらのファイルは現在のカタログのモデルと一致しません。'],
   ['Download models', 'Télécharger les modèles', 'Descargar modelos', 'Baixar modelos', '下载模型', 'تنزيل النماذج', 'Скачать модели', 'モデルをダウンロード'],
   ['Continue', 'Continuer', 'Continuar', 'Continuar', '继续', 'متابعة', 'Продолжить', '続行'],
   ['Browser neural terrain', 'Relief neuronal dans le navigateur', 'Relieve neuronal en el navegador', 'Relevo neural no navegador', '浏览器神经地形', 'التضاريس العصبية في المتصفح', 'Нейрорельеф в браузере', 'ブラウザーのニューラル地形'],
