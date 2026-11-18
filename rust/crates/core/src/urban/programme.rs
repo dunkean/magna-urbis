@@ -3603,7 +3603,12 @@ pub fn reallocate(layouts: &[Layout], partitions: &[Partition]) -> Result<Vec<Pa
             .iter()
             .find(|l| l.key == p.key)
             .ok_or("Partition has no retained layout")?;
-        allocate(layout, p);
+        if p.prepared.is_some() {
+            let prepared = super::partition_layout(layout, p);
+            allocate(&prepared, p);
+        } else {
+            allocate(layout, p);
+        }
     }
     Ok(out)
 }

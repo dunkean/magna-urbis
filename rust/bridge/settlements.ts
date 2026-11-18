@@ -234,6 +234,8 @@ export interface ExitReport {
   gateway: string | null;
   point: Point | null;
   reason: string | null;
+  /** Map edits can cut a generated gateway connection while retaining its boundary handle. */
+  connected?: boolean;
 }
 export interface RoadOutput {
   segments: RoadSegment[];

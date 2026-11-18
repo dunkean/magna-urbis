@@ -4,6 +4,7 @@ import { POPULATION_CLASSES, regionalPopulation, automaticSettlementLimits, auto
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './settlementPopulationPanel.css';
 import { activitySitesOf } from './activitySites';
+import { isolatedPlacesOf } from './isolatedPlaces';
 import { clearRegionalPopulation, editRegionalPopulation, followEnvironmentPopulation, type RegionalPopulationField } from './regionalPopulationEdits';
 
 registerMessages(
@@ -210,7 +211,7 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
       placed.textContent = translate('Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites')
         .replace('{places}', String(world.settlements.length))
         .replace('{population}', String(world.settlements.reduce((n, p) => n + p.population, 0)))
-        .replace('{isolated}', String(activitySitesOf(world).length));
+        .replace('{isolated}', String(activitySitesOf(world).length + isolatedPlacesOf(world).length));
   }
   onLanguageChange(sync);
   sync();

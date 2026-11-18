@@ -239,6 +239,8 @@ struct ShellOut<'a> {
     diagnostics: Option<&'a PartitionDiagnostics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     enclosure: Option<&'a Resolved>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prepared: Option<&'a super::PreparedBlocks>,
     parcels: [usize; 2],
     allocations: [usize; 2],
     adjacency: [usize; 2],
@@ -271,6 +273,8 @@ struct ShellIn {
     diagnostics: Option<PartitionDiagnostics>,
     #[serde(default)]
     enclosure: Option<Resolved>,
+    #[serde(default)]
+    prepared: Option<super::PreparedBlocks>,
     parcels: [usize; 2],
     allocations: [usize; 2],
     adjacency: [usize; 2],
@@ -377,7 +381,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
     let (mut n, mut na, mut nj, mut ne) = (0usize, 0usize, 0usize, 0usize);
     let mut shells = Vec::with_capacity(partitions.len());
     for partition in partitions {
-        let Partition { config, programme, key, parcels, warnings, diagnostics, enclosure } = partition;
+        let Partition { config, programme, key, parcels, warnings, diagnostics, enclosure, prepared } = partition;
         let first = n;
         // Ids resolve to the first parcel of this partition that bears them.
         let mut by_id: HashMap<&str, u32> = HashMap::with_capacity(parcels.len());
@@ -570,6 +574,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
             warnings,
             diagnostics: diagnostics.as_ref(),
             enclosure: enclosure.as_ref(),
+            prepared: prepared.as_ref(),
             parcels: [first, n],
             allocations: [a0, na],
             adjacency: [j0, nj],
@@ -1208,7 +1213,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<Partition>, String> {
 
     let mut out = Vec::with_capacity(shells.len());
     for shell in shells {
-        let ShellIn { config, programme, key, warnings, diagnostics, enclosure, parcels, allocations, adjacency, environment } =
+        let ShellIn { config, programme, key, warnings, diagnostics, enclosure, prepared, parcels, allocations, adjacency, environment } =
             shell;
         let parcels = range(parcels, n, "parcels")?.map(|i| parcel(i)).collect::<Result<Vec<_>, _>>()?;
         let programme = match programme {
@@ -1247,7 +1252,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<Partition>, String> {
                 navigable_frontage,
             }),
         };
-        out.push(Partition { config, programme, key, parcels, warnings, diagnostics, enclosure });
+        out.push(Partition { config, programme, key, parcels, warnings, diagnostics, enclosure, prepared });
     }
     Ok(out)
 }
@@ -1455,11 +1460,13 @@ mod tests {
                 warnings: vec!["Population target not reached".into()],
                 diagnostics: Some(PartitionDiagnostics { covered_area: 1.0 / 7.0, residual_area: 0.0, overlap_area: 2.5, unserved_area: 1e-9 }),
                 enclosure: Some(Resolved { plot: 0.35, front: 1.2345678901234567, material: "wall".into(), ..Resolved::default() }),
+                prepared: None,
             },
             Partition {
                 config: None,
                 programme: Some(programme(vec![], vec![], vec![])),
                 key: "empty-programme".into(),
+                prepared: None,
                 parcels: vec![parcel("p0", 60.0)],
                 warnings: vec![],
                 diagnostics: None,
@@ -1469,12 +1476,13 @@ mod tests {
                 config: None,
                 programme: None,
                 key: "no-programme".into(),
+                prepared: None,
                 parcels: vec![parcel("r0", 80.0)],
                 warnings: vec!["w".into()],
                 diagnostics: None,
                 enclosure: None,
             },
-            Partition { config: None, programme: None, key: "empty".into(), parcels: vec![], warnings: vec![], diagnostics: None, enclosure: None },
+            Partition { config: None, programme: None, key: "empty".into(), parcels: vec![], warnings: vec![], diagnostics: None, enclosure: None, prepared: None },
         ]
     }
 

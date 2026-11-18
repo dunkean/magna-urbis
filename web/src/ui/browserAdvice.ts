@@ -1,4 +1,4 @@
-import { urbanText } from './urbanPanelLocale';
+import { onLanguageChange, setText, translate } from '../v2/i18n';
 
 const DISMISSED = 'magna-browser-advice-closed';
 
@@ -31,10 +31,6 @@ function readEnv(): BrowserEnv {
   return { userAgent: nav.userAgent, brave: nav.brave !== undefined, brands: nav.userAgentData?.brands?.map(b => b.brand), tauri: '__TAURI_INTERNALS__' in w || '__TAURI__' in w };
 }
 
-function message(): string {
-  return urbanText(['Pour de meilleures performances, utilisez Chrome ou Edge.', 'For the best performance, use Chrome or Edge.', '为获得最佳性能，请使用 Chrome 或 Edge。', 'Para un mejor rendimiento, use Chrome o Edge.', 'Para melhor desempenho, use Chrome ou Edge.']);
-}
-
 let shown = false;
 /** A fixed, non-blocking banner at the top of the page, once per visit; the close button hides it for the session. */
 export function showBrowserAdvice(): void {
@@ -54,13 +50,18 @@ export function showBrowserAdvice(): void {
     'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483000;max-width:min(640px,calc(100vw - 32px));' +
     'background:#fffbe8;color:#3b3220;border:1px solid #d8c88f;border-radius:8px;padding:10px 12px;font:13px/1.4 system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;gap:10px;align-items:flex-start';
   const text = document.createElement('span');
-  text.textContent = message();
+  setText(text, 'For the best performance, use Chrome or Edge.');
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = '×';
-  close.setAttribute('aria-label', urbanText(['Fermer', 'Close', '关闭', 'Cerrar', 'Fechar']));
+  close.setAttribute('aria-label', translate('Close'));
   close.style.cssText = 'border:0;background:none;font:18px/1 system-ui,sans-serif;cursor:pointer;color:inherit;padding:0 2px';
+  const offLanguage = onLanguageChange(() => {
+    setText(text, 'For the best performance, use Chrome or Edge.');
+    close.setAttribute('aria-label', translate('Close'));
+  });
   close.onclick = () => {
+    offLanguage();
     banner.remove();
     try {
       sessionStorage.setItem(DISMISSED, '1');

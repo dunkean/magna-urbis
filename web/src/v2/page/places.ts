@@ -7,6 +7,7 @@ import { setHTML, insertHTML, setText, setDynamicText, translate, numberLocale, 
 import { settlementDisplayName } from '../mapPresentation';
 import { localFactsHtml, type LocalFactsInput } from '../localFacts';
 import { activitySitesOf } from '../activitySites';
+import { isolatedPlacesOf } from '../isolatedPlaces';
 import { demographicClass } from '../../../../rust/bridge/settlementDemography';
 import { nativeCityRecords } from '../nativeProducts';
 import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
@@ -108,6 +109,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
     state.labelEditor.sync();
     state.riverEditor.sync();
     state.roadEditor.sync();
+    state.contourEditor.sync();
     state.townMover.sync();
     state.editingTools.sync();
     state.mapControls.sync();
@@ -142,6 +144,28 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
           .map(site => `<button class="activity-place" data-activity="${esc(site.id)}"><strong>${esc(site.template)}</strong><small>${esc(site.kind)} · ${site.buildings.length}</small></button>`)
           .join('')}`,
       );
+    // Inhabited farms outside every listed place (land use): listed as farmsteads and hamlets of their nearest place.
+    const isolated = isolatedPlacesOf(state.world);
+    if (isolated.length)
+      insertHTML(
+        $('#settlement-list'),
+        'beforeend',
+        `<h3 class="settlement-group">${esc(translate('Isolated farmsteads'))} · ${isolated.length}</h3>${isolated
+          .map(
+            place =>
+              `<button class="activity-place" data-isolated="${esc(place.key)}"><strong>${esc(translate(place.category === 'hamlet' ? 'Farm hamlet' : 'Isolated farmstead'))}</strong><small>${esc(translate('{farms} households').replace('{farms}', String(place.farms)))}${place.near ? ` · ${esc(translate('near {place}').replace('{place}', settlementDisplayName(state.world!, place.near, state.settings) ?? place.near))}` : ''}${place.connected ? '' : ` · ${esc(translate('no track'))}`}</small></button>`,
+          )
+          .join('')}`,
+      );
+    document.querySelectorAll<HTMLButtonElement>('[data-isolated]').forEach(
+      button =>
+        (button.onclick = () => {
+          const place = isolated.find(place => place.key === button.dataset.isolated);
+          if (!place) return;
+          state.client.viewer.setView({ cx: place.center.x, cy: place.center.y, scale: 2 });
+          if (place.near) actions.showInspector(place.near);
+        }),
+    );
     document.querySelectorAll<HTMLButtonElement>('[data-activity]').forEach(
       button =>
         (button.onclick = () => {

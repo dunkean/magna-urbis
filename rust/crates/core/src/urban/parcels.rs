@@ -4079,6 +4079,7 @@ pub(super) fn generate(
         warnings: Vec::new(),
         diagnostics: None,
         enclosure: None,
+        prepared: None,
     };
     let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));
@@ -4246,6 +4247,10 @@ pub(super) fn generate(
     laps.lap("prepare");
     let blocks = super::par::map(&layout.blocks, |bi, block| {
         let mut out = BlockCut::default();
+        // A block the user deleted (`edits/blocks.rs`) is open ground.
+        if block.kind == super::edits::blocks::DELETED {
+            return out;
+        }
         let block_id = block_identity(layout, &block.shape);
         let block_edit = cfg.overrides.blocks.get(&bi.to_string());
         let block_culture = block_edit.and_then(|e| e.culture.as_deref()).unwrap_or_else(|| cultural_context(layout, block, culture));

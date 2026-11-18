@@ -96,6 +96,7 @@ function mountTiltButton(state: PageState, actions: PageActions): void {
     // on map" stays on (it picks in a tilted view too).
     if (tilted) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: $<HTMLInputElement>('#inspect-mode').checked ? 'buildings' : '3d' }));
     state.editingTools.sync();
+    state.contourEditor.sync();
   });
   button.onclick = () => {
     if (!state.world) {

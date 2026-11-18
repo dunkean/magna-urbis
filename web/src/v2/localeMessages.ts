@@ -9,6 +9,8 @@ import { localeExtraFill } from './localeExtraFill';
 import { localeExtraCultures } from './localeExtraCultures';
 import { neuralDownloadMessages } from './neuralDownloadMessages';
 import { editingMessages } from './editingMessages';
+import { roadEditorMessages } from './roadEditorMessages';
+import { isolatedPlaceMessages } from './isolatedPlaceMessages';
 import { symbolicMapMessages } from './symbolicMapMessages';
 import { coastTraceMessages } from './coastTraceMessages';
 import { engineRuntimeEntries, engineRuntimeTemplates } from './engineRuntimeMessages';
@@ -8389,6 +8391,8 @@ for(const [language,messages] of Object.entries(localeExtraCultures))Object.assi
 for (const [index, language] of (['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const).entries()) {
   for (const row of neuralDownloadMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of editingMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of roadEditorMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of isolatedPlaceMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of urbanHelpMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of cityCodeMessages) localeMessages[language][row[0]] = row[index + 1];
   for (const row of [...coastTraceMessages, ...symbolicMapMessages]) localeMessages[language][row[0]] = row[index + 1];

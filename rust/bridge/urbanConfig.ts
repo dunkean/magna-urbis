@@ -194,7 +194,8 @@ export interface UrbanEdits {
   blocks?: Record<string, BlockOverride>;
   parcels?: Record<string, ParcelOverride>;
 }
-/** One retained street block, keyed by its index in the layout. */
+/** One retained street block. Native keys: `"<i>"` (block i of the input layout, part 0 if split)
+ * or `"<i>/<k>"` (part k ≥ 1 of split block i); saved keys go through `runtimeBlockEdits`. */
 export interface BlockOverride {
   culture?: string;
   /** Default building type for the block's parcels; a parcel's own type takes priority. */
@@ -203,6 +204,15 @@ export interface BlockOverride {
   operator?: ParcelConfig['operator'];
   salt?: number;
   houseConfig?: Partial<import('./housesContract').HouseConfig>;
+  /** New outline, clipped to the quarter, street/wall ribbons and other blocks. `"<i>"` keys only. */
+  shape?: EditShape;
+  /** Split into 2..64 closed parts (exclusive with `shape`), each clipped and cut out of the previous ones.
+   * Part 0 keeps the block's key; part k is `"<i>/<k>"`. Edit a part's geometry here; append new parts. `"<i>"` keys only. */
+  parts?: EditShape[];
+  /** The block or part holds no lot (kind `deleted`, open ground). */
+  deleted?: boolean;
+  /** Remove selected split pieces, including part 0, while retaining their siblings. */
+  deletedParts?: number[];
 }
 /** A user-drawn polygon in world metres (outer ring, optional holes); rounded to 0.1 m by the UI. */
 export interface EditShape {
@@ -222,8 +232,16 @@ export interface QuarterOverride {
   zone?: string;
   /** New outline of the quarter. The engine clips it, so the applied shape can be smaller. */
   shape?: EditShape;
-  /** The quarter's blocks and lots are removed. The land returns to open ground; main streets stay. */
+  /** Split into 2..64 closed parts (exclusive with `shape`; `"<i>"` keys only), applied last on the finished plan:
+   * each clipped to the quarter and cut out of the previous ones; together they must cover it (5 % tolerance).
+   * Part 0 keeps quarter index i; part k is appended after the plan's quarters and keyed `"<i>/<k>"` (see `QuarterEdits`).
+   * Edit a part's geometry here; split a part again by replacing `parts[k]` and appending. No street is built. */
+  parts?: EditShape[];
+  /** The quarter's blocks and lots are removed. The land returns to open ground; main streets stay.
+   * On a part key `"<i>/<k>"`: the part keeps its outline and index; its blocks hold no lot. */
   deleted?: boolean;
+  /** Delete split pieces (part 0 included), preserving the other pieces and their identities. */
+  deletedParts?: number[];
   /** Redraw of the quarter's interior: 1, 2, 3… (absent = the original draw). */
   salt?: number;
 }
@@ -236,6 +254,8 @@ export interface ParcelOverride {
   households?: number;
   /** New outline of the lot, clipped to its block. Neighbours give up or take back the difference. */
   shape?: EditShape;
+  /** Split into 2..64 closed parts (exclusive with `shape`) that must cover the lot. Part 0 keeps the id; part k is `"<id>/part-<k>"`. */
+  parts?: EditShape[];
   /** 'merge': the lot is absorbed by its best neighbour (default of « Supprimer »).
    *  'garden': the lot stays, as unbuilt open ground. */
   deleted?: 'merge' | 'garden';
@@ -267,6 +287,10 @@ export const FORTIFICATION_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curta
 export type FortificationStyle = (typeof FORTIFICATION_STYLES)[number];
 export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOperators' | 'streetAlignedHomes' | 'denserSmallholdings' | 'plotEnclosure' | 'fieldEnclosure' | 'countrysideEnclosures' | 'enclosureMaterial'> {
   phaseOverrides?: Record<string, PhaseOverride>;
+  /** Output only: set on a layout prepared by the parcel stage (structural block edits); never sent as an input. */
+  blockEdits?: import('./urban').BlockEdits;
+  /** Output only: set by the quarter stage when quarter splits were applied; never sent as an input. */
+  quarterEdits?: import('./urban').QuarterEdits;
   programme: ProgrammeContext;
   axisAlignment: 'regional' | 'culture';
   mixCulture: string;

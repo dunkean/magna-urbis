@@ -315,7 +315,7 @@ export class GroundProducts implements Ground {
   private groundOccupation(): Promise<ForestOccupation | undefined> {
     const world = this.map.world!,
       v = this.map.scene!.revisions;
-    const revision = JSON.stringify([v.landuse, v.cities, v.settlements]);
+    const revision = JSON.stringify([v.roads, v.landuse, v.cities, v.settlements]);
     if (this.occupationCache?.world !== world || this.occupationCache.revision !== revision) {
       // The building merge needs only the occupation raster; the holdings detail joins at the end.
       const parts = v2ForestOccupationParts(world);

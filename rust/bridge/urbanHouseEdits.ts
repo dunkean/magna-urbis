@@ -3,7 +3,8 @@ import type { LayoutConfig, ParcelConfig } from './urbanConfig';
 import type { Layout } from './urban';
 import type { HouseMix, PlacementBatch, PlacementRequest, PlacementBatchSettings } from './urbanArchitecture';
 import { pointInRing } from '../../web/src/gen/geo/poly';
-import { blockEditId } from './urbanBlockEdits';
+import { blockEditKey } from './urbanBlockEdits';
+import { quarterEditKey } from './urbanQuarterEdits';
 
 export type HouseEditConfig = Partial<HouseConfig> & { culture?: string };
 export function mergeHouseEdits(...values: (Partial<HouseConfig> | undefined)[]): Partial<HouseConfig> {
@@ -22,7 +23,7 @@ export function siteQuarter(layouts: readonly Layout[], site: { surface?: Placem
   const centre = ring.reduce((p, v) => ({ x: p.x + v.x / ring.length, y: p.y + v.y / ring.length }), { x: 0, y: 0 });
   for (const layout of layouts) {
     const index = layout.quarters.findIndex(q => pointInRing(q.shape.outer, centre) && !q.shape.holes.some(h => pointInRing(h, centre)));
-    if (index >= 0) return String(index);
+    if (index >= 0) return quarterEditKey(layout, index);
   }
 }
 export function siteBlock(layouts: readonly Layout[], site: { surface?: PlacementRequest['cadastral']; cadastral?: PlacementRequest['cadastral'] }): string | undefined {
@@ -30,8 +31,8 @@ export function siteBlock(layouts: readonly Layout[], site: { surface?: Placemen
   if (!ring?.length) return;
   const centre = ring.reduce((p, v) => ({ x: p.x + v.x / ring.length, y: p.y + v.y / ring.length }), { x: 0, y: 0 });
   for (const layout of layouts) {
-    const index = layout.blocks.findIndex(b => pointInRing(b.shape.outer, centre) && !b.shape.holes.some(h => pointInRing(h, centre)));
-    if (index >= 0) return blockEditId(layout, layout.blocks[index].shape);
+    const index = layout.blocks.findIndex(b => b.kind !== 'deleted' && pointInRing(b.shape.outer, centre) && !b.shape.holes.some(h => pointInRing(h, centre)));
+    if (index >= 0) return blockEditKey(layout, index);
   }
 }
 /** House-only edits do not invalidate the street or cadastral stages. */

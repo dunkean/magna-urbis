@@ -312,7 +312,20 @@ export class StudioClient {
     if (this.runtimePreference) this.runtimeFallback.update(this.runtimePreference, effective);
     this.onRuntimeStatusChange?.();
   }
-  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, progress?: (p: V2Progress) => void, keepUrbanLanes = false): Promise<World> {
+  run(
+    action: Action,
+    settings: V2Settings,
+    world?: World,
+    key?: string,
+    townStage?: V2TownStage,
+    terrainStage?: string,
+    keys?: string[],
+    cityOutput?: string,
+    progress?: (p: V2Progress) => void,
+    keepUrbanLanes = false,
+    roadEdit?: 'access' | 'rebuild',
+    contourEdit = false,
+  ): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
     if (this.resolve(settings, world, true).path !== 'minimal') {
@@ -355,7 +368,7 @@ export class StudioClient {
         if (this.pending?.id !== id) return;
         // A resent world carries its town partitions packed (copies: the page keeps its objects).
         const sent = packedWorldInput(action, world, this.retained);
-        this.engine.postMessage({ id, action, settings, ...sent.input, key, keys, townStage, terrainStage, cityOutput, keepUrbanLanes, assetBase: document.baseURI }, sent.transfer);
+        this.engine.postMessage({ id, action, settings, ...sent.input, key, keys, townStage, terrainStage, cityOutput, keepUrbanLanes, roadEdit, contourEdit, assetBase: document.baseURI }, sent.transfer);
       };
       void dispatch().catch(error => {
         if (this.pending?.id === id) {
