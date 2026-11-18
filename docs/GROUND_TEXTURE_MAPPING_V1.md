@@ -12,7 +12,7 @@ The [associated catalog](GROUND_TEXTURE_PALETTE_V1.json) contains types, conditi
 
 ## 1. Sources and scope reduction
 
-The selection starts from libraries in [RENDER_REVIEW.md from the height-chain-budget worktree](../../magna-urbis-height-chain-budget/docs/RENDER_REVIEW.md), §§6–9. Poly Haven and ambientCG cover this catalog; MatSynth remains a reserve, not a dependency. The 15-source library already declared in [surface/materials/catalogue.json](../../magna-urbis-height-chain-budget/surface/materials/catalogue.json) can be partially reused but does not limit the number of types.
+The selection starts from libraries in [RENDER_REVIEW.md](RENDER_REVIEW.md), §§6–9. Poly Haven and ambientCG cover this catalog; MatSynth remains a reserve, not a dependency. The 15-source library already declared in [surface/materials/catalogue.json](../surface/materials/catalogue.json) can be partially reused but does not limit the number of types.
 
 Assets are supplied under CC0 according to [Poly Haven's terms](https://polyhaven.com/license) and [ambientCG's terms](https://docs.ambientcg.com/license/). The catalog retains each provider and asset link. This license must be distinguished from API access terms.
 
@@ -335,22 +335,8 @@ Full classification weights remain the reference. Reducing to two or three types
 | Asset quality | Inspect repetition, human traces, residual lighting, and scale; unsuitable candidates leave pool before draw |
 | Multiple scales | Distant mean and close texture derive from the same assets, tints, and proportions |
 
-## 8. Examples of examined sources
+## 8. Source-preview provenance
 
-These plates show library albedos or previews to compare material diversity. The ambientCG spheres are provider-lit previews, not our map's rendering or a mean color to copy. They illustrate some candidates, not full qualification of all 142 packs in the engine.
+The original study compared provider albedos and previews in four local contact sheets: forest soils, low cover, rocks, and snow/ice. Those validation captures are not distributed with the repository. Consult each candidate's provider and asset URL in the [palette inventory](GROUND_TEXTURE_PALETTE_V1.json); do not treat an unavailable contact sheet as evidence of current renderer qualification.
 
-### Forest soils: needles, leaves, roots, earth, and mosses
-
-![Forest soils: needles, leaves, roots, earth, and mosses](surface/evidence/ground-texture-palette-v1/forest-sources.png)
-
-### Low cover: grasslands, open ground, and mosses
-
-![Low cover: grasslands, open ground, and mosses](surface/evidence/ground-texture-palette-v1/herbaceous-sources.png)
-
-### Rocks: structures, grains, fractures, and colonized surfaces
-
-![Rocks: structures, grains, fractures, and colonized surfaces](surface/evidence/ground-texture-palette-v1/rock-sources.png)
-
-### Snow and ice: fine textures, ripples, and partial cover
-
-![Snow and ice: fine textures, ripples, and partial cover](surface/evidence/ground-texture-palette-v1/snow-sources.png)
+Provider-lit previews illustrate candidate diversity, not the map's rendering or a mean colour to copy. The preview comparison did not qualify every full pack in the engine.

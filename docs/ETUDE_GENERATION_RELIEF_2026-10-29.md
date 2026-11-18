@@ -44,7 +44,7 @@ Le dépôt voisin présent ici s'appelle `../infinite_map`. Révision inspectée
 | Interpolation fine | `backend/terrain_lod_interpolation.py` | Interpolation C2 bornée sous un plancher de relief, actuellement LOD −6 | Le LOD −12 augmente la densité d'échantillonnage, **pas la quantité de relief nouvellement généré** |
 | Orogen et érosion City | `native/orogen`, `backend/terrain_city_erosion.py` | Tectonique, climat, biomes, étapes conservées, érosion GPU optionnelle | Contexte planétaire ; un extrait de son maillage ne remplace pas automatiquement une topographie locale détaillée |
 
-Ces conclusions viennent du code, pas seulement des intitulés du sélecteur. Les descriptions générales de Neural Earth se trouvent dans [sa documentation d'amplification](../../infinite_map/docs/terrain-amplification.md) et [le suivi d'Orogen](../../infinite_map/docs/orogen-maintenance.md). Ces liens sont locaux et supposent le dépôt voisin.
+These conclusions come from the inspected code, not just the selector labels. General Neural Earth descriptions were read in the local files `docs/terrain-amplification.md` and `docs/orogen-maintenance.md` at the revision above. These external study inputs are not distributed with Magna Urbis; see the [Neural Earth project](https://github.com/dunkean/neural-earth) for that project's maintained documentation.
 
 ## 3. Essais réalisés dans Magna Urbis
 
@@ -89,7 +89,7 @@ Le résidu est mesuré par rapport à la spline conservée de Magna, pas par rap
 
 Les huit combinaisons méthode/niveau sont finies, déterministes, et identiques bit à bit lorsque la même fenêtre est assemblée en quatre quadrants. La conservation du signe terre/mer passe sur ce cas terrestre ; ce n'est pas une validation côtière. Données détaillées (historical validation, archived locally).
 
-![Même fenêtre réelle de Magna : classique, Phasor, hybride et MSE. Pour chaque échelle, l'ombrage est suivi du résidu sur une échelle commune.](evidence/terrain-study-2026-10-29/amplification-comparison.png)
+The original comparison plate (classic, Phasor, hybrid and MSE at each scale, with shading and residuals on a shared scale) is local validation material and is not distributed. The quantitative results and measurement limits are retained below.
 
 **Lecture visuelle :** Phasor ajoute clairement des ravines, avec un motif encore assez ondulé sur ce terrain lisse. L'hybride concentre davantage ses changements. MSE et classique se distinguent à peine. L'hybride de Neural Earth n'est donc pas automatiquement le meilleur réglage visuel de Magna : le résultat dépend de la rugosité et du drainage de la source.
 

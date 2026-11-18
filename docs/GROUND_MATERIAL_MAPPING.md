@@ -21,7 +21,7 @@ The documents have complementary roles:
 | [RENDER_REVIEW.md](RENDER_REVIEW.md), §§3 and 7–9 | Probabilistic `{weight, orientation, scale}` composition, component arrangement, material-specific techniques, and zoom stability |
 | [SURFACE_RENDER_LAYERS.md](SURFACE_RENDER_LAYERS.md) | Physical separation between support, low cover, and trees; litter distinct from humus |
 
-Input state is that of the [Test-Render compiler](../../magna-urbis-render-godot-original/godot-render/tools/surface_context.py) and its [tile contract](../../magna-urbis-render-godot-original/docs/surface/TILE_VIEWER.md) in worktree `magna-urbis-render-godot-original`. Its `ground.version=2` schema must not be confused with SurfaceWorld contracts developed in other worktrees.
+Input state is that of the [Test-Render compiler](../godot-render/tools/surface_context.py) and its [tile contract](surface/TILE_VIEWER.md), originally examined in worktree `magna-urbis-render-godot-original`. These links point to their repository locations, not to that local worktree. The study's `ground.version=2` schema must not be confused with SurfaceWorld contracts.
 
 Proposed rules and values are **appearance synthesis** rules derived from the organization in these documents. They are neither soil classification nor a calibrated transport model. No additional external source is required for this package.
 
