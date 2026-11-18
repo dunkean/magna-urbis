@@ -5,7 +5,8 @@
  */
 import type { PageActions, PageState } from './contract';
 import type { V2Progress } from '../contracts';
-import { setText, translate, registerMessages } from '../i18n';
+import { setDynamicText, setText, translate, registerMessages } from '../i18n';
+import { progressPresentation } from '../progressPresentation';
 import { firstPendingGeneration, runRemainingGeneration } from '../fullGeneration';
 import type { Options } from '../../gen/options';
 import type { V2TownStage, UrbanSeedStage } from '../contracts';
@@ -148,16 +149,16 @@ export function createStageChainActions(state: PageState, actions: PageActions) 
     return source && place ? { ...place.options, culture: String(source.stats[`v2.culture:${key}`] ?? place.culture), population: Number(source.stats[`v2.population:${key}`] ?? place.population) } : undefined;
   }
   function updateProgress(p: V2Progress): void {
-    setText($('#progress-label'), p.label);
+    const presentation = progressPresentation(p);
+    setText($('#progress-label'), presentation.title);
     actions.showProgressSettlement(p.settlement);
     const meter = $<HTMLProgressElement>('#progress');
     if (p.total > 0) meter.value = Math.max(0, Math.min(100, (100 * p.completed) / p.total));
     else meter.removeAttribute('value');
     meter.setAttribute('aria-labelledby', 'progress-label');
-    meter.setAttribute('aria-describedby', 'progress-detail');
-    const cache = p.cache === 'memory' ? 'Memory cache reused' : p.cache === 'disk' ? 'Terrain restored from disk' : 'Computing in a worker';
+    meter.setAttribute('aria-describedby', p.settlement ? 'progress-context progress-detail' : 'progress-detail');
     state.chain.progress(p);
-    setText($('#progress-detail'), p.detail ?? cache);
+    setDynamicText($('#progress-detail'), () => presentation.details.map(detail => translate(detail)).join(' · '));
     actions.log(p.label + (p.cache ? ` · ${p.cache}` : ''));
   }
   return { runCities, rerollCityStep, rerollStage, scheduleChainSync, fullGenerationStatus, syncFullGenerationButton, runFullGeneration, runFamily, runStage, cityControlDefaults, updateProgress };
