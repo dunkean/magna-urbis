@@ -396,6 +396,7 @@ const templatePairs: readonly (readonly [string, string])[] = [
   ['Lieu inconnu : {id}', 'Unknown settlement: {id}'],
   ['Le moteur Rust n’a pas renvoyé {field}.', 'The Rust engine did not return {field}.'],
   ['{name} : plan, rues, parcelles et bâtiments…', '{name}: plan, streets, parcels and buildings…'],
+  ['Lieu {done}/{total} ({name})', 'Settlement {done}/{total} ({name})'],
   ['Rust · maisons sources {done}/{total}…', 'Rust · baseline houses {done}/{total}…'],
   ['Rust · maisons {done}/{total}…', 'Rust · houses {done}/{total}…'],
   ['Relief terminé · {backend} · hydrologie et biomes ensuite', 'Terrain complete · {backend} · hydrology and biomes next'],

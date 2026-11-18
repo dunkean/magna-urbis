@@ -217,6 +217,7 @@ export interface PageActions {
   log(message: string): void;
   dialog(id: string): void;
   setBusy(value: boolean): void;
+  showProgressSettlement(settlement?: V2Progress['settlement']): void;
   // generation
   generateMainOnly(): Promise<void>;
   generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<boolean>;

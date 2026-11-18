@@ -3,6 +3,7 @@
  * a run. Called by every module; owns no mount.
  */
 import type { PageActions, ToastAction, PageState } from './contract';
+import type { V2Progress } from '../contracts';
 import { setText, translate, numberLocale } from '../i18n';
 import { F as RUNTIME_FALLBACK } from '../runtimeChoices';
 import { isNativeConnectionFailure } from '../../../../rust/bridge/nativeAvailability';
@@ -95,6 +96,7 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     labelEditorHostInert(value);
     state.busy = value;
     $('#progress-card').hidden = !value;
+    showProgressSettlement();
     $('#hardware-led').classList.toggle('busy-led', value);
     $('#app').setAttribute('aria-busy', String(value));
     for (const selector of ['#terrain-controls .chain-scroll', '#urban-settings-panel', '#inspector', '#editor-content']) {
@@ -147,9 +149,16 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     state.workbenchLayout?.sync();
   }
 
+  /** Second line of the progress card: which settlement of a town run is being built (its counters restart with each one). */
+  function showProgressSettlement(settlement?: V2Progress['settlement']): void {
+    const context = $('#progress-context');
+    context.hidden = !settlement;
+    if (settlement) setText(context, `Settlement ${settlement.index}/${settlement.total} (${settlement.name})`);
+  }
+
   function labelEditorHostInert(value: boolean): void {
     const panel = document.querySelector<HTMLElement>('.map-label-editor');
     if (panel) panel.inert = value;
   }
-  return { toast, renderLog, log, dialog, setBusy };
+  return { toast, renderLog, log, dialog, setBusy, showProgressSettlement };
 }

@@ -79,6 +79,7 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
       state.world = edited.world;
       if (edited.skipped) actions.log(`${edited.skipped} edit(s) no longer match their original building.`);
       setText($('#progress-label'), 'Drawing the map…');
+      actions.showProgressSettlement();
       $<HTMLButtonElement>('#cancel-job').disabled = true;
       actions.log('Preparing the scene and drawing in the render worker…');
       const showStart = performance.now();

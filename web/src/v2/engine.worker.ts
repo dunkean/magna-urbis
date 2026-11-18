@@ -66,6 +66,14 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest | V2ResourceR
       if (!world) throw new Error('No map to process.');
       if (action === 'region' || action === 'settlements' || action === 'all') world = await stage(effective => planRegion(world!, effective, progress, action === 'all'));
       if (action === 'roads') world = await stage(effective => rerouteRegion(world!, effective, progress));
+      // A full run names the map at its end only: name its places now, so the town progress says which one is being built.
+      if (action === 'all')
+        try {
+          const named = new Map(renameMap(world, settings).settlements?.map(place => [place.key, place.name]));
+          for (const place of world.settlements ?? []) place.name = named.get(place.key) ?? place.name;
+        } catch {
+          /* The progress line then shows the provisional names of the placement. */
+        }
       if (action === 'towns' || action === 'all') world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes));
       if (action === 'town') {
         if (!request.key) throw new Error('Choose a settlement.');
