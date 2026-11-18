@@ -612,12 +612,12 @@ export function weatheredRoof(color: string, light: number, age: number, cover: 
 }
 /** Share of the grain a roof colour takes: on a very light cover (lime, snow-white plaster) only the dark marks
  * show, on a very dark one (old slate, tarred bark) only the light ones, so both ends take less. */
-function grainGain(color: string): number {
+export function grainGain(color: string): number {
   const v = parseInt(color.slice(1), 16), l = (((v >> 16) & 255) * .3 + ((v >> 8) & 255) * .59 + (v & 255) * .11) / 255;
   return 1 - .5 * Math.max(0, Math.min(1, (l - .68) / .2)) - .45 * Math.max(0, Math.min(1, (.3 - l) / .15));
 }
 /** Walls whose top shows around a flat roof as a parapet of their own material. */
-const MASONRY = /^(brick|stone|coral|concrete|ashlar)$/;
+export const MASONRY = /^(brick|stone|coral|concrete|ashlar)$/;
 /** Wall colour on a natural ground: pulled three quarters of the way to the muted tone of the tint the building asks
  * for (its beige, its grey, the darker or warmer glass of a tower: buildingPalette.ts tintedWallColor, shared with
  * the 3D meshes); the drawn plans keep their own conventions. `material`: the wall material. */

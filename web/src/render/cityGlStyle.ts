@@ -4,7 +4,7 @@
  * Not ported (kept on the Canvas 2D overlay or dropped): parchment hatching, dashed
  * reserve outlines, the thicker landmark outline of the roles view (1 px here). */
 import type { CityBuilding, CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityView, CityDistrict } from './cityCanvas';
-import { BUILDING_FAMILIES, DISTRICT_ROLES, castShadowFill, districtRoleKey, roleFamily, tintedWall, weatheredRoof } from './cityCanvas';
+import { BUILDING_FAMILIES, DISTRICT_ROLES, MASONRY, castShadowFill, districtRoleKey, grainGain, roleFamily, tintedWall, weatheredRoof } from './cityCanvas';
 import { isBoardwalk } from './cityGround';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, softStreet, type WashKind } from './groundBlend';
 import { streetToneAt, washAt } from './groundTone';
@@ -36,7 +36,9 @@ export interface CityGlStyleState {
   live?: CityGlLiveLook;
 }
 /** What the live look needs from the appearance besides the plan state: the road look and its emphasis. */
-export interface CityGlLiveLook { roadLook: RoadLook; emphasis: number; /** Canal water (townWaterColour). */ waterColor?: string }
+export interface CityGlLiveLook { roadLook: RoadLook; emphasis: number; /** Canal water (townWaterColour). */ waterColor?: string;
+  /** Natural grounds without textured materials: the mean tone of the Canvas roof grain, uneven snow and wall rims. */ grain?: boolean;
+  /** Plan line width in CSS px (drawCitySteps lineW: city width, at least .2). */ lineWidth?: number }
 export const DEFAULT_LAYERS: CityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 
 /** Which draws a state issues. */
@@ -248,9 +250,13 @@ export function* planColorsSteps(scene: CityScene, mesh: Pick<CityGlFillMesh, 'l
 }
 
 /** Colours of the building mesh (feature = item index). */
-export const buildingColors = (buildings: CityBuildings | undefined, s: CityGlStyleState, scene?: CityScene): { fill: Uint8Array; line: Uint8Array } => finish(buildingColorsSteps(buildings, s, scene));
+/** Live look on natural grounds: per pan, R = grain family (1 + COVER_GRAINS index, 0 none), G = grain gain (grainGain,
+ * 0 where the Canvas town lays no grain), B = uneven snow strength of a snow patch, A = flags (1: shaded snow,
+ * 2: masonry wall rim); and the rim colour of those rims (drawn as the wall top below .55 device m/px). */
+export interface CityGlRoofGrain { grain: Uint8Array; rim: Uint8Array }
+export const buildingColors = (buildings: CityBuildings | undefined, s: CityGlStyleState, scene?: CityScene): { fill: Uint8Array; line: Uint8Array; roofGrain?: CityGlRoofGrain } => finish(buildingColorsSteps(buildings, s, scene));
 /** `buildingColors` in resumable steps. */
-export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: CityGlStyleState, _scene?: CityScene): Generator<void, { fill: Uint8Array; line: Uint8Array }> {
+export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: CityGlStyleState, _scene?: CityScene): Generator<void, { fill: Uint8Array; line: Uint8Array; roofGrain?: CityGlRoofGrain }> {
   const items = buildings?.items ?? [], roofs = buildings?.roofs, count = items.length + (roofs ? roofs.shapes.length + items.length : 0);
   const fill = new Uint8Array(Math.max(1, count) * 4), line = new Uint8Array(Math.max(1, count) * 4), colors: string[] = [];
   const parchment = s.palette === 'parchment', edge = s.buildingStyle === 'silhouette' && parchment ? '#f1e5c6' : '#2e261d';
@@ -267,7 +273,8 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
     colors.push(color);
   }
   // Live look: the pans as drawPlanRoofsSteps (cityCanvas.ts) colours them.
-  if (roofs && s.live && !diagnostic) yield* liveRoofColors(items, roofs, s, fill, line);
+  let roofGrain: CityGlRoofGrain | undefined;
+  if (roofs && s.live && !diagnostic) roofGrain = yield* liveRoofColors(items, roofs, s, fill, line);
   // Roof pans use the exact shared culture/material/tone, softened for ink maps.
   else if (roofs) {
     for (let k = 0; k < roofs.shapes.length; k++) {
@@ -281,7 +288,7 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
     // Every relief roof casts a short, height-derived ground shadow.
     for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', 1);
   }
-  return { fill, line };
+  return { fill, line, roofGrain };
 }
 
 // ---------------------------------------------------------------- live look (Canvas 2D colours on the GPU)
@@ -289,27 +296,50 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
 // layer matches it while the view moves (the exact Canvas frame replaces it at rest).
 /** Roof pans as drawPlanRoofsSteps colours them by day: on a natural ground (terrain palette) the capped pan light, the
  * cover and its weathering; elsewhere the shared plan colour. Snow patches show only with snow on the ground. Pan edges
- * take the Canvas ink at about the coverage of its sub-pixel stroke. No grain, no rims, no uneven snow. */
-function* liveRoofColors(items: readonly CityBuilding[], roofs: NonNullable<CityBuildings['roofs']>, s: CityGlStyleState, fill: Uint8Array, line: Uint8Array): Generator<void, void> {
+ * take the Canvas ink at about the coverage of its sub-pixel stroke. On a natural ground (and `live.grain`) also the
+ * per-pan data of the grain's mean tone, the uneven snow and the wall rims (CityGlRoofGrain), which FILL_VS applies
+ * with the frame's grain level and strength; the marks themselves are not drawn. */
+function* liveRoofColors(items: readonly CityBuilding[], roofs: NonNullable<CityBuildings['roofs']>, s: CityGlStyleState, fill: Uint8Array, line: Uint8Array): Generator<void, CityGlRoofGrain | undefined> {
   const custom = s.diagnostic === 'none' ? s.colors?.building : undefined, parchment = s.palette === 'parchment';
   const natural = s.palette === 'terrain' && !custom && s.diagnostic === 'none';
-  const edge = parchment ? '#2c2117' : '#1f1811', edgeAlpha = (parchment ? .65 : natural ? .45 : .65) * .6;
+  // The Canvas pan edge ink; its sub-pixel width is the line pass's coverage factor (cityGl uLineAlpha).
+  const edge = parchment ? '#2c2117' : '#1f1811', edgeAlpha = parchment ? .65 : natural ? .45 : .65;
+  const n = Math.max(1, items.length + roofs.shapes.length + items.length);
+  const out = natural && s.live?.grain ? { grain: new Uint8Array(n * 4), rim: new Uint8Array(n * 4) } : undefined;
   for (let k = 0; k < roofs.shapes.length; k++) {
     if ((k + 1) % COLOR_STEP === 0) yield;
     const item = items[roofs.owner[k]], f = items.length + k;
     if (!item) { put(fill, f, undefined); put(line, f, undefined); continue; }
     const ground = mapGroundSnow(item.snowAltitude ?? item.building.ground_z_m);
     if (roofs.patch?.[k] && !ground) { put(fill, f, undefined); put(line, f, undefined); continue; }
-    const snowed = !!(roofs.snow?.[k] && ground), cover = roofs.cover[k], light = roofs.light[k];
+    const snowed = !!(roofs.snow?.[k] && ground), cover = roofs.cover[k], light = roofs.light[k], age = item.age ?? .5;
     const base = natural && !roofs.flat?.[k] && !snowed
       ? planShade(planBuildingColors(item, s.palette, cover, roofs.wall?.[k], roofs.tone[k]).roof, planPanLight(light, cover))
       : planRoofColor(item, roofs, k, s.palette, custom);
-    put(fill, f, natural && !roofs.snow?.[k] ? weatheredRoof(base, light, item.age ?? .5, cover) : base);
+    const aged = natural && !roofs.snow?.[k] ? weatheredRoof(base, light, age, cover) : base;
+    put(fill, f, aged);
     put(line, f, edge, roofs.snow?.[k] ? 0 : edgeAlpha);
+    if (!out) continue;
+    const o = f * 4;
+    // Grain: on bare covers (under deep snow only the pans that kept little of it), with the gain of the pan's colour.
+    const bare = ground < .6 || !roofs.patch?.[k + 1] || (roofs.snow?.[k + 1] ?? 0) * ground < .5;
+    if (!snowed && bare && roofs.grain?.[k]) { out.grain[o] = roofs.grain[k]; out.grain[o + 1] = Math.round(Math.max(0, Math.min(1, grainGain(aged))) * 255); }
+    // Uneven snow of a snow patch: the mantle's opacity, as drawPlanRoofsSteps (smoothstep of the depth, × 1.12).
+    if (snowed && roofs.patch?.[k]) {
+      const amount = Math.min(1, (roofs.snow?.[k] ?? 0) * ground), t = amount * amount * (3 - 2 * amount);
+      out.grain[o + 2] = Math.max(1, Math.round(Math.min(1, t * 1.12) * 255));
+      if (light < -.08) out.grain[o + 3] |= 1;
+    }
+    // A flat roof's rim on masonry walls: the wall top in the wall's colour once a rim covers a device pixel.
+    const wall = roofs.wall?.[k] ?? '';
+    if (roofs.rim?.[k] && MASONRY.test(wall)) {
+      out.grain[o + 3] |= 2;
+      put(out.rim, f, planShade(tintedWall(planBuildingColors(item, s.palette, cover, wall, roofs.tone[k]).wall, roofs.tint?.[k], s.palette, wall), Math.max(-.12, Math.min(.1, light * .3))));
+    }
   }
   for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', 1);
-}
-const shadowTints = new Map<string, [number, number, number, number]>();
+  return out;
+}const shadowTints = new Map<string, [number, number, number, number]>();
 /** cityCanvas castShadowFill by day as a straight RGBA tint (snow of the first building's ground, as the Canvas town
  * shadow pass reads it). */
 export function liveShadowTint(palette: CityPalette, first: CityBuilding | undefined): [number, number, number, number] {

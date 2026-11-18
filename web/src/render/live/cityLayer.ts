@@ -25,6 +25,7 @@ import { createCityGlRendererOn, finishProgram, programLinked, startProgram, typ
 import { cityBuildingAppearance } from '../cityDrawOptions';
 import { FAR_TOWN_FADE, farTownAlpha, farTownRaster, heldFarTownRaster, type FarRaster } from '../cityFarRaster';
 import { townWaterColour } from '../townWater';
+import { grainMeansReady, grainMeansStep } from '../cityGlGrain';
 import type { YardBoundary } from '../cityLotEnclosures';
 import type { CityCanopy } from '../cityGrove';
 
@@ -202,7 +203,9 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         // The Canvas town ignores `painted` for city volumes, and the live look omits textures (flat colours).
         paintedBuildings: false, textured: false, buildingsVisible, diagnostic: buildingAppearance.diagnostic,
         refusedParcels: buildingAppearance.diagnostic === 'access' ? towns.refused() : undefined, colors: appearance.palette.colors,
-        groundBlend: city.groundBlend === 'blended', live: { roadLook: roads.look, emphasis: roads.emphasis ?? 1, waterColor: townWaterColour(appearance) },
+        groundBlend: city.groundBlend === 'blended', live: { roadLook: roads.look, emphasis: roads.emphasis ?? 1, waterColor: townWaterColour(appearance),
+          // Natural grounds: the Canvas town lays its procedural grain unless textured materials replace it.
+          grain: !city.textured, lineWidth: Math.max(.2, finite(city.width, .6, 0, 5)) },
       },
     };
     unprepare(); farReady = false; checked = undefined;
@@ -385,6 +388,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     if (renderer.pendingUpload) return 'upload pending';
     const l = lookNow();
     if (l.reason) return l.reason;
+    // Natural roofs take the mean tone of the Canvas grain: its tile means are measured in work first.
+    if (l.base.palette === 'terrain' && l.base.live?.grain && !grainMeansReady()) return 'grain means';
     const level = selectCityLod(1 / frame.view.scale, lod);
     // The colour tables of the frame's level of detail are prepared in `work`; a draw never computes them.
     if (!preparedLods.has(level)) return 'tables not prepared';
@@ -412,7 +417,13 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       stats.drawCalls = stats.triangles = stats.instances = 0;
       // Only after `ready` answered true for this frame: its checked options, nothing to create.
       const c = checked?.frame === frame ? checked : undefined;
-      if (renderer && c && l.opacity > 0) { lod = c.level; paint(frame, l, c.options, 1 / frame.view.scale, false); }
+      stats.opacity = l.opacity;
+      // The target is the frame's at draw time: `ready` runs before the compositor binds the isolated group, so the
+      // options it checked still name the canvas (drawing there skipped the group and its opacity: an opaque town).
+      if (renderer && c && l.opacity > 0) {
+        lod = c.level;
+        paint(frame, l, { ...c.options, target: { framebuffer: frame.target, width: frame.width, height: frame.height } }, 1 / frame.view.scale, false);
+      }
       checked = undefined;
       stats.ms = performance.now() - start;
     },
@@ -463,6 +474,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (!frame) return building > 0;
       const l = lookNow(), water = env.water?.();
       if (l.reason) return building > 0;
+      // The grain tile means (one cover kind per call, a few ms), shared by every town layer.
+      if (l.base.palette === 'terrain' && l.base.live?.grain && grainMeansStep()) return true;
       if (preparedWater !== water) { unprepare(); preparedWater = water; }
       const own = selectCityLod(1 / frame.view.scale, lod);
       // Colour tables, one level of detail at a time in slices: the view's level first, then the others, so a zoom

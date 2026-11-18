@@ -22,6 +22,8 @@ import {
 } from './cityGlBuild';
 import { buildingColors, buildingColorsSteps, DEFAULT_LAYERS, liveShadowTint, PAINTED_SHADOW, PARCHMENT_HATCH, PARCHMENT_SHADOW, planColors, planColorsSteps, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetColorsSteps, streetMaterialTable, wallColors, type CityGlDraws, type CityGlLiveLook, type CityGlStyleState } from './cityGlStyle';
 import { buildYardStrokes, yardColors } from './cityGlYards';
+import { grainLevelMeans } from './cityGlGrain';
+import { coverGrainFrame } from './buildingMaterials';
 import type { YardBoundary } from './cityLotEnclosures';
 import { isBlended } from './groundBlend';
 import { roofSeasonKey } from './seasonPalette';
@@ -130,13 +132,38 @@ layout(location = 1) in uint aFeature;
 uniform vec4 uView;
 uniform highp sampler2D uColors;
 uniform vec4 uTint;
+// Live roof pans (cityGlGrain.ts): the mean tone of the Canvas grain, uneven snow mantle and wall rims of each pan
+// (uGrainTab: family, gain, snow strength, flags; uRimTab: rim colour), with the frame's grain strength and level means.
+uniform int uRoofGrain, uRims;
+uniform highp sampler2D uGrainTab, uRimTab;
+uniform float uGrainStrength;
+uniform vec2 uGrain[18];
+uniform vec4 uSnowMean[2];
 out vec4 vColor;
 out vec2 vPos;
 void main() {
   vPos = aPos;
   int f = int(aFeature);
-  vColor = texelFetch(uColors, ivec2(f & 4095, f >> 12), 0);
+  ivec2 q = ivec2(f & 4095, f >> 12);
+  vColor = texelFetch(uColors, q, 0);
   bool shown = vColor.a > 0.0;
+  if (uRoofGrain == 1 && shown) {
+    vec4 g = floor(texelFetch(uGrainTab, q, 0) * 255.0 + 0.5);
+    int flags = int(g.a);
+    if (uRims == 1 && (flags & 2) != 0) vColor = vec4(texelFetch(uRimTab, q, 0).rgb, 1.0);
+    else if (g.b > 0.0) {
+      // Snow patch: the pan at 1 - u (none from .97), then the mantle tile at u x depth; one source-over equivalent.
+      float u = uGrainStrength;
+      if (u > 0.03) {
+        vec4 m = (flags & 1) != 0 ? uSnowMean[1] : uSnowMean[0];
+        float k = u * g.b / 255.0, a = k * m.a, fillA = u < 0.97 ? 1.0 - u : 0.0, outA = 1.0 - (1.0 - fillA) * (1.0 - a);
+        vColor = vec4((vColor.rgb * fillA * (1.0 - a) + k * m.rgb) / max(outA, 1e-4), outA);
+      }
+    } else if (g.r > 0.0) {
+      float s = uGrainStrength * g.g / 255.0;
+      if (s > 0.03) { vec2 m = uGrain[int(g.r) - 1]; vColor.rgb = vColor.rgb * (1.0 - s * m.x) + s * m.y; }
+    }
+  }
   // A tint (painted building shadows) replaces the colour of every feature drawn.
   if (uTint.a > 0.0) vColor = uTint;
   gl_Position = shown ? vec4(aPos * uView.xy + uView.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
@@ -150,6 +177,7 @@ uniform float uRuinSpacing;
 // metres per device pixel for the edge; the table alpha (hatch strength per feature) times uHatch.w.
 uniform vec4 uHatch;
 uniform vec3 uHatchColor;
+uniform float uLineAlpha;
 out vec4 outColor;
 void main() {
   if (uHatch.x > 0.0) {
@@ -159,13 +187,16 @@ void main() {
     outColor = vec4(uHatchColor * a, a);
     return;
   }
+  // uLineAlpha (live look, outline passes): the coverage of the Canvas sub-pixel stroke over a 1-pixel GL line.
+  float lineAlpha = uLineAlpha > 0.0 ? uLineAlpha : 1.0;
   vec3 color = vColor.rgb;
   if (uRuinSpacing > 0.0) {
     float stripe = abs(fract((vPos.x - vPos.y) / uRuinSpacing + 0.5) - 0.5);
     float hatch = 1.0 - smoothstep(0.04, 0.13, stripe);
     color = mix(color, vec3(0.275, 0.231, 0.176), hatch);
   }
-  outColor = vec4(color * vColor.a, vColor.a);
+  float alpha = vColor.a * lineAlpha;
+  outColor = vec4(color * alpha, alpha);
 }`;
 /** Paved squares (render background, below 0.3 m/px): a second pass over the plan mesh in
  * which only the features whose alpha byte is 253 (cityGlStyle PAVED_ALPHA) survive the
@@ -510,6 +541,8 @@ function uploadTable(gl: WebGL2RenderingContext, texture: WebGLTexture, rgba: Ui
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 }
 
+type FillExtra = 'hatch' | 'grain' | 'rim';
+const FILL_EXTRAS: readonly FillExtra[] = ['hatch', 'grain', 'rim'];
 /** Colour tables kept per fill mesh: the four levels of detail of a look and a previous look or two. */
 const TABLES_KEPT = 6;
 /** A fill mesh on the GPU: shared vertices, one VAO for triangles, one for lines, two colour tables per kept state
@@ -517,9 +550,10 @@ const TABLES_KEPT = 6;
 class FillPack {
   vbo: WebGLBuffer[] = []; tri: WebGLVertexArrayObject; line: WebGLVertexArrayObject; fill: WebGLTexture | null = null; edge: WebGLTexture | null = null; mats?: WebGLTexture;
   private geometryBytes: number;
-  /** Hatch strength per feature of the current state (live parchment look), or null. */
-  hatch: WebGLTexture | null = null;
-  private tables = new Map<string, { fill: WebGLTexture; edge: WebGLTexture; hatch?: WebGLTexture; draws?: CityGlDraws }>();
+  /** Extra per-feature tables of the current state (live look): parchment hatch strength (plan), roof grain data and
+   * wall-rim colours (buildings, cityGlStyle CityGlRoofGrain); null when the state has none. */
+  hatch: WebGLTexture | null = null; grain: WebGLTexture | null = null; rim: WebGLTexture | null = null;
+  private tables = new Map<string, { fill: WebGLTexture; edge: WebGLTexture; extra: Partial<Record<FillExtra, WebGLTexture>>; draws?: CityGlDraws }>();
   constructor(private gl: WebGL2RenderingContext, readonly mesh: CityGlFillMesh) {
     const buffer = (target: number, data: ArrayBufferView): WebGLBuffer => { const b = gl.createBuffer()!; gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); this.vbo.push(b); return b; };
     const pos = buffer(gl.ARRAY_BUFFER, mesh.positions), feat = buffer(gl.ARRAY_BUFFER, mesh.vertexFeatures);
@@ -534,32 +568,38 @@ class FillPack {
     this.geometryBytes = mesh.positions.byteLength + mesh.vertexFeatures.byteLength + mesh.triangles.byteLength + mesh.lines.byteLength;
   }
   get bytes(): number { return this.geometryBytes + Math.max(1, this.tables.size) * Math.ceil(this.mesh.featureCount / TEX_W) * TEX_W * 8; }
-  /** Uploads the tables of state `key` and makes them current. */
-  colors(fill: Uint8Array, edge: Uint8Array, key: string, draws?: CityGlDraws, hatch?: Uint8Array): void {
+  /** Uploads the tables of state `key` (and its extra tables) and makes them current. */
+  colors(fill: Uint8Array, edge: Uint8Array, key: string, draws?: CityGlDraws, extra: Partial<Record<FillExtra, Uint8Array>> = {}): void {
     const gl = this.gl;
     let t = this.tables.get(key);
     if (!t) {
       if (this.tables.size >= TABLES_KEPT) {
         const [oldest, old] = this.tables.entries().next().value!; this.tables.delete(oldest);
-        gl.deleteTexture(old.fill); gl.deleteTexture(old.edge); if (old.hatch) gl.deleteTexture(old.hatch);
+        gl.deleteTexture(old.fill); gl.deleteTexture(old.edge); for (const x of Object.values(old.extra)) if (x) gl.deleteTexture(x);
       }
-      t = { fill: gl.createTexture()!, edge: gl.createTexture()! }; this.tables.set(key, t);
+      t = { fill: gl.createTexture()!, edge: gl.createTexture()!, extra: {} }; this.tables.set(key, t);
     }
     t.draws = draws;
     uploadTable(gl, t.fill, fill); uploadTable(gl, t.edge, edge);
-    if (hatch) uploadTable(gl, t.hatch ??= gl.createTexture()!, hatch);
-    else if (t.hatch) { gl.deleteTexture(t.hatch); t.hatch = undefined; }
-    this.fill = t.fill; this.edge = t.edge; this.hatch = t.hatch ?? null;
+    for (const name of FILL_EXTRAS) {
+      const data = extra[name];
+      if (data) uploadTable(gl, t.extra[name] ??= gl.createTexture()!, data);
+      else if (t.extra[name]) { gl.deleteTexture(t.extra[name]!); delete t.extra[name]; }
+    }
+    this.current(t);
+  }
+  private current(t: { fill: WebGLTexture; edge: WebGLTexture; extra: Partial<Record<FillExtra, WebGLTexture>> }): void {
+    this.fill = t.fill; this.edge = t.edge; this.hatch = t.extra.hatch ?? null; this.grain = t.extra.grain ?? null; this.rim = t.extra.rim ?? null;
   }
   /** Makes the kept tables of state `key` current; undefined when they are not kept. */
-  table(key: string): { draws?: CityGlDraws } | undefined { const t = this.tables.get(key); if (t) { this.fill = t.fill; this.edge = t.edge; this.hatch = t.hatch ?? null; } return t; }
+  table(key: string): { draws?: CityGlDraws } | undefined { const t = this.tables.get(key); if (t) this.current(t); return t; }
   /** The tables of state `key` are kept (nothing made current). */
   has(key: string): boolean { return this.tables.has(key); }
   materials(table: Uint8Array): void { uploadTable(this.gl, this.mats ??= this.gl.createTexture()!, table); }
   dispose(): void {
     const gl = this.gl; if (this.mats) gl.deleteTexture(this.mats); this.vbo.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.tri); gl.deleteVertexArray(this.line);
-    for (const t of this.tables.values()) { gl.deleteTexture(t.fill); gl.deleteTexture(t.edge); if (t.hatch) gl.deleteTexture(t.hatch); }
-    this.tables.clear(); this.fill = this.edge = this.hatch = null;
+    for (const t of this.tables.values()) { gl.deleteTexture(t.fill); gl.deleteTexture(t.edge); for (const x of Object.values(t.extra)) if (x) gl.deleteTexture(x); }
+    this.tables.clear(); this.fill = this.edge = this.hatch = this.grain = this.rim = null;
   }
 }
 /** Segment instances on the GPU (36-byte stride), with outer/inner colour tables. */
@@ -762,7 +802,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     // The live look stands in for the Canvas 2D frame of the V2, which has no render background.
     const renderBackground = !o.live && globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = !footprint && (o.paintedBuildings ?? renderBackground);
     const style: CityGlStyleState = { buildingStyle: o.buildingStyle, view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors, live: o.live };
-    const colorKey = o.colors ? JSON.stringify(o.colors) : '', liveKey = o.live ? `live:${o.live.roadLook}:${o.live.emphasis}:${o.live.waterColor ?? ''}` : '';
+    const colorKey = o.colors ? JSON.stringify(o.colors) : '', liveKey = o.live ? `live:${o.live.roadLook}:${o.live.emphasis}:${o.live.waterColor ?? ''}:${o.live.grain ? 1 : 0}` : '';
     const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]) + liveKey;
     const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}|${liveKey}`;
     const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
@@ -785,14 +825,14 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     if (key !== styleKey) {
       const kept = pl.table(key);
       if (kept?.draws) draws = kept.draws;
-      else { const pc = planColors(s, pl.mesh, style); pl.colors(pc.fill, pc.line, key, pc.draws, pc.hatch); draws = pc.draws; }
+      else { const pc = planColors(s, pl.mesh, style); pl.colors(pc.fill, pc.line, key, pc.draws, { hatch: pc.hatch }); draws = pc.draws; }
       styleKey = key;
     }
     if (sKey !== streetKey) {
       const sc = streetColors(s, palette, softStreets, o.colors, o.live), wc = cityWallColors(s, palette); // walls hook
       streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;
     }
-    if (built && bKey !== builtKey) { if (!built.table(bKey)) { const bc = buildingColors(buildings, style, s); built.colors(bc.fill, bc.line, bKey); } builtKey = bKey; }
+    if (built && bKey !== builtKey) { if (!built.table(bKey)) { const bc = buildingColors(buildings, style, s); built.colors(bc.fill, bc.line, bKey, undefined, { ...bc.roofGrain }); } builtKey = bKey; }
     // Lot enclosures (live look): a few texels per look, by palette.
     if (yards && yards.palette !== palette) { const c = yardColors(yards.looks, palette); yards.runs.colors(c.line, c.line); yards.jambs.colors(c.jamb, c.jamb); yards.palette = palette; }
     // Textured materials: albedo array loaded once (the plan is drawn flat until it arrives, then repainted).
@@ -881,7 +921,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         const pc = yield* planColorsSteps(s, pl.mesh, st.style);
         if (plan !== pl) return;
         const current = styleKey;
-        pl.colors(pc.fill, pc.line, st.key, pc.draws, pc.hatch);
+        pl.colors(pc.fill, pc.line, st.key, pc.draws, { hatch: pc.hatch });
         if (current) pl.table(current); // `colors` made the new tables current: the draw state stays the drawn one
       }
       if (st.sKey !== streetKey) {
@@ -895,7 +935,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         const bc = yield* buildingColorsSteps(buildings, st.style, s);
         if (built !== bb) return;
         const current = builtKey;
-        bb.colors(bc.fill, bc.line, st.bKey);
+        bb.colors(bc.fill, bc.line, st.bKey, undefined, { ...bc.roofGrain });
         if (current) bb.table(current);
       }
       styleFrame(o, lod);
@@ -1034,7 +1074,12 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
 
       // Fills and outlines.
       gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
-      gl.uniform1f(fillP.u.uRuinSpacing, 0); gl.uniform4f(fillP.u.uHatch, 0, 0, 0, 0);
+      gl.uniform1f(fillP.u.uRuinSpacing, 0); gl.uniform4f(fillP.u.uHatch, 0, 0, 0, 0); gl.uniform1f(fillP.u.uLineAlpha, 0); gl.uniform1i(fillP.u.uRoofGrain, 0);
+      // Live look: a GL line is one device pixel; the Canvas strokes are thinner (CSS px below), drawn with coverage.
+      // Building edges under roof pans show their outer half only. Factor = stroke width in device pixels.
+      const dpr = mpp / Math.max(devPx, 1e-9), hasPans = !footprint && !!built?.mesh.layers.roofs?.triangles.count;
+      const strokePx = (layer: string): number => layer === 'blocks' || layer === 'parcels' ? o.live?.lineWidth ?? .6 : layer === 'roofs' ? palette === 'parchment' ? .3 : .5
+        : layer === 'buildings' ? hasPans ? .275 : .55 : layer === 'buildingFootprints' ? palette === 'parchment' ? .3 : .55 : layer === 'waterwayBridges' ? .6 : 1;
       /** Live parchment hatching over a plan layer (drawCitySteps hatchPattern, world-anchored 7 px lines). */
       const hatch = (layer: string): void => {
         if (!d.hatch || !plan?.hatch) return;
@@ -1049,11 +1094,13 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         const l = pack?.mesh.layers[layer];
         if (!pack || !l || !(lines ? l.lines : l.triangles).count) return;
         gl.bindTexture(gl.TEXTURE_2D, lines ? pack.edge : pack.fill); gl.bindVertexArray(lines ? pack.line : pack.tri);
+        if (lines && o.live) gl.uniform1f(fillP.u.uLineAlpha, Math.max(.05, Math.min(1, strokePx(layer) * dpr)));
         // Only the grid chunks in view (consecutive ones merged into one call).
         for (const [first, count] of visibleRanges(l.chunks, v, c => lines ? c.lines : c.triangles)) {
           gl.drawElements(lines ? gl.LINES : gl.TRIANGLES, count, gl.UNSIGNED_INT, first * 4);
           frame.drawCalls++; if (!lines) frame.triangles += count / 3;
         }
+        if (lines && o.live) gl.uniform1f(fillP.u.uLineAlpha, 0);
       };
       dry(true);
       if (lod === 'far') { if (d.footprint) fills(plan, 'footprint', false); if (d.footprintLines) fills(plan, 'footprint', true); hatch('footprint'); }
@@ -1171,7 +1218,10 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         if (pans) {
           // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
           gl.uniform4fv(fillP.u.uTint, palette === 'parchment' ? PARCHMENT_SHADOW : o.live ? liveShadowTint(palette, buildings?.items[0]) : PAINTED_SHADOW);
+          // Live look: each sample shaded once, as the Canvas fills one path per building (its pieces' shadows overlap).
+          if (o.live) { gl.enable(gl.STENCIL_TEST); gl.stencilMask(0xff); gl.clearStencil(0); gl.clear(gl.STENCIL_BUFFER_BIT); gl.stencilFunc(gl.EQUAL, 0, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR); }
           fills(built, 'shadows', false);
+          if (o.live) gl.disable(gl.STENCIL_TEST);
           gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
         } else if (painted && palette !== 'parchment') {
           // Ground shadow: the same triangles, shifted south-east (metres, with a 1 px floor).
@@ -1184,7 +1234,20 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         fills(built, buildingLayer, false);
         if (pans) {
           if (textured && built.mats && palette !== 'parchment' && palette !== 'ink') { useTextured(tfillP, built.mats, false); fills(built, 'roofs', false); gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); }
-          else fills(built, 'roofs', false);
+          else {
+            // Live look on natural grounds: the mean tone of the Canvas grain, uneven snow and wall rims (cityGlGrain.ts) at
+            // this frame's grain level and strength (coverGrainFrame of the device metres per pixel, as drawPlanRoofsSteps).
+            const grain = !!o.live?.grain && !!built.grain && !!built.rim;
+            if (grain) {
+              const gf = coverGrainFrame(devPx), means = grainLevelMeans(gf?.level ?? 0);
+              gl.uniform1i(fillP.u.uRoofGrain, 1); gl.uniform1i(fillP.u.uRims, devPx <= .55 ? 1 : 0); gl.uniform1f(fillP.u.uGrainStrength, gf?.alpha[0] ?? 0);
+              gl.uniform2fv(fillP.u['uGrain[0]'], means.grain); gl.uniform4fv(fillP.u['uSnowMean[0]'], means.snow);
+              gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, built.grain); gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, built.rim); gl.activeTexture(gl.TEXTURE0);
+              gl.uniform1i(fillP.u.uGrainTab, 3); gl.uniform1i(fillP.u.uRimTab, 4);
+            }
+            fills(built, 'roofs', false);
+            if (grain) gl.uniform1i(fillP.u.uRoofGrain, 0);
+          }
           fills(built, 'roofs', true);
         }
         if (d.buildingLines) fills(built, buildingLayer, true);

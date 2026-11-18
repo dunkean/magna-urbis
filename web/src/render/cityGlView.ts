@@ -95,7 +95,11 @@ export function* mergeCityBuildingsSteps(parts: readonly { plan: CityScene; buil
     const owner = Uint32Array.from(concat(of('owner'), faces, itemShift)); yield;
     const light = Float32Array.from(concat(of('light'), faces)), tone = Float32Array.from(concat(of('tone'), faces)); yield;
     const dir = Float32Array.from(concat(of('dir'), faces)), flat = Uint8Array.from(concat(of('flat'), faces)), snow = Float32Array.from(concat(of('snow'), faces)); yield;
-    roofs = { shapes: built.flatMap(b => b?.roofs?.shapes ?? []), owner, light, tone, dir, flat, snow,
+    // Snow patches, flat-roof rims, grain families and wall tints too: the live look colours pans as the Canvas town.
+    const bytesOf = (key: 'patch' | 'rim' | 'grain'): Uint8Array => Uint8Array.from(concat(built.map(b => b?.roofs?.[key]), faces)); yield;
+    const patch = bytesOf('patch'), rim = bytesOf('rim'), grain = bytesOf('grain'); yield;
+    roofs = { shapes: built.flatMap(b => b?.roofs?.shapes ?? []), owner, light, tone, dir, flat, snow, patch, rim, grain,
+      tint: built.flatMap((b, i) => b?.roofs?.tint ?? Array<string | undefined>(faces[i]).fill(undefined)),
       cover: built.flatMap((b, i) => b?.roofs?.cover ?? Array<string>(faces[i]).fill('')),
       wall: built.flatMap((b, i) => b?.roofs?.wall ?? Array<string>(faces[i]).fill('')),
       shadows: built.flatMap((b, i) => b?.roofs?.shadows ?? Array.from({ length: counts[i] }, (): CityRoofs['shadows'][number] => [])) };
