@@ -186,10 +186,16 @@ export function mountTownMoveEditor(api: {
     button.setAttribute('aria-pressed', 'false');
     api.map.classList.remove('v2-moving-towns');
   }
+  let starting = false;
   async function start() {
-    if (api.busy() || !api.getWorld()?.settlements?.length) return;
     const source = api.getWorld();
-    if (api.deferred && source!.settlements!.some(s => (s.main ? source!.urban : s.urban)) && !(await confirmAction('Moving positions resets generated cities when you apply. Continue?', { id: 'move-towns-dialog', title: 'Move settlements', confirmLabel: 'Continue' }))) return;
+    if (starting || api.busy() || !source?.settlements?.length) return;
+    starting = true;
+    try {
+      if (api.deferred && source.settlements.some(s => (s.main ? source.urban : s.urban)) && !(await confirmAction('Moving positions resets generated cities when you apply. Continue?', { id: 'move-towns-dialog', title: 'Move settlements', confirmLabel: 'Continue' }))) return;
+    } finally {
+      starting = false;
+    }
     if (api.busy() || api.getWorld() !== source) return;
     validate.hidden = cancel.hidden = !api.deferred;
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'town-move' }));
@@ -201,7 +207,10 @@ export function mountTownMoveEditor(api: {
     api.map.classList.add('v2-moving-towns');
     follow();
   }
-  button.onclick = () => (enabled ? stop() : start());
+  button.onclick = () => {
+    if (enabled) stop();
+    else void start().catch(api.error);
+  };
   api.map.addEventListener(
     'pointerdown',
     event => {

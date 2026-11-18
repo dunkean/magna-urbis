@@ -96,8 +96,18 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
     reset.setAttribute('data-i18n-title', RESET_TITLE);
     reset.title = translate(RESET_TITLE);
     $('#map-advanced-open').after(reset);
+    let confirming = false;
     reset.onclick = async () => {
-      if (state.busy || !(await confirmAction(RESET_CONFIRM, { id: 'reset-settings-dialog', title: RESET_LABEL, confirmLabel: RESET_LABEL, danger: true }))) return;
+      if (state.busy || confirming) return;
+      confirming = true;
+      let confirmed = false;
+      try {
+        confirmed = await confirmAction(RESET_CONFIRM, { id: 'reset-settings-dialog', title: RESET_TITLE, confirmLabel: RESET_LABEL, danger: true });
+      } finally {
+        confirming = false;
+      }
+      // A generation may have started while the dialog was open.
+      if (!confirmed || state.busy) return;
       state.labelBaseline = undefined;
       state.smallPlaceRecipe = undefined;
       await state.smallPlaces?.stop();

@@ -15,7 +15,6 @@ export function chooseAction<T extends string>(options: { id: string; title: str
         const modal = document.createElement('dialog');
         modal.id = options.id;
         modal.className = 'v2-action-dialog';
-        modal.style.width = 'min(500px,94vw)';
         const head = document.createElement('div');
         head.className = 'dialog-head';
         const title = document.createElement('h2');
@@ -26,6 +25,7 @@ export function chooseAction<T extends string>(options: { id: string; title: str
         close.type = 'button';
         close.textContent = '×';
         close.setAttribute('aria-label', translate('Close'));
+        close.autofocus = true;
         head.append(title, close);
         modal.append(head);
         const message = document.createElement('p');
@@ -72,14 +72,17 @@ export function chooseAction<T extends string>(options: { id: string; title: str
         modal.addEventListener('keydown', event => event.stopPropagation());
         const actions = document.createElement('div');
         actions.className = 'dialog-actions';
-        actions.style.flexWrap = 'wrap';
+        // Focus (Enter) goes to the primary choice, or to the cancel choice when the primary one is destructive.
+        const primary = options.choices.find(choice => choice.primary),
+          focused = primary && !primary.danger ? primary : options.choices.find(choice => choice.value === options.cancelValue);
         for (const choice of options.choices) {
           const button = document.createElement('button');
           button.type = 'button';
           setText(button, choice.label);
           button.dataset.choice = choice.value;
-          if (choice.primary) {
-            button.classList.add('primary');
+          if (choice.primary) button.classList.add('primary');
+          if (choice === focused) {
+            close.autofocus = false;
             button.autofocus = true;
           }
           if (choice.danger) button.classList.add('danger');
