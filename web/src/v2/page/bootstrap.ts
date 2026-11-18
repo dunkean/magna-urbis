@@ -38,8 +38,11 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
 
   await state.cityCodeSharing.restoreFromLocation();
 
-  {
-    // Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
+  // Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
+  // Never awaited here: the entry module (main.ts awaits this function) must finish evaluating before the restored run
+  // draws its map. In the build, the lazy renderer chunk imports the entry chunk, so `import('./benchRenderer')` waited
+  // for the entry module, which waited for the run.
+  void (async () => {
     const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';
     const saved = explicit ? undefined : await takeAutosave(); // the entry is removed here and written back only after a successful restore
     if (saved) {
@@ -68,9 +71,9 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
       }
     }
     armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab, mode3d: !!state.city3d?.active, camera: state.city3d?.active ? state.city3d.getCamera() : undefined } }));
-    mountNewButton($('#import-open'));
-    $('#export-open').before($('#city-code-open'));
-  }
+  })();
+  mountNewButton($('#import-open'));
+  $('#export-open').before($('#city-code-open'));
 
   const startupProbe = actions.inspectHardware();
 

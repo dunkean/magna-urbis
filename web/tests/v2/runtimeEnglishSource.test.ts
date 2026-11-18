@@ -22,6 +22,8 @@ describe('runtime messages are authored in English', () => {
     expect(message('Topography ready', 'fr')).toBe('Topographie prête');
     expect(message('Terrain settings have changed. Regenerate the topography before continuing.', 'fr')).toBe('Les paramètres du terrain ont changé. Régénérez la topographie avant de poursuivre.');
     expect(message('Tower: plan, streets, parcels and buildings…', 'fr')).toBe('Tower : plan, rues, parcelles et bâtiments…');
+    expect(message('Settlement 3/12 (Tower)', 'fr')).toBe('Lieu 3/12 (Tower)');
+    expect(message('Settlement 3/12 (Tower)', 'es')).toBe('Asentamiento 3/12 (Tower)');
     expect(message('Underdark · carving caverns and tunnels…', 'fr')).toBe('Outreterre · creusement des cavernes et des tunnels…');
     expect(message('Local Rust service · computing the 2048 × 2048 physical field', 'fr')).toBe('Service Rust local · calcul du champ physique 2048 × 2048');
     expect(message('Rust/WASM · 4096² physical source at 12.50 m', 'fr')).toBe('Rust/WASM · source physique 4096² à 12.50 m');

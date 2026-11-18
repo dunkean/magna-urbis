@@ -149,6 +149,7 @@ export function createStageChainActions(state: PageState, actions: PageActions) 
   }
   function updateProgress(p: V2Progress): void {
     setText($('#progress-label'), p.label);
+    actions.showProgressSettlement(p.settlement);
     const meter = $<HTMLProgressElement>('#progress');
     if (p.total > 0) meter.value = Math.max(0, Math.min(100, (100 * p.completed) / p.total));
     else meter.removeAttribute('value');
