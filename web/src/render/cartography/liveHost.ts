@@ -12,7 +12,7 @@ import { RecordingCanvas } from '../gpu/recorder';
 import type { DisplayList } from '../gpu/contract';
 import type { LiveLayer } from '../live/contract';
 import { createOverlayLayer, type OverlayBand, type OverlayPlan } from '../live/overlayLayer';
-import { getVectorEngine, noteGpuFallback } from '../vectorEngine';
+import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
@@ -77,7 +77,7 @@ export function createLiveHost(c: CartographyContext) {
   function createLiveLayer(gl: WebGL2RenderingContext): LiveLayer | undefined {
     if (deps.raster === false || !deps.invalidate) return undefined;
     const layer = createOverlayLayer(gl, {
-      active: () => !c.disposed && !c.rasterFailed && getVectorEngine() === 'gpu',
+      active: () => !c.disposed && !c.rasterFailed && liveVectorEngine() === 'gpu',
       key: (scale, dpr, light) => {
         const key = regionKey(scale, dpr, light);
         return key === regionFailed ? undefined : key;

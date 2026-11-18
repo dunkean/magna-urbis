@@ -502,6 +502,22 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     return did;
   };
 
+  /** Why the region shown is not the overlay at rest of `frame`; '' when it is. */
+  const restGap = (frame: LiveFrame): string => {
+    if (failed) return `failed: ${failed}`;
+    if (!host.active()) return 'inactive (vector engine or raster failed)';
+    if (raster.lost) return 'context lost';
+    // Recorded for this frame's half-octave scale bucket (its key holds it): the lists are replayed, never a snapshot.
+    const key = host.key(2 ** (Math.round(2 * Math.log2(frame.view.scale)) / 2), frame.dpr, frame.quality === 'light'),
+      r = shown;
+    if (key === undefined || key === failedKey) return 'not recordable';
+    if (!r) return 'no region';
+    if (r.stale || r.draft) return r.stale ? 'stale' : 'draft';
+    if (r.dpr !== frame.dpr || !covers(r.rect, frame.rect)) return 'not covered';
+    if (r.key !== key) return 'other scale';
+    return beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO) ? 'far' : '';
+  };
+
   return {
     name: 'overlay',
     isolated: true,
@@ -513,11 +529,10 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       return !!r && !failed && r.dpr === frame.dpr && meets(r.rect, frame.rect) && host.active() && !raster.lost;
     },
     restExact(frame: LiveFrame): boolean {
-      const r = shown;
-      if (!r || failed || r.stale || r.draft || r.dpr !== frame.dpr || !covers(r.rect, frame.rect) || !host.active() || raster.lost) return false;
-      // Recorded for this frame's half-octave scale bucket (its key holds it): the lists are replayed, never a snapshot.
-      const scale = 2 ** (Math.round(2 * Math.log2(frame.view.scale)) / 2);
-      return r.key === host.key(scale, frame.dpr, frame.quality === 'light') && !beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO);
+      const why = restGap(frame);
+      // Read by the probes: why the overlay at rest is not the live layer's ('' when it is).
+      (globalThis as { __muLiveOverlayWhy?: string }).__muLiveOverlayWhy = why;
+      return !why;
     },
     draw(frame: LiveFrame): void {
       const r = shown;

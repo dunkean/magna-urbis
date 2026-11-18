@@ -256,6 +256,11 @@ export interface LiveStats {
   layerMs?: Partial<Record<LiveLayerName, number[]>>;
   /** A layer whose `ready`, `draw` or `work` threw: the compositor dropped it (its stand-in shows instead). */
   errors?: Partial<Record<LiveLayerName, string>>;
+  /** The picture of the 2D view at rest (v2/display/composedView.ts): `picture` its state (due, live, awaiting,
+   * painting, exact); `exactFrom` the lowest layer painted by its exact renderer because its live layer cannot show it
+   * (globalThis.__muLiveOverlayWhy, __muLiveCityGaps and __muVectorEngine.stats() say why); `awaited` the lowest
+   * live layer still preparing it, which keeps the composed picture meanwhile. */
+  rest?: { picture: string; exactFrom?: LiveLayerName; awaited?: LiveLayerName };
   /** Units of work that held the main thread longer than a frame can afford, oldest first (at most 64): what ran
    * (`work:ground`, `draw:city`, `exact:city`...), for how long (ms), and when (`performance.now()`). */
   slow?: [what: string, ms: number, at: number][];

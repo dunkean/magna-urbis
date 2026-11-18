@@ -9,7 +9,11 @@
  * the names is asked whether what its live layer draws is its picture at rest (LiveLayer.restExact):
  *  - yes: nothing else is painted for it, the compositor keeps drawing it, and a frame at rest costs what a moving
  *    frame costs;
- *  - no (a look its live layer does not cover, a layer that failed): the exact renderer of that layer paints it in
+ *  - not yet, and its live layer has work left (a region of the overlay being recorded for this view, the town's
+ *    meshes, the names placed for it): the layer gets a slice of work, the compositor keeps drawing what it has, and
+ *    the question is asked again at the frame its work ends or shows something new;
+ *  - no, and no work left (a look its live layer does not cover, a layer that failed, the processor drawing the
+ *    map): the exact renderer of that layer paints it in
  *    its stepwise mode (non-blocking: it paints what it has and asks for the frame again as it progresses) into a 2D
  *    canvas stacked above the compositor's, shown once its paint is complete.
  * The exact canvases lie above the compositor's canvas, so a layer shown by one takes the layers above it with it:
@@ -65,8 +69,8 @@ const EXACT_LAYER_CSS = 'position:absolute;left:0;top:0;visibility:hidden';
 const FURNITURE_MS = 100;
 /** Placeholder view of a stand-in that is being cleared. */
 const WHOLE_VIEW: View = { cx: 0, cy: 0, scale: 1 };
-/** The slice of glyph work the text layer gets in the frame that places the names of a view at rest. */
-const NAMES_SLICE_MS = 2;
+/** The slice of work a live layer that is not its picture at rest yet gets in a frame of the view at rest. */
+const REST_SLICE_MS = 2;
 /** The names of a tilted view are those of the top view of its centre and scale, placed over a square this many
  * times the larger side of the viewport: a tilted camera sees further than the top view's rectangle, towards the
  * horizon and on both sides of it. Beyond, the names would fade anyway (render/live/textLayer.ts). */
@@ -87,13 +91,13 @@ const atOrAbove = (layer: ExactLayer, from: ExactLayer | undefined): boolean => 
 
 /**
  * The picture of the view at rest:
- *   due            : not made for this view yet (the view moves, or has just arrived);
- *   live           : the compositor's layers are the picture; nothing else is painted;
- *   awaiting-names : as `live`, but the text layer is still preparing the names placed for this view;
- *   painting       : the exact renderers are painting the layers from `exactFrom` up, in steps;
- *   exact          : those exact canvases are complete and shown.
+ *   due      : not made for this view yet (the view moves, or has just arrived);
+ *   live     : the compositor's layers are the picture; nothing else is painted;
+ *   awaiting : as `live`, but a live layer (`awaited`) is still preparing its picture at rest for this view;
+ *   painting : the exact renderers are painting the layers from `exactFrom` up, in steps;
+ *   exact    : those exact canvases are complete and shown.
  */
-type RestPicture = 'due' | 'live' | 'awaiting-names' | 'painting' | 'exact';
+type RestPicture = 'due' | 'live' | 'awaiting' | 'painting' | 'exact';
 
 export class ComposedView {
   private live?: LiveCompositor;
@@ -118,6 +122,8 @@ export class ComposedView {
   private rest: RestPicture = 'due';
   /** The lowest layer the picture at rest paints with its exact renderer (undefined: none). */
   private exactFrom?: ExactLayer;
+  /** The lowest layer below `exactFrom` whose live layer is still preparing its picture at rest (undefined: none). */
+  private awaited?: ExactLayer;
   /** The lowest layer whose exact canvas is on screen; the canvases above it are too, and the compositor draws none of them. */
   private shownFrom?: ExactLayer;
   /** The exact town paint of the picture at rest is incomplete. */
@@ -330,7 +336,7 @@ export class ComposedView {
       canvas.remove();
       canvas.width = canvas.height = 0;
     }
-    this.shownFrom = this.exactFrom = undefined;
+    this.shownFrom = this.exactFrom = this.awaited = undefined;
     this.townPending = false;
     this.rest = 'due';
     this.cssW = this.cssH = 0;
@@ -385,7 +391,7 @@ export class ComposedView {
     // At rest: the picture at rest when it is due (the view came to rest, the content changed, a stepwise paint
     // progressed, the names were being prepared), else the compositor alone (a ground tile arrived, the page asked
     // for a frame of the same content).
-    if (this.rest === 'due' || this.rest === 'awaiting-names' || this.paintedRevision !== map.paintRevision) this.restFrame(live, view, w, h, dpr, now);
+    if (this.rest === 'due' || this.awaited || this.paintedRevision !== map.paintRevision) this.restFrame(live, view, w, h, dpr, now);
     else this.composeFrame(live, view, w, h, dpr, false, now);
   }
   private viewRested = (): void => {
@@ -522,9 +528,9 @@ export class ComposedView {
       renderer.placeText(view, w, h);
       reportDrawnLabels(renderer.lastPlaced().map(p => p.label.id));
     }
-    const from = this.lowestExact(live, view, w, h, ratio, cityOn),
-      namesAwaited = from === 'awaited';
-    const exactFrom = (this.exactFrom = from === 'awaited' ? undefined : from);
+    const { exact: exactFrom, awaited } = this.restPlan(live, view, w, h, ratio, cityOn);
+    this.exactFrom = exactFrom;
+    this.awaited = awaited;
     let overlayPending = false;
     this.townPending = false;
     if (exactFrom) {
@@ -569,22 +575,27 @@ export class ComposedView {
       if (exactFrom !== 'text' && !this.townPending) live.setStandIn('city', cityOn && town.city ? this.cityCanvas : undefined, view, w, h);
       live.setStandIn('text', renderer ? this.textCanvas : undefined, view, w, h);
     }
-    this.rest = exactFrom ? (complete ? 'exact' : 'painting') : namesAwaited ? 'awaiting-names' : 'live';
+    this.rest = exactFrom ? (complete ? 'exact' : 'painting') : awaited ? 'awaiting' : 'live';
+    liveStats().rest = { picture: this.rest, exactFrom, awaited };
     noteLiveUnit('rest', started);
     this.readiness.notePresented();
   }
-  /** The lowest of the overlay, the town and the names whose live layer is not its picture at rest for this view;
-   * undefined when all three are; `awaited` when only the names are missing and the text layer is preparing them. */
-  private lowestExact(live: LiveCompositor, view: View, w: number, h: number, ratio: number, cityOn: boolean): ExactLayer | 'awaited' | undefined {
+  /** Of the overlay, the town and the names: the lowest whose live layer is not its picture at rest for this view and
+   * cannot become it (`exact`), and below it the lowest whose live layer is still preparing it (`awaited`). */
+  private restPlan(live: LiveCompositor, view: View, w: number, h: number, ratio: number, cityOn: boolean): { exact?: ExactLayer; awaited?: ExactLayer } {
     const { cartography, town } = this.parts;
-    // Without a cartography there is no overlay and no name to paint; a hidden town has nothing to paint either.
-    if (cartography.renderer && !live.restExact('overlay', view, w, h, ratio)) return 'overlay';
-    if (cityOn && town.city && !live.restExact('city', view, w, h, ratio)) return 'city';
-    if (!cartography.renderer || live.restExact('text', view, w, h, ratio)) return undefined;
-    // The text layer holds the names of another placement (they keep following the map meanwhile): it gets a slice
-    // of work now, and the names are painted exact only if it has nothing left to do and still cannot show them.
-    if (live.advanceLayer('text', NAMES_SLICE_MS)) return 'awaited';
-    return live.restExact('text', view, w, h, ratio) ? undefined : 'text';
+    let awaited: ExactLayer | undefined;
+    for (const layer of EXACT_LAYERS) {
+      // Without a cartography there is no overlay and no name to paint; a hidden town has nothing to paint either.
+      if (layer === 'city' ? !cityOn || !town.city : !cartography.renderer) continue;
+      if (live.restExact(layer, view, w, h, ratio)) continue;
+      // The live layer holds another region, mesh tier or placement (it keeps following the map meanwhile): it gets
+      // a slice of work now, and the layer is painted exact only once it has nothing left to do and still cannot
+      // show its picture at rest.
+      if (live.advanceLayer(layer, REST_SLICE_MS)) awaited ??= layer;
+      else if (!live.restExact(layer, view, w, h, ratio)) return { exact: layer, awaited };
+    }
+    return { awaited };
   }
   /** The exact canvases to have on screen. Those from `from` up change hands together: when their paints are complete,
    * or as they fill when the compositor has nothing to show for the lowest of them (`covered` false: no live layer
@@ -620,9 +631,9 @@ export class ComposedView {
 
   // --- pending work, style switch, disposal --------------------------------------------------------------------------
 
-  /** Pending work that only concerns the view on screen: the picture at rest, the names being prepared, the town paint. */
+  /** Pending work that only concerns the view on screen: the picture at rest, a live layer preparing it, the town paint. */
   pendingViewOnly(): number {
-    return Number(this.motion.restOwed) + Number(this.rest === 'awaiting-names') + Number(this.townPending);
+    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending);
   }
   /** Overlay rasters the exact overlay paint still waits for (none when the overlay at rest is the live layer). */
   pendingOverlay(): number {

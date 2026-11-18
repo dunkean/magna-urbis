@@ -1,15 +1,16 @@
 /**
- * The exact raster tiles of the map: drawVector rendered per tile at the view's scale (recorded and rasterized on
- * WebGL2 by the shared tile rasterizer, or drawn by the processor), cached per key, composed into the view with the
- * furniture on top.
+ * The exact raster tiles of the map: drawVector rendered per tile (recorded and rasterized on WebGL2 by the shared tile
+ * rasterizer, or drawn by the processor), cached per key, composed into the view with the furniture on top.
  *
  * Two ways to paint a view:
- *  - synchronous (`draw(view)`): captures, exports and sheets; every missing tile is built before the call returns.
+ *  - synchronous (`draw(view)`): captures, exports and sheets, at the view's scale; every missing tile is built before
+ *    the call returns.
  *  - stepwise (`draw(view, { stepwise: true })`): the composed view for an overlay whose live layer is not its picture at
  *    rest (`restExact` false), and the fallback display. A call composes the tiles it has and starts a job that builds
  *    the missing ones in slices of at most 8 ms per animation frame (StepwisePaint), asking for a repaint as they come.
  *    Under the missing tiles it draws the last picture it painted, moved to the view: the fallback display shows its
- *    picture while it fills. Its tiles are smaller (each one is a step) and feed the tile pyramid.
+ *    picture while it fills. Its tiles are smaller (each one is a step), drawn at the half-octave scale of the view
+ *    (the live overlay's), and feed the tile pyramid.
  * The 3D drape paints its tiles here too (`drawGround`), and reads the pyramid of stepwise tiles as its stand-in, as
  * does the miniature (`drawCachedMap`).
  * Reads: scene, world, palette, the semantic and road keys of the host. Writes: stepwise, activeLight, activeDpr,
@@ -88,8 +89,13 @@ export function createExactTiles(c: CartographyContext) {
       cssH = canvas.height / dpr,
       rect = viewRect(view, cssW, cssH);
     const stepwise = c.stepwise && !!deps.invalidate && typeof requestAnimationFrame === 'function';
-    const scale = view.scale,
-      k = scale * dpr;
+    // Captures are drawn at the view's exact scale. Stepwise tiles are drawn at the half-octave scale of the live
+    // overlay's regions (render/live/overlayLayer.ts) and laid at the view's (`ratio`, within 2^±1/4): a pan or a
+    // zoom inside the bucket reuses them instead of repainting every tile.
+    const scale = stepwise ? 2 ** (Math.round(2 * Math.log2(view.scale)) / 2) : view.scale,
+      k = scale * dpr,
+      outputK = view.scale * dpr,
+      ratio = view.scale / scale;
     // Small stepwise CPU tiles bound each indivisible raster operation; captures take larger tiles. Polygon paths are
     // clipped below. Raster cost does not bound GPU tiles: stepwise ones are larger, so a view needs fewer.
     const engine = getVectorEngine();
@@ -131,7 +137,7 @@ export function createExactTiles(c: CartographyContext) {
           else if (list && st && gpu) {
             try {
               const bitmap = gpu.rasterize(list);
-              noteGpuTile(t1 - t0, now() - t1, gpu.lastStats().synced);
+              noteGpuTile(t1 - t0, now() - t1, gpu.lastStats().synced, side * side);
               pathsBuilt += st.pathsBuilt;
               mapStats = st;
               resource = bitmap;
@@ -165,7 +171,7 @@ export function createExactTiles(c: CartographyContext) {
             target.height = 0;
           }
         };
-        noteCpuTile(now() - t0);
+        noteCpuTile(now() - t0, side * side);
       }
       const margin = paintMargin(scale) + gutter / k;
       rasterCache.put(request.key, { value: resource, bytes, bounds: { minX: request.x * tileSize - margin, minY: request.y * tileSize - margin, maxX: (request.x + 1) * tileSize + margin, maxY: (request.y + 1) * tileSize + margin }, release });
@@ -242,26 +248,26 @@ export function createExactTiles(c: CartographyContext) {
       if (stepwise && missing && lastPicture) {
         const old = lastPicture,
           factor = ((view.scale / old.view.scale) * dpr) / old.dpr;
-        const x = canvas.width / 2 + (old.view.cx - view.cx) * k - (old.canvas.width * factor) / 2;
-        const y = canvas.height / 2 + (old.view.cy - view.cy) * k - (old.canvas.height * factor) / 2;
+        const x = canvas.width / 2 + (old.view.cx - view.cx) * outputK - (old.canvas.width * factor) / 2;
+        const y = canvas.height / 2 + (old.view.cy - view.cy) * outputK - (old.canvas.height * factor) / 2;
         ctx.drawImage(old.canvas as unknown as CanvasImageSource, x, y, old.canvas.width * factor, old.canvas.height * factor);
       }
       for (const tile of tiles) {
-        const x = (tile.x * tileSize - rect.minX) * k,
-          y = (tile.y * tileSize - rect.minY) * k;
+        const x = (tile.x * tileSize - rect.minX) * outputK,
+          y = (tile.y * tileSize - rect.minY) * outputK;
         // Gutters supply filtering samples, but each output pixel belongs to one
         // tile only. Overpainting them darkens transparent land-use overlays.
         // Integer device-pixel partitions also avoid fractional clipping seams.
         const left = Math.round(x),
           top = Math.round(y);
-        const width = Math.round(x + tilePx) - left,
-          height = Math.round(y + tilePx) - top;
+        const width = Math.round(x + tilePx * ratio) - left,
+          height = Math.round(y + tilePx * ratio) - top;
         ctx.save();
         ctx.beginPath();
         ctx.rect(left, top, width, height);
         ctx.clip();
         ctx.clearRect(left, top, width, height);
-        ctx.drawImage(tile.image, x - gutter, y - gutter, tilePx + 2 * gutter, tilePx + 2 * gutter);
+        ctx.drawImage(tile.image, x - gutter * ratio, y - gutter * ratio, (tilePx + 2 * gutter) * ratio, (tilePx + 2 * gutter) * ratio);
         ctx.restore();
       }
       if (stepwise) {
@@ -371,7 +377,7 @@ export function createExactTiles(c: CartographyContext) {
             } finally {
               bitmap.close();
             }
-            noteGpuTile(t1 - t0, now() - t1, gpu.lastStats().synced);
+            noteGpuTile(t1 - t0, now() - t1, gpu.lastStats().synced, target.width * target.height);
             return drawn(fs);
           }
         }
@@ -381,7 +387,7 @@ export function createExactTiles(c: CartographyContext) {
     }
     const t0 = now(),
       fs = drawVector(c, view, target, 'ground');
-    noteCpuTile(now() - t0);
+    noteCpuTile(now() - t0, target.width * target.height);
     return drawn(fs);
   }
   /** Bytes held by the tiles and the last picture. */

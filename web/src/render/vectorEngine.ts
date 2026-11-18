@@ -17,8 +17,11 @@ const VECTOR_ENGINE_STORAGE_KEY = 'magna-urbis-vector-engine';
 const SLOW_RASTER_MS = 40,
   SLOW_WINDOW = 8,
   HISTORY = 64;
-/** The processor keeps the map only when its tiles take less than this share of the GPU's (record + raster). */
+/** The processor keeps the map only when its tiles take less than this share of the GPU's (record + raster), per pixel:
+ * the processor's stepwise tiles are a quarter of the GPU's. */
 const CPU_WINS = 0.8;
+/** Tile times are compared per this many pixels (a tile without a size counts as this many). */
+const TILE_PIXELS = 1e6;
 /** A trial the processor won gives the GPU another chance after this long, doubled at each new trial it loses
  * (a busy graphics process or first shader compiles pass; a weak card does not). */
 const RETRY_MS = 30000,
@@ -27,6 +30,8 @@ const RETRY_MS = 30000,
 interface VectorEngineStats {
   preference: VectorEngineChoice;
   engine: VectorEngine;
+  /** The engine of the live overlay layer (`liveVectorEngine`). */
+  live: VectorEngine;
   renderer: string;
   software: boolean;
   demoted?: string;
@@ -55,13 +60,13 @@ if (typeof location !== 'undefined') {
 let preference: VectorEngineChoice = valid(stored) ? stored : 'auto';
 /** In memory only: a reload gives the GPU another chance (a latched session demotion kept fixed tabs on the CPU). */
 let demoted: string | undefined;
-/** Set while `demoted` is a slow-tile trial: the GPU tile time it started from, the processor tiles drawn since,
- * and when the GPU is tried again once the processor has won. */
+/** Set while `demoted` is a slow-tile trial: the GPU tile time it started from, the processor tiles drawn since (both
+ * per TILE_PIXELS), and when the GPU is tried again once the processor has won. */
 let trial: { gpuMs: number; cpu: number[]; retryAt?: number } | undefined;
 let retryMs = RETRY_MS;
-/** Median processor tile time of the last trial: the GPU is not put on trial again while it stays below it. */
+/** Median processor tile time (per TILE_PIXELS) of the last trial: the GPU is not put on trial again while it stays below it. */
 let cpuReference: number | undefined;
-/** Raster and whole-tile (record + raster) times of the GPU tiles whose replay waited for the graphics process. */
+/** Raster and whole-tile (record + raster, per TILE_PIXELS) times of the GPU tiles whose replay waited for the graphics process. */
 let syncedRaster: number[] = [],
   syncedTile: number[] = [];
 try {
@@ -104,9 +109,14 @@ function rasterizerOrNull(): GpuRasterizer | null {
 }
 
 /** The engine the next tile uses. Node and workers (no document) always answer `cpu`. */
-export function getVectorEngine(): VectorEngine {
+export const getVectorEngine = (): VectorEngine => engineFor(false);
+/** The engine of the live overlay layer (render/cartography/liveHost.ts). A slow-tile trial does not concern it: the
+ * trial measures the exact tiles of the shared tile rasterizer, while the live layer replays in the compositor's
+ * context; demoting it would hand every view at rest to the processor's exact paint. */
+export const liveVectorEngine = (): VectorEngine => engineFor(true);
+function engineFor(live: boolean): VectorEngine {
   const choice = getVectorEnginePreference();
-  if (choice === 'cpu' || demoted !== undefined || typeof document === 'undefined') return 'cpu';
+  if (choice === 'cpu' || (demoted !== undefined && !(live && trial)) || typeof document === 'undefined') return 'cpu';
   const raster = rasterizerOrNull();
   if (!raster || raster.lost) return 'cpu';
   // An explicit GPU choice may use a software rasterizer; auto never does.
@@ -171,14 +181,15 @@ function promote(why: string): void {
   emit();
 }
 
-/** `synced`: the replay waited for the graphics process (GpuRasterizer.lastStats), so `raster` includes the GPU's time. */
-export function noteGpuTile(record: number, raster: number, synced = true): void {
+/** `synced`: the replay waited for the graphics process (GpuRasterizer.lastStats), so `raster` includes the GPU's time.
+ * `pixels`: the tile's surface. */
+export function noteGpuTile(record: number, raster: number, synced = true, pixels = TILE_PIXELS): void {
   gpuTiles++;
   push(recordMs, record);
   push(rasterMs, raster);
   if (!synced) return;
   push(syncedRaster, raster);
-  push(syncedTile, record + raster);
+  push(syncedTile, ((record + raster) * TILE_PIXELS) / pixels);
   if (getVectorEnginePreference() !== 'auto' || demoted !== undefined || syncedRaster.length < SLOW_WINDOW) return;
   const median = medianOf(syncedRaster),
     tile = medianOf(syncedTile);
@@ -189,11 +200,11 @@ export function noteGpuTile(record: number, raster: number, synced = true): void
   console.warn(`Vector engine: the processor draws the map for now (${demoted}); the faster engine stays.`);
   emit();
 }
-export function noteCpuTile(ms: number): void {
+export function noteCpuTile(ms: number, pixels = TILE_PIXELS): void {
   cpuTiles++;
   push(cpuMs, ms);
   if (!trial) return;
-  push(trial.cpu, ms);
+  push(trial.cpu, (ms * TILE_PIXELS) / pixels);
   if (trial.cpu.length < SLOW_WINDOW) return;
   // Compared on its last tiles for as long as the processor draws: the first ones may be light (a view at rest)
   // and the next ones a whole new style.
@@ -201,7 +212,7 @@ export function noteCpuTile(ms: number): void {
   // The processor is not clearly faster: the slowness was not the GPU engine's (a busy graphics process, a heavy map).
   if (median >= trial.gpuMs * CPU_WINS) {
     cpuReference = median;
-    promote(`processor tiles ${median.toFixed(0)} ms, GPU tiles ${trial.gpuMs.toFixed(0)} ms`);
+    promote(`processor tiles ${median.toFixed(0)} ms, GPU tiles ${trial.gpuMs.toFixed(0)} ms per megapixel`);
     return;
   }
   if (trial.retryAt === undefined) {
@@ -229,6 +240,7 @@ export function vectorEngineStats(): VectorEngineStats {
   return {
     preference: getVectorEnginePreference(),
     engine,
+    live: liveVectorEngine(),
     renderer: raster?.renderer ?? '',
     software: raster?.software ?? false,
     ...(demoted !== undefined ? { demoted } : {}),
