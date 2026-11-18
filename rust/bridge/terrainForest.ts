@@ -15,6 +15,7 @@ import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterio
 import { forestPlanes } from './forestNative';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { FOREST_CROWN_SETBACK_GLSL } from '../../web/src/render/forestRoom';
+import { FOREST_STATURE_GLSL } from './terrainForestStature';
 
 export interface ForestSettings {
   enabled: boolean;
@@ -819,8 +820,10 @@ vec3 forestKind(float trop,float dry){
   float savanna=trop*groundSmooth(.3,.6,dry);
   return vec3((1.-trop)*groundSmooth(10.,14.,uMaterialClimate.x)*groundSmooth(.35,.7,dry),trop-savanna,savanna);
 }
-// Mean crown radius: spires are narrow, so the τ lattice packs them tighter at the same cover.
-float forestRadius(float height,float needle,float dry){return mix((.24*height+1.)*(1.+.45*dry),.07*height+.55,needle);}
+${FOREST_STATURE_GLSL}
+// Mean crown radius: spires are narrow, so the τ lattice packs them tighter at the same cover. The biome scales it
+// (FOREST_BIOME): crown size and spacing read differently from boreal spires to savanna umbrellas.
+float forestRadius(float height,float needle,float dry){vec4 b=FOREST_BIOME[forestBiome()];return mix((.24*height+1.)*(1.+.45*dry)*b.x,(.07*height+.55)*b.y,needle);}
 // Stunted conifers near the treeline: the field's stature has already shrunk with altitude.
 float forestKrummholz(float height,float needle){return (1.-groundSmooth(3.,7.,height))*groundSmooth(.35,.7,needle);}
 // Field heights vanish where Render's eligibility does: planted trees need ground where trees can grow.
@@ -874,7 +877,8 @@ vec2 forestOpenShares(vec2 world){
 }
 float forestFieldShare(vec2 world){return forestOpenShares(world).x;}
 // One crown: centre, mean radius, outline harmonics, height, crown depth.
-struct ForestCrown{vec2 c;float r;float h;float depth;bool needle;bool alive;bool riparian;float edge;uint id;};
+// lift raises a giant's dome above its neighbours (draw order only: shadows keep h).
+struct ForestCrown{vec2 c;float r;float h;float depth;float lift;bool needle;bool alive;bool riparian;float edge;uint id;};
 // Signed distance (m, positive inside) to the open land of the occupation raster.
 float forestOpenAt(vec2 p){return (textureLod(uOccupation,(p-uOccupationRect.xy)/uOccupationRect.z,0.).r*255.-128.)/16.*uOccupationRect.z/uOccupationN;}
 ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch lattice){
@@ -885,7 +889,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   // probabilities/radii can otherwise switch half-way through a drawing,
   // leaving a sliced crown or only a thin strip of its painted foot.
   vec4 centre=forestField(k.c,0.);float cover=centre.r,height=centre.g*50.,needle=centre.b;
-  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false,tilledPlot=false,field=false;
+  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false,tilledPlot=false,field=false,town=false;
   if(uHasOccupation==1){
     vec2 ouv=(k.c-uOccupationRect.xy)/uOccupationRect.z;
     if(all(greaterThanEqual(ouv,vec2(0.)))&&all(lessThanEqual(ouv,vec2(1.)))){
@@ -893,7 +897,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
       open=dist.x;forced=dist.y;
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
       // Kitchen and market-garden plots (class 5) root no crown: only the woods around them overhang the beds.
-      tilledPlot=cls==5;
+      tilledPlot=cls==5;town=cls==7;
       // A cultivated field keeps only its edge hedge and a lone tree or two (forestFieldTree). Its smooth share, not
       // the nearest class texel, which drew the field rules along the wood edge as a staircase.
       vec2 shares=forestOpenShares(k.c);field=shares.x>.5;
@@ -959,15 +963,22 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   }
   k.riparian=k.riparian&&k.alive;
   // Geometry only for live crowns. No early return: ANGLE/D3D11 miscompiled it here.
-  k.needle=false;k.r=0.;k.h=0.;k.depth=0.;
+  k.needle=false;k.r=0.;k.h=0.;k.depth=0.;k.lift=0.;
   if(k.alive){
     k.needle=forestU8(h2,8u)<needle;
-    vec3 kind=forestKind(st.trop,st.dry);
-    float emergent=kind.y*groundSmooth(.9,.97,forestU8(h2,24u));
+    vec3 kind=forestKind(st.trop,st.dry);vec4 bio=FOREST_BIOME[forestBiome()];
+    // Social class (forestSocial): margins are stand gaps, wood edges within 2.5 radii and bank galleries.
+    float margin=max(max(k.edge,open>-1e3?1.-groundSmooth(0.,2.5*radius,-open):0.),k.riparian?.6:0.);
+    float closure=groundSmooth(.55,.9,density)*groundSmooth(8.,18.,height)*(1.-margin);
+    bool lone=beyond>0.,hedgeRow=town||open<(field?FOREST_FIELD_HEDGE:5.);
+    vec2 social=forestSocial(forestU8(h2,16u),forestU8(h2*0x85ebca6bu,24u),forestU8(h,24u),margin,closure,krumm,kind.y,lone);
+    // Giants in old-growth cores of the stand, landmark trees in meadows and pastures; never in scrub or krummholz.
+    float giantGate=(1.-krumm)*groundSmooth(4.,10.,height);
+    bool giant=lone?!field&&!hedgeRow&&forestU8(h2,24u)<min(FOREST_LANDMARK*bio.z,FOREST_LANDMARK_MAX)*giantGate:forestGiant(k.c,forestU8(h2,24u),bio.z*giantGate,seed);
+    // Open-grown crowns are broader than stand crowns, hedgerows and town trees keep theirs; stand margins widen.
     // Capped to the reach of the 3×3 search: a wider crown would be sliced.
-    k.r=min(rho*s*(.8+.4*forestU8(h,24u))*(1.+.1*k.edge)*(beyond>0.?.75:1.)*(1.+.6*emergent+.3*krumm),1.14*s);
-    // Tropical canopies spread their heights into layers.
-    k.h=height*(mix(.82,.66,kind.y)+mix(.36,.6,kind.y)*forestU8(h2,16u))*(1.+.45*emergent);
+    k.r=min(rho*s*(.8+.4*forestU8(h,24u))*(giant?bio.w:social.y)*(lone?(hedgeRow?FOREST_HEDGE_WIDEN:FOREST_LONE_WIDEN):1.+.2*margin)*(1.+.3*krumm),1.14*s);
+    k.h=height*(giant?FOREST_GIANT_PAINTED:social.x);k.lift=giant?FOREST_GIANT_LIFT*height:0.;
     k.depth=k.r*(k.needle?mix(3.2,1.1,krumm):mix(.55,.22,kind.z));
   }
   return k;
@@ -978,7 +989,7 @@ ForestCrown orchardCrown(ivec2 cell,ForestStand st){
   ForestCrown k;uint h=groundHash(ivec3(cell,877),uMaterialSeed);k.id=groundHash(ivec3(cell,878),uMaterialSeed);
   vec2 q=(vec2(cell)+.5+(vec2(forestU8(h,0u),forestU8(h,8u))-.5)*.12)*8.;
   k.c=st.rows*q.x+vec2(-st.rows.y,st.rows.x)*q.y;
-  k.r=2.3+.4*forestU8(h,16u);k.h=6.+1.2*forestU8(k.id,16u);k.depth=k.r*.8;
+  k.r=2.3+.4*forestU8(h,16u);k.h=6.+1.2*forestU8(k.id,16u);k.depth=k.r*.8;k.lift=0.;
   k.needle=false;k.riparian=false;k.edge=0.;
   vec4 detail=orchardDetail(k.c);vec2 c2=detail.gb*2.-1.;float a=.5*atan(c2.y,c2.x);vec2 rows=vec2(cos(a),sin(a));
   k.alive=int(groundOccupation(k.c).z)==4&&dot(rows,st.rows)>.9999&&detail.a*6.>k.r*1.2
@@ -1042,7 +1053,7 @@ void forestCrowns(inout ForestHit hit,int level,float s,ForestStand st,float aa)
     else {r=forestOutline(k,d/max(dist,1e-4),aa)*forestLeafSpan(k.needle);hit.near=min(hit.near,dist/r);if(dist>=r+aa)continue;a=clamp((r-dist)/aa+.5,0.,1.);}
     // Profiles: sharp-tipped cone, dome, or the flat top of a savanna umbrella.
     float delta=min(dist/r,1.),d2=delta*delta,tip=sqrt(d2+.006);
-    float z=k.h-k.depth*(k.needle?tip:mix(d2,d2*d2,umbrella));
+    float z=k.h+k.lift-k.depth*(k.needle?tip:mix(d2,d2*d2,umbrella));
     // Union of translucent layers: overlapping painted foliage closes the
     // canopy as the Boolean model behind the τ table assumes (max() did not).
     hit.cover=1.-(1.-hit.cover)*(1.-a);
