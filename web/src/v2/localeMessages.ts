@@ -12,6 +12,8 @@ import { editingMessages } from './editingMessages';
 import { symbolicMapMessages } from './symbolicMapMessages';
 import { coastTraceMessages } from './coastTraceMessages';
 import { engineRuntimeEntries, engineRuntimeTemplates } from './engineRuntimeMessages';
+import { urbanHelpMessages } from './localeUrbanHelp';
+import { cityCodeMessages } from './localeCityCode';
 
 /** Translations keyed by canonical English presentation text; schema catalogs are reviewed separately. */
 export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Record<string, string>> = {
@@ -8381,6 +8383,8 @@ for(const [language,messages] of Object.entries(localeExtraCultures))Object.assi
 for (const [index, language] of (['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const).entries()) {
   for (const row of neuralDownloadMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of editingMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of urbanHelpMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of cityCodeMessages) localeMessages[language][row[0]] = row[index + 1];
   for (const row of [...coastTraceMessages, ...symbolicMapMessages]) localeMessages[language][row[0]] = row[index + 1];
 }
 

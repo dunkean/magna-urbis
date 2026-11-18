@@ -4,6 +4,7 @@ import { STYLE_FACETS, type StyleFacet, type StyleMix, type StyleSheet } from '.
 import { bindTree, registerMessages, setText, translate } from './i18n';
 import { URBAN_ZONES, urbanCultureChoices } from './urbanControlSchema';
 import './urbanControls.css';
+import { urbanParameterHelp } from './urbanParameterHelp';
 
 export type MixSpread = NonNullable<StyleMix['spread']>;
 const SPREADS: readonly MixSpread[] = ['lot', 'block', 'quarter'];
@@ -69,6 +70,7 @@ export function mountMixEditor(area: HTMLElement, o: MixEditorOptions): MixEdito
     if (!value) return;
     const spread = document.createElement('label'); spread.className = 'urban-mix-spread'; const caption = document.createElement('span'); setText(caption, 'Spread');
     const select = document.createElement('select'); if (o.path) select.dataset.settingPath = `${o.path}.spread`;
+    for (const target of [caption, select]) { target.title = translate(urbanParameterHelp.spread); target.setAttribute('data-i18n-title', urbanParameterHelp.spread); }
     for (const id of SPREADS) { const option = document.createElement('option'); option.value = id; setText(option, spreadText(id)); select.append(option); }
     select.value = value.spread ?? 'lot';
     select.onchange = () => o.set({ ...value, spread: select.value as MixSpread }); spread.append(caption, select); rows.append(spread);
@@ -80,6 +82,7 @@ export function mountMixEditor(area: HTMLElement, o: MixEditorOptions): MixEdito
       if (!cultures.some(c => c.value === style.culture)) culture.append(new Option(style.culture, style.culture));
       culture.value = style.culture;
       const weight = document.createElement('input'); weight.setAttribute('aria-label', translate('Weight')); if (o.path) weight.dataset.settingPath = `${o.path}.styles.${i}.weight`;
+      for (const [target, key] of [[culture, 'culture'], [weight, 'weight']] as const) { target.title = translate(urbanParameterHelp[key]); target.setAttribute('data-i18n-title', urbanParameterHelp[key]); }
       if (o.slider) { weight.type = 'range'; weight.min = '0'; weight.max = '100'; weight.step = '1'; weight.className = 'urban-mix-weight'; }
       else { weight.type = 'number'; weight.min = '0'; weight.step = 'any'; }
       weight.value = String(style.weight);
@@ -128,6 +131,7 @@ export function mountStyleSheetEditor(parent: HTMLElement, o: StyleSheetEditorOp
     const text = STYLE_FACET_TEXT[facet];
     const [box, title] = block('h4'); box.className = 'urban-control-section urban-style-facet'; box.dataset.styleFacet = facet;
     setText(title, text.title[0]); box.append(title);
+    title.title = translate(text.hint[0]); title.setAttribute('data-i18n-title', text.hint[0]);
     const hint = document.createElement('small'); setText(hint, text.hint[0]); box.append(hint);
     const whole = document.createElement('div'); whole.className = 'urban-style-mix'; box.append(whole);
     const caption = document.createElement('h4'); setText(caption, 'Whole place'); whole.append(caption);

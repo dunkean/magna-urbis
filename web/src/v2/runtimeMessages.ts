@@ -12,6 +12,7 @@ export type RuntimeLanguage = Language;
 
 const entries: readonly (readonly [string, string])[] = [
   ...engineRuntimeEntries,
+  ['Rust · composition urbaine…', 'Rust · urban composition…'],
   ...neuralDownloadMessages.map(([en, fr]) => [fr, en] as const),
   ["Créez d’abord le relief.", "Create the terrain first."],
   ["Chargement du moteur Rust/WASM (threads)…", "Loading the Rust/WASM engine (threads)…"],

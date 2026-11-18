@@ -7,6 +7,7 @@ import { HOUSE_SCHEMA, type HouseConfig, type WorkshopRequest } from '../../../r
 import type { ParameterField } from './parameterForm';
 import { HARBOUR_TYPES, HARBOUR_TYPE_NAMES } from '../render/harbourStyle';
 import { urbanActivityNames, urbanCultureNames, urbanExtraChoiceNames, urbanExtraFieldNames } from './urbanLabelNames';
+import { urbanHelp } from './urbanParameterHelp';
 
 export interface UrbanCatalogue {
   fields: Record<'quarters' | 'parcels', string[]>;
@@ -56,7 +57,7 @@ const boundedOne = new Set(['mixShare', 'siteAdaptation', 'irregularity', 'aniso
 const integers = new Set(['count', 'rings', 'phases', 'nuclei', 'epochs', 'floors', 'bodies', 'salt']);
 export function urbanField(path: string, value: unknown, section: UrbanControlSection): UrbanParameterField {
   const key = path.split('.').filter(part => !/^\d+$/.test(part)).at(-1)!, label = urbanName(key)[0];
-  const field: UrbanParameterField = { path, section, label, type: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' || value === null ? 'number' : 'text', optional: true };
+  const field: UrbanParameterField = { path, section, label, help: urbanHelp(path), helpDisplay: 'tooltip', type: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' || value === null ? 'number' : 'text', optional: true };
   if (field.type === 'number') { field.step = integers.has(key) ? 1 : 'any' as unknown as number; if (!['orientation', 'mixAngle', 'fieldTwist', 'site_slope_deg'].includes(key)) field.min = 0; if (boundedOne.has(key)) field.max = 1; if (key === 'singularDensity') field.max = 3; }
   if (key === 'density') { field.min = .1; field.max = 10; }
   if (key === 'salt') field.max = 2147483647;

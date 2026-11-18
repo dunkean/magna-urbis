@@ -10,6 +10,7 @@ import { nameProfileLabels } from './mapControls';
 import { mountParameterForm } from './parameterForm';
 import { LANGUAGES } from './languages';
 import { registerMessages, setText, translate } from './i18n';
+import { urbanParameterHelp } from './urbanParameterHelp';
 
 registerMessages({
   'Names are independent of building styles.': { en:'Names are independent of building styles.', fr:'Les noms sont indépendants du style des constructions.' },
@@ -26,10 +27,10 @@ export function mountNameOriginControls(host: HTMLElement, id: string, b: {
   setText(hint, 'Names are independent of building styles.'); host.append(heading, fields, preview, hint);
   const policy = (): NamingPolicy => b.city ? b.getSettings().naming?.local?.[b.city] ?? {} : b.getSettings().naming ?? {};
   const form = mountParameterForm(fields, [
-    { path:'profile', id:`${id}-profile`, label:'Name profile', type:'select', optional:true, emptyLabel:b.city ? 'Inherit' : 'Inherit from culture', options:TOPONYM_PROFILES.map(p=>({value:p.id,label:nameProfileLabels[p.id]})) },
-    { path:'source', id:`${id}-source`, label:'Name source', type:'select', optional:true, emptyLabel:'Inherit', options:[{value:'auto',label:'Profile default'},{value:'geographic',label:'Real geographic names'},{value:'invented',label:'Invented names'},{value:'mixed',label:'Real and invented names'}] },
+    { path:'profile', id:`${id}-profile`, label:'Name profile', type:'select' as const, optional:true, emptyLabel:b.city ? 'Inherit' : 'Inherit from culture', options:TOPONYM_PROFILES.map(p=>({value:p.id,label:nameProfileLabels[p.id]})) },
+    { path:'source', id:`${id}-source`, label:'Name source', type:'select' as const, optional:true, emptyLabel:'Inherit', options:[{value:'auto',label:'Profile default'},{value:'geographic',label:'Real geographic names'},{value:'invented',label:'Invented names'},{value:'mixed',label:'Real and invented names'}] },
     ...(!b.city ? [{ path:'presentation', id:`${id}-language`, label:'Map language', type:'select' as const, options:[{value:'ui',label:'Interface language'},...LANGUAGES.map(l=>({value:l.code,label:l.name})),{value:'cultural',label:'Full cultural names'}] }] : []),
-  ], {
+  ].map(field => ({ ...field, help: urbanParameterHelp[field.path === 'profile' ? 'nameProfile' : field.path === 'source' ? 'nameSource' : 'mapLanguage'], helpDisplay: 'tooltip' as const })), {
     getValue:path=>path==='presentation' ? b.getSettings().naming?.mode==='cultural' ? 'cultural' : b.getSettings().naming?.mapLanguage ?? 'ui' : policy()[path as keyof NamingPolicy] ?? '',
     setValue:(path,value)=>{
       const s=b.getSettings(); s.naming??={};

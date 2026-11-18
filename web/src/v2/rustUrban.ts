@@ -372,7 +372,7 @@ export async function generateRustTown(world: World, settings: V2Settings, key: 
       culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language);
     const inputs = { sites: [neighbours.length ? { ...site, neighbours } : site], roads };
     if (!snapshot.compositionLayouts) {
-      report('urban-layout', 'Rust · composition urbaine…', 0);
+      report('urban-layout', 'Rust · urban composition…', 0);
       snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');
     }
     snapshot.compositionKey = compositionKey;

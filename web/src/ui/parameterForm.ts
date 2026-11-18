@@ -8,6 +8,8 @@ export interface ParameterField {
   path: string;
   label: string;
   help?: string;
+  /** Keep the description available to assistive technology and on hover without an inline paragraph. */
+  helpDisplay?: 'inline' | 'tooltip';
   type: 'number' | 'select' | 'boolean' | 'text' | 'color';
   options?: readonly ParameterChoice[];
   min?: number;
@@ -57,6 +59,10 @@ function fieldCaption(field: ParameterField): string {
   return source && /\((m|km|m²|km²)\)$/.test(field.label)
     ? `${text.replace(/\s*[（(][^()（）]*[)）]\s*$/, '')} (${displayUnit(source, getDistanceUnit())})` : text;
 }
+function fieldHelp(field: ParameterField): string {
+  const source = physicalUnit(field), text = translate(field.help ?? '');
+  return source ? text.replaceAll('{unit}', displayUnit(source, getDistanceUnit())) : text;
+}
 
 /** Shared scalar editor. It never rebuilds controls when values or language change. */
 export function mountParameterForm(root: HTMLElement, fields: readonly ParameterField[], bindings: ParameterFormBindings): ParameterForm {
@@ -64,7 +70,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
   const namespace = root.id || `form-${++parameterFormSequence}`;
   const cleanups: (() => void)[] = [];
   const previews: ReturnType<typeof mountCityPatternChoices>[] = [];
-  const controls: { field: ParameterField; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement; reset?: HTMLButtonElement; automatic: HTMLElement }[] = [];
+  const controls: { field: ParameterField; caption: HTMLElement; help?: HTMLElement; input: HTMLInputElement | HTMLSelectElement; slider?: HTMLInputElement; reset?: HTMLButtonElement; automatic: HTMLElement }[] = [];
   const choiceKeys = new Map<string, string>();
   for (const field of fields) {
     const label = document.createElement('label'); label.className = `parameter-field parameter-${field.type}`;
@@ -107,7 +113,13 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       const onReset = () => bindings.setValue(field.path, field.resetValue); reset.addEventListener('click', onReset); cleanups.push(() => reset!.removeEventListener('click', onReset)); label.append(reset);
     }
     if (field.unit) { const unit = document.createElement('span'); unit.className = 'parameter-unit'; setDynamicText(unit, () => physicalUnit(field) ? displayUnit(physicalUnit(field)!, getDistanceUnit()) : field.unit!); label.append(unit); }
-    if (field.help) { const help = document.createElement('small'); help.className = 'parameter-help'; help.id = `${input.id}-help`; setText(help, field.help); input.setAttribute('aria-describedby', help.id); label.append(help); }
+    let help: HTMLElement | undefined;
+    if (field.help) {
+      help = document.createElement('small'); help.className = 'parameter-help'; help.id = `${input.id}-help`;
+      help.hidden = field.helpDisplay === 'tooltip'; setText(help, field.help); input.setAttribute('aria-describedby', help.id); label.append(help);
+      // The caption is the requested hover target; inputs also expose the description on focus/hover.
+      for (const target of [caption, input, slider]) if (target) { target.title = fieldHelp(field); target.setAttribute('data-i18n-title', field.help); }
+    }
     const onInput = () => {
       let value: unknown;
       if (field.type === 'boolean') value = field.optional ? input.value === '' ? undefined : input.value === 'true' : (input as HTMLInputElement).checked;
@@ -127,14 +139,14 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       slider.addEventListener('input', onSlide); cleanups.push(() => slider!.removeEventListener('input', onSlide));
     }
     const automatic = document.createElement('small'); automatic.className = 'parameter-automatic-choice'; automatic.hidden = true; label.append(automatic);
-    controls.push({ field, input, slider, reset, automatic }); root.append(label);
+    controls.push({ field, caption, help, input, slider, reset, automatic }); root.append(label);
     if (input instanceof HTMLSelectElement && /(^|\.)tissue$/.test(field.path)) {
       const preview = mountCityPatternChoices(input); previews.push(preview); cleanups.push(preview.dispose);
     }
   }
   bindTree(root);
   const sync = () => {
-    for (const { field, input, slider, reset, automatic } of controls) {
+    for (const { field, caption, help, input, slider, reset, automatic } of controls) {
       const dynamic = input instanceof HTMLSelectElement ? bindings.choices?.(field.path) : undefined;
       if (dynamic) {
         // Group labels and notes are plain translated text: a language change rebuilds the list.
@@ -157,6 +169,11 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       }
       automatic.hidden = true; delete input.dataset.resolvedValue;
       input.setAttribute('aria-label', fieldCaption(field));
+      if (field.help) {
+        const description = fieldHelp(field);
+        if (help) help.textContent = description;
+        for (const target of [caption, input, slider]) if (target) target.title = description;
+      }
       const sourceUnit = physicalUnit(field);
       if (sourceUnit) {
         const label = input.closest('label')!;

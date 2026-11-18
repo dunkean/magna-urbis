@@ -1,4 +1,5 @@
 import { organizeUrbanForm } from './advancedPanel';
+import { urbanParameterHelp } from './urbanParameterHelp';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import type { V2Settings, V2UrbanControls } from './contracts';
 import type { HouseMix } from '../../../rust/bridge/urbanArchitecture';
@@ -264,7 +265,7 @@ export function localFields(scope: UrbanControlScope): UrbanParameterField[] {
     .map(f => advanced({ ...f, path: f.path.replace('houses.house_config.', prefix) }));
   const fence: UrbanParameterField = { path: 'enclosure', section: 'advanced', label: 'Fence', type: 'select', optional: true,
     options: [{ value: 'none', label: 'No fence' }, { value: 'fence', label: 'Wooden fence' }, { value: 'hedge', label: 'Hedge' }, { value: 'wall', label: 'Stone wall' }],
-    help: 'Boundary of this lot and its house yard. Applied on Regenerate.' };
+    help: 'Boundary of this lot and its house yard. Applied on Regenerate.', helpDisplay: 'tooltip' };
   if (scope.kind === 'quarter') return [
     culture('quarter', 'Culture sets streets, parcels and buildings. Regenerate replaces descendant overrides.'),
     { ...urbanField('tissue', 'culture', 'quarter'), label: 'Urban plan', help: 'Street pattern changes interior streets; boundary roads stay in place.' },
@@ -355,8 +356,8 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
   }).className = 'quiet small urban-reset';
   if (global) {
     const stageRoot = document.createElement('div'); root.append(stageRoot);
-    forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', type: 'select', options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) },
-      ...(scope.kind === 'global' ? [{ path: 'architecture', label: 'Architecture', type: 'select' as const, options: CITY_ARCHITECTURES.map(value => ({ value, label: architectureNames[value] })) }] : [])], { getValue: effective, isMixed, setValue: set, disabled: parts?.disabled }));
+    forms.push(mountParameterForm(stageRoot, [{ path: 'through', label: 'Generate through', help: urbanParameterHelp.through, helpDisplay: 'tooltip', type: 'select', options: ['layout', 'parcels', 'programme', 'buildings'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) })) },
+      ...(scope.kind === 'global' ? [{ path: 'architecture', label: 'Architecture', help: urbanParameterHelp.architecture, helpDisplay: 'tooltip' as const, type: 'select' as const, options: CITY_ARCHITECTURES.map(value => ({ value, label: architectureNames[value] })) }] : [])], { getValue: effective, isMixed, setValue: set, disabled: parts?.disabled }));
   }
   }
   let modelEnabled: HTMLInputElement | undefined, loadedCatalogue: CatalogueBundle | undefined, catalogueValuesKey = '';
@@ -368,6 +369,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     if (key === 'house' && global) {
       const label = document.createElement('label'); label.className = 'urban-model-switch'; modelEnabled = document.createElement('input'); modelEnabled.type = 'checkbox'; modelEnabled.dataset.houseModel = '';
       const span = document.createElement('span'); setText(span, 'Use a pinned native house model'); label.append(modelEnabled, span); details.append(label);
+      for (const target of [span, modelEnabled]) { target.title = translate(urbanParameterHelp.pinnedModel); target.setAttribute('data-i18n-title', urbanParameterHelp.pinnedModel); }
       modelEnabled.onchange = () => set('houses.house_config', modelEnabled!.checked ? clone(readSettingPath(inherited(), 'houses.house_config') ?? houseControlDefaults()) : undefined);
       effects.push(() => {
         const pins = scopes().map(target => {
@@ -448,6 +450,7 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
     const quarters = new Set<string>(Object.keys((effective('houses.houses.quarters') as object) ?? {}));
     for (const id of quarters) mountMix(`houses.houses.quarters.${id}`, `${translate('Quarter')} ${id}`);
     const quarter = document.createElement('input'); quarter.placeholder = translate('Quarter identifier'); quarter.setAttribute('aria-label', translate('Quarter identifier')); box.append(quarter);
+    quarter.title = translate(urbanParameterHelp.quarterIdentifier); quarter.setAttribute('data-i18n-title', urbanParameterHelp.quarterIdentifier);
     button(box, 'Add quarter styles', () => { const id = quarter.value.trim(); if (!id || quarters.has(id) || /[.]/.test(id)) return; quarters.add(id); mountMix(`houses.houses.quarters.${id}`, `${translate('Quarter')} ${id}`); sync(); });
   }
   function mountSiteArchetypes(): void {
@@ -459,12 +462,14 @@ export function mountUrbanControls(root: HTMLElement, getSettings: () => V2Setti
       for (const [id, archetype] of Object.entries(rules)) {
         const row = document.createElement('label'); row.className = 'urban-mix-row'; const name = document.createElement('span'); name.textContent = id; name.dataset.l10nKeep = '';
         const value = document.createElement('input'); value.value = archetype; value.setAttribute('list', `urban-${scopeId}-archetypes`); value.dataset.settingPath = `layout.siteArchetypes[${id}]`;
+        for (const target of [name, value]) { target.title = translate(urbanParameterHelp.siteArchetype); target.setAttribute('data-i18n-title', urbanParameterHelp.siteArchetype); }
         value.onchange = () => set('layout.siteArchetypes', { ...rules, [id]: value.value }); row.append(name, value);
         button(row, 'Remove site rule', () => { const next = { ...rules }; delete next[id]; set('layout.siteArchetypes', next); }); rows.append(row);
       }
     });
     const list = document.createElement('datalist'); list.id = `urban-${scopeId}-archetypes`; for (const archetype of SITE_ARCHETYPES) { const option = new Option('', archetype); setText(option, siteArchetypeNames[archetype][0]); list.append(option); } box.append(list);
     const id = document.createElement('input'); id.placeholder = translate('Settlement identifier'); id.setAttribute('aria-label', 'Settlement identifier'); box.append(id);
+    id.title = translate(urbanParameterHelp.settlementIdentifier); id.setAttribute('data-i18n-title', urbanParameterHelp.settlementIdentifier);
     button(box, 'Add site rule', () => { if (!id.value.trim()) return; set('layout.siteArchetypes', { ...effective('layout.siteArchetypes') as object ?? {}, [id.value.trim()]: 'auto' }); id.value = ''; });
     button(box, 'Reset field', () => set('layout.siteArchetypes', undefined));
   }
