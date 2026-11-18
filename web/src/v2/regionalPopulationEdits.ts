@@ -52,6 +52,7 @@ export function followEnvironmentPopulation(settings: V2Settings): void {
     delete region.placement.list;
     region.placement.mode = 'auto';
   }
+  for (const local of Object.values(settings.local)) delete local.population;
 }
 
 /** No settlement at all: every class count and the regional population are 0. Adding a place afterwards

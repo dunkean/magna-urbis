@@ -35,8 +35,8 @@ registerMessages(
       'Non-residential sites: mills, workshops, shrines… Inhabited farms are counted above. Placement depends on suitable terrain and resources.':
         'Sites sans résidents : moulins, ateliers, sanctuaires… Les fermes habitées sont comptées au-dessus. L’implantation dépend des terrains et ressources disponibles.',
       'Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites': 'Implantés : {places} lieux · {population} habitants · {isolated} sites isolés',
-      'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. More inhabitants enlarge towns and cities. Exact counts override these limits.':
-        'Plafonds automatiques de cette carte : {villages} villages, {hamlets} hameaux, {farms} fermes habitées, {isolated} sites isolés. Davantage d’habitants agrandissent les bourgs et les villes. Des effectifs imposés remplacent ces plafonds.',
+      'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. Suggested settlements stay at or below 20,000 inhabitants. A manual population or density can exceed this size; exact counts override the place limits.':
+        'Plafonds automatiques de cette carte : {villages} villages, {hamlets} hameaux, {farms} fermes habitées, {isolated} sites isolés. Les lieux proposés restent à 20 000 habitants maximum. Une population ou densité manuelle peut dépasser cette taille ; des effectifs imposés remplacent les plafonds de lieux.',
     }).map(([en, fr]) => [en, { en, fr }]),
   ),
 );
@@ -180,7 +180,9 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
       plan = regionalPopulation(s),
       d = s.region?.demography ?? {};
     const limits = automaticSettlementLimits(plan.areaKm2, plan.population);
-    limitsHint.textContent = translate('Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. More inhabitants enlarge towns and cities. Exact counts override these limits.')
+    limitsHint.textContent = translate(
+      'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. Suggested settlements stay at or below 20,000 inhabitants. A manual population or density can exceed this size; exact counts override the place limits.',
+    )
       .replace('{villages}', String(limits.village))
       .replace('{hamlets}', String(limits.hamlet))
       .replace('{farms}', String(limits.farmstead))

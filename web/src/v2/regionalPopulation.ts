@@ -6,7 +6,7 @@ import { cultureEnvironment } from './environmentCultures';
 import type { SettlementSpec } from '../../../rust/bridge/settlements';
 
 export const POPULATION_CLASSES = ['city', 'town', 'village', 'hamlet', 'farmstead'] as const;
-export const REGIONAL_POPULATION_VERSION = 'list-first-regional-population-v4';
+export const REGIONAL_POPULATION_VERSION = 'bounded-regional-population-v5';
 export type PopulationClass = (typeof POPULATION_CLASSES)[number];
 /** Missing values follow the region; only deliberate overrides travel in a recipe. */
 export interface RegionalDemography {
@@ -47,6 +47,9 @@ const FARM_HOUSEHOLD = 5;
 // Demographic names may change with size; a requested village is not capped at 999 residents.
 const MINIMUM = [20000, 1000, 150, 15, FARM_HOUSEHOLD],
   MAXIMUM = [5000000, 19999, 5000000, 149, 14];
+/** Performance budget for suggested places. Explicit populations/densities and lists may exceed it. */
+export const AUTOMATIC_SETTLEMENT_POPULATION_MAX = 20000;
+const AUTOMATIC_MAXIMUM = [AUTOMATIC_SETTLEMENT_POPULATION_MAX, 19999, 999, 149, 14];
 /** Automatic places are a readable regional hierarchy, not one simulated site per rural household.
  * Both area and population bound counts. Extra residents fill larger settlements; these ceilings
  * are never lifted to make room. Explicit counts/list entries remain deliberate overrides. */
@@ -92,7 +95,7 @@ function settlementFloor(widthKm: number, profile: PopulationProfile): { counts:
   return { counts, population: counts.reduce((n, c, i) => n + c * Math.max(MINIMUM[i], Math.min(FLOOR_SIZE[i], profile.maximum)), 0) };
 }
 function typicalSize(i: number, profile: PopulationProfile): number {
-  return Math.max(MINIMUM[i], Math.min(MAXIMUM[i], Math.min(profile.maximum, profile.means[i]) || MINIMUM[i]));
+  return Math.max(MINIMUM[i], Math.min(AUTOMATIC_MAXIMUM[i], Math.min(profile.maximum, profile.means[i]) || MINIMUM[i]));
 }
 export interface RegionalPopulationPlan {
   areaKm2: number;
@@ -129,8 +132,8 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   const realisticPopulation = Math.min(100000000, Math.max(0, Math.round(areaKm2 * profile.density * environmentFactor)));
   const floor = areaKm2 > 0 ? settlementFloor(width / 1000, profile) : { counts: [0, 0, 0, 0, 0], population: 0 };
   const floored = realisticPopulation < floor.population;
-  const recommendedPopulation = floored ? floor.population : realisticPopulation;
-  const defaultDensity = areaKm2 ? recommendedPopulation / areaKm2 : profile.density * environmentFactor;
+  let recommendedPopulation = floored ? floor.population : realisticPopulation;
+  let defaultDensity = areaKm2 ? recommendedPopulation / areaKm2 : profile.density * environmentFactor;
   const manual = settings.region?.placement;
   if (manual?.mode === 'list' || (!manual?.mode && manual?.list?.length)) {
     const places = (manual.list ?? []).map(p => ({ ...p, ...(settings.local[p.key]?.population !== undefined ? { population: settings.local[p.key].population! } : {}), ...(settings.local[p.key]?.culture ? { culture: settings.local[p.key].culture! } : {}) }));
@@ -164,18 +167,18 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   const free = (i: number) => i >= 0 && overrides[POPULATION_CLASSES[i]] === undefined;
   const root = new Rng(`regional-population:${stepSeed(settings.options.seed, 'settle-sites')}`);
   type Slot = { spec: SettlementSpec; min: number; max: number; weight: number };
-  function makeSlots(counts: Record<PopulationClass, number>): Slot[] {
+  function makeSlots(counts: Record<PopulationClass, number>, bounded = d.population === undefined && d.density === undefined): Slot[] {
     const slots: Slot[] = [];
     for (const [i, id] of POPULATION_CLASSES.entries())
       for (let j = 0; j < counts[id]; j++) {
         const key = slots.length ? `${id}-${j}` : 'main',
           fixed = settings.local[key]?.population;
-        // Cultural maxima guide the initial composition, not an absolute size limit that forces
-        // a large requested population into hundreds of camps, villages or farmsteads.
+        // Suggested places keep their class and cultural size limits. An explicitly requested
+        // total can still resize them without multiplying the number of simulated places.
         slots.push({
           spec: { key, name: '', population: 0, culture: settings.options.culture, siteType: 'auto', sitePrefs: {} },
           min: fixed ?? MINIMUM[i],
-          max: fixed ?? MAXIMUM[i],
+          max: fixed ?? (bounded ? Math.max(MINIMUM[i], Math.min(AUTOMATIC_MAXIMUM[i], profile.maximum)) : MAXIMUM[i]),
           weight:
             ((profile.means[i] || MINIMUM[i]) * (1 - (settings.region?.placement?.populationJitter ?? 0.25) + root.fork(`${id}:${j}`).float() * 2 * (settings.region?.placement?.populationJitter ?? 0.25))) /
             Math.pow(j + 1, settings.region?.placement?.distribution === 'zipf' ? (settings.region.placement.zipfExponent ?? 1.1) : 0.15),
@@ -210,7 +213,7 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
     }
   }
   // 1. The automatic list: the floor table, or the realistic regional hierarchy built from shares.
-  // Area and population both bound the counts; extra residents fill larger settlements.
+  // Area and population both bound the counts; the suggested population must fit those places.
   const automatic = zeroCounts();
   if (floored) POPULATION_CLASSES.forEach((id, i) => (automatic[id] = floor.counts[i]));
   else {
@@ -232,8 +235,10 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
     }
   }
   // 2. Typical size of one place per class in that automatic list.
-  const automaticSlots = makeSlots(automatic);
+  const automaticSlots = makeSlots(automatic, true);
   allocate(automaticSlots, recommendedPopulation);
+  recommendedPopulation = automaticSlots.reduce((n, s) => n + s.spec.population, 0);
+  defaultDensity = areaKm2 ? recommendedPopulation / areaKm2 : defaultDensity;
   const firstAutomatic = POPULATION_CLASSES.find(id => automatic[id] > 0) ?? 'farmstead';
   const classSizes = Object.fromEntries(
     POPULATION_CLASSES.map((id, i) => {
@@ -245,7 +250,15 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   const counts = zeroCounts();
   POPULATION_CLASSES.forEach(id => (counts[id] = overrides[id] ?? automatic[id]));
   const added = POPULATION_CLASSES.reduce((n, id) => n + (counts[id] - automatic[id]) * classSizes[id], 0);
-  const population = Math.min(100000000, Math.max(0, Math.round(d.population ?? (d.density !== undefined ? areaKm2 * d.density : recommendedPopulation + added))));
+  const requestedPopulation = Math.min(100000000, Math.max(0, Math.round(d.population ?? (d.density !== undefined ? areaKm2 * d.density : recommendedPopulation + added))));
+  // Never inflate suggested places (or add extra ones) to absorb an environmental estimate.
+  const population =
+    d.population !== undefined || d.density !== undefined
+      ? requestedPopulation
+      : Math.min(
+          requestedPopulation,
+          makeSlots(counts).reduce((n, s) => n + s.max, 0),
+        );
   const density = d.population === undefined && d.density !== undefined ? d.density : areaKm2 ? population / areaKm2 : 0;
   // 4. Fit the list to that population, keeping the number of places whenever a class change can.
   if (population <= 0)
