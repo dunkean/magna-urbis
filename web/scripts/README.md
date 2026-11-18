@@ -1,6 +1,17 @@
-# Checks and display measurements
+# Development scripts
 
-Run from `web/`; install the declared dependencies first. Browser scripts require installed Chrome/Edge via Playwright. They write evidence under `out/`. This cleanup round permits only syntax, TypeScript, targeted Vitest and formatting commands: **the browser commands below are for the supervisor after integration**.
+Run from `web/`; install the declared dependencies first. Browser scripts require installed Chrome/Edge via Playwright. They write evidence under `out/`. Commands that need an existing app server, native engine or GPU say so below.
+
+## Entry points
+
+Use the commands in [`package.json`](../package.json) for application builds, development servers and test suites. The [contribution guide](../../CONTRIBUTING.md) describes setup and verification. Desktop publication follows the [release guide](../../docs/DESKTOP_RELEASE.md) and its existing GitHub Actions workflow.
+
+- `v2.mjs`, `local.mjs`, `rust_benches.mjs` and `benches.ps1` launch or build their documented application/workshop profiles.
+- `v2_version.mjs`, `v2_release_resources.mjs`, `v2_release_check.mjs`, `v2_portable.mjs` and `v2_neural_release.mjs` maintain desktop versioning, resources and release assets.
+- `neural_*` and `illustration*` include the optional module launchers, model tooling and their checks. Optional models and runtimes are separate from the procedural application.
+- Asset packers, fixture generators and offline replay tools remain beside their callers and tests. Check each script's arguments and required inputs before running it.
+
+## Checks and display measurements
 
 | When                     | Command / script                                                                                            | Checks and requirements                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,3 +40,9 @@ Known stale selectors (quick source audit, 2026-11-18; **not fixed or browser-va
 | `v2_workbench_check.mjs`                                                                                                                | Selects `rust` in web-profile `#exec-engine`, whose options are auto/CPU/GPU.                                                    |
 
 Other `v2_*_check.mjs` scripts were skimmed for selectors, not certified current. Historical display/renderer assertions may also need revision after the display cleanup; a passing unit suite does not validate browser scripts.
+
+## Keeping scripts maintainable
+
+Keep a script here when it serves a current command, a reproducible fixture or asset pipeline, or a reusable diagnostic. Document its inputs and environment requirements; accept explicit paths for external data rather than relying on a developer's checkout or an old `out/` campaign.
+
+One-off investigations tied to private captures, a single user URL, or frozen local executables belong in ignored working directories. Completed campaign scripts can be recovered from Git history when needed; they do not need permanent entry points or compatibility wrappers. Preserve maintained regression fixtures, shared audit helpers, scientific sources and asset/license provenance when retiring a campaign.
