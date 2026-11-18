@@ -10,8 +10,10 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 //   await __v2Test.view('2d' | '2d-core' | '2d-b')   // frame the town as City Bench's "City" button does, in the real viewport
 //   await __v2Test.code()                      // the MU3 generation code of the prepared town (V2 Share dialog)
 //   __v2Test.summary()                         // town, site scores, shore distances, camp extent, activity yard
-//   __v2Test.camera3d() / __v2Test.setCamera3d(camera)   // the tilt of the map's camera: { x, y, scale, pitch, yaw }, radians,
-//                                                          // pitch 0 = straight down, yaw clockwise from north; any subset to set.
+//   __v2Test.camera3d() / __v2Test.setCamera3d(camera)   // the tilt of the map's camera: { x, y, scale, pitch, yaw, navigation, eye? },
+//                                                          // radians, pitch 0 = straight down, yaw clockwise from north; any subset to
+//                                                          // set. navigation 'orbit' | 'walk' | 'fly'; a free eye stands at (x, y) at
+//                                                          // altitude `eye` (metres as drawn) and its pitch may pass the horizon.
 //                                                          // With ?camera=dual: the separate 3D view's camera, once opened with #view3d
 //
 // The world is the saved decor (web/decors/<id>.decor, City Bench `artifact=`): relief, sea, lakes and rivers with their widths
@@ -39,7 +41,7 @@ export interface V2TestBindings {
   run(places?: 'all' | 'main'): Promise<void>;
   /** Resolves when the background build of small places has nothing left to do. */
   smallPlacesSettled?(): Promise<void>;
-  getViewer(): { getView(): View; setView(view: View): void };
+  getViewer(): { getView(): View; setView(view: View): void; setNavigation(mode: 'orbit' | 'walk' | 'fly'): void; navigation(): 'orbit' | 'walk' | 'fly' };
   get3d(): { getCamera(): unknown; setCamera(camera: any): void; stats?(): unknown } | undefined;
   prepareCapture?(): void;
   /** Rerolls one town's composition seed and rebuilds that town alone (the "Build town" path). */
@@ -342,14 +344,16 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
     camera3d: () => {
       if (dualCameras()) return bindings.get3d()?.getCamera();
       const view = bindings.getViewer().getView();
-      return { x: view.cx, y: view.cy, scale: view.scale, pitch: view.pitch ?? 0, yaw: view.yaw ?? 0 };
+      return { x: view.cx, y: view.cy, scale: view.scale, pitch: view.pitch ?? 0, yaw: view.yaw ?? 0, navigation: bindings.getViewer().navigation(), eye: view.eye };
     },
     setCamera3d: (camera: unknown) => {
       if (dualCameras()) return bindings.get3d()?.setCamera(camera);
       const viewer = bindings.getViewer(),
         view = viewer.getView(),
-        wanted = (camera ?? {}) as { x?: number; y?: number; scale?: number; pitch?: number; yaw?: number };
-      viewer.setView({ cx: wanted.x ?? view.cx, cy: wanted.y ?? view.cy, scale: wanted.scale ?? view.scale, pitch: wanted.pitch ?? view.pitch, yaw: wanted.yaw ?? view.yaw });
+        wanted = (camera ?? {}) as { x?: number; y?: number; scale?: number; pitch?: number; yaw?: number; eye?: number; navigation?: 'orbit' | 'walk' | 'fly' };
+      if (wanted.navigation) viewer.setNavigation(wanted.navigation);
+      const current = viewer.getView();
+      viewer.setView({ cx: wanted.x ?? current.cx, cy: wanted.y ?? current.cy, scale: wanted.scale ?? view.scale, pitch: wanted.pitch ?? current.pitch, yaw: wanted.yaw ?? current.yaw, eye: wanted.eye ?? current.eye });
     },
     /** The 3D view's stats (buildings shown, terrain tile loading: lod.tiles / ready / pending), for the sheet's settle wait. */
     stats3d: () => bindings.get3d()?.stats?.(),

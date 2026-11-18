@@ -7,7 +7,10 @@
  *  - the camera's motion (viewMotion.ts): moving or at rest;
  *  - the frozen picture of a style switch: while the appearance passes run, a copy of the last picture stays on screen
  *    and follows the view;
- *  - the capture frame: an exact frame laid over the view for a screenshot, kept until the camera moves.
+ *  - the capture frame: an exact frame laid over the view for a screenshot, kept until the camera moves (a tilted
+ *    view: the compositor's frame read back, the exact renderers paint the top view only);
+ *  - picking: the ground point and the building under a pixel (the 2D mapping in the top view, the camera's ray when
+ *    tilted).
  *
  * Only the composed view draws a tilted camera (render/world/): the element says so to the viewer
  * (`data-camera="tilt"`), which then lets the camera tilt; under the fallback view the camera stays the top view.
@@ -22,7 +25,8 @@ import { fallbackForced } from '../../render/live/policy';
 import { initializeDisplayQuality, noteDisplayNavigation, onDisplayQualityChange } from '../../render/displayQuality';
 import { onVectorEngineChange } from '../../render/vectorEngine';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
-import type { View } from '../../render/view';
+import { screenToWorld, type View } from '../../render/view';
+import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { isTilted } from '../../render/world/camera';
 import type { WorldRelief } from '../../render/world/contract';
 import { suspendFantasyRaster } from '../../ui/fantasyRaster';
@@ -82,7 +86,7 @@ export class MapView implements AppearanceListener, ViewStatus {
       return;
     }
     if (this.captured) {
-      if (!isTilted(view) && sameFrame(this.captured, view, w, h, dpr)) return;
+      if (sameFrame(this.captured, view, w, h, dpr)) return;
       this.releaseCapture();
     }
     const now = performance.now(),
@@ -247,17 +251,32 @@ export class MapView implements AppearanceListener, ViewStatus {
       frame = this.motion.frame;
     this.suspendStepwisePaints();
     this.motion.restDone();
-    // A tilted view is the compositor's frame as it is: the exact renderers paint the top view only.
-    if (this.presenter === 'composed' && this.composed.tilted) return;
     if (!frame || !map.world) {
       if (this.parts.ground.gpuActive) this.parts.ground.gpu!.redrawForCapture();
       return;
     }
     const canvas = this.captureCanvas;
-    this.exact.paint(canvas, frame.view, frame.w, frame.h, frame.dpr, { stepwise: false, groundBeneath: false });
+    // A tilted view is the compositor's frame read back: the exact renderers paint the top view only.
+    if (isTilted(frame.view)) {
+      if (this.presenter !== 'composed' || !this.composed.capture(frame.view, frame.w, frame.h, frame.dpr, canvas)) return;
+    } else this.exact.paint(canvas, frame.view, frame.w, frame.h, frame.dpr, { stepwise: false, groundBeneath: false });
     canvas.style.cssText = `position:absolute;left:0;top:0;z-index:1;width:${frame.w}px;height:${frame.h}px`;
     this.element.append(canvas);
     this.captured = { view: { ...frame.view }, w: frame.w, h: frame.h, dpr: frame.dpr };
+  }
+  /** The tilted view on screen as a picture at its pixel ratio (the PNG of the view); undefined in the top view. */
+  captureView(): HTMLCanvasElement | undefined {
+    const frame = this.motion.frame,
+      canvas = document.createElement('canvas');
+    if (!frame || !isTilted(frame.view) || this.presenter !== 'composed') return undefined;
+    return this.composed.capture(frame.view, frame.w, frame.h, frame.dpr, canvas) ? canvas : undefined;
+  }
+  /** The ground point under the CSS pixel (sx, sy) of `view`, and in a tilted view the building volume in front of it
+   * among those `accept` takes; undefined when the pixel shows no ground (the sky of a tilted view). */
+  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+    if (isTilted(view) && this.presenter === 'composed') return this.composed.pick(view, w, h, sx, sy, accept);
+    const [x, y] = screenToWorld(view, w, h, sx, sy);
+    return { x, y };
   }
   private releaseCapture(): void {
     if (!this.captured) return;

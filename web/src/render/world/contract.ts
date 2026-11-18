@@ -2,9 +2,11 @@
  * Contract of the world view (render/world/): the map is the world seen from above, and one camera goes from that top
  * view to a tilted perspective of the relief, with no second engine.
  *
- *   camera.ts       the camera: its pose from a view (centre, scale, pitch, yaw), its matrices, the ground point under
- *                   a pixel, pan and zoom on the ground. Pure math: the compositor fills the frame with it, the viewer
- *                   navigates with it.
+ *   camera.ts       the camera: its pose from a view (centre, scale, pitch, yaw; or a free eye), its matrices, the
+ *                   ground point under a pixel, the screen point of a ground point, pan and zoom on the ground. Pure
+ *                   math: the compositor fills the frame with it, the viewer navigates and the page picks with it.
+ *   navigation.ts   walking and flying: a free eye entered from the orbit camera, moved and turned (pure math).
+ *   buildingsPick.ts the building volume under a pixel: a ray against the boxes of the blocks, then of their buildings.
  *   heights.ts      the relief of a map on the CPU (the camera stands on it, picking reads it) and as a texture.
  *   patches.ts      which squares of the map a frame draws and how finely: a bounded quadtree walk.
  *   footprint.ts    which tier of baked ground tiles a square is draped with.
@@ -57,7 +59,7 @@ export interface FrameCamera {
   /** The same projection for positions given relative to `target`: float32 map coordinates resolve 4 mm on a 40 km
    * map, a pixel at the closest zoom, so a layer subtracts the target on the CPU and draws with this matrix. */
   readonly targetViewProjection: Float32Array;
-  /** The ground point at the centre of the view, and the eye: x, y, z. */
+  /** The ground point at the centre of the view (the ground under the eye for a free eye), and the eye: x, y, z. */
   readonly target: Float64Array;
   readonly eye: Float64Array;
   /** Unit vectors of the camera in the world: towards the right of the screen, its top, and into the picture. */
@@ -66,6 +68,9 @@ export interface FrameCamera {
   readonly forward: Float64Array;
   /** Device pixels on screen per unit of (offset across the view axis / depth along it). */
   readonly focal: number;
+  /** How far the camera looks (metres): from the eye to the target for the orbit camera, a fixed reach for a free eye
+   * (walking, flying), whose target is the ground under it. The haze and the fading of far names scale with it. */
+  readonly distance: number;
   /** Depths of the near and far planes along the view axis (metres). */
   readonly near: number;
   readonly far: number;

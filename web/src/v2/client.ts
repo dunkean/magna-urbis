@@ -23,6 +23,8 @@ import { resolveSettingsAppearance, resolvedDisplayOptions } from './appearance'
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
+import type { Building3dVisual } from '../render/urbanBuildingGeometry';
+import { screenToWorld } from '../render/view';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
 import { mapPresentation } from './mapPresentation';
@@ -673,6 +675,18 @@ export class StudioClient {
   /** Display work still owed to the 2D view (tiles, textures, programs); 0 in 3D, whose readiness is awaited separately. */
   displayPending(): number {
     return !this.view3dActive && this.benchActive && this.bench ? this.bench.pendingWork() : 0;
+  }
+  /** The tilted view on screen as a picture (the PNG of the view); undefined in the top view or without the bench. */
+  captureView(): HTMLCanvasElement | undefined {
+    return this.benchActive ? this.bench?.captureView() : undefined;
+  }
+  /** What lies under the CSS pixel (sx, sy) of the map: the ground point (map metres) and, in a tilted view, the building
+   * volume in front of it among those `accept` takes. Undefined where the pixel shows no ground (the sky of a tilted view). */
+  pickAt(sx: number, sy: number, w: number, h: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+    const view = this.viewer.getView();
+    if (this.benchActive && this.bench) return this.bench.pick(view, w, h, sx, sy, accept);
+    const [x, y] = screenToWorld(view, w, h, sx, sy);
+    return { x, y };
   }
   prepareViewportCapture(): void {
     if (this.minimalActive) this.minimal?.prepareCapture();

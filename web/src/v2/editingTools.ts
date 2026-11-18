@@ -21,8 +21,9 @@ export function stickySelection(token: string, selecting: boolean): boolean {
   return selecting && (token === 'busy' || token === 'family' || token === 'selection');
 }
 
-/** One place for activation, one contextual dock. Existing tools keep ownership of their edits. */
-export function mountEditingTools(api: { canEdit(): boolean }): { sync(): void } {
+/** One place for activation, one contextual dock. Existing tools keep ownership of their edits. `canSelect`: "Select on
+ * map" is offered (it picks in a tilted view too, where the editors are not). */
+export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolean }): { sync(): void } {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
   const dock = $('#editor-dock'),
     inspect = $<HTMLInputElement>('#inspect-mode'),
@@ -33,9 +34,11 @@ export function mountEditingTools(api: { canEdit(): boolean }): { sync(): void }
   river.id = 'rivers-open';
   let mode = 'navigate';
   function sync(): void {
-    const available = api.canEdit();
-    for (const selector of ['#inspect-mode', '#labels-open', '#rivers-open', '#move-towns', '[data-network-quick]']) document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => (control.disabled = !available));
-    $<HTMLSelectElement>('#inspect-target').disabled = !available || !inspect.checked;
+    const available = api.canEdit(),
+      selectable = api.canSelect();
+    for (const selector of ['#labels-open', '#rivers-open', '#move-towns', '[data-network-quick]']) document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => (control.disabled = !available));
+    inspect.disabled = !selectable;
+    $<HTMLSelectElement>('#inspect-target').disabled = !selectable || !inspect.checked;
   }
   function show(next: string): void {
     mode = next;
@@ -56,7 +59,7 @@ export function mountEditingTools(api: { canEdit(): boolean }): { sync(): void }
   const finish = () => window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'navigate' }));
   for (const id of ['edit-navigate', 'editor-close', 'edit-done']) $(`#${id}`).onclick = finish;
   inspect.onchange = () => {
-    if (inspect.checked && !api.canEdit()) {
+    if (inspect.checked && !api.canSelect()) {
       inspect.checked = false;
       return;
     }

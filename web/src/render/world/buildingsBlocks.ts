@@ -17,7 +17,7 @@
  */
 import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, type Building3dScene, type Building3dVisual } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
-import { buildingBatches, buildingBounds, buildingGround, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
+import { buildingBatches, buildingBounds, buildingGround, type BuildingBounds, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import type { WorldRelief } from './contract';
 
 export const BUILDING_BLOCK = 256;
@@ -44,6 +44,25 @@ export interface BuildingBlock {
 
 /** Buildings grouped between two looks at the clock. */
 const GROUP_CHUNK = 64;
+
+const span: [number, number] = [0, 0];
+/** The heights a building covers as drawn at full relief (worldSeat), into `out` (low, high): a building on its own
+ * ground, exaggerated as the terrain is; a structure or a yard on the terrain under the corners of its box. */
+export function buildingSpan(building: Building3dVisual, box: BuildingBounds, relief: WorldRelief, exaggeration: number, out: [number, number]): void {
+  const ground = buildingGround(building);
+  if (Number.isFinite(ground)) {
+    out[0] = (ground + Math.min(0, box[2] - ground)) * exaggeration;
+    out[1] = ground * exaggeration + Math.max(0, box[5] - ground);
+    return;
+  }
+  out[0] = Infinity;
+  out[1] = -Infinity;
+  for (let i = 0; i < 4; i++) {
+    const t = relief.heightAt(box[i & 1 ? 3 : 0], box[i & 2 ? 4 : 1]);
+    out[0] = Math.min(out[0], t - 1);
+    out[1] = Math.max(out[1], t + (box[5] - box[2]));
+  }
+}
 
 /** Groups the buildings of a scene into blocks, a chunk at a time: the grouping of a large town is spread over work
  * slices. */
@@ -86,26 +105,9 @@ export class BlockGrouping {
       block.minY = Math.min(block.minY, box[1]);
       block.maxX = Math.max(block.maxX, box[3]);
       block.maxY = Math.max(block.maxY, box[4]);
-      // Heights as drawn (worldSeat): a building on its ground; a structure or a yard on the terrain under its corners.
-      const ground = buildingGround(building);
-      let low = Infinity,
-        high = -Infinity;
-      if (Number.isFinite(ground)) {
-        low = (ground + Math.min(0, box[2] - ground)) * exaggeration;
-        high = ground * exaggeration + Math.max(0, box[5] - ground);
-      } else
-        for (const [x, y] of [
-          [box[0], box[1]],
-          [box[3], box[1]],
-          [box[0], box[4]],
-          [box[3], box[4]],
-        ]) {
-          const t = relief.heightAt(x, y);
-          low = Math.min(low, t - 1);
-          high = Math.max(high, t + (box[5] - box[2]));
-        }
-      block.low = Math.min(block.low, low);
-      block.high = Math.max(block.high, high);
+      buildingSpan(building, box, relief, exaggeration, span);
+      block.low = Math.min(block.low, span[0]);
+      block.high = Math.max(block.high, span[1]);
       if (this.next % GROUP_CHUNK === 0 && performance.now() > deadline) return false;
     }
     if (this.next === buildings.length) {

@@ -26,7 +26,9 @@
  * the furniture is hidden (a scale bar measures nothing in perspective). This view gives the compositor, the ground
  * layer and the names the relief of the map (`relief`), and places the names of a tilted view at rest. The town's
  * buildings and the modelled trees stand on the terrain as volumes (render/world/volumes.ts): two more layers, fed by
- * worldVolumes.ts, which draw nothing in the top view.
+ * worldVolumes.ts, which draw nothing in the top view. A click on a tilted view picks with the camera's ray (`pick`:
+ * the building volume in front of the ground, else the ground point), and its picture is the compositor's frame read
+ * back (`capture`).
  */
 import { createLiveCompositor, type LiveCompositor } from '../../render/live/compositor';
 import { liveStats, noteLiveUnit } from '../../render/live/liveStats';
@@ -37,8 +39,9 @@ import type { CanvasRenderer } from '../../render/canvas';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
 import { dualCameras } from '../../render/live/policy';
-import { isTilted } from '../../render/world/camera';
-import { createWorldBuildingsLayer } from '../../render/world/buildingsLayer';
+import { createCameraPose, groundHit, isTilted, pixelRay, poseCamera } from '../../render/world/camera';
+import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../render/world/buildingsLayer';
+import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
 import { createWorldTreesLayer } from '../../render/world/treesLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
@@ -138,6 +141,8 @@ export class ComposedView {
   private readonly cityEnv: LiveCityEnv;
   /** The town in volume and the trees of the tilted map, for the two volume layers. */
   private readonly volumes: WorldVolumes;
+  /** The buildings layer on the compositor, for picking. */
+  private buildings?: WorldBuildingsLayer;
 
   constructor(
     private readonly map: MapState,
@@ -238,7 +243,7 @@ export class ComposedView {
     // One pair of volume layers for the page: they read the town and the trees of whichever map is on display.
     if (!owners.volumes) {
       owners.volumes = true;
-      live.setLayer('buildings', createWorldBuildingsLayer(gl, this.volumes.buildings));
+      live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
       live.setLayer('trees', createWorldTreesLayer(gl, this.volumes.trees));
     }
     if (owners.cartography !== cartography.renderer) {
@@ -592,6 +597,27 @@ export class ComposedView {
     return shown && !atOrAbove(from, shown) ? shown : shown ? from : undefined;
   }
 
+  // --- picking and captures of a tilted view --------------------------------------------------------------------------
+
+  /** What lies under the CSS pixel (sx, sy) of a tilted view: the ground point, and the building volume in front of the
+   * ground there among those `accept` takes (with the point where the ray meets its box). Undefined when the pixel
+   * shows neither (the sky). CPU only, for a click. */
+  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+    const relief = this.relief(),
+      pose = poseCamera(createCameraPose(), view, h, relief),
+      point: [number, number] = [0, 0],
+      ground = groundHit(pose, sx, sy, w, h, relief, point);
+    const ray = new Float64Array(3);
+    pixelRay(pose, sx, sy, w, h, ray);
+    const hit = this.map.exportLayers.city !== false ? this.buildings?.pick(pose.eye, ray, pose.rise, ground, accept) : undefined;
+    if (hit) return { x: pose.eye[0] + ray[0] * hit.t, y: pose.eye[1] + ray[1] * hit.t, building: hit.building };
+    return ground < Infinity ? { x: point[0], y: point[1] } : undefined;
+  }
+  /** The tilted view as a picture, the compositor's frame at `dpr` (LiveCompositor.capture). */
+  capture(view: View, w: number, h: number, dpr: number, out: HTMLCanvasElement): boolean {
+    return !!this.live?.active() && this.live.capture(view, w, h, Math.min(2, dpr), out);
+  }
+
   // --- pending work, style switch, disposal --------------------------------------------------------------------------
 
   /** Pending work that only concerns the view on screen: the picture at rest, the names being prepared, the town paint. */
@@ -633,5 +659,6 @@ export class ComposedView {
     clearTimeout(this.tiltTimer);
     this.live?.dispose();
     this.live = undefined;
+    this.buildings = undefined;
   }
 }

@@ -7,8 +7,13 @@
  * projection is the orthographic mapping of the 2D map (`topViewMapping`), which a perspective looking straight down
  * at a flat map equals. The relief rises with the pitch (`riseAt`), so the two meet without a jump.
  *
+ * A free eye (View.eye: walking, flying; navigation.ts) stands over the view's centre at its own altitude and looks
+ * along its pitch and yaw, past the horizon if it likes; the relief then stands at its full height, and the target is
+ * the ground under the eye.
+ *
  * Callers: the live compositor fills `LiveFrame.camera` with `frameCamera` once per frame; the viewer (ui/viewer.ts)
- * pans and zooms a tilted view with `panOnGround` and `zoomAtGround`.
+ * pans and zooms a tilted view with `panOnGround` and `zoomAtGround`, and shows the view's footprint on the miniature
+ * (`viewFootprint`); the page picks with `groundHit` and draws its overlays with `screenProjection`.
  */
 import type { View } from '../view';
 import type { FrameCamera, WorldRelief } from './contract';
@@ -25,7 +30,18 @@ export const clampPitch = (pitch: number | undefined): number => (Number.isFinit
 /** Into [-pi, pi). */
 export const wrapYaw = (yaw: number | undefined): number => (Number.isFinite(yaw) ? ((((yaw! + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI : 0);
 /** The view is not the top view: it has a pitch or a yaw. */
-export const isTilted = (view: View): boolean => clampPitch(view.pitch) > 0 || wrapYaw(view.yaw) !== 0;
+export const isTilted = (view: View): boolean => isFreeEye(view) || clampPitch(view.pitch) > 0 || wrapYaw(view.yaw) !== 0;
+/** The view is a free eye (walking, flying), not the orbit camera. */
+export const isFreeEye = (view: View): boolean => Number.isFinite(view.eye);
+/** Height of a walking eye above the ground, metres: the separate 3D view's. */
+export const WALK_EYE_HEIGHT = 1.7;
+/** Pitch of a free eye: from nearly straight down to well above the horizon (69 degrees up). */
+const FREE_PITCH_MIN = 0.05,
+  FREE_PITCH_MAX = Math.PI / 2 + 1.2;
+export const clampLook = (pitch: number | undefined): number => (Number.isFinite(pitch) ? Math.max(FREE_PITCH_MIN, Math.min(FREE_PITCH_MAX, pitch!)) : Math.PI / 2);
+/** How far a free eye looks (CameraPose.distance), at least: the haze is twice that, the separate 3D view's walking
+ * fog; on a map wider than it, the side of the map. */
+const FREE_REACH = 2500;
 /** Share of the relief shown at a pitch (FrameCamera.rise): a smooth step from the top view to RISE_PITCH. */
 export function riseAt(pitch: number): number {
   const t = Math.max(0, Math.min(1, pitch / RISE_PITCH));
@@ -58,49 +74,44 @@ export interface CameraPose {
   pitch: number;
   yaw: number;
   tilted: boolean;
+  /** A free eye (View.eye). */
+  free: boolean;
   rise: number;
   /** CSS pixels on screen per unit of (offset across the view axis / depth along it). */
   focal: number;
-  /** From the eye to the target. */
+  /** How far the camera looks (FrameCamera.distance): from the eye to the target in the orbit, the reach of a free eye. */
   distance: number;
+  /** Height of the eye above the ground under it (metres as drawn; above the target's level without a relief). */
+  clearance: number;
+  /** Level of the horizontal plane a pixel falls on when there is no relief to meet: the target's, or the ground under
+   * a free eye. */
+  plane: number;
   readonly target: Float64Array;
   readonly eye: Float64Array;
   readonly right: Float64Array;
   readonly up: Float64Array;
   readonly forward: Float64Array;
 }
-export const createCameraPose = (): CameraPose => ({ pitch: 0, yaw: 0, tilted: false, rise: 0, focal: 1, distance: 1, target: new Float64Array(3), eye: new Float64Array(3), right: new Float64Array(3), up: new Float64Array(3), forward: new Float64Array(3) });
+export const createCameraPose = (): CameraPose => ({
+  pitch: 0,
+  yaw: 0,
+  tilted: false,
+  free: false,
+  rise: 0,
+  focal: 1,
+  distance: 1,
+  clearance: 1,
+  plane: 0,
+  target: new Float64Array(3),
+  eye: new Float64Array(3),
+  right: new Float64Array(3),
+  up: new Float64Array(3),
+  forward: new Float64Array(3),
+});
 
-/** The pose of the camera of `view` in a viewport `cssH` CSS pixels high. With a relief the target sits on the
- * ground and the eye stays above it: an eye that would be inside a slope is lifted and aimed at the target again. */
-export function poseCamera(pose: CameraPose, view: View, cssH: number, relief?: WorldRelief): CameraPose {
-  const pitch = clampPitch(view.pitch),
-    yaw = wrapYaw(view.yaw),
-    rise = riseAt(pitch);
-  const sinYaw = Math.sin(yaw),
-    cosYaw = Math.cos(yaw);
-  let sinPitch = Math.sin(pitch),
-    cosPitch = Math.cos(pitch);
-  const focal = cssH / (2 * TAN_HALF_FIELD);
-  let distance = focal / view.scale;
-  const { target, eye, right, up, forward } = pose;
-  target[0] = view.cx;
-  target[1] = view.cy;
-  target[2] = relief && rise > 0 ? relief.heightAt(view.cx, view.cy) * rise : 0;
-  // The ground direction at the top of the screen is (sinYaw, -cosYaw): north at yaw 0.
-  eye[0] = target[0] - sinYaw * sinPitch * distance;
-  eye[1] = target[1] + cosYaw * sinPitch * distance;
-  eye[2] = target[2] + cosPitch * distance;
-  if (relief && rise > 0) {
-    const floor = relief.heightAt(eye[0], eye[1]) * rise + Math.max(0.3, distance * 0.01);
-    if (eye[2] < floor) {
-      eye[2] = floor;
-      const flat = Math.hypot(target[0] - eye[0], target[1] - eye[1]);
-      distance = Math.hypot(flat, eye[2] - target[2]);
-      sinPitch = flat / distance;
-      cosPitch = (eye[2] - target[2]) / distance;
-    }
-  }
+/** The axes of a camera looking at `pitch` from the vertical towards `yaw`. */
+function aim(pose: CameraPose, sinYaw: number, cosYaw: number, sinPitch: number, cosPitch: number): void {
+  const { right, up, forward } = pose;
   right[0] = cosYaw;
   right[1] = sinYaw;
   right[2] = 0;
@@ -110,12 +121,76 @@ export function poseCamera(pose: CameraPose, view: View, cssH: number, relief?: 
   forward[0] = sinYaw * sinPitch;
   forward[1] = -cosYaw * sinPitch;
   forward[2] = -cosPitch;
+}
+
+/** The pose of a free eye: over (cx, cy) at its altitude, never closer to the ground than a walking eye, the relief at
+ * its full height. */
+function poseFreeEye(pose: CameraPose, view: View, cssH: number, relief?: WorldRelief): CameraPose {
+  const pitch = clampLook(view.pitch),
+    yaw = wrapYaw(view.yaw),
+    ground = relief ? relief.heightAt(view.cx, view.cy) : 0,
+    altitude = Math.max(view.eye!, ground + WALK_EYE_HEIGHT);
+  const { target, eye } = pose;
+  target[0] = eye[0] = view.cx;
+  target[1] = eye[1] = view.cy;
+  target[2] = ground;
+  eye[2] = altitude;
+  aim(pose, Math.sin(yaw), Math.cos(yaw), Math.sin(pitch), Math.cos(pitch));
+  pose.pitch = pitch;
+  pose.yaw = yaw;
+  pose.tilted = pose.free = true;
+  pose.rise = 1;
+  pose.focal = cssH / (2 * TAN_HALF_FIELD);
+  pose.distance = Math.max(FREE_REACH, relief?.width ?? 0);
+  pose.clearance = altitude - ground;
+  pose.plane = ground;
+  return pose;
+}
+
+/** The pose of the camera of `view` in a viewport `cssH` CSS pixels high. With a relief the target sits on the
+ * ground and the eye stays above it: an eye that would be inside a slope is lifted and aimed at the target again. */
+export function poseCamera(pose: CameraPose, view: View, cssH: number, relief?: WorldRelief): CameraPose {
+  if (isFreeEye(view)) return poseFreeEye(pose, view, cssH, relief);
+  const pitch = clampPitch(view.pitch),
+    yaw = wrapYaw(view.yaw),
+    rise = riseAt(pitch);
+  const sinYaw = Math.sin(yaw),
+    cosYaw = Math.cos(yaw);
+  let sinPitch = Math.sin(pitch),
+    cosPitch = Math.cos(pitch);
+  const focal = cssH / (2 * TAN_HALF_FIELD);
+  let distance = focal / view.scale;
+  const { target, eye } = pose;
+  target[0] = view.cx;
+  target[1] = view.cy;
+  target[2] = relief && rise > 0 ? relief.heightAt(view.cx, view.cy) * rise : 0;
+  // The ground direction at the top of the screen is (sinYaw, -cosYaw): north at yaw 0.
+  eye[0] = target[0] - sinYaw * sinPitch * distance;
+  eye[1] = target[1] + cosYaw * sinPitch * distance;
+  eye[2] = target[2] + cosPitch * distance;
+  let clearance = eye[2] - target[2];
+  if (relief && rise > 0) {
+    const under = relief.heightAt(eye[0], eye[1]) * rise,
+      floor = under + Math.max(0.3, distance * 0.01);
+    if (eye[2] < floor) {
+      eye[2] = floor;
+      const flat = Math.hypot(target[0] - eye[0], target[1] - eye[1]);
+      distance = Math.hypot(flat, eye[2] - target[2]);
+      sinPitch = flat / distance;
+      cosPitch = (eye[2] - target[2]) / distance;
+    }
+    clearance = eye[2] - under;
+  }
+  aim(pose, sinYaw, cosYaw, sinPitch, cosPitch);
   pose.pitch = pitch;
   pose.yaw = yaw;
   pose.tilted = pitch > 0 || yaw !== 0;
+  pose.free = false;
   pose.rise = rise;
   pose.focal = focal;
   pose.distance = distance;
+  pose.clearance = clearance;
+  pose.plane = target[2];
   return pose;
 }
 
@@ -123,7 +198,7 @@ export function poseCamera(pose: CameraPose, view: View, cssH: number, relief?: 
 export type WritableFrameCamera = { -readonly [K in keyof FrameCamera]: FrameCamera[K] } & { readonly pose: CameraPose };
 export function createFrameCamera(): WritableFrameCamera {
   const pose = createCameraPose();
-  return { pose, pitch: 0, yaw: 0, tilted: false, rise: 0, viewProjection: new Float32Array(16), targetViewProjection: new Float32Array(16), target: pose.target, eye: pose.eye, right: pose.right, up: pose.up, forward: pose.forward, focal: 1, near: 0, far: 1 };
+  return { pose, pitch: 0, yaw: 0, tilted: false, rise: 0, viewProjection: new Float32Array(16), targetViewProjection: new Float32Array(16), target: pose.target, eye: pose.eye, right: pose.right, up: pose.up, forward: pose.forward, focal: 1, distance: 1, near: 0, far: 1 };
 }
 
 /** One row set of a perspective matrix: `tr`, `tu`, `tf` are the eye-relative origin along right, up and forward. */
@@ -150,6 +225,7 @@ export function frameCamera(camera: WritableFrameCamera, view: View, cssW: numbe
   camera.tilted = pose.tilted;
   camera.rise = pose.rise;
   camera.focal = pose.focal * dpr;
+  camera.distance = pose.distance;
   const absolute = camera.viewProjection,
     relative = camera.targetViewProjection;
   if (!pose.tilted) {
@@ -166,10 +242,11 @@ export function frameCamera(camera: WritableFrameCamera, view: View, cssW: numbe
     camera.far = pose.distance;
     return;
   }
-  // The far plane holds the whole map; the near one stays under the clearance the eye keeps over the ground.
+  // The far plane holds the whole map; the near one stays under the clearance the eye keeps over the ground (a free
+  // eye: a walker's feet are 1.7 m below it).
   let reach = pose.distance * 16;
   if (relief) reach = Math.hypot(Math.max(Math.abs(eye[0]), Math.abs(eye[0] - relief.width)), Math.max(Math.abs(eye[1]), Math.abs(eye[1] - relief.width)), eye[2] - relief.low * pose.rise);
-  const near = Math.max(0.1, pose.distance * 0.004),
+  const near = pose.free ? Math.max(0.05, pose.clearance * 0.03) : Math.max(0.1, pose.distance * 0.004),
     far = Math.max(reach * 1.02, pose.distance * 2),
     a = (far + near) / (far - near),
     b = (-2 * far * near) / (far - near);
@@ -189,31 +266,41 @@ export function frameCamera(camera: WritableFrameCamera, view: View, cssW: numbe
 const RAY_STEPS = 160,
   RAY_REFINE = 12;
 
-/** The ground point under the CSS pixel (sx, sy) of a `cssW` x `cssH` viewport, into `out` (x, y). With a relief:
- * the first point of the terrain the ray meets. Without: the horizontal plane through the target. False when the ray
- * meets no ground (it points at or above the horizon). */
-export function groundPoint(pose: CameraPose, sx: number, sy: number, cssW: number, cssH: number, relief: WorldRelief | undefined, out: [number, number]): boolean {
-  const { eye, right, up, forward, target } = pose,
+/** The ray of the CSS pixel (sx, sy) of a `cssW` x `cssH` viewport: from the eye along `out` (x, y, z), a direction
+ * whose component along the view axis is 1 (so `t` along it is the depth). */
+export function pixelRay(pose: CameraPose, sx: number, sy: number, cssW: number, cssH: number, out: Float64Array | number[]): void {
+  const { right, up, forward } = pose,
     u = (sx - cssW / 2) / pose.focal,
     v = (cssH / 2 - sy) / pose.focal;
-  const dx = forward[0] + u * right[0] + v * up[0],
-    dy = forward[1] + u * right[1] + v * up[1],
-    dz = forward[2] + u * right[2] + v * up[2];
-  if (!relief || pose.rise === 0) {
-    if (dz > -1e-6) return false;
-    const t = (target[2] - eye[2]) / dz;
+  for (let i = 0; i < 3; i++) out[i] = forward[i] + u * right[i] + v * up[i];
+}
+
+const ray = new Float64Array(3);
+/** Where the ray of the CSS pixel (sx, sy) meets the ground: `t` along `pixelRay` (its depth), the point into `out`
+ * (x, y). With a relief: the first point of the terrain the ray meets. Without: the horizontal plane of the pose
+ * (`plane`). Infinity when the ray meets no ground (it points at or above the horizon). */
+export function groundHit(pose: CameraPose, sx: number, sy: number, cssW: number, cssH: number, relief: WorldRelief | undefined, out: [number, number]): number {
+  const eye = pose.eye;
+  pixelRay(pose, sx, sy, cssW, cssH, ray);
+  const dx = ray[0],
+    dy = ray[1],
+    dz = ray[2];
+  const at = (t: number): number => {
     out[0] = eye[0] + dx * t;
     out[1] = eye[1] + dy * t;
-    return true;
-  }
+    return t;
+  };
+  if (!relief || pose.rise === 0) return dz > -1e-6 ? Infinity : at((pose.plane - eye[2]) / dz);
   const rise = pose.rise,
     above = (t: number): number => eye[2] + dz * t - relief.heightAt(eye[0] + dx * t, eye[1] + dy * t) * rise;
   // The ray is below every ground of the map from `end` on (a descending ray), or has left the map (a level one).
   const end = dz < -1e-6 ? (relief.low * rise - eye[2]) / dz : relief.width * 3;
+  // The first step: a fraction of the orbit's distance, or of a free eye's height (a walker's feet are near).
+  const first = pose.free ? Math.max(0.25, pose.clearance * 0.25) : pose.distance * 0.02;
   let before = 0,
     t = 0;
   for (let step = 0; step < RAY_STEPS && before < end; step++) {
-    t = Math.min(end, before + Math.max(pose.distance * 0.02, before * 0.06));
+    t = Math.min(end, before + Math.max(first, before * 0.06));
     if (above(t) <= 0) {
       let low = before,
         high = t;
@@ -222,16 +309,69 @@ export function groundPoint(pose: CameraPose, sx: number, sy: number, cssW: numb
         if (above(middle) <= 0) high = middle;
         else low = middle;
       }
-      out[0] = eye[0] + dx * high;
-      out[1] = eye[1] + dy * high;
-      return true;
+      return at(high);
     }
     before = t;
   }
-  if (dz > -1e-6) return false;
-  out[0] = eye[0] + dx * end;
-  out[1] = eye[1] + dy * end;
-  return true;
+  return dz > -1e-6 ? Infinity : at(end);
+}
+/** The ground point under a pixel (groundHit), into `out`; false when the ray meets no ground. */
+export const groundPoint = (pose: CameraPose, sx: number, sy: number, cssW: number, cssH: number, relief: WorldRelief | undefined, out: [number, number]): boolean => groundHit(pose, sx, sy, cssW, cssH, relief, out) < Infinity;
+
+/** Where the ground points of the map are on screen, for the page's overlays (the selection outline): the 2D mapping in
+ * the top view, the camera's perspective onto the relief when tilted. Made once per view. */
+export interface ScreenProjection {
+  readonly tilted: boolean;
+  /** The CSS pixel of the ground point (x, y) into `out`; false when it lies behind the eye. */
+  project(x: number, y: number, out: [number, number]): boolean;
+}
+export function screenProjection(view: View, cssW: number, cssH: number, relief?: WorldRelief): ScreenProjection {
+  if (!isTilted(view))
+    return {
+      tilted: false,
+      project(x, y, out) {
+        out[0] = (x - view.cx) * view.scale + cssW / 2;
+        out[1] = (y - view.cy) * view.scale + cssH / 2;
+        return true;
+      },
+    };
+  const pose = poseCamera(createCameraPose(), view, cssH, relief),
+    { eye, right, up, forward, rise } = pose,
+    near = Math.max(0.05, pose.clearance * 0.03);
+  return {
+    tilted: true,
+    project(x, y, out) {
+      const dx = x - eye[0],
+        dy = y - eye[1],
+        dz = (relief ? relief.heightAt(x, y) * rise : pose.plane) - eye[2];
+      const depth = dx * forward[0] + dy * forward[1] + dz * forward[2];
+      if (depth < near) return false;
+      out[0] = cssW / 2 + (pose.focal * (dx * right[0] + dy * right[1] + dz * right[2])) / depth;
+      out[1] = cssH / 2 - (pose.focal * (dx * up[0] + dy * up[1] + dz * up[2])) / depth;
+      return true;
+    },
+  };
+}
+
+/** How far the miniature draws the footprint of a tilted view towards its horizon, in camera distances of the orbit. */
+const FOOTPRINT_REACH = 8;
+const corner: [number, number] = [0, 0];
+/** The ground a tilted view sees, for the miniature: the points under the four corners of the viewport on the plane of
+ * the pose (top left, top right, bottom right, bottom left), into `out` (x0, y0, ... x3, y3). A corner above the
+ * horizon, or further than FOOTPRINT_REACH distances (a free eye: its reach), is cut there along its ray. */
+export function viewFootprint(view: View, cssW: number, cssH: number, relief: WorldRelief | undefined, out: Float64Array | number[]): void {
+  const pose = poseCamera(scratch, view, cssH, relief),
+    reach = pose.free ? pose.distance : pose.distance * FOOTPRINT_REACH,
+    eye = pose.eye;
+  const corners = [0, 0, cssW, 0, cssW, cssH, 0, cssH];
+  for (let i = 0; i < 4; i++) {
+    let t = groundHit(pose, corners[i * 2], corners[i * 2 + 1], cssW, cssH, undefined, corner);
+    const flat = Math.hypot(ray[0], ray[1]);
+    if (flat > 1e-9) t = Math.min(t, reach / flat);
+    if (!(t < Infinity)) t = 0;
+    out[i * 2] = eye[0] + ray[0] * t;
+    out[i * 2 + 1] = eye[1] + ray[1] * t;
+  }
 }
 
 const scratch = createCameraPose(),

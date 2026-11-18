@@ -21,6 +21,8 @@ import { BlockGrouping, blockHidden, blockLevel, blockPart, joinParts, worldPain
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
 import { VOLUME_HAZE, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
+import { pickBuilding, type BuildingPick } from './buildingsPick';
+import type { Building3dVisual } from '../urbanBuildingGeometry';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -34,6 +36,13 @@ export interface WorldBuildingsOptions {
   budgetBytes?: number;
   /** Asks for a frame (a wanted level was built). */
   invalidate(): void;
+}
+
+/** The buildings layer, and the building under a pixel of a tilted view (buildingsPick.ts), for the page's picking. */
+export interface WorldBuildingsLayer extends VolumeLayer {
+  /** The building first met by the ray from `origin` along `direction` (map metres, z as drawn) before `limit`, among
+   * those `accept` takes; undefined before the town is grouped into blocks. CPU only, for a click. */
+  pick(origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined;
 }
 
 /** Buildings meshed between two looks at the clock. */
@@ -62,11 +71,13 @@ interface Slot {
   seen: number;
 }
 
-export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): VolumeLayer {
+export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): WorldBuildingsLayer {
   /** `blocks` drawn, `bytes` on the GPU, `sliceMs` the longest work slice so far. */
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, blocks: 0, bytes: 0, sliceMs: 0 };
   const volume = new ViewVolume();
   let slots: Slot[] = [];
+  /** The blocks of the slots, for picking. */
+  let blocks: BuildingBlock[] = [];
   const visible: Slot[] = [];
   let visibleCount = 0,
     tick = 0,
@@ -95,6 +106,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   const dropAll = (): void => {
     for (const slot of slots) for (let i = 0; i < slot.levels.length; i++) dropLevel(slot, i);
     slots = [];
+    blocks = [];
     visibleCount = 0;
   };
 
@@ -195,6 +207,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
         paint = worldPaint(scene!, appearance!, grouping.altitudes);
+        blocks = grouping.blocks;
         slots = grouping.blocks.map(block => ({ block, levels: new Array<Level | undefined>(block.levels).fill(undefined), want: block.levels - 1, shown: -1, depth: Infinity, seen: -1 }));
         grouping = undefined;
         return slice(started, true);
@@ -320,6 +333,9 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     },
     invalidate() {
       dirty = true;
+    },
+    pick(origin, direction, rise, limit, accept) {
+      return heights && slots.length ? pickBuilding(blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept) : undefined;
     },
     contextLost() {
       // Every handle is dead: forget them without deleting.

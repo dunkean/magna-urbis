@@ -95,6 +95,11 @@ export interface LiveCompositor {
   hasStandIn(name: LiveLayerName): boolean;
   /** Draws one frame. False: nothing was presented (context lost). */
   draw(view: View, cssW: number, cssH: number, dpr: number, moving: boolean): boolean;
+  /** A tilted view as a picture: the frame of `view` drawn by the same layers into an offscreen multisampled target of
+   * `cssW * dpr` x `cssH * dpr` device pixels (cut to the context's limit), read back over the paper into `out`. A
+   * synchronous readback, for a capture only. False in the top view (its exact renderers capture it), with the
+   * context lost, or when the target cannot be made. */
+  capture(view: View, cssW: number, cssH: number, dpr: number, out: HTMLCanvasElement): boolean;
   requestFrame(): void;
   /** Stops the background work (the page is hidden behind another view). */
   setPaused(paused: boolean): void;
@@ -158,6 +163,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     moving: false,
     quality: 'full',
   };
+  /** The whole view of the last frame drawn (`frame.view` holds its centre and scale only). */
+  const screenView: View = { cx: 0, cy: 0, scale: 1 };
   /** A frame was drawn since the context was (re)created: `frame` describes it. */
   let frameValid = false,
     lastFrameAt = 0,
@@ -201,6 +208,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   // --- own GL resources (rebuilt after a context loss) ---------------------------------------------------------------
   let quad: RasterQuad | undefined;
   const group = createIsolatedGroup(gl);
+  /** The offscreen target of a capture: made for it, dropped after it. */
+  const captureGroup = createIsolatedGroup(gl);
   const timer = createGpuTimer(gl, ms => pushSample(stats.gpuMs, ms));
   let maxTexture = 4096,
     maxSamples = 0;
@@ -467,6 +476,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     fence = null;
     quad = undefined;
     group.contextLost();
+    captureGroup.contextLost();
     timer.contextLost();
     drape.contextLost();
     drapePending = drapeWaited = false;
@@ -671,6 +681,15 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         busy--;
       }
     },
+    capture(view, cssW, cssH, dpr, out) {
+      if (lost || disposed || !init() || !isTilted(view)) return false;
+      busy++;
+      try {
+        return captureFrame(view, cssW, cssH, dpr, out);
+      } finally {
+        busy--;
+      }
+    },
     requestFrame() {
       if (!disposed) options.invalidate();
     },
@@ -700,6 +719,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (!lost) {
         drape.dispose();
         group.drop();
+        captureGroup.drop();
         quad?.dispose();
         timer.dispose();
       }
@@ -712,9 +732,63 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     },
   };
 
+  /** LiveCompositor.capture: the layers that take the camera draw the tilted frame into the capture target, as
+   * drawFrame draws it on screen (no stand-in, no statistics); the frame object is then refilled for the view on
+   * screen, which the work slices go on preparing. */
+  function captureFrame(view: View, cssW: number, cssH: number, dpr: number, out: HTMLCanvasElement): boolean {
+    const onScreen = frameValid ? { view: { ...screenView }, cssW: frame.cssW, cssH: frame.cssH, dpr: frame.dpr, moving: frame.moving } : undefined;
+    const limit = Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) || 4096;
+    fillFrame(view, cssW, cssH, Math.min(dpr, limit / Math.max(cssW, cssH)), false, performance.now());
+    const width = frame.width,
+      height = frame.height,
+      samples = frame.quality === 'light' ? 0 : Math.min(4, maxSamples);
+    let pixels: Uint8Array | undefined;
+    if (captureGroup.ensure(width, height, samples) || (samples > 0 && captureGroup.ensure(width, height, 0))) {
+      const scene = captureGroup.target!;
+      resetLiveState(gl, scene.fbo, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clearDepth(1);
+      gl.clearStencil(0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+      for (const name of LIVE_LAYER_ORDER) {
+        const layer = layers[name];
+        if (!shown[name] || !layer?.tilts) continue;
+        frame.target = scene.fbo;
+        resetLiveState(gl, scene.fbo, width, height);
+        try {
+          if (layer.ready(frame)) layer.draw(frame);
+        } catch (error) {
+          fail(name, error);
+        }
+      }
+      frame.target = null;
+      gl.disable(gl.SCISSOR_TEST);
+      gl.colorMask(true, true, true, true);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, scene.fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, scene.resolve);
+      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, scene.resolve);
+      pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    }
+    captureGroup.drop();
+    resetLiveState(gl, null, width, height);
+    if (onScreen) fillFrame(onScreen.view, onScreen.cssW, onScreen.cssH, onScreen.dpr, onScreen.moving, performance.now());
+    else frameValid = false;
+    if (!pixels) return false;
+    composeOverPaper(pixels, width, height, paper, out);
+    return true;
+  }
+
   function drawFrame(view: View, cssW: number, cssH: number, dpr: number, moving: boolean): boolean {
     const started = performance.now();
     fillFrame(view, cssW, cssH, dpr, moving, started);
+    screenView.cx = view.cx;
+    screenView.cy = view.cy;
+    screenView.scale = view.scale;
+    screenView.pitch = view.pitch;
+    screenView.yaw = view.yaw;
+    screenView.eye = view.eye;
     const width = frame.width,
       height = frame.height;
     if (canvas.width !== width) canvas.width = width;
@@ -858,4 +932,29 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     if (runWork(moving ? WORK_MOVING_MS : WORK_REST_MS, !moving || paceOk)) schedule();
     return !lost;
   }
+}
+
+/** Premultiplied pixels read back from GL (first row at the bottom) laid over the paper colour, into `out`: an opaque
+ * picture, north at the top. */
+function composeOverPaper(pixels: Uint8Array, width: number, height: number, paper: string, out: HTMLCanvasElement): void {
+  out.width = width;
+  out.height = height;
+  const ctx = out.getContext('2d')!;
+  ctx.fillStyle = paper || '#fff';
+  ctx.fillRect(0, 0, 1, 1);
+  const [pr, pg, pb] = ctx.getImageData(0, 0, 1, 1).data,
+    image = ctx.createImageData(width, height),
+    data = image.data;
+  for (let y = 0; y < height; y++) {
+    let from = (height - 1 - y) * width * 4,
+      to = y * width * 4;
+    for (let x = 0; x < width; x++, from += 4, to += 4) {
+      const keep = (255 - pixels[from + 3]) / 255;
+      data[to] = pixels[from] + pr * keep;
+      data[to + 1] = pixels[from + 1] + pg * keep;
+      data[to + 2] = pixels[from + 2] + pb * keep;
+      data[to + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
 }

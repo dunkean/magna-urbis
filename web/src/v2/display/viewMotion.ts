@@ -1,5 +1,6 @@
 /**
- * The camera of the map across frames: moving, or at rest. Its pose is the whole view: centre, scale, pitch and yaw.
+ * The camera of the map across frames: moving, or at rest. Its pose is the whole view: centre, scale, pitch, yaw and
+ * the altitude of a free eye.
  *
  * The page asks for one frame per change of view. A gesture is a run of such frames; between two wheel steps, or just
  * after the last pan, the view has not moved but the gesture is not over. So the view counts as moving until SETTLE_MS
@@ -15,7 +16,16 @@ import type { ViewFrame } from './contract';
 export const SETTLE_MS = 160;
 
 export const sameFrame = (frame: ViewFrame | undefined, view: View, w: number, h: number, dpr: number): boolean =>
-  !!frame && frame.w === w && frame.h === h && frame.dpr === dpr && frame.view.cx === view.cx && frame.view.cy === view.cy && frame.view.scale === view.scale && (frame.view.pitch ?? 0) === (view.pitch ?? 0) && (frame.view.yaw ?? 0) === (view.yaw ?? 0);
+  !!frame &&
+  frame.w === w &&
+  frame.h === h &&
+  frame.dpr === dpr &&
+  frame.view.cx === view.cx &&
+  frame.view.cy === view.cy &&
+  frame.view.scale === view.scale &&
+  (frame.view.pitch ?? 0) === (view.pitch ?? 0) &&
+  (frame.view.yaw ?? 0) === (view.yaw ?? 0) &&
+  frame.view.eye === view.eye;
 
 type MotionPhase = 'moving' | 'resting';
 
@@ -43,6 +53,7 @@ export class ViewMotion {
     last.view.scale = view.scale;
     last.view.pitch = view.pitch;
     last.view.yaw = view.yaw;
+    last.view.eye = view.eye;
     last.w = w;
     last.h = h;
     last.dpr = dpr;

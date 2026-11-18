@@ -1,13 +1,14 @@
 /**
  * The page's direct controls: recipe fields of the staging area, the seed, run buttons, cancel, zoom, the style
- * selector, the mobile toggle, and the map click that picks a label, a placement position or what to inspect.
+ * selector, the mobile toggle, and the map click that picks a label, a placement position or what to inspect (in the
+ * top view or tilted: worldPicking.ts).
  */
 import type { PageActions, PageState } from './contract';
-import { screenToWorld } from '../../render/view';
 import { adaptedExtent } from '../settings';
 import { buildingAt, nearestSettlement } from '../edits';
 import { migrateUrbanSeeds } from '../urbanSeeds';
 import { $ } from './dom';
+import { pickOnMap } from './worldPicking';
 
 export function mountToolbar(state: PageState, actions: PageActions): void {
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-option]').forEach(input =>
@@ -88,9 +89,12 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
 
   $('#map').addEventListener('click', e => {
     if (!state.world || state.busy || (!state.pendingRegionPosition && !state.labelEditor.active() && !$<HTMLInputElement>('#inspect-mode').checked) || Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) > 5) return;
+    // The point the click means: under the pixel in the top view, what the camera sees there when tilted.
     const rect = $('#map').getBoundingClientRect(),
-      [x, y] = screenToWorld(state.client.viewer.getView(), rect.width, rect.height, e.clientX - rect.left, e.clientY - rect.top),
-      p = { x, y };
+      picked = pickOnMap(state, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
+    if (!picked) return;
+    const p = picked.point,
+      { x, y } = p;
     if (state.labelEditor.active()) {
       state.labelEditor.pick(p);
       return;
@@ -120,7 +124,7 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
       if (town) actions.showInspector(town.key);
       return;
     }
-    const hit = buildingAt(state.world, p);
+    const hit = picked.building ?? buildingAt(state.world, p);
     if (hit) {
       actions.showBuilding(hit);
       return;

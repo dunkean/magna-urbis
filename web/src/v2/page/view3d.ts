@@ -3,7 +3,8 @@
  * line it shares.
  *
  * The map has one camera: the "3D" button eases it to a tilt and back to the top view, and its label and pressed
- * state follow the camera however it was tilted (`mountTiltButton`).
+ * state follow the camera however it was tilted (`mountTiltButton`). While tilted, the controls beside it: the modelled
+ * trees (worldTrees.ts), the navigation and the PNG of the view (worldNavigation.ts).
  *
  * With `?camera=dual` (render/live/policy.ts, temporary) the button opens the separate 3D view instead, as it did:
  * loaded on first use, cancellable by a click on "2D" while it loads, with its PNG capture. That part goes with the
@@ -18,6 +19,7 @@ import { dualCameras } from '../../render/live/policy';
 import { isTilted } from '../../render/world/camera';
 import { $ } from './dom';
 import { mountWorldTreeControls } from './worldTrees';
+import { mountWorldNavigation } from './worldNavigation';
 
 /** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
 const BUTTON_PITCH = 1;
@@ -33,8 +35,9 @@ function mountTiltButton(state: PageState, actions: PageActions): void {
     tilted = !tilted;
     setText(button, tilted ? '2D' : '3D');
     button.setAttribute('aria-pressed', String(tilted));
-    // The map tools pick on the top view: they end when the camera tilts and are offered again when it is back.
-    if (tilted) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' }));
+    // The editors work on the top view: they end when the camera tilts and are offered again when it is back. "Select
+    // on map" stays on (it picks in a tilted view too).
+    if (tilted) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: $<HTMLInputElement>('#inspect-mode').checked ? 'buildings' : '3d' }));
     state.editingTools.sync();
   });
   button.onclick = () => {
@@ -68,6 +71,7 @@ export function mountView3d(state: PageState, actions: PageActions): void {
   if (!dualCameras()) {
     mountTiltButton(state, actions);
     mountWorldTreeControls(state, actions);
+    mountWorldNavigation(state, actions);
     return;
   }
 

@@ -52,7 +52,7 @@ export function volumeDepthEnd(gl: WebGL2RenderingContext): void {
 export const VOLUME_LIGHT: readonly [number, number, number] = [-0.485, -0.485, 0.728];
 /** Haze of the draped ground (drapedGround.ts): its colour, and its distance for a camera, as that file sets them. */
 export const VOLUME_HAZE: readonly [number, number, number] = [0.77, 0.85, 0.88];
-export const hazeDistance = (camera: FrameCamera): number => Math.max(2 * Math.hypot(camera.eye[0] - camera.target[0], camera.eye[1] - camera.target[1], camera.eye[2] - camera.target[2]), 100);
+export const hazeDistance = (camera: FrameCamera): number => Math.max(2 * camera.distance, 100);
 
 /** The six planes of a frame's view volume, for positions relative to the target (FrameCamera.targetViewProjection).
  * Refilled in place per frame. */

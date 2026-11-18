@@ -46,7 +46,11 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
 
   mountMeasureTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), readout: $('#cursor-readout'), getView: () => state.client.viewer.getView(), getHeight: () => state.world?.terrain.height, getMapSize: () => state.world?.mapSize });
 
-  state.selectionOutline = createSelectionOverlay($('#map'), () => state.client.viewer.getView());
+  state.selectionOutline = createSelectionOverlay(
+    $('#map'),
+    () => state.client.viewer.getView(),
+    () => state.client.viewer.projection(),
+  );
 
   window.addEventListener('v2-edit-mode', event => {
     const token = (event as CustomEvent<string>).detail;

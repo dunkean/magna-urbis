@@ -19,12 +19,18 @@
  * turns and tilts it, as do Shift+arrows, Shift+wheel and a two-finger vertical drag; Home eases back to the top
  * view and the fit key (0) resets it. Pan and zoom then act on the ground under the cursor. In the top view the
  * views handed out carry no pitch and no yaw: they are the views of the 2D map.
+ *
+ * Walking and flying (`setNavigation`, render/world/navigation.ts): the camera becomes a free eye (View.eye), with the
+ * separate 3D view's keys: W/Z or Up forward, S or Down back, A/Q or Left and D or Right sideways, Shift faster; flying
+ * also Space or E up, C down (not Ctrl: Ctrl+W closes the tab). A drag looks around, two fingers move, the wheel steps forward or back; Escape
+ * returns to the orbit, Home to the top view. The held keys move the eye in the frames of the viewer's own loop.
  */
 import type { CanvasRenderer } from '../render/canvas';
 import { dualCameras } from '../render/live/policy';
 import { View, fitView, clampView, zoomAt, panBy, viewRect } from '../render/view';
-import { clampPitch, panOnGround, wrapYaw, zoomAtGround } from '../render/world/camera';
+import { clampLook, clampPitch, panOnGround, screenProjection, viewFootprint, wrapYaw, zoomAtGround, type ScreenProjection } from '../render/world/camera';
 import type { WorldRelief } from '../render/world/contract';
+import { enterFreeEye, leaveFreeEye, lookFreeEye, moveFreeEye, switchFreeEye, walkingEye, type Navigation } from '../render/world/navigation';
 
 export interface ViewerOptions {
   container: HTMLElement;
@@ -86,8 +92,16 @@ export interface Viewer {
   /** Eases the camera to a pitch (radians, 0 looks straight down) and a yaw (radians clockwise from north; the
    * current one when absent). Without effect while the map on screen does not tilt. */
   tiltTo(pitch: number, yaw?: number): void;
-  /** Calls `listener` with the view whenever its pitch or yaw changed; returns the function that stops it. */
+  /** Calls `listener` with the view whenever its pitch, its yaw or the navigation mode changed; returns the function
+   * that stops it. */
   onCamera(listener: (view: View) => void): () => void;
+  /** Orbit (the default), walk or fly. Walking and flying need a map that tilts; back to the orbit at the pitch the
+   * camera had before. */
+  setNavigation(mode: Navigation): void;
+  navigation(): Navigation;
+  /** Where the ground points of the map are on screen for the view on screen (render/world/camera.ts), made again only
+   * when the view, the size or the relief changed: the page's overlays follow a tilted camera with it. */
+  projection(): ScreenProjection;
   /** The relief of the map on screen: a zoom of a tilted view then aims at the terrain under the cursor rather than
    * at the plane through the centre of the view. */
   setRelief(relief: (() => WorldRelief | undefined) | undefined): void;
@@ -110,6 +124,15 @@ const DRAG_PITCH = 0.006,
   WHEEL_PITCH = 0.003,
   KEY_PITCH = Math.PI / 18,
   KEY_YAW = Math.PI / 12;
+/** Keys that move a free eye (KeyboardEvent.code), and those that only a flyer has. */
+const MOVE_KEYS = new Set(['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight']),
+  FLY_KEYS = new Set(['Space', 'KeyE', 'KeyC']);
+/** Seconds of walk or flight per wheel notch (100 px, the separate 3D view's), and per metre-free step of a button. */
+const WHEEL_STRIDE_S = 0.25;
+/** Walk or flight per CSS pixel of a two-finger slide (the separate 3D view's). */
+const SLIDE_STRIDE = 0.04;
+/** Longest step of a held key: a stalled or background frame does not throw the eye far. */
+const MOVE_STEP_S = 0.05;
 /** A two-finger gesture is read once a finger has travelled this far (CSS pixels). */
 const GESTURE_TRAVEL = 8;
 /** What two fingers on the map do: not known yet, pan and zoom, or tilt (both sliding up or down together). */
@@ -141,14 +164,39 @@ export function createViewer(o: ViewerOptions): Viewer {
     tiltStamp = 0;
   let relief: (() => WorldRelief | undefined) | undefined;
   const cameraListeners = new Set<(view: View) => void>();
-  /** Pitch and yaw last told to the listeners. */
+  /** Pitch, yaw and navigation last told to the listeners. */
   let toldPitch = 0,
-    toldYaw = 0;
+    toldYaw = 0,
+    toldNavigation: Navigation = 'orbit';
+  /** Orbit, or a free eye: then `view` holds where the eye stands (and the orbit's scale), `pitch` its look, and a
+   * flyer its altitude; the orbit's pitch waits for the way back. */
+  let navigation: Navigation = 'orbit',
+    flightAltitude = 0,
+    orbitPitch = 1;
+  /** Keys held that move a free eye (KeyboardEvent.code), and the time of the last step. */
+  const held = new Set<string>();
+  let heldStamp = 0;
   /** The frame source presents a map that tilts. */
   const tilts = (): boolean => !dualCameras() && direct?.element.dataset.camera === 'tilt';
-  const tilted = (): boolean => (pitch !== 0 || yaw !== 0) && tilts();
-  /** A centre and a scale with the tilt of the camera; in the top view, the view itself. */
-  const withTilt = (v: View): View => (tilted() ? { ...v, pitch, yaw } : v);
+  const free = (): boolean => navigation !== 'orbit' && tilts();
+  const tilted = (): boolean => (pitch !== 0 || yaw !== 0 || navigation !== 'orbit') && tilts();
+  /** A centre and a scale with the tilt of the camera (a free eye: its look and altitude); in the top view, the view
+   * itself. */
+  const withTilt = (v: View): View => {
+    if (!tilted()) return v;
+    if (navigation === 'orbit') return { ...v, pitch, yaw };
+    return { ...v, pitch, yaw, eye: navigation === 'walk' ? walkingEye(relief?.(), v.cx, v.cy) : flightAltitude };
+  };
+  /** The free eye of `next` becomes the camera's (where it stands, its look and its altitude). */
+  const takeEye = (next: View): void => {
+    view = { cx: next.cx, cy: next.cy, scale: view.scale };
+    pitch = next.pitch ?? pitch;
+    yaw = next.yaw ?? yaw;
+    if (navigation === 'fly') flightAltitude = next.eye ?? flightAltitude;
+    invalidate();
+  };
+  let projected: { view: View; w: number; h: number; relief: WorldRelief | undefined; value: ScreenProjection } | undefined;
+  const sameCamera = (a: View, b: View): boolean => sameView(a, b) && a.pitch === b.pitch && a.yaw === b.yaw && a.eye === b.eye;
   /** The ground under (x0, y0) comes under (x1, y1). */
   const panned = (v: View, x0: number, y0: number, x1: number, y1: number): View => {
     if (!tilted()) return panBy(v, x1 - x0, y1 - y0);
@@ -236,29 +284,42 @@ export function createViewer(o: ViewerOptions): Viewer {
     const ty = (shown.view.cy - view.cy) * view.scale + (h - shown.h) / 2;
     canvas.style.transform = `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) scale(${k})`;
   }
-  /** What the miniature last showed: its base, its size, the marker colour and the view rectangle in quarter pixels. */
-  let miniShown: { base: ImageBitmap | HTMLCanvasElement | null; size: number; marker: string; x: number; y: number; rw: number; rh: number } | undefined;
+  /** What the miniature last showed: its base, its size, the marker colour and the corners of the view's outline in
+   * quarter pixels. */
+  let miniShown: { base: ImageBitmap | HTMLCanvasElement | null; size: number; marker: string; corners: Int32Array } | undefined;
+  const footprint = new Float64Array(8),
+    corners = new Int32Array(8);
+  /** The ground the view shows, on the miniature: its rectangle in the top view, the footprint of a tilted camera (the
+   * ground under the corners of the screen, cut towards the horizon). */
   function drawMiniOverlay(): void {
     if (!minimap || !miniBase) return;
     const k = minimap.width / mapSize,
-      r = viewRect(view, w, h, 0);
-    // A frame of a gesture usually moves the rectangle by a fraction of a miniature pixel: a redraw would change
-    // nothing on screen, yet every changed canvas costs the page a raster and a compositor update.
-    const x = Math.round(r.minX * k * 4),
-      y = Math.round(r.minY * k * 4),
-      rw = Math.round((r.maxX - r.minX) * k * 4),
-      rh = Math.round((r.maxY - r.minY) * k * 4);
+      camera = withTilt(view);
+    if (camera === view) {
+      const r = viewRect(view, w, h, 0);
+      footprint.set([r.minX, r.minY, r.maxX, r.minY, r.maxX, r.maxY, r.minX, r.maxY]);
+    } else viewFootprint(camera, w, h, relief?.(), footprint);
+    // A frame of a gesture usually moves the outline by a fraction of a miniature pixel: a redraw would change nothing
+    // on screen, yet every changed canvas costs the page a raster and a compositor update.
+    for (let i = 0; i < 8; i++) corners[i] = Math.round(footprint[i] * k * 4);
     const shown = miniShown;
-    if (shown && shown.base === miniBase && shown.size === minimap.width && shown.marker === marker && shown.x === x && shown.y === y && shown.rw === rw && shown.rh === rh) return;
+    if (shown && shown.base === miniBase && shown.size === minimap.width && shown.marker === marker && shown.corners.every((value, i) => value === corners[i])) return;
     const ctx = minimap.getContext('2d');
     if (!ctx) return;
-    miniShown = { base: miniBase, size: minimap.width, marker, x, y, rw, rh };
+    miniShown = { base: miniBase, size: minimap.width, marker, corners: corners.slice() };
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, minimap.width, minimap.height);
     ctx.drawImage(miniBase, 0, 0, minimap.width, minimap.height);
     ctx.strokeStyle = marker;
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(r.minX * k, r.minY * k, (r.maxX - r.minX) * k, (r.maxY - r.minY) * k);
+    if (camera === view) {
+      ctx.strokeRect(footprint[0] * k, footprint[1] * k, (footprint[2] - footprint[0]) * k, (footprint[5] - footprint[1]) * k);
+      return;
+    }
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) ctx.lineTo(footprint[i * 2] * k, footprint[i * 2 + 1] * k);
+    ctx.closePath();
+    ctx.stroke();
   }
   function sendRequest(): void {
     if (!source) return;
@@ -312,13 +373,55 @@ export function createViewer(o: ViewerOptions): Viewer {
     yaw = wrapYaw(yaw + turn * share);
     invalidate();
   }
-  /** Tells the listeners the pitch and yaw of the view on screen when they changed. */
+  /** One step of a free eye moved by the held keys; the frames go on while a key is held. */
+  function stepHeld(now: number): void {
+    const seconds = Math.min(MOVE_STEP_S, Math.max(0, (now - heldStamp) / 1000));
+    heldStamp = now;
+    if (!free()) {
+      held.clear();
+      return;
+    }
+    const key = (...codes: string[]): number => (codes.some(code => held.has(code)) ? 1 : 0);
+    const forward = key('KeyW', 'KeyZ', 'ArrowUp') - key('KeyS', 'ArrowDown'),
+      right = key('KeyD', 'ArrowRight') - key('KeyA', 'KeyQ', 'ArrowLeft'),
+      up = navigation === 'fly' ? key('Space', 'KeyE') - key('KeyC') : 0;
+    // Shift alone moves nothing: no frame until a moving key comes.
+    if (forward || right || up) takeEye(moveFreeEye(withTilt(view), navigation as 'walk' | 'fly', forward, right, up, seconds, !!key('ShiftLeft', 'ShiftRight'), relief?.()));
+  }
+  /** A step of a free eye forward (negative: back) for `seconds`: the wheel, the zoom buttons and keys, two fingers. */
+  const stride = (forward: number, right: number, seconds: number, fast = false): void => {
+    if (forward || right) takeEye(moveFreeEye(withTilt(view), navigation as 'walk' | 'fly', forward, right, 0, seconds, fast, relief?.()));
+  };
+  /** Walk, fly or orbit (Viewer.setNavigation). */
+  function setNavigation(mode: Navigation): void {
+    if (mode === navigation || (mode !== 'orbit' && !tilts())) return;
+    held.clear();
+    tiltTarget = null;
+    zoomTarget = null;
+    const camera = withTilt(view);
+    if (mode === 'orbit') {
+      const back = leaveFreeEye(camera, orbitPitch, w, h, relief?.());
+      navigation = 'orbit';
+      view = { cx: back.cx, cy: back.cy, scale: view.scale };
+      pitch = back.pitch ?? orbitPitch;
+      yaw = back.yaw ?? yaw;
+      invalidate();
+      return;
+    }
+    if (navigation === 'orbit') orbitPitch = pitch || 1;
+    const next = navigation === 'orbit' ? enterFreeEye(camera, mode, h, relief?.()) : switchFreeEye(camera, mode, relief?.());
+    navigation = mode;
+    takeEye(next);
+  }
+  /** Tells the listeners the pitch, the yaw and the navigation of the view on screen when they changed. */
   function tellCamera(): void {
     const shownPitch = tilted() ? pitch : 0,
-      shownYaw = tilted() ? yaw : 0;
-    if (shownPitch === toldPitch && shownYaw === toldYaw) return;
+      shownYaw = tilted() ? yaw : 0,
+      shownNavigation = tilted() ? navigation : 'orbit';
+    if (shownPitch === toldPitch && shownYaw === toldYaw && shownNavigation === toldNavigation) return;
     toldPitch = shownPitch;
     toldYaw = shownYaw;
+    toldNavigation = shownNavigation;
     const current = withTilt(view);
     for (const listener of cameraListeners) listener(current);
   }
@@ -329,6 +432,7 @@ export function createViewer(o: ViewerOptions): Viewer {
     dirty = false;
     if (zoomTarget) stepZoom(typeof stamp === 'number' ? Math.max(stamp, zoomStamp) : performance.now());
     if (tiltTarget) stepTilt(typeof stamp === 'number' ? Math.max(stamp, tiltStamp) : performance.now());
+    if (held.size) stepHeld(typeof stamp === 'number' ? Math.max(stamp, heldStamp) : performance.now());
     view = clampView(view, mapSize, w, h);
     const camera = withTilt(view),
       tilting = tilts();
@@ -344,7 +448,7 @@ export function createViewer(o: ViewerOptions): Viewer {
         }
         const st = direct.draw({ seq: ++seq, view: { ...camera }, w, h, dpr, mini: minimap ? minimap.width : 0 });
         // The source began or ceased to present a map that tilts: a tilt set meanwhile shows, or goes, next frame.
-        if (tilting !== tilts() && (pitch !== 0 || yaw !== 0)) invalidate();
+        if (tilting !== tilts() && (pitch !== 0 || yaw !== 0 || navigation !== 'orbit')) invalidate();
         tellCamera();
         // A miniature returned by the draw is new content, even in the same canvas object.
         if (st.mini) {
@@ -385,21 +489,25 @@ export function createViewer(o: ViewerOptions): Viewer {
   const level = (): void => {
     pitch = yaw = 0;
     tiltTarget = null;
+    navigation = 'orbit';
+    held.clear();
   };
   const fit = (): void => {
     level();
     set(fitView(mapSize, w, h));
   };
-  const zoomBy = (f: number, sx = w / 2, sy = h / 2): void => set(zoomed(view, f, sx, sy));
+  /** A free eye has no zoom: the zoom buttons and keys step it forward or back. */
+  const zoomBy = (f: number, sx = w / 2, sy = h / 2): void => (free() ? stride(Math.sign(Math.log(f)), 0, WHEEL_STRIDE_S) : set(zoomed(view, f, sx, sy)));
   /** Zoom by `f` around a screen point, eased: successive calls move the target, as direct jumps would move the view. */
   const easeZoomBy = (f: number, sx = w / 2, sy = h / 2): void => {
+    if (free()) return zoomBy(f);
     if (!zoomTarget) zoomStamp = performance.now();
     zoomTarget = clampView(zoomed(zoomTarget ?? view, f, sx, sy), mapSize, w, h);
     invalidate();
   };
   /** Tilts and turns the camera at once (a drag follows the pointer). */
   const tiltBy = (lift: number, turn: number): void => {
-    if (!tilts()) return;
+    if (!tilts() || navigation !== 'orbit') return;
     tiltTarget = null;
     pitch = clampPitch(pitch + lift);
     yaw = wrapYaw(yaw + turn);
@@ -408,6 +516,8 @@ export function createViewer(o: ViewerOptions): Viewer {
   /** Eases the camera to a pitch and a yaw: successive calls move the target. */
   const tiltTo = (toPitch: number, toYaw: number): void => {
     if (!tilts()) return;
+    // The tilt button and Home leave a walk or a flight for the orbit first.
+    if (navigation !== 'orbit') setNavigation('orbit');
     if (!tiltTarget) tiltStamp = performance.now();
     tiltTarget = { pitch: clampPitch(toPitch), yaw: wrapYaw(toYaw) };
     invalidate();
@@ -444,6 +554,7 @@ export function createViewer(o: ViewerOptions): Viewer {
     canvas.classList.add('drag');
     orbiting = pts.size === 1 && (e.button === 2 || e.ctrlKey) && tilts();
     if (pts.size === 2) pinch = { d: dist(), mode: tilts() ? 'undecided' : 'pinch', starts: new Map(pts) };
+    if (free()) orbiting = false;
   });
   // The right button drags the camera of a map that tilts.
   canvas.addEventListener('contextmenu', e => {
@@ -473,6 +584,16 @@ export function createViewer(o: ViewerOptions): Viewer {
     const prev = pts.get(e.pointerId);
     if (!prev) return;
     const cur = local(e);
+    // A free eye: a drag looks around, two fingers walk or fly (sliding down goes forward).
+    if (free()) {
+      const m0 = pts.size === 2 ? mid() : undefined;
+      pts.set(e.pointerId, cur);
+      if (m0) {
+        const m1 = mid();
+        stride((m1.y - m0.y) * SLIDE_STRIDE, (m0.x - m1.x) * SLIDE_STRIDE, 0.12);
+      } else if (pts.size === 1) takeEye(lookFreeEye(withTilt(view), cur.x - prev.x, cur.y - prev.y));
+      return;
+    }
     if (pts.size === 2 && pinch) {
       const m0 = mid();
       pts.set(e.pointerId, cur);
@@ -510,6 +631,12 @@ export function createViewer(o: ViewerOptions): Viewer {
     e => {
       e.preventDefault();
       const p = local(e);
+      // A free eye steps forward or back (Shift: faster).
+      if (free()) {
+        const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+        stride(-Math.max(-200, Math.min(200, delta)) / 100, 0, WHEEL_STRIDE_S, e.shiftKey);
+        return;
+      }
       // Shift+wheel tilts (a mouse reports it on either axis); a notch is eased, a touchpad step followed.
       if (e.shiftKey && tilts()) {
         const raw = e.deltaY || e.deltaX,
@@ -527,12 +654,29 @@ export function createViewer(o: ViewerOptions): Viewer {
     { passive: false },
   );
   canvas.addEventListener('dblclick', e => {
+    if (free()) return;
     const p = local(e);
     easeZoomBy(e.shiftKey ? 0.5 : 2, p.x, p.y);
   });
   const key = (e: KeyboardEvent): void => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    // A free eye: the held keys move it (the frames step it), Escape returns to the orbit, Home to the top view.
+    // The zoom keys step it and 0 fits the map, below.
+    if (free() && !e.defaultPrevented) {
+      const moving = MOVE_KEYS.has(e.code) || (navigation === 'fly' && FLY_KEYS.has(e.code));
+      if (e.key === 'Escape') setNavigation('orbit');
+      else if (e.key === 'Home') tiltTo(0, 0);
+      else if (moving) {
+        if (!held.size) heldStamp = performance.now();
+        held.add(e.code);
+        invalidate();
+      }
+      if (e.key === 'Escape' || e.key === 'Home' || moving) {
+        e.preventDefault();
+        return;
+      }
+    }
     // The camera keys of a map that tilts: Shift+arrows tilt and turn, Home returns to the top view. A control that
     // took the key for itself (it prevented the default) keeps it.
     if (tilts() && !e.defaultPrevented && (e.key === 'Home' || (e.shiftKey && e.key.startsWith('Arrow')))) {
@@ -573,6 +717,12 @@ export function createViewer(o: ViewerOptions): Viewer {
     e.preventDefault();
   };
   window.addEventListener('keydown', key);
+  const release = (e: KeyboardEvent): void => {
+    if (held.delete(e.code)) e.preventDefault();
+  };
+  const releaseAll = (): void => held.clear();
+  window.addEventListener('keyup', release);
+  window.addEventListener('blur', releaseAll);
 
   // minimap click = recenter
   const mini = (e: PointerEvent): void => {
@@ -682,11 +832,25 @@ export function createViewer(o: ViewerOptions): Viewer {
     },
     fit,
     setView(v) {
-      // The view is taken whole: its pitch and yaw too (absent: the top view), kept for a map that tilts.
+      // The view is taken whole: its pitch and yaw too (absent: the top view), kept for a map that tilts; a view with an
+      // eye is a flight (a walk stays a walk), one without is the orbit.
       tiltTarget = null;
-      pitch = dualCameras() ? 0 : clampPitch(v.pitch);
+      held.clear();
+      const eye = !dualCameras() && Number.isFinite(v.eye);
+      if (eye && navigation === 'orbit') orbitPitch = pitch || 1;
+      navigation = eye ? (navigation === 'walk' ? 'walk' : 'fly') : 'orbit';
+      if (eye) flightAltitude = v.eye!;
+      pitch = dualCameras() ? 0 : eye ? clampLook(v.pitch) : clampPitch(v.pitch);
       yaw = dualCameras() ? 0 : wrapYaw(v.yaw);
-      set(v);
+      set({ cx: v.cx, cy: v.cy, scale: v.scale });
+    },
+    setNavigation,
+    navigation: () => (tilted() ? navigation : 'orbit'),
+    projection() {
+      const camera = withTilt(view),
+        ground = camera === view ? undefined : relief?.();
+      if (!projected || !sameCamera(projected.view, camera) || projected.w !== w || projected.h !== h || projected.relief !== ground) projected = { view: camera, w, h, relief: ground, value: screenProjection(camera, w, h, ground) };
+      return projected.value;
     },
     tiltTo: (toPitch, toYaw) => tiltTo(toPitch, toYaw ?? tiltTarget?.yaw ?? yaw),
     onCamera(listener) {
@@ -726,6 +890,8 @@ export function createViewer(o: ViewerOptions): Viewer {
       destroyed = true;
       ro.disconnect();
       window.removeEventListener('keydown', key);
+      window.removeEventListener('keyup', release);
+      window.removeEventListener('blur', releaseAll);
       closeMini();
       detachDirect();
       if (raf) cancelAnimationFrame(raf);

@@ -386,12 +386,11 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
   /** The program of a tilted frame and its camera: the batches are then drawn as in the top view. */
   function useTilted(frame: LiveFrame, p: TiltedProgram): void {
     const camera = frame.camera,
-      target = camera.target,
-      eye = camera.eye;
+      target = camera.target;
     gl.useProgram(p.handle);
     gl.uniformMatrix4fv(p.projection, false, camera.targetViewProjection);
     gl.uniform3f(p.origin, originX - target[0], originY - target[1], -target[2]);
-    gl.uniform4f(p.scale, camera.rise, placedScale, frame.dpr, Math.hypot(eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]));
+    gl.uniform4f(p.scale, camera.rise, placedScale, frame.dpr, camera.distance);
     gl.uniform2f(p.viewport, frame.width, frame.height);
     gl.uniform1i(p.atlas, 0);
   }

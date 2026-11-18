@@ -26,6 +26,7 @@ import type { V2Settings } from './contracts';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
+import type { Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { WorldRelief } from '../render/world/contract';
 import type { ExportLayers } from '../render/exportLayers';
 import { ResourceCache } from './passes/pass';
@@ -173,6 +174,14 @@ export class BenchRenderer {
     capture.mark('programs-ready');
     this.view.prepareCapture();
     capture.mark('capture-complete');
+  }
+  /** The tilted view on screen as a picture (the PNG of the view); undefined in the top view. */
+  captureView(): HTMLCanvasElement | undefined {
+    return this.view.captureView();
+  }
+  /** The ground point under a CSS pixel of `view`, and in a tilted view the building volume in front of it. */
+  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+    return this.view.pick(view, w, h, sx, sy, accept);
   }
   /** Terrain-pass bitmap for 3D; invalidated with the ground, shared without PNG encoding and image decoding. */
   groundBackground(): HTMLCanvasElement | undefined {
