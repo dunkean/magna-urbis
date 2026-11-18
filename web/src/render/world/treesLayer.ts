@@ -7,12 +7,12 @@
  * frame wanted nearest the eye first (only blocks in view: what lies behind or under the eye is never built), and kept
  * on the GPU within a byte budget. A frame draws the blocks in view within the tree distance, horizontally, of the
  * target (the ground point at the centre of the view) or of the eye's ground point: one instanced draw each, the
- * lathe coarser and the block thinned as its trees get smaller on screen (treesBlocks.ts), nothing under a pixel and a
- * half; beyond, the painted crowns of the ground carry the forest. No rule measures the eye's distance (the eye moves
+ * lathe coarser and the block thinned as its trees get smaller on screen (treesBlocks.ts), nothing under two pixels; beyond, the painted crowns of the ground carry the forest. No rule measures the eye's distance (the eye moves
  * away and down as an orbit tilts at a fixed scale), so a tilt or a turn adds or removes trees at the far end only,
- * never around the target or in front of the eye. A frame builds and uploads nothing, and allocates nothing.
+ * never around the target or in front of the eye. A frame builds and uploads no geometry.
  */
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
+import { TreeDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
 import { TREES_BLOCK, TREE_CELLS, TREE_SIZE_M, treeBlockSteps, treeDrawCount, treeInputsKey, treeLevel, type TreeBlock } from './treesBlocks';
@@ -51,8 +51,6 @@ const BUDGET_TRIANGLES = 250000,
 const treeBudget = (far: number): number => Math.min(BUDGET_MAX, BUDGET_TRIANGLES * (far / 600) ** 2);
 /** Past this coarsening every tree on screen is an impostor (60 px / 2 px): only then does the budget thin. */
 const MAX_COARSER = 30;
-/** Radius of the `inner` statistic around the target (m): a sweep of the pitch at a fixed target and scale counts it. */
-const INNER_METRES = 300;
 /** Side of a cell of a block (m). */
 const CELL = TREES_BLOCK / TREE_CELLS;
 const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uLathe', 'uCrown', 'uFacing', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
@@ -81,15 +79,11 @@ interface Slot {
 interface Building {
   key: number;
   steps: Generator<void, TreeBlock>;
-  ms: number;
 }
 
 export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: WorldTreesOptions): VolumeLayer {
-  /** `instances` drawn, `inner` of them in blocks wholly within 300 m of the target (a pitch or yaw
-   * sweep at a fixed target and scale keeps it while those blocks stay on screen), `front` of them in view within the
-   * tree distance of the eye's ground point (the trees in front of a low camera), `blocks` drawn, `bytes` on the
-   * GPU, `built` blocks built so far, `blockMs` build time of the last block, `sliceMs` the longest work slice. */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, inner: 0, front: 0, coarser: 1, thinner: 1, blocks: 0, bytes: 0, built: 0, blockMs: 0, sliceMs: 0 };
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, bytes: 0 };
+  const diagnostics = layerDiagnosticsEnabled() ? new TreeDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
   const slots = new Map<number, Slot>();
   const wantKey = new Float64Array(MAX_BLOCKS),
@@ -212,10 +206,10 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   };
   /** The draws of the visible blocks with the levels of a tree `coarser` times smaller on screen than it is and the
    * thinning of one `thinner` times smaller; the frame's triangles. */
-  const select = (at: { tx: number; ty: number; gx: number; gy: number; far: number; inner: number; focal: number; closest: number }, coarser: number, thinner: number): number => {
+  const select = (at: { tx: number; ty: number; gx: number; gy: number; far: number; focal: number; closest: number }, coarser: number, thinner: number): number => {
     drawnCountTotal = 0;
     lastWhole = false;
-    stats.inner = stats.front = stats.blocks = 0;
+    diagnostics?.selection();
     let triangles = 0;
     const size = TREE_SIZE_M * at.focal;
     for (let b = 0; b < visibleCount; b++) {
@@ -250,14 +244,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           if (cellLevel >= 0) addDraw(slot, key, cellLevel, first, treeDrawCount(all, pixels / thinner), all);
         }
       }
-      let count = 0;
-      for (let i = before; i < drawnCountTotal; i++) {
-        count += drawnCount[i];
-        triangles += (drawnCount[i] * VERTICES[drawnLathe[i]]) / 3;
-      }
-      if (Math.hypot(Math.max(at.tx - minX, minX + TREES_BLOCK - at.tx), Math.max(at.ty - minY, minY + TREES_BLOCK - at.ty)) <= at.inner) stats.inner += count;
-      if (gapTo(minX, minY, at.gx, at.gy) <= at.far) stats.front += count;
-      stats.blocks++;
+      for (let i = before; i < drawnCountTotal; i++) triangles += (drawnCount[i] * VERTICES[drawnLathe[i]]) / 3;
+      diagnostics?.block(drawnCount, before, drawnCountTotal, minX, minY, TREES_BLOCK, at.tx, at.ty, at.gx, at.gy, at.far);
     }
     return triangles;
   };
@@ -280,8 +268,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     lastWhole = whole;
   };
   const slice = (started: number, pending: boolean): boolean => {
-    const ms = performance.now() - started;
-    if (ms > stats.sliceMs) stats.sliceMs = ms;
+    diagnostics?.slice(started);
     return pending;
   };
 
@@ -290,7 +277,6 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     tilts: true,
     tiltOnly: true,
     ready: () => true,
-    restExact: frame => !volumesDrawn(frame.camera) || !options.shown() || (!wanted && !building),
     work(budgetMs, frame) {
       const started = performance.now();
       sync();
@@ -308,19 +294,17 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             break;
           }
           const key = wantKey[best];
-          building = { key, steps: treeBlockSteps(inputs, key % 65536, Math.floor(key / 65536)), ms: 0 };
+          building = { key, steps: treeBlockSteps(inputs, key % 65536, Math.floor(key / 65536)) };
+          diagnostics?.startBlock();
           wantKey[best] = wantKey[wanted - 1];
           wantPriority[best] = wantPriority[wanted - 1];
           wanted--;
         }
         if (performance.now() - started > budgetMs) return slice(started, true);
-        const unit = performance.now(),
-          step = building.steps.next();
-        building.ms += performance.now() - unit;
+        const step = diagnostics ? diagnostics.step(building.steps) : building.steps.next();
         if (step.done) {
           upload(building.key, step.value);
-          stats.blockMs = building.ms;
-          stats.built++;
+          diagnostics?.built();
           building = undefined;
           if (frame?.camera.tilted) options.invalidate();
         }
@@ -333,7 +317,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         camera = frame.camera,
         standing = volumesDrawn(camera) && options.shown();
       tick++;
-      stats.drawCalls = stats.triangles = stats.instances = stats.inner = stats.front = stats.blocks = 0;
+      stats.drawCalls = stats.triangles = stats.instances = 0;
+      diagnostics?.selection();
       drawnCountTotal = 0;
       const relief = heights;
       if (standing && relief && inputs && program) {
@@ -350,7 +335,6 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           rise = camera.rise,
           drawnPerMetre = relief.exaggeration * rise,
           far = limits.far,
-          inner = INNER_METRES,
           // CSS pixels per metre at a depth of one metre, and the closest depth a block is measured at.
           focal = camera.focal / frame.dpr,
           closest = Math.max(camera.near, 0.5);
@@ -400,7 +384,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         // all together (every tree stays), and only once every tree is an impostor, fewer trees: the cost follows the
         // distance setting, never the view, and the trees around the target and in front of the eye stay.
         const budget = treeBudget(far),
-          selection = { tx, ty, gx, gy, far, inner, focal, closest };
+          selection = { tx, ty, gx, gy, far, focal, closest };
         let coarser = 1,
           thinner = 1,
           previous = Infinity;
@@ -415,8 +399,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           }
           previous = triangles;
         }
-        stats.coarser = coarser;
-        stats.thinner = thinner;
+        diagnostics?.levels(coarser, thinner);
         if (drawnCountTotal) {
           const u = program.u;
           gl.useProgram(program.program);

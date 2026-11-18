@@ -1,35 +1,24 @@
 /**
- * The town's buildings as volumes in the tilted world view (volumes.ts): the same meshes, colours, material grain and
- * levels of detail as the separate 3D view (buildingsMesh.ts), standing on the relief the draped ground shows
- * (TerrainHeights), drawn after it with depth. Where the page gives the top view's town look, the roofs and walls of the
- * buildings that town draws take its colours, slope light and grain marks instead (buildingsMesh.ts `look`), so the
- * town reads the same tilted or not.
- *
- * Built once per scene, appearance and terrain, block by block in work slices (buildingsBlocks.ts): the levels a frame
- * wanted first, nearest first, then the coarsest level of every other block so a turn finds them. A block level is one
- * vertex buffer, its buildings cell by cell. A frame tests the blocks against the view volume and gives each a level by
- * the size its buildings take on screen; a block across levels (a near one) gives each cell its own, drawn as ranges of
- * the level's vertices (runs of cells at one level in one draw). While the frame's triangles pass BUDGET_TRIANGLES, the
- * farthest blocks and cells go one level coarser, round after round (to nothing: the drape's town plan carries them);
- * the near field, buildings over DETAILED_PIXELS, keeps its full volumes. An unbuilt level shows the nearest built one meanwhile. No upload, no allocation, no geometry in a frame.
- * Levels not drawn for a while go when the cache passes its byte budget.
- *
- * Made by the page with the scene the separate 3D view composes for the same town (City3dDisplayScene: towns, farms,
- * stand-in houses, walls, bridges, quays, lot boundaries, groves), its building appearance and the terrain heights.
+ * Building volumes created by worldVolumes and drawn by the live compositor after the draped town, against its terrain depth.
+ * Selects block/cell levels by screen size, protecting buildings over DETAILED_PIXELS from budget demotion. Unbuilt levels
+ * use their nearest built substitute; hidden volumes leave the town plan on the drape. buildingsCache owns mesh jobs,
+ * staged uploads and level eviction; buildingsGrain owns roof marks. Draws build and upload no geometry.
  */
 import { roofSeasonKey } from '../seasonPalette';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
-import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, blockPart, worldPaint, worldSeat, type BuildingBlock } from './buildingsBlocks';
+import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, worldPaint, worldSeat } from './buildingsBlocks';
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
 import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 import { pickBuilding, type BuildingPick } from './buildingsPick';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
-import { COVER_GRAINS, COVER_GRAIN_LEVELS, COVER_GRAIN_TILE, coverGrainTiles } from '../buildingMaterials';
+import { CoverGrainTexture } from './buildingsGrain';
+import { BuildingBlockCache, type BuildingLevel as Level, type BuildingSlot as Slot } from './buildingsCache';
 import type { VolumeTownLook } from '../city/buildingLook';
+import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -57,10 +46,6 @@ export interface WorldBuildingsLayer extends VolumeLayer {
   pick(origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined;
 }
 
-/** Buildings meshed between two looks at the clock. */
-const BUILD_CHUNK = 8;
-/** The separate 3D view's cache budget. */
-const BUDGET_BYTES = 96 * 1024 * 1024;
 /** Triangles a frame of buildings may take: past it, the farthest blocks and cells go coarser, round after round. */
 const BUDGET_TRIANGLES = 300000;
 /** Buildings spanning this many pixels keep their full volumes whatever the budget (the near field; blockLevel's
@@ -73,75 +58,13 @@ const MAX_DRAWS = 8192;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
 const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
 
-/** The top view's roof grain tiles as one texture (COVER_GRAIN_GLSL): a layer per family of COVER_GRAINS, their halved
- * copies as its mips, premultiplied. Filled one family per work slice (a few milliseconds each the first time the
- * tiles are drawn); an unfilled layer is transparent, so a roof shows no marks until its family is there. */
-class CoverGrainTexture {
-  texture?: WebGLTexture;
-  private filled = 0;
-  constructor(private readonly gl: WebGL2RenderingContext) {}
-  /** Fills the next family; true once every family is in. */
-  step(): boolean {
-    const gl = this.gl;
-    if (this.filled >= COVER_GRAINS.length) return true;
-    if (!this.texture) {
-      this.texture = gl.createTexture()!;
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
-      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, COVER_GRAIN_LEVELS, gl.RGBA8, COVER_GRAIN_TILE, COVER_GRAIN_TILE, COVER_GRAINS.length);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    } else gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
-    const tiles = coverGrainTiles(COVER_GRAINS[this.filled]);
-    if (tiles) {
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-      for (let level = 0; level < Math.min(tiles.length, COVER_GRAIN_LEVELS); level++) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, level, 0, 0, this.filled, tiles[level].width, tiles[level].height, 1, gl.RGBA, gl.UNSIGNED_BYTE, tiles[level]);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    }
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
-    this.filled++;
-    return this.filled >= COVER_GRAINS.length;
-  }
-  /** The context was lost: the handle is dead. */
-  lost(): void {
-    this.texture = undefined;
-    this.filled = 0;
-  }
-  dispose(): void {
-    if (this.texture) this.gl.deleteTexture(this.texture);
-    this.lost();
-  }
-}
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
-interface Level {
-  vao: WebGLVertexArrayObject;
-  buffer: WebGLBuffer;
-  vertices: number;
-  /** First vertex of each cell, and the end. */
-  cellFirst: Int32Array;
-  bytes: number;
-  /** Draw tick it was last shown in. */
-  used: number;
-}
-interface Slot {
-  block: BuildingBlock;
-  levels: (Level | undefined)[];
-  /** The levels the last frame that saw the block wanted (bit per level). */
-  need: number;
-  /** Depth along the view axis at that draw, and its tick. */
-  depth: number;
-  seen: number;
-}
-
 export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): WorldBuildingsLayer {
-  /** `blocks` drawn, `bytes` on the GPU, `sliceMs` the longest work slice so far, `demoted` the units the budget made coarser. */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, blocks: 0, bytes: 0, sliceMs: 0, demoted: 0 };
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, bytes: 0 };
+  const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
-  let slots: Slot[] = [];
-  /** The blocks of the slots, for picking. */
-  let blocks: BuildingBlock[] = [];
+  const cache = new BuildingBlockCache(gl, () => options.budgetBytes);
   // The blocks in view of a frame: slot, height centre and half range, radius.
   const visible: Slot[] = [],
     visibleZ = new Float64Array(16384),
@@ -158,11 +81,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   let warmed = false;
   let visibleCount = 0,
     tick = 0,
-    bytes = 0,
-    missing = false,
-    dirty = true,
-    /** A level was evicted since the blocks were made: the overviews of the whole town do not fit the budget. */
-    spilled = false;
+    dirty = true;
   let program: Program | undefined;
   /** The program the driver is linking (startVolumeProgram), from the first work slice on. */
   let linking: WebGLProgram | undefined;
@@ -175,28 +94,6 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   let grainFilled = false;
   /** The grouping of a new scene into blocks, while it runs. */
   let grouping: BlockGrouping | undefined;
-  /** The block level being built, part by part: parts never straddle a cell, so each cell's first vertex is known. */
-  /** Then its buffer is allocated and the parts copied into it a few at a time (`uploaded` parts so far): a dense block's
-   * detailed level holds megabytes, which one join and one upload kept the main thread on for tens of milliseconds. */
-  let pending: { slot: Slot; level: number; next: number; parts: Float32Array[]; vertices: number; cell: number; cellFirst: Int32Array; uploaded: number; buffer?: WebGLBuffer } | undefined;
-  const startJob = (slot: Slot, level: number): typeof pending => ({ slot, level, next: 0, parts: [], vertices: 0, cell: 0, cellFirst: new Int32Array(CELLS + 1), uploaded: 0 });
-
-  const dropLevel = (slot: Slot, index: number): void => {
-    const level = slot.levels[index];
-    if (!level) return;
-    gl.deleteBuffer(level.buffer);
-    gl.deleteVertexArray(level.vao);
-    bytes -= level.bytes;
-    slot.levels[index] = undefined;
-  };
-  const dropAll = (): void => {
-    for (const slot of slots) for (let i = 0; i < slot.levels.length; i++) dropLevel(slot, i);
-    slots = [];
-    blocks = [];
-    visibleCount = 0;
-    spilled = false;
-  };
-
   /** The inputs of the page: a new scene, appearance or terrain starts the blocks again (grouped in later slices). */
   const sync = (): void => {
     const nextScene = options.scene(),
@@ -208,9 +105,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     night = isNight ? ((nextAppearance.lightsOn ?? isNight) ? 1 : 2) : 0;
     if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && nextLook === look) return;
     dirty = false;
-    dropAll();
-    if (pending?.buffer) gl.deleteBuffer(pending.buffer);
-    pending = undefined;
+    cache.clear();
+    visibleCount = 0;
     paint = undefined;
     scene = nextScene;
     heights = nextHeights;
@@ -221,78 +117,9 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     seat = heights && worldSeat(heights, heights.exaggeration);
   };
 
-  /** Copies the parts of a finished job into its buffer until `deadline`; once all are in, the level is installed.
-   * True when the level is installed. */
-  const uploadStep = (job: NonNullable<typeof pending>, deadline: number): boolean => {
-    const stride = BUILDING_STRIDE * 4;
-    gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer ?? null);
-    if (!job.buffer) {
-      job.buffer = gl.createBuffer()!;
-      gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, Math.max(4, job.vertices * stride), gl.STATIC_DRAW);
-    }
-    let offset = 0;
-    for (let i = 0; i < job.uploaded; i++) offset += job.parts[i].byteLength;
-    while (job.uploaded < job.parts.length) {
-      const part = job.parts[job.uploaded++];
-      if (part.length) gl.bufferSubData(gl.ARRAY_BUFFER, offset, part);
-      offset += part.byteLength;
-      if (performance.now() >= deadline) break;
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    if (job.uploaded < job.parts.length) return false;
-    const vao = gl.createVertexArray()!;
-    gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
-    gl.enableVertexAttribArray(2);
-    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
-    gl.enableVertexAttribArray(4);
-    gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 36);
-    gl.bindVertexArray(null);
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    job.slot.levels[job.level] = { vao, buffer: job.buffer, vertices: job.vertices, cellFirst: job.cellFirst, bytes: job.vertices * stride, used: tick };
-    bytes += job.vertices * stride;
-    return true;
-  };
-  /** The exact height range of what a part draws, for the view volume test. */
-  const reach = (block: BuildingBlock, part: Float32Array): void => {
-    for (let i = 0; i < part.length; i += BUILDING_STRIDE) {
-      const z = part[i + 9] + part[i + 1];
-      if (z < block.low) block.low = z;
-      if (z > block.high) block.high = z;
-    }
-  };
-
-  /** Over budget: the levels drawn least recently go, never one of the last frame. */
-  const evict = (): void => {
-    const budget = options.budgetBytes ?? BUDGET_BYTES;
-    while (bytes > budget) {
-      let oldest: Slot | undefined,
-        oldestIndex = -1,
-        used = tick;
-      for (const slot of slots)
-        for (let i = 0; i < slot.levels.length; i++) {
-          const level = slot.levels[i];
-          if (level && level.used < used) {
-            used = level.used;
-            oldest = slot;
-            oldestIndex = i;
-          }
-        }
-      if (!oldest) return;
-      dropLevel(oldest, oldestIndex);
-      spilled = true;
-    }
-  };
-
-  /** Ends a work slice: notes its length. */
+  /** Work pending is returned independently of the optional slice measurement. */
   const slice = (started: number, pending: boolean): boolean => {
-    const ms = performance.now() - started;
-    if (ms > stats.sliceMs) stats.sliceMs = ms;
+    diagnostics?.slice(started);
     return pending;
   };
 
@@ -313,7 +140,6 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     slot.need |= 1 << level;
     let built = slot.levels[level];
     if (!built) {
-      missing = true;
       for (let step = 1; step < slot.block.levels && !built; step++) built = slot.levels[level + step] ?? slot.levels[level - step];
       if (!built) return 0;
     }
@@ -333,11 +159,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     return count / 3;
   };
   /** The units of a frame (a whole block, or a cell of a near block): slot, cell (-1: whole), pixels its mean building
-   * spans, the level its size asks for and the level it gets, and the triangles of that level. */
+   * spans, the level it gets, and the triangles of that level. */
   const unitSlot: Slot[] = [],
     unitCell = new Int8Array(MAX_UNITS),
     unitPixels = new Float64Array(MAX_UNITS),
-    unitWanted = new Int8Array(MAX_UNITS),
     unitLevel = new Int8Array(MAX_UNITS),
     unitCost = new Float64Array(MAX_UNITS),
     order = new Int32Array(MAX_UNITS);
@@ -355,7 +180,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     unitSlot[unitCount] = slot;
     unitCell[unitCount] = cell;
     unitPixels[unitCount] = pixels;
-    unitWanted[unitCount] = unitLevel[unitCount] = level;
+    unitLevel[unitCount] = level;
     unitCost[unitCount++] = costOf(slot, level, cell);
   };
   /** The draws of the visible blocks: each block, or each cell of a near block, at the level its size asks for; past
@@ -365,8 +190,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   const select = (tx: number, ty: number, focal: number, boxed: boolean): number => {
     unitCount = 0;
     drawTotal = 0;
-    missing = false;
-    stats.blocks = stats.demoted = 0;
+    diagnostics?.selection();
     for (let v = 0; v < visibleCount; v++) {
       const slot = visible[v],
         b = slot.block,
@@ -378,7 +202,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         near = blockLevel(b, nearPixels, boxed);
       slot.need = 0;
       if (near === hidden) continue;
-      stats.blocks++;
+      diagnostics?.block();
       // One level over the block (all yards): one unit. Otherwise each cell at its own.
       if (b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed)) {
         addUnit(slot, -1, nearPixels, near);
@@ -412,7 +236,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           triangles += cost - unitCost[i];
           unitCost[i] = cost;
           unitLevel[i] = level;
-          stats.demoted++;
+          diagnostics?.demoted();
         }
     }
     // In block and cell order, so the runs of one level of a block merge into one draw.
@@ -473,7 +297,6 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     tilts: true,
     tiltOnly: true,
     ready: () => true,
-    restExact: frame => !volumesDrawn(frame.camera) || !missing,
     work(budgetMs, frame) {
       // Each step below is bounded: the grouping and the meshes go a chunk at a time, the link is polled.
       const started = performance.now(),
@@ -489,80 +312,29 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
         paint = worldPaint(scene!, appearance!, grouping.altitudes, look);
-        blocks = grouping.blocks;
-        slots = grouping.blocks.map(block => ({ block, levels: new Array<Level | undefined>(block.levels).fill(undefined), need: 0, depth: Infinity, seen: -1 }));
+        cache.setBlocks(grouping.blocks);
         grouping = undefined;
         return slice(started, true);
       }
-      if (!slots.length || !paint) return slice(started, false);
+      if (!cache.slots.length || !paint) return slice(started, false);
       if (!linked) return slice(started, true);
       if (!warmed) {
         warm();
         return slice(started, true);
       }
-      let built = false;
-      for (;;) {
-        if (!pending) {
-          // The level the last frame wanted for the nearest block that lacks it; else the overview of a block that
-          // has nothing yet (built in the background, before the first tilt and while the view rests).
-          let next: Slot | undefined,
-            level = 0;
-          for (const slot of slots) {
-            if (slot.seen !== tick || (next && slot.depth >= next.depth)) continue;
-            // The finest level it lacks among those the frame wanted.
-            for (let l = 0; l < slot.block.levels; l++)
-              if (slot.need & (1 << l) && !slot.levels[l]) {
-                next = slot;
-                level = l;
-                break;
-              }
-          }
-          if (next) pending = startJob(next, level);
-          else if (!spilled) {
-            // Not once the budget has spilled: an overview built then evicts another, which is bare again, without end.
-            const bare = slots.find(slot => !slot.levels.some(Boolean));
-            if (bare) pending = startJob(bare, bare.block.levels - 1);
-          }
-          if (!pending) break;
-        }
-        const job = pending!,
-          cells = job.slot.block.cells,
-          count = job.slot.block.buildings.length;
-        while (job.next < count) {
-          while (job.cell < CELLS && job.next >= cells[job.cell + 1]) job.cellFirst[++job.cell] = job.vertices;
-          const to = Math.min(count, job.next + BUILD_CHUNK, job.cell < CELLS ? cells[job.cell + 1] : count),
-            part = blockPart(job.slot.block, job.level, paint, seat!, job.next, to);
-          reach(job.slot.block, part);
-          job.parts.push(part);
-          job.vertices += part.length / BUILDING_STRIDE;
-          job.next = to;
-          if (performance.now() >= deadline) break;
-        }
-        if (job.next >= count) {
-          while (job.cell < CELLS) job.cellFirst[++job.cell] = job.vertices;
-        }
-        if (job.next >= count && performance.now() < deadline && uploadStep(job, deadline)) {
-          pending = undefined;
-          // A frame is due only for a block the last frame saw; an overview built ahead shows nothing new.
-          built ||= job.slot.seen === tick;
-        }
-        if (performance.now() >= deadline) {
-          if (built && frame?.camera.tilted) options.invalidate();
-          return slice(started, true);
-        }
-      }
-      if (built && frame?.camera.tilted) options.invalidate();
-      evict();
-      return slice(started, false);
+      const more = cache.work(deadline, tick, paint, seat!, () => {
+        if (frame?.camera.tilted) options.invalidate();
+      });
+      return slice(started, more);
     },
     draw(frame: LiveFrame) {
       const started = performance.now(),
         camera = frame.camera,
         drawn = volumesDrawn(camera);
       tick++;
-      stats.drawCalls = stats.triangles = stats.blocks = 0;
+      stats.drawCalls = stats.triangles = 0;
+      diagnostics?.frame();
       visibleCount = 0;
-      missing = false;
       if (drawn && program) {
         volume.set(camera);
         const tx = camera.target[0],
@@ -571,8 +343,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           rise = camera.rise,
           focal = camera.focal / frame.dpr,
           boxed = options.boxed?.() ?? false;
-        for (let s = 0; s < slots.length && visibleCount < visibleZ.length; s++) {
-          const slot = slots[s],
+        for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
+          const slot = cache.slots[s],
             b = slot.block,
             low = b.low * rise,
             high = b.high * rise;
@@ -623,21 +395,19 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           volumeDepthEnd(gl);
         }
       }
-      stats.bytes = bytes;
+      stats.bytes = cache.bytes;
       stats.ms = performance.now() - started;
     },
     invalidate() {
       dirty = true;
     },
     pick(origin, direction, rise, limit, accept) {
-      return heights && slots.length ? pickBuilding(blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept) : undefined;
+      return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept) : undefined;
     },
     contextLost() {
       // Every handle is dead: forget them without deleting.
-      for (const slot of slots) slot.levels.fill(undefined);
-      bytes = 0;
+      cache.contextLost();
       program = linking = undefined;
-      pending = undefined; // its buffer died with the context
       visibleCount = drawTotal = 0;
       warmed = false;
       grain.lost();
@@ -645,9 +415,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     },
     stats: () => stats,
     dispose() {
-      dropAll();
-      if (pending?.buffer) gl.deleteBuffer(pending.buffer);
-      pending = undefined;
+      cache.clear();
+      visibleCount = 0;
       if (program) gl.deleteProgram(program.program);
       if (linking) gl.deleteProgram(linking);
       program = linking = undefined;

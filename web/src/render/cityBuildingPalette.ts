@@ -4,6 +4,7 @@ import { centreOf, groundAt, toneStamp } from './groundTone';
 import { mapGroundSnow } from './seasonPalette';
 import { snowRoofTint } from './roofSnow';
 import { roofAgainstGround, type Rgb01 } from './roofContrast';
+import { turfCover, turfRoof } from './city/turfLook';
 import type { CityBuilding, CityPalette, CityRoofs } from './cityCanvas';
 
 const hex = (c: PaletteRgb): string =>
@@ -41,8 +42,12 @@ export function planBuildingColors(b: CityBuilding, palette: CityPalette, cover 
     c = outer?.length ? centreOf(outer) : undefined,
     g = c && groundAt(c.x, c.y, 2);
   let roof = mapTint(colors.roof, palette);
-  // Roofs keep a minimum contrast against the map ground they stand on (rule, whatever the culture); applied on the displayed colour.
-  if (g) roof = hex(roofAgainstGround([1, 3, 5].map(i => parseInt(roof.slice(i, i + 2), 16) / 255) as Rgb01, [g[0] / 255, g[1] / 255, g[2] / 255]));
+  // Roofs keep a minimum contrast against the map ground they stand on (rule, whatever the culture); applied on the
+  // displayed colour. Turf on a natural ground takes its own, wider rule (city/turfLook.ts).
+  const rgb = [1, 3, 5].map(i => parseInt(roof.slice(i, i + 2), 16) / 255) as Rgb01,
+    ground = g && [g[0] / 255, g[1] / 255, g[2] / 255];
+  if (palette === 'terrain' && turfCover(cover, wall)) roof = hex(turfRoof(rgb, ground));
+  else if (ground) roof = hex(roofAgainstGround(rgb, ground));
   const mapped = { wall: mapTint(colors.wall, palette), roof };
   cache.set(key, mapped);
   return mapped;

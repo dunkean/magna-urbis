@@ -11,6 +11,10 @@ import {
   CITY_LOD_LIMITS,
   FAR_TOWN_FADE,
   PARCHMENT_HATCH,
+  TURF_LOOK,
+  turfCover,
+  turfFarTone,
+  turfRoof,
   blockOps,
   buildingBody,
   buildingsShown,
@@ -37,6 +41,7 @@ import {
 } from '../src/render/city/look';
 import { mockCanvas } from '../scripts/fakeworld';
 import { city3dScene } from '../src/render/city3dMeshes';
+import { colourDistance } from '../src/render/roofContrast';
 import { BUILDING_STRIDE, buildingBatches } from '../src/render/world/buildingsMesh';
 
 const ring = (x: number, y: number, w: number, h: number) => [
@@ -299,5 +304,17 @@ describe('roofs in volume', () => {
       expect(painted.size).toBeGreaterThan(1);
       expect([...painted].sort()).toEqual([...pans].sort());
     }
+  });
+});
+
+describe('turf roofs', () => {
+  it('stand apart from a meadow: mown and wider contrast close, an earth bank far', () => {
+    const grass = [84 / 255, 118 / 255, 54 / 255],
+      turf = [0.45, 0.5, 0.3] as [number, number, number];
+    expect(colourDistance(turfRoof(turf, grass), grass)).toBeGreaterThanOrEqual(TURF_LOOK.contrast - 0.005);
+    expect(turfCover('turf', 'earth') && !turfCover('turf', 'wood') && !turfCover('thatch', 'earth')).toBe(true);
+    const far = turfFarTone([90, 110, 60]);
+    expect(far[0] - far[1]).toBeGreaterThan(90 - 110);
+    expect(far[0] + far[1] + far[2]).toBeLessThan(260);
   });
 });

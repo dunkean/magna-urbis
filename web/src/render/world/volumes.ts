@@ -3,21 +3,21 @@
  * the modelled trees (treesLayer.ts). This file holds what both share: the layer they are, how they rise with the
  * relief, which world blocks a frame sees, and the program link (started early, polled, never waited for).
  *
- * How a volume layer meets the compositor (render/live/contract.ts, owned by the world stream). It is a LiveLayer that
+ * How a volume layer meets the compositor (render/live/contract.ts). It is a LiveLayer that
  * takes the camera (`tilts`), drawn after the ground and the draped layers and before the names, NOT isolated: it draws
  * straight into `frame.target` (the canvas), with depth test and depth writes against the depth the draped ground left
  * there in the same frame. In the top view it draws nothing and is ready, so the 2D map is unchanged.
  *
  * Cost by construction: everything a frame draws is in GPU buffers built in work slices (one per world block and level
- * of detail); a frame walks the blocks (a sphere test each), sets a few uniforms and issues one draw per visible block.
- * No upload, no allocation, no geometry in a frame.
+ * of detail); a frame walks the blocks (a sphere test each), sets a few uniforms and issues draws for visible blocks or contiguous cells at one level.
+ * No upload or geometry building in a frame.
  */
 import type { LiveLayer } from '../live/contract';
 import type { FrameCamera } from './contract';
 
 /** The names the compositor gives the volume layers: in LIVE_LAYER_ORDER after 'city', before 'text'. */
 export type VolumeLayerName = 'buildings' | 'trees';
-/** A LiveLayer whose name is a volume layer's; assignable to LiveLayer once LiveLayerName includes these names. */
+/** The compositor layer contract restricted to world volumes. */
 export interface VolumeLayer extends Omit<LiveLayer, 'name' | 'isolated' | 'tilts'> {
   readonly name: VolumeLayerName;
   readonly tilts: true;

@@ -1,14 +1,13 @@
 /**
  * The town of the world view in blocks, without GL: which buildings each world block holds, where a vertex stands on
- * the terrain (the seat), the level of detail a block wants in a frame, and its vertices at that level. The GPU side is
- * buildingsLayer.ts.
+ * the terrain (the seat), the level of detail a block wants in a frame, and its vertices at that level. buildingsCache owns the uploads and retained levels; buildingsLayer selects and draws them.
  *
  * Blocks are 256 m squares (the separate 3D view's sector size), lot boundaries in blocks of their own; a building
  * belongs to the block of the centre of what it covers. Levels of detail are those of that view: a building block is
  * detailed or an overview (capped bodies) by the pixels its mean building spans; a block of lot boundaries has the
- * three yard levels (mesh, ribbon, wide ribbon). Farther than the 3D view drew, two more steps keep a large town cheap:
+ * three yard levels (mesh, ribbon, wide ribbon). Two further levels bound the cost of a large town:
  * boxes (each building its footprint extruded to its height under a flat roof in its roof colour, about ten
- * triangles) once a building spans a few pixels, then nothing once it spans under a pixel: the map drape carries the
+ * triangles) once a building spans a few pixels, then nothing once it spans under three pixels: the map drape carries the
  * town plan there. Small structural features are kept at the detailed levels (the 3D view drops them by metres per
  * pixel, a rebuild per zoom octave).
  *
@@ -16,7 +15,7 @@
  * that order and a frame can give each part of a near block its own level: a range of the level's vertices per cell.
  *
  * Everything here runs in slices: the grouping (BlockGrouping.step) and the vertices of a block (blockPart, a range of
- * its buildings at a time), so a large town never holds the main thread for more than a few milliseconds.
+ * its buildings at a time), with the deadline checked between chunks.
  */
 import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, type Building3dScene, type Building3dVisual } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
@@ -45,7 +44,7 @@ export interface BuildingBlock {
   low: number;
   high: number;
   /** Levels of detail that have vertices: 0 detailed, 1 overview, 2 boxes; for yards the three yard levels. The level
-   * `levels` (BLOCK_HIDDEN) draws nothing. */
+   * `levels` (blockHidden) draws nothing. */
   readonly levels: number;
   /** First building of each cell (row by row), and the end: the buildings are in cell order once grouped. */
   cells: Int32Array;
@@ -225,7 +224,7 @@ function buildingBox(building: Building3dVisual): Building3dVisual {
   return { ...building, projection: 'native-building-visual-1', height_m: building3dHeight(building), materials: building.volumes[0].materials, volumes: undefined, structural_features: undefined, structural_foundations: undefined } as unknown as Building3dVisual;
 }
 
-/** Pixels a building spans (its smaller side, the block's mean) from which it is drawn detailed (the 3D view's 7-10 px), as an overview (capped
+/** Pixels a building spans (its smaller side, the block's mean) from which it is drawn detailed, as an overview (capped
  * bodies), as a box; under the last, nothing (the drape's town plan carries it). */
 const LEVEL_PIXELS = [10, 6, 3];
 /** Yards (pixels per metre): no lot boundary once a metre spans under a quarter pixel. */
@@ -233,7 +232,7 @@ const YARD_HIDDEN = 0.25;
 
 /** Level of buildings of a block whose mean building spans `pixels` CSS px (per metre for yards), `blockHidden` for
  * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis: the
- * frame's budget (buildingsLayer.ts) moves the thresholds, and a level only ever changes over a whole cell. */
+ * frame's budget (buildingsLayer.ts) demotes units independently, and a level only ever changes over a whole cell. */
 export function blockLevel(block: BuildingBlock, pixels: number, boxed = false): number {
   const hidden = blockHidden(block);
   if (block.yard) return pixels < YARD_HIDDEN ? hidden : yardLod(pixels, 0);

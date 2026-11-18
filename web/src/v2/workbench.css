@@ -133,11 +133,6 @@
     transform: rotate(360deg);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .view-loading {
-    animation-duration: 2.4s;
-  }
-}
 .view-strip #render-status {
   position: absolute;
   inset-inline-start: 0;

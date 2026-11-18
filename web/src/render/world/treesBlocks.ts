@@ -8,7 +8,7 @@
  * turning builds nothing. Its instances are shuffled, so a frame draws a prefix of them to thin a far block evenly.
  *
  * Detail follows the projected size, never the eye's distance: the eye moves away and up as the camera tilts at a
- * fixed scale (camera.ts), so a rule on its distance changed the trees around the target with the pitch.
+ * fixed scale (camera.ts); using that distance for detail would change the trees around the target with the pitch.
  */
 import { buildNearTreesSteps, TREE_BLOCK, TREE_STRIDE, type TreeInputs } from '../../ui/terrain3dTrees';
 import { TREE_LATHES } from './treesShader';
