@@ -13,9 +13,18 @@
  *    request is in flight and the newest view always wins. When a fresh bitmap arrives it replaces the old one and
  *    the transform is recomputed in the same task, so the swap is seamless.
  * Optional minimap canvas (drawn by the renderer, or from a base bitmap + the view rectangle).
+ *
+ * One camera (render/world/camera.ts): when the frame source presents a map that tilts (its element says so,
+ * `data-camera="tilt"`; never with `?camera=dual`), the view also has a pitch and a yaw. Right-drag or Ctrl-drag
+ * turns and tilts it, as do Shift+arrows, Shift+wheel and a two-finger vertical drag; Home eases back to the top
+ * view and the fit key (0) resets it. Pan and zoom then act on the ground under the cursor. In the top view the
+ * views handed out carry no pitch and no yaw: they are the views of the 2D map.
  */
 import type { CanvasRenderer } from '../render/canvas';
+import { dualCameras } from '../render/live/policy';
 import { View, fitView, clampView, zoomAt, panBy, viewRect } from '../render/view';
+import { clampPitch, panOnGround, wrapYaw, zoomAtGround } from '../render/world/camera';
+import type { WorldRelief } from '../render/world/contract';
 
 export interface ViewerOptions {
   container: HTMLElement;
@@ -74,6 +83,14 @@ export interface Viewer {
   /** Keep shared products/camera while another view covers this viewer. */
   setPaused(paused: boolean): void;
   getView(): View;
+  /** Eases the camera to a pitch (radians, 0 looks straight down) and a yaw (radians clockwise from north; the
+   * current one when absent). Without effect while the map on screen does not tilt. */
+  tiltTo(pitch: number, yaw?: number): void;
+  /** Calls `listener` with the view whenever its pitch or yaw changed; returns the function that stops it. */
+  onCamera(listener: (view: View) => void): () => void;
+  /** The relief of the map on screen: a zoom of a tilted view then aims at the terrain under the cursor rather than
+   * at the plane through the centre of the view. */
+  setRelief(relief: (() => WorldRelief | undefined) | undefined): void;
   /** Wait until the displayed pixels represent the current camera, including worker replies. */
   waitForFrame(): Promise<void>;
   clear(): void;
@@ -85,6 +102,18 @@ const sameView = (a: View, b: View): boolean => a.cx === b.cx && a.cy === b.cy &
  * pixels, from which a wheel event is a notch to ease rather than a touchpad or pinch step to follow. */
 const ZOOM_EASE_MS = 45,
   WHEEL_NOTCH_PX = 40;
+/** Time constant of an eased tilt or turn (keys, the tilt button), slower than the zoom: the swing is larger. */
+const TILT_EASE_MS = 90;
+/** Radians per CSS pixel of a camera drag (pitch, yaw) and per pixel of a tilting wheel; steps of the keys. */
+const DRAG_PITCH = 0.006,
+  DRAG_YAW = 0.008,
+  WHEEL_PITCH = 0.003,
+  KEY_PITCH = Math.PI / 18,
+  KEY_YAW = Math.PI / 12;
+/** A two-finger gesture is read once a finger has travelled this far (CSS pixels). */
+const GESTURE_TRAVEL = 8;
+/** What two fingers on the map do: not known yet, pan and zoom, or tilt (both sliding up or down together). */
+type TwoFingers = { d: number; mode: 'undecided' | 'pinch' | 'tilt'; starts: Map<number, { x: number; y: number }> };
 
 export function createViewer(o: ViewerOptions): Viewer {
   const { container, canvas, minimap } = o;
@@ -104,6 +133,33 @@ export function createViewer(o: ViewerOptions): Viewer {
   /** Eased zoom: the view the camera is moving to, and the time of its last step. */
   let zoomTarget: View | null = null,
     zoomStamp = 0;
+  /** The tilt of the camera (radians), where it eases to, and the time of its last step. `view` and `zoomTarget`
+   * hold the centre and the scale only. */
+  let pitch = 0,
+    yaw = 0,
+    tiltTarget: { pitch: number; yaw: number } | null = null,
+    tiltStamp = 0;
+  let relief: (() => WorldRelief | undefined) | undefined;
+  const cameraListeners = new Set<(view: View) => void>();
+  /** Pitch and yaw last told to the listeners. */
+  let toldPitch = 0,
+    toldYaw = 0;
+  /** The frame source presents a map that tilts. */
+  const tilts = (): boolean => !dualCameras() && direct?.element.dataset.camera === 'tilt';
+  const tilted = (): boolean => (pitch !== 0 || yaw !== 0) && tilts();
+  /** A centre and a scale with the tilt of the camera; in the top view, the view itself. */
+  const withTilt = (v: View): View => (tilted() ? { ...v, pitch, yaw } : v);
+  /** The ground under (x0, y0) comes under (x1, y1). */
+  const panned = (v: View, x0: number, y0: number, x1: number, y1: number): View => {
+    if (!tilted()) return panBy(v, x1 - x0, y1 - y0);
+    const moved = panOnGround(withTilt(v), x0, y0, x1, y1, w, h);
+    return { cx: moved.cx, cy: moved.cy, scale: moved.scale };
+  };
+  const zoomed = (v: View, factor: number, sx: number, sy: number): View => {
+    if (!tilted()) return zoomAt(v, factor, sx, sy, w, h);
+    const moved = zoomAtGround(withTilt(v), factor, sx, sy, w, h, relief?.());
+    return { cx: moved.cx, cy: moved.cy, scale: moved.scale };
+  };
   // async mode state
   let bmCtx: ImageBitmapRenderingContext | null = null;
   let shown: { view: View; w: number; h: number } | null = null;
@@ -238,14 +294,45 @@ export function createViewer(o: ViewerOptions): Viewer {
     } else view = { cx: view.cx + (target.cx - view.cx) * share, cy: view.cy + (target.cy - view.cy) * share, scale: target.scale };
     invalidate();
   }
+  /** One step of an eased tilt: pitch and yaw cover a share of what is left, the yaw by the shorter way round. */
+  function stepTilt(now: number): void {
+    const target = tiltTarget!,
+      dt = Math.max(0, Math.min(64, now - tiltStamp));
+    tiltStamp = now;
+    const turn = wrapYaw(target.yaw - yaw),
+      lift = target.pitch - pitch;
+    if (Math.abs(turn) < 0.002 && Math.abs(lift) < 0.002) {
+      pitch = target.pitch;
+      yaw = target.yaw;
+      tiltTarget = null;
+      return;
+    }
+    const share = 1 - Math.exp(-dt / TILT_EASE_MS);
+    pitch += lift * share;
+    yaw = wrapYaw(yaw + turn * share);
+    invalidate();
+  }
+  /** Tells the listeners the pitch and yaw of the view on screen when they changed. */
+  function tellCamera(): void {
+    const shownPitch = tilted() ? pitch : 0,
+      shownYaw = tilted() ? yaw : 0;
+    if (shownPitch === toldPitch && shownYaw === toldYaw) return;
+    toldPitch = shownPitch;
+    toldYaw = shownYaw;
+    const current = withTilt(view);
+    for (const listener of cameraListeners) listener(current);
+  }
   function frame(stamp?: number): void {
     raf = 0;
     if (paused) return;
     if (!dirty) return;
     dirty = false;
     if (zoomTarget) stepZoom(typeof stamp === 'number' ? Math.max(stamp, zoomStamp) : performance.now());
+    if (tiltTarget) stepTilt(typeof stamp === 'number' ? Math.max(stamp, tiltStamp) : performance.now());
     view = clampView(view, mapSize, w, h);
-    o.onView?.(view, w, h);
+    const camera = withTilt(view),
+      tilting = tilts();
+    o.onView?.(camera, w, h);
     if (direct) {
       try {
         // Only when the size changed: a style write per frame makes the page recompute styles per frame.
@@ -255,7 +342,10 @@ export function createViewer(o: ViewerOptions): Viewer {
           canvas.style.width = w + 'px';
           canvas.style.height = h + 'px';
         }
-        const st = direct.draw({ seq: ++seq, view: { ...view }, w, h, dpr, mini: minimap ? minimap.width : 0 });
+        const st = direct.draw({ seq: ++seq, view: { ...camera }, w, h, dpr, mini: minimap ? minimap.width : 0 });
+        // The source began or ceased to present a map that tilts: a tilt set meanwhile shows, or goes, next frame.
+        if (tilting !== tilts() && (pitch !== 0 || yaw !== 0)) invalidate();
+        tellCamera();
         // A miniature returned by the draw is new content, even in the same canvas object.
         if (st.mini) {
           if (miniBase !== st.mini) {
@@ -291,14 +381,38 @@ export function createViewer(o: ViewerOptions): Viewer {
     view = clampView(v, mapSize, w, h);
     invalidate();
   };
-  const fit = (): void => set(fitView(mapSize, w, h));
-  const zoomBy = (f: number, sx = w / 2, sy = h / 2): void => set(zoomAt(view, f, sx, sy, w, h));
+  /** The top view at once. */
+  const level = (): void => {
+    pitch = yaw = 0;
+    tiltTarget = null;
+  };
+  const fit = (): void => {
+    level();
+    set(fitView(mapSize, w, h));
+  };
+  const zoomBy = (f: number, sx = w / 2, sy = h / 2): void => set(zoomed(view, f, sx, sy));
   /** Zoom by `f` around a screen point, eased: successive calls move the target, as direct jumps would move the view. */
   const easeZoomBy = (f: number, sx = w / 2, sy = h / 2): void => {
     if (!zoomTarget) zoomStamp = performance.now();
-    zoomTarget = clampView(zoomAt(zoomTarget ?? view, f, sx, sy, w, h), mapSize, w, h);
+    zoomTarget = clampView(zoomed(zoomTarget ?? view, f, sx, sy), mapSize, w, h);
     invalidate();
   };
+  /** Tilts and turns the camera at once (a drag follows the pointer). */
+  const tiltBy = (lift: number, turn: number): void => {
+    if (!tilts()) return;
+    tiltTarget = null;
+    pitch = clampPitch(pitch + lift);
+    yaw = wrapYaw(yaw + turn);
+    invalidate();
+  };
+  /** Eases the camera to a pitch and a yaw: successive calls move the target. */
+  const tiltTo = (toPitch: number, toYaw: number): void => {
+    if (!tilts()) return;
+    if (!tiltTarget) tiltStamp = performance.now();
+    tiltTarget = { pitch: clampPitch(toPitch), yaw: wrapYaw(toYaw) };
+    invalidate();
+  };
+  const easeTiltBy = (lift: number, turn: number): void => tiltTo((tiltTarget?.pitch ?? pitch) + lift, (tiltTarget?.yaw ?? yaw) + turn);
 
   size();
   const ro = new ResizeObserver(() => {
@@ -307,9 +421,11 @@ export function createViewer(o: ViewerOptions): Viewer {
   });
   ro.observe(container);
 
-  // --- pointers (drag = pan, two pointers = pinch) ---
+  // --- pointers (drag = pan, right-drag or Ctrl-drag = turn and tilt, two pointers = pinch or tilt) ---
   const pts = new Map<number, { x: number; y: number }>();
-  let pinch: { d: number } | null = null;
+  let pinch: TwoFingers | null = null;
+  /** The one pointer down turns and tilts the camera instead of panning. */
+  let orbiting = false;
   const local = (e: PointerEvent | WheelEvent | MouseEvent): { x: number; y: number } => {
     const r = container.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -326,8 +442,33 @@ export function createViewer(o: ViewerOptions): Viewer {
     pts.set(e.pointerId, local(e));
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add('drag');
-    if (pts.size === 2) pinch = { d: dist() };
+    orbiting = pts.size === 1 && (e.button === 2 || e.ctrlKey) && tilts();
+    if (pts.size === 2) pinch = { d: dist(), mode: tilts() ? 'undecided' : 'pinch', starts: new Map(pts) };
   });
+  // The right button drags the camera of a map that tilts.
+  canvas.addEventListener('contextmenu', e => {
+    if (tilts()) e.preventDefault();
+  });
+  /** Reads a two-finger gesture once a finger has travelled: both fingers sliding up or down together, at a
+   * constant distance, tilt the camera; anything else pans and zooms. */
+  const readGesture = (two: TwoFingers): void => {
+    let travelled = false,
+      together = true,
+      direction = 0;
+    for (const [id, at] of pts) {
+      const start = two.starts.get(id);
+      if (!start) return;
+      const dx = at.x - start.x,
+        dy = at.y - start.y;
+      if (Math.hypot(dx, dy) >= GESTURE_TRAVEL) travelled = true;
+      if (Math.abs(dy) < GESTURE_TRAVEL / 2 || Math.abs(dx) > Math.abs(dy) * 0.6 || (direction !== 0 && Math.sign(dy) !== direction)) together = false;
+      direction = Math.sign(dy);
+    }
+    if (!travelled) return;
+    const [a, b] = [...two.starts.values()],
+      apart = Math.hypot(a.x - b.x, a.y - b.y);
+    two.mode = together && apart > 0 && Math.abs(dist() / apart - 1) < 0.12 ? 'tilt' : 'pinch';
+  };
   canvas.addEventListener('pointermove', e => {
     const prev = pts.get(e.pointerId);
     if (!prev) return;
@@ -337,21 +478,29 @@ export function createViewer(o: ViewerOptions): Viewer {
       pts.set(e.pointerId, cur);
       const m1 = mid(),
         d = dist();
-      let v = panBy(view, m1.x - m0.x, m1.y - m0.y);
-      if (pinch.d > 0 && d > 0) v = zoomAt(v, d / pinch.d, m1.x, m1.y, w, h);
+      if (pinch.mode === 'undecided') readGesture(pinch);
+      if (pinch.mode === 'tilt') tiltBy((m0.y - m1.y) * DRAG_PITCH, 0);
+      else if (pinch.mode === 'pinch') {
+        let v = panned(view, m0.x, m0.y, m1.x, m1.y);
+        if (pinch.d > 0 && d > 0) v = zoomed(v, d / pinch.d, m1.x, m1.y);
+        set(v);
+      }
       pinch.d = d;
-      set(v);
+    } else if (orbiting) {
+      pts.set(e.pointerId, cur);
+      tiltBy((prev.y - cur.y) * DRAG_PITCH, (cur.x - prev.x) * DRAG_YAW);
     } else {
       pts.set(e.pointerId, cur);
       // A drag during an eased zoom moves its target too: the zoom ends where the drag left the map.
-      const target = zoomTarget && clampView(panBy(zoomTarget, cur.x - prev.x, cur.y - prev.y), mapSize, w, h);
-      set(panBy(view, cur.x - prev.x, cur.y - prev.y));
+      const target = zoomTarget && clampView(panned(zoomTarget, prev.x, prev.y, cur.x, cur.y), mapSize, w, h);
+      set(panned(view, prev.x, prev.y, cur.x, cur.y));
       zoomTarget = target;
     }
   });
   const up = (e: PointerEvent): void => {
     pts.delete(e.pointerId);
     if (pts.size < 2) pinch = null;
+    orbiting = false;
     if (!pts.size) canvas.classList.remove('drag');
   };
   canvas.addEventListener('pointerup', up);
@@ -361,6 +510,14 @@ export function createViewer(o: ViewerOptions): Viewer {
     e => {
       e.preventDefault();
       const p = local(e);
+      // Shift+wheel tilts (a mouse reports it on either axis); a notch is eased, a touchpad step followed.
+      if (e.shiftKey && tilts()) {
+        const raw = e.deltaY || e.deltaX,
+          delta = e.deltaMode === 1 ? raw * 16 : e.deltaMode === 2 ? raw * 400 : raw;
+        if (tiltTarget || Math.abs(delta) >= WHEEL_NOTCH_PX) easeTiltBy(-delta * WHEEL_PITCH, 0);
+        else tiltBy(-delta * WHEEL_PITCH, 0);
+        return;
+      }
       const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
       // A wheel notch is a large step (16 % and more): eased. Touchpads and pinch gestures (ctrl+wheel) send many small
       // steps that are already continuous: followed directly, unless a notch is still being eased.
@@ -376,6 +533,16 @@ export function createViewer(o: ViewerOptions): Viewer {
   const key = (e: KeyboardEvent): void => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    // The camera keys of a map that tilts: Shift+arrows tilt and turn, Home returns to the top view. A control that
+    // took the key for itself (it prevented the default) keeps it.
+    if (tilts() && !e.defaultPrevented && (e.key === 'Home' || (e.shiftKey && e.key.startsWith('Arrow')))) {
+      if (e.key === 'Home') tiltTo(0, 0);
+      else if (e.key === 'ArrowUp') easeTiltBy(KEY_PITCH, 0);
+      else if (e.key === 'ArrowDown') easeTiltBy(-KEY_PITCH, 0);
+      else easeTiltBy(0, e.key === 'ArrowLeft' ? -KEY_YAW : KEY_YAW);
+      e.preventDefault();
+      return;
+    }
     switch (e.key) {
       case '+':
       case '=':
@@ -389,16 +556,16 @@ export function createViewer(o: ViewerOptions): Viewer {
         fit();
         break;
       case 'ArrowLeft':
-        set(panBy(view, 80, 0));
+        set(panned(view, w / 2, h / 2, w / 2 + 80, h / 2));
         break;
       case 'ArrowRight':
-        set(panBy(view, -80, 0));
+        set(panned(view, w / 2, h / 2, w / 2 - 80, h / 2));
         break;
       case 'ArrowUp':
-        set(panBy(view, 0, 80));
+        set(panned(view, w / 2, h / 2, w / 2, h / 2 + 80));
         break;
       case 'ArrowDown':
-        set(panBy(view, 0, -80));
+        set(panned(view, w / 2, h / 2, w / 2, h / 2 - 80));
         break;
       default:
         return;
@@ -431,6 +598,7 @@ export function createViewer(o: ViewerOptions): Viewer {
       mapSize = size2;
       if (!keepView || sizeChanged) {
         zoomTarget = null;
+        level();
         view = fitView(mapSize, w, h);
       }
       invalidate();
@@ -506,20 +674,35 @@ export function createViewer(o: ViewerOptions): Viewer {
       if (markerColor) marker = markerColor;
       if (!keepView || sizeChanged) {
         zoomTarget = null;
+        level();
         view = fitView(mapSize, w, h);
       }
       force = true;
       invalidate();
     },
     fit,
-    setView: set,
+    setView(v) {
+      // The view is taken whole: its pitch and yaw too (absent: the top view), kept for a map that tilts.
+      tiltTarget = null;
+      pitch = dualCameras() ? 0 : clampPitch(v.pitch);
+      yaw = dualCameras() ? 0 : wrapYaw(v.yaw);
+      set(v);
+    },
+    tiltTo: (toPitch, toYaw) => tiltTo(toPitch, toYaw ?? tiltTarget?.yaw ?? yaw),
+    onCamera(listener) {
+      cameraListeners.add(listener);
+      return () => cameraListeners.delete(listener);
+    },
+    setRelief(value) {
+      relief = value;
+    },
     zoomBy: f => zoomBy(f),
     invalidate,
     setPaused(value: boolean) {
       paused = value;
       if (!paused) invalidate();
     },
-    getView: () => view,
+    getView: () => withTilt(view),
     async waitForFrame() {
       const started = performance.now();
       for (;;) {

@@ -8,35 +8,42 @@
 import type { World } from '../../gen/types';
 import type { ExportLayers } from '../../render/exportLayers';
 import { riverCapsules, riverSegmentsInBox } from '../../render/riverCapsules';
-import { createNativeCityMapAsync, type NativeCityHooks, type NativeCityMap } from '../nativeCityMap';
+import { createNativeCityMapAsync, type NativeCityHooks, type NativeCityMap, type NativeCityMapStats } from '../nativeCityMap';
 import { drawUrbanSemantic } from '../../render/semanticLayer';
 import type { CityScene } from '../../render/cityCanvas';
+import type { View } from '../../render/view';
+import type { DisplayParts, SemanticState, Town, TownPaint, WorldBox } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
 
 /** Street roles that cross water above it (bridges, fords, causeways, piers, boardwalks). */
 const CROSSING_ROLES = new Set(['bridge', 'ford', 'causeway', 'pier', 'boardwalk', 'walkway']);
 
-export class TownProducts {
+export class TownProducts implements Town {
   city?: NativeCityMap;
   private exportCity?: NativeCityMap;
-  /** The canvas under a town painted straight into a canvas of its own (the exact overlay of the composed view): the
-   * river cut is repeated there. Set by the composed view; null when the town shares its canvas with what lies under it. */
-  canvasUnder?: (town: HTMLCanvasElement) => CanvasRenderingContext2D | null;
+  /** The paint being made, or the last one made: the hooks of a stepwise paint are also called after `draw` returned. */
+  private painting: TownPaint & { canvas?: HTMLCanvasElement } = {};
 
   constructor(
     private readonly map: MapState,
-    private readonly parts: DisplayParts,
+    private readonly parts: Pick<DisplayParts, 'water'>,
+    /** The semantic land-use state of the cartography (the urban looks are painted under the buildings). */
+    private readonly semantic: () => SemanticState | undefined,
   ) {}
 
+  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, paint: TownPaint): NativeCityMapStats | undefined {
+    this.painting = { ...paint, canvas: ctx.canvas };
+    return this.city?.draw(ctx, view, w, h, dpr, this.map.resolved!, this.shownLayers(), this.hooks, paint.stepwise);
+  }
+  /** The city plan on WebGL2 is uploaded before a synchronous paint. */
+  async prepare(): Promise<void> {
+    await this.city?.prepare(this.map.resolved!, this.shownLayers());
+  }
   private paintUrban(ctx: CanvasRenderingContext2D, scene: CityScene, frame: { viewport: { minX: number; minY: number; maxX: number; maxY: number }; mpp: number }): void {
-    const s = this.parts.cartography.semantic;
+    const s = this.semantic();
     if (s && s.urban !== 'off') drawUrbanSemantic(ctx, [scene], { look: s.urban, opacity: s.opacity, mpp: frame.mpp, viewport: frame.viewport });
   }
-  readonly hooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame), water: () => this.parts.water.cityWater, waterAbove: (ctx, box, over) => this.waterAbove(ctx, box, over) };
-  /** How the ground under the town was laid in the frame being drawn, when it is in the same canvas (exports and captures);
-   * absent in the view on screen, where the GPU ground lies in a canvas of its own under the town. */
-  groundRedraw?: (ctx: CanvasRenderingContext2D) => void;
+  private readonly hooks: NativeCityHooks = { beforeBuildings: (ctx, scene, frame) => this.paintUrban(ctx, scene, frame), water: () => this.parts.water.cityWater, waterAbove: (ctx, box, over) => this.waterAbove(ctx, box, over) };
   private cityWaterPath?: { source: Float32Array; paths: Map<string, Path2D> };
   private crossingHolesOf?: { world: World; scenes: readonly CityScene[]; path: Path2D };
   /** The whole map with a hole per bridge, ford or causeway deck (regional bridges and the towns' crossings), for an
@@ -73,7 +80,7 @@ export class TownProducts {
   }
   /** Puts the river back over the town ground and streets (Canvas 2D town): the ground is redrawn inside the river
    * capsules when it lies in this canvas, else the town's own pixels there are cleared to show the GPU ground below. */
-  private waterAbove(ctx: CanvasRenderingContext2D, box: { minX: number; minY: number; maxX: number; maxY: number }, over?: () => void): void {
+  private waterAbove(ctx: CanvasRenderingContext2D, box: WorldBox, over?: () => void): void {
     const rivers = this.parts.water.cityWater;
     if (!rivers || typeof Path2D === 'undefined') return;
     // Only the rivers around this town: the whole network as one clip path per town and frame froze the map for
@@ -94,16 +101,17 @@ export class TownProducts {
     // town's own crossings drawn after this).
     ctx.clip(this.crossingHoles(), 'evenodd');
     ctx.save();
-    if (this.groundRedraw) {
+    const paint = this.painting;
+    if (paint.groundRedraw) {
       ctx.globalAlpha = 1;
-      this.groundRedraw(ctx);
+      paint.groundRedraw(ctx);
     } else {
       ctx.globalCompositeOperation = 'destination-out';
       ctx.globalAlpha = 1;
       ctx.fill(path);
       // A town painted straight into a canvas of its own does not share it with the cartography, which the same cut
       // clears when both lie in one canvas.
-      const under = this.canvasUnder?.(ctx.canvas) ?? null;
+      const under = ctx.canvas === paint.canvas ? paint.overlayBelow : undefined;
       if (under) {
         under.save();
         under.setTransform(ctx.getTransform());

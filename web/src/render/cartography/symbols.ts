@@ -28,7 +28,7 @@ export interface PenMark {
   size: number;
 }
 /** Symbol choice for one parchment mark: clumped by noise, sized in metres, or null in a gap. */
-export function penSymbol(kind: string, m: Mark): Omit<PenMark, 'x' | 'y'> | null {
+function penSymbol(kind: string, m: Mark): Omit<PenMark, 'x' | 'y'> | null {
   const h1 = frac(m.k * 7.31 + 0.17),
     h2 = frac(m.k * 13.7 + 0.41),
     h3 = frac(m.k * 31.3 + 0.73);
@@ -52,7 +52,7 @@ export function penSymbol(kind: string, m: Mark): Omit<PenMark, 'x' | 'y'> | nul
 }
 /** Hand-drawn map symbols for the parchment sheet, in the convention of estate maps: curved grass fans, reed clumps over
  * water dashes, stippled heath. `k` (0-1) varies each mark; strokes only, so the paper shows through. */
-export function appendPenMark(path: Path2D, shape: 'tuft' | 'reed' | 'dot', x: number, y: number, r: number, k: number): void {
+function appendPenMark(path: Path2D, shape: 'tuft' | 'reed' | 'dot', x: number, y: number, r: number, k: number): void {
   const h1 = frac(k * 7.31 + 0.17),
     h2 = frac(k * 13.7 + 0.41),
     h3 = frac(k * 31.3 + 0.73);
@@ -111,7 +111,7 @@ export function appendPenMark(path: Path2D, shape: 'tuft' | 'reed' | 'dot', x: n
   }
 }
 
-export interface TexSpec {
+interface TexSpec {
   sp: number;
   shape: 'circle' | 'tuft' | 'reed' | 'dot';
   r: number;
@@ -119,7 +119,7 @@ export interface TexSpec {
   stroke: keyof Palette;
   alpha: number;
 }
-export const TEX: Record<string, TexSpec> = {
+const TEX: Record<string, TexSpec> = {
   garden: { sp: 8, shape: 'circle', r: 1.7, fill: 'treeFill', stroke: 'treeInk', alpha: 0.95 },
   field: { sp: 14, shape: 'circle', r: 2.7, fill: 'treeFill', stroke: 'treeInk', alpha: 0.95 },
   forest: { sp: 9, shape: 'circle', r: 3.1, fill: 'treeFill', stroke: 'treeInk', alpha: 0.95 },
@@ -129,7 +129,7 @@ export const TEX: Record<string, TexSpec> = {
   marsh: { sp: 15, shape: 'reed', r: 3.2, stroke: 'reed', alpha: 0.9 },
   commons: { sp: 18, shape: 'dot', r: 0.7, fill: 'grass', stroke: 'grass', alpha: 0.75 },
 };
-export const TEX_SALT: Record<string, number> = { forest: 11, orchard: 23, meadow: 37, pasture: 41, marsh: 53, commons: 67 };
+const TEX_SALT: Record<string, number> = { forest: 11, orchard: 23, meadow: 37, pasture: 41, marsh: 53, commons: 67 };
 export function drawTexture(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): number {
   const { pal, deps, canopy, brushes } = c;
   // The polygon wash above carries light parchment woods; keep individual trees only at close zoom.
@@ -167,7 +167,7 @@ export function drawTexture(c: CartographyContext, ctx: CanvasRenderingContext2D
   }
 }
 /** Parchment symbol sheet tinted for one land kind, in the palette of the moment. */
-export function penSheet(c: CartographyContext, kind: string): ParchmentSymbols {
+function penSheet(c: CartographyContext, kind: string): ParchmentSymbols {
   const { pal, makeCanvas, penSheets } = c;
   const ink = mixHex(pal.inkSoft, kind === 'marsh' ? pal.reed : pal.grass, 0.3),
     wash = mixHex(pal.treeFill, pal.inkSoft, 0.3),
@@ -180,7 +180,7 @@ export function penSheet(c: CartographyContext, kind: string): ParchmentSymbols 
   return sheet;
 }
 /** `area`: only the marks inside it (a layer tile and the reach of its sprites); all marks of `tiles` otherwise. */
-export function drawPenSymbols(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4): void {
+function drawPenSymbols(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], area?: Rect4): void {
   const sheet = penSheet(c, tl.kind),
     list = penMarkList(c, tl, tiles, area);
   list.sort((a, b) => a.y - b.y);
@@ -192,7 +192,7 @@ export function drawPenSymbols(c: CartographyContext, ctx: CanvasRenderingContex
   ctx.restore();
 }
 /** Pen symbol marks of `tiles` (inside `area` when given), unsorted. */
-export function penMarkList(c: CartographyContext, tl: TextureLayer, tiles: number[], area?: Rect4): PenMark[] {
+function penMarkList(c: CartographyContext, tl: TextureLayer, tiles: number[], area?: Rect4): PenMark[] {
   const { penMarks } = c;
   const sp = tl.kind === 'pasture' ? 9 : 7.5,
     list: PenMark[] = [];
@@ -213,7 +213,7 @@ export function penMarkList(c: CartographyContext, tl: TextureLayer, tiles: numb
   return list;
 }
 /** Canopy lone trees of an open land layer (cached per index tile); `area` keeps only the marks inside it. */
-export function drawStrays(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], pxPerMetre: number, area?: Rect4): void {
+function drawStrays(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, tiles: number[], pxPerMetre: number, area?: Rect4): void {
   const { canopy } = c;
   const lone = strayMarkList(c, tl, tiles, area);
   if (!lone.length) return;
@@ -222,7 +222,7 @@ export function drawStrays(c: CartographyContext, ctx: CanvasRenderingContext2D,
   ctx.globalAlpha = 1;
 }
 /** Lone-tree marks of `tiles` (inside `area` when given), unsorted. */
-export function strayMarkList(c: CartographyContext, tl: TextureLayer, tiles: number[], area?: Rect4): Mark[] {
+function strayMarkList(c: CartographyContext, tl: TextureLayer, tiles: number[], area?: Rect4): Mark[] {
   const { strayMarks } = c;
   let entries = strayMarks.get(tl);
   if (!entries) {
@@ -242,7 +242,7 @@ export function strayMarkList(c: CartographyContext, tl: TextureLayer, tiles: nu
   }
   return lone;
 }
-export function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4): number {
+function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4): number {
   const { pal, deps, P, canopy, brushes, cached, brushIdOf } = c;
   if (brushes && isBrushKind(tl.kind) && tl.index.tilesInRect(budgetRect).length <= 500) {
     const k = tl.kind,

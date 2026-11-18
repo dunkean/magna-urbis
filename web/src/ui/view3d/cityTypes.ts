@@ -9,7 +9,7 @@ import { type TextSettings } from '../../render/textLayer';
 import { type Palette } from '../../render/styles';
 import { type Terrain3d, type Terrain3dCamera, type Terrain3dGroundSettings, type Terrain3dLookSettings, type Terrain3dOptions } from '../terrain3d';
 import { type Terrain3dIllustration } from '../terrain3dTexture';
-import type { HeightLayer } from '../terrainGl';
+import type { HeightLayer } from '../terrain/contract';
 import type { ForestField, ForestOccupation } from '../../../../rust/bridge/terrainForest';
 import { type UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { NativeBuildingProjectionScene } from '../urbanBuildingProjection';

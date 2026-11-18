@@ -23,29 +23,29 @@ import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../../render/viewRaster';
 import { isResourceDiagnostic } from '../../render/displayDiagnostics';
 import { resourceOverlayBody } from '../resourceLayer';
+import type { DisplayParts, VectorRaster, Water, WorldBox } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
 import { svgOf, svgPartsOf, wholeMap } from './mapSvg';
 
-export interface VectorRaster {
-  image: HTMLCanvasElement;
-  region: ViewRasterRegion;
-}
-
-export class WaterProducts {
+export class WaterProducts implements Water {
   /** Vector water, hydrology (waterSvg) and frame (frameSvg): world-coordinate SVG bodies, rasterized per view (render/viewRaster). */
   private waterSvg = '';
   private frameSvg = '';
   vectors = '';
-  vectorsDirty = false;
+  /** The bodies changed since `vectors` was made from them. */
+  private vectorsDirty = false;
   vectorBase?: VectorRaster;
   vectorView?: VectorRaster;
-  vectorRequest?: Promise<void>;
+  private vectorRequest?: Promise<void>;
 
   constructor(
     private readonly map: MapState,
-    private readonly parts: DisplayParts,
+    private readonly parts: Pick<DisplayParts, 'ground'>,
   ) {}
+
+  get vectorPending(): boolean {
+    return !!this.vectorRequest;
+  }
 
   waterDisplay(): WaterDisplay {
     const r = this.map.resolved!,
@@ -130,7 +130,19 @@ export class WaterProducts {
     this.vectorsDirty = true;
     this.parts.ground.dropBackground();
   }
-  async refreshVectors(): Promise<void> {
+  /** The look of the ground changed: the night grading of the vector water follows it. */
+  invalidateVectors(): void {
+    this.vectorsDirty = true;
+  }
+  /** Starts the whole-map raster of the bodies when they changed; undefined when it is current. */
+  refreshStaleVectors(): Promise<void> | undefined {
+    return this.vectorsDirty ? this.refreshVectors() : undefined;
+  }
+  /** set() failed: the bodies of the failed passes are not rasterized. */
+  rollback(): void {
+    this.vectorsDirty = false;
+  }
+  private async refreshVectors(): Promise<void> {
     this.vectorsDirty = false;
     const r = this.map.resolved!,
       water = r.composition.ambience === 'night' && r.composition.networks.water.look === 'natural' ? moonlightSvg(this.waterSvg, 'v2-water-night') : this.waterSvg;
@@ -155,7 +167,7 @@ export class WaterProducts {
    * The vector water raster lies under the overlay: erase the land use, contours and semantics above it (the parchment
    * backdrop does the same with `destination-in`), so rivers and lakes stay crisp in their palette blue. Roads and bridges come later.
    */
-  cutWater(ctx: CanvasRenderingContext2D, rect: { minX: number; minY: number; maxX: number; maxY: number }): void {
+  cutWater(ctx: CanvasRenderingContext2D, rect: WorldBox): void {
     if (!this.waterAboveLand()) return;
     const covers = (v?: { region: ViewRasterRegion }): boolean => !!v && v.region.x <= rect.minX && v.region.y <= rect.minY && v.region.x + v.region.width >= rect.maxX && v.region.y + v.region.height >= rect.maxY;
     const mask = covers(this.vectorView) ? this.vectorView : this.vectorBase;
@@ -181,9 +193,17 @@ export class WaterProducts {
     if (refine) void this.requestVectors(viewRasterRegion(rect, density, size));
     return this.vectorView && viewRasterFits({ ...this.vectorView.region, density }, rect, density, size) ? this.vectorView : this.vectorBase;
   }
+  async vectorsReadyFor(view: View, w: number, h: number, dpr: number): Promise<void> {
+    const size = this.map.world!.mapSize,
+      rect = viewRect(view, w, h),
+      density = view.scale * dpr;
+    if (!this.vectors || viewRasterFits(this.vectorView?.region, rect, density, size) || viewRasterFits(this.vectorBase?.region, rect, density, size, Infinity)) return;
+    await this.vectorRequest;
+    await this.requestVectors(viewRasterRegion(rect, density, size));
+  }
   /** UTF-8 of the vector SVG body, encoded once per body. */
   private vectorBytes?: { text: string; bytes: Uint8Array };
-  requestVectors(region: ViewRasterRegion): Promise<void> {
+  private requestVectors(region: ViewRasterRegion): Promise<void> {
     if (this.vectorRequest) return this.vectorRequest;
     const vectors = this.vectors;
     if (this.vectorBytes?.text !== vectors) this.vectorBytes = { text: vectors, bytes: new TextEncoder().encode(vectors) };

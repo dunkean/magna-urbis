@@ -6,7 +6,7 @@ import type { Vec2 } from '../../gen/types';
 import { PolyLayer, LineLayer } from '../scene';
 import { Rect4 } from '../view';
 
-export const hexRgb = (h: string): number[] | null => {
+const hexRgb = (h: string): number[] | null => {
   const m = /^#([0-9a-f]{6})$/i.exec(h);
   if (!m) return null;
   const v = parseInt(m[1], 16);
@@ -72,7 +72,7 @@ export function addRing(path: Path2D, ring: Vec2[]): void {
 
 /** Bounds of a ring, kept with it (rings are immutable scene products). */
 export const ringBounds = new WeakMap<readonly Vec2[], Float64Array>();
-export function boundsOf(ring: readonly Vec2[]): Float64Array {
+function boundsOf(ring: readonly Vec2[]): Float64Array {
   let b = ringBounds.get(ring);
   if (!b) {
     b = new Float64Array([Infinity, Infinity, -Infinity, -Infinity]);
@@ -86,7 +86,7 @@ export function boundsOf(ring: readonly Vec2[]): Float64Array {
   }
   return b;
 }
-export let clipA = new Float64Array(1024),
+let clipA = new Float64Array(1024),
   clipB = new Float64Array(1024);
 /** clipRingBox (gen/geo/bool.ts) on a Vec2 ring, same planes, order and arithmetic, on scratch typed arrays:
  * the tuple copies and per-point closures of the generic version cost seconds on map-sized forest and wash rings
@@ -235,7 +235,7 @@ export function runPath(P: new () => Path2D, lines: readonly { level: number; pt
     }
   return any ? path : null;
 }
-export const hashBuffer = new Float64Array(1),
+const hashBuffer = new Float64Array(1),
   hashWords = new Uint32Array(hashBuffer.buffer);
 /** FNV-1a over the exact coordinates of a layer: equal geometry, equal key. */
 export function layerHash(layer: PolyLayer): string {

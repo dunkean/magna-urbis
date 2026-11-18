@@ -22,7 +22,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { cpus, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMPOSITE_FS, COMPOSITE_VS, RIVER_FS, RIVER_VS, TERRAIN_FS, TERRAIN_VS } from '../src/ui/terrainGl';
+import { COMPOSITE_FS, COMPOSITE_VS, RIVER_FS, RIVER_VS, TERRAIN_FS, TERRAIN_VS } from '../src/ui/terrain/gl/shaders';
 import { RENDER_WATER_FS } from '../src/render/renderWaterShader';
 
 const here = dirname(fileURLToPath(import.meta.url));

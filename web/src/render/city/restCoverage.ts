@@ -7,7 +7,7 @@
  * repaint for that frame. It is deliberately strict — a missing entry would show a degraded town at rest — and it is
  * the work list of the GPU town: an entry goes when cityGl draws that element from retained data.
  */
-import type { CityLod, CityPalette, CityView } from '../cityCanvas';
+import type { CityLod, CityPalette, CityView } from './model/contract';
 import { CROSSINGS, type StreetMode } from './streetLook';
 
 /** What the towns hold that some rule below depends on (counted once per scene, not per frame). */

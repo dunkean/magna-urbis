@@ -18,7 +18,7 @@ import { cavernDisplayWorld } from './cavernDisplay';
 import { renderView } from '../gen/settlements/merge';
 import { biomePalette } from './biomes';
 import { cartoucheModel } from './legend';
-import type { World, LandKind } from '../gen/types';
+import type { World } from '../gen/types';
 import type { Palette, MapStyle } from './styles';
 import type { Scene } from './scene';
 import type { Label } from './labels';
@@ -28,9 +28,9 @@ import { createNames } from './cartography/names';
 import { createLiveHost } from './cartography/liveHost';
 import { drawFurniture, drawMinimap } from './cartography/furniture';
 import { LAYER_TILE_GUTTER, LAYER_TILE_REACH } from './cartography/woods';
-import type { CanvasLike, CanvasRenderer, CanvasRendererDeps, Overlays } from './cartography/types';
+import type { CanvasLike, CanvasRenderer, CanvasRendererDeps, Overlays } from './cartography/contract';
 
-export type { CanvasLike, CanvasRenderer, CanvasRendererDeps, FrameStats, Overlays } from './cartography/types';
+export type { CanvasLike, CanvasRenderer, CanvasRendererDeps, FrameStats, Overlays } from './cartography/contract';
 export { clipRingRect } from './cartography/geometry';
 
 export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: MapStyle | Palette, deps: CanvasRendererDeps = {}): CanvasRenderer {
@@ -51,9 +51,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // Dirty-region update (a town build or edit on the same terrain): tiles outside the changed areas stay cached,
     // and the last frame stands in for the repainted tiles until they are ready.
     const local = !!nextScene.dirty && nextScene !== scene && !terrainChanged && world.options.landuse === nextSource.options.landuse && world.options.contours === nextSource.options.contours;
-    tiles.suspendLive();
-    if (!local) tiles.dropLastRaster();
-    tiles.dropPreview();
+    tiles.suspendStepwise();
+    if (!local) tiles.dropLastPicture();
     if (!local) tiles.mapPyramid.clear();
     if (nextSource.seed !== sourceWorld.seed) c.cavernRockImg = undefined;
     if (terrainChanged || nextScene.poly.get('sea') !== scene.poly.get('sea') || nextScene.poly.get('lakes') !== scene.poly.get('lakes')) c.landPath = undefined;
@@ -108,7 +107,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     drawGround: tiles.drawGround,
     drawCachedMap: tiles.drawCachedMap,
     update,
-    suspendLive: tiles.suspendLive,
+    suspendStepwise: tiles.suspendStepwise,
     createLiveLayer: live.createLiveLayer,
     drawFurniture: (target, view, cssW, cssH) => drawFurniture(c, target, view, cssW, cssH),
     setLabels(l: Label[]) {
@@ -127,9 +126,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     getMapInfo: () => ({ cartouche: (c.infoPanel ??= cartoucheModel(c.world, c.pal, 1, false)), legend: c.legendNow(), fontFamily: c.family }),
     dispose() {
       c.disposed = true;
-      tiles.suspendLive();
-      tiles.dropLastRaster();
-      tiles.dropPreview();
+      tiles.suspendStepwise();
+      tiles.dropLastPicture();
       c.canopy?.dispose();
       c.brushes?.dispose();
       c.treeMarks.clear();
@@ -146,5 +144,3 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     },
   };
 }
-
-export type { LandKind };

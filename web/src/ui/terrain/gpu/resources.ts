@@ -9,7 +9,7 @@ import { AuxPassKey } from '../redraw';
 import { RetainedWaterRaster } from '../retainedWater';
 import type { ForestField } from '../../../../../rust/bridge/terrainForest';
 import type { StackedLayer } from '../layers';
-import type { HeightLayer } from '../types';
+import type { HeightLayer } from '../contract';
 
 export interface GpuImage {
   texture: GPUTexture;

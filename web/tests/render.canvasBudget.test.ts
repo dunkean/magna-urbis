@@ -1,5 +1,5 @@
 import './vectorWaterWasm';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { buildScene, type PolyLayer } from '../src/render/scene';
@@ -103,68 +103,6 @@ describe('bounded Canvas vector replay', () => {
       expect(contexts.every(c => c?.willReadFrequently === true)).toBe(true);
     } finally {
       renderer.dispose();
-    }
-  });
-
-  it('builds the CPU preview cooperatively with a fixed polygon/vertex budget', () => {
-    const frames = new Map<number, FrameRequestCallback>();
-    let id = 0,
-      clock = 0;
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      frames.set(++id, cb);
-      return id;
-    });
-    vi.stubGlobal('cancelAnimationFrame', (key: number) => frames.delete(key));
-    const world = worldOf();
-    world.options.landuse = true;
-    const scene = buildScene(world);
-    scene.poly.clear();
-    scene.lines = [];
-    scene.poly.set(
-      'lu-meadow',
-      layer(
-        'lu-meadow',
-        Array.from({ length: 10000 }, (_, i) => square((i % 100) * 150, Math.floor(i / 100) * 150, 100)),
-      ),
-    );
-    const m = mockCanvas(256, 256),
-      preview = mockCanvas(2048, 2048);
-    let previewOptions: CanvasRenderingContext2DSettings | undefined;
-    const renderer = createCanvasRenderer(m.canvas as unknown as CanvasLike, world, 'parchment', {
-      scene,
-      Path2D: MockPath2D as never,
-      dpr: 1,
-      terrain: () => null,
-      now: () => clock++,
-      invalidate() {},
-      createCanvas: (w, h) => {
-        const target = w === 2048 ? preview : mockCanvas(w, h);
-        return {
-          width: w,
-          height: h,
-          getContext: (_id, options) => {
-            if (w === 2048 && options) previewOptions = options;
-            return target.canvas.getContext('2d') as CanvasRenderingContext2D;
-          },
-        };
-      },
-    });
-    try {
-      renderer.draw({ cx: 8000, cy: 8000, scale: 1 }, { live: true });
-      expect(preview.log.fills.length).toBe(0);
-      expect(previewOptions?.willReadFrequently).toBe(true);
-      for (let i = 0; frames.size && i < 10000; i++) {
-        const [key, cb] = frames.entries().next().value!;
-        frames.delete(key);
-        cb(clock);
-      }
-      expect(frames.size).toBe(0);
-      expect(preview.log.fills.length).toBeGreaterThan(0);
-      expect(preview.log.fills.length).toBeLessThanOrEqual(4096);
-      expect(preview.log.pathOps).toBeLessThanOrEqual(32768);
-    } finally {
-      renderer.dispose();
-      vi.unstubAllGlobals();
     }
   });
 });

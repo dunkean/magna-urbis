@@ -5,7 +5,7 @@
  * renderer and turns the calls into a `DisplayList` (displayList.ts). Anything it cannot represent sets `unsupported`
  * (first reason wins) and recording continues cheaply; the caller then falls back to the CPU engine.
  */
-import { IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type DrawOp, type FillRule, type ImageSource, type LineCap, type LineJoin, type Mat, type Paint, type RecordedPath, type Repeat, type Rgba } from './displayList';
+import { IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type DrawOp, type FillRule, type ImageSource, type LineCap, type LineJoin, type Mat, type Paint, type RecordedPath, type Repeat, type Rgba } from './contract';
 import { PlainPath, RecPath2D, matFromInit, pAppend, pArcTo, pClose, pCopy, pCubic, pEllipse, pLineTo, pMoveTo, pQuad, pRect, pReset, pRoundRect, pTransform, type PathData } from './path';
 
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -173,7 +173,7 @@ const samePaint = (a: Paint, b: Paint): boolean => a === b || (a.kind === 'color
 // ---------------------------------------------------------------------------------------------------- patterns
 
 /** Pattern made by a RecordingContext: an image, a repetition and a live matrix (Canvas `pattern.setTransform`). */
-export class RecPattern {
+class RecPattern {
   private matrix: Mat = IDENTITY;
   private smooth: Paint | null = null;
   private sharp: Paint | null = null;

@@ -23,9 +23,18 @@
  * Seams: tile quads share their edges exactly (both computed from the same world coordinate); each tile is its own
  * array layer, sampled with CLAMP_TO_EDGE, so no texel of a neighbour bleeds in; the material is a function of world
  * position, so both sides of an edge agree.
+ *
+ * A tilted camera (frame.camera.tilted) sees the same tiles draped on the relief: the layer hands that frame to its
+ * draped ground (render/world/drapedGround.ts), which reads the tiles through `DrapeTiles` and names the ones its
+ * squares want; those are then what the layer bakes first.
+ *
+ * One unit although long: the pyramid, its baking order, its eviction and both ways of showing it share the one
+ * table of tiles.
  */
 import type { GroundTileRenderer, LiveFrame, LiveGroundOptions, LiveLayer, LiveLayerStats } from './contract';
 import { MAX_SCALE, type Rect4 } from '../view';
+import type { DrapeTile, DrapeTiles } from '../world/contract';
+import { DrapedGround } from '../world/drapedGround';
 
 /** Device pixels of a baked tile. */
 const TILE = 512;
@@ -48,6 +57,8 @@ const MAX_ITEMS = 2048;
 const FLOATS = 10;
 /** A renderer that cannot draw (programs linking) is asked again after this delay. */
 const RETRY_MS = 100;
+/** Tiles a tilted frame may ask for: one per square it draws at most. */
+const MAX_WANTED = 1024;
 
 const VS = `#version 300 es
 layout(location=0) in vec4 aDst;
@@ -156,7 +167,16 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   const instanceData = new Float32Array(MAX_ITEMS * 2 * FLOATS);
   /** Per draw: page, first instance, count. */
   const ranges = new Int32Array(2 * MAX_PAGES * 3);
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, tiles: 0, bytes: 0, pending: 0, bakeMs: 0, baked: 0, tier: 0 };
+  /** `patches`: squares of the terrain mesh in the last tilted frame; `patchUploads`: lists of squares sent to the GPU. */
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, tiles: 0, bytes: 0, pending: 0, bakeMs: 0, baked: 0, tier: 0, patches: 0, patchUploads: 0 };
+  /** The tiles the last tilted frame wanted and did not find fresh, with the depth of the square that wants each. */
+  const wantedTier = new Uint8Array(MAX_WANTED),
+    wantedX = new Int32Array(MAX_WANTED),
+    wantedY = new Int32Array(MAX_WANTED),
+    wantedDepth = new Float32Array(MAX_WANTED);
+  let wantedCount = 0;
+  /** Bumped whenever a tile is baked, dropped or made stale (DrapeTiles.revision). */
+  let tileRevision = 0;
   // Scan result of nextBake.
   let foundTier = 0,
     foundX = 0,
@@ -165,7 +185,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   const density0 = (): number => TILE / gridSize;
   const finestTier = (dpr: number): number => Math.max(0, Math.min(MAX_TIER, Math.ceil(Math.log2((MAX_SCALE * dpr) / density0()) - 1e-9)));
   /** Coarsest tier whose density is at least the frame's (device pixels per metre). */
-  const wantedTier = (frame: LiveFrame): number => Math.max(0, Math.min(finestTier(frame.dpr), Math.ceil(Math.log2((frame.view.scale * frame.dpr) / density0()) - 1e-9)));
+  const viewTier = (frame: LiveFrame): number => Math.max(0, Math.min(finestTier(frame.dpr), Math.ceil(Math.log2((frame.view.scale * frame.dpr) / density0()) - 1e-9)));
 
   function ensure(): GlState | undefined {
     if (state) return state;
@@ -218,6 +238,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   function resetTiles(size: number): void {
     gridSize = size;
     tiles.clear();
+    tileRevision++;
     if (state) {
       state.free.length = 0;
       for (let slot = state.pages.length * LAYERS - 1; slot >= 0; slot--) state.free.push(slot);
@@ -314,7 +335,18 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       cx = 0,
       cy = 0,
       k = 0;
-    if (frame) {
+    const tilted = !!frame?.camera.tilted;
+    if (tilted) {
+      // What the squares of the tilted frame asked for, nearest first.
+      let nearest = -1;
+      for (let i = 0; i < wantedCount; i++) if ((nearest < 0 || wantedDepth[i] < wantedDepth[nearest]) && needs(wantedTier[i], wantedX[i], wantedY[i])) nearest = i;
+      if (nearest >= 0) {
+        foundTier = wantedTier[nearest];
+        foundX = wantedX[nearest];
+        foundY = wantedY[nearest];
+        return true;
+      }
+    } else if (frame) {
       const [sx, sy, tx, ty] = frame.worldToPixel;
       minX = -tx / sx;
       minY = -ty / sy;
@@ -322,7 +354,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       maxY = (frame.height - ty) / sy;
       cx = frame.view.cx;
       cy = frame.view.cy;
-      k = wantedTier(frame);
+      k = viewTier(frame);
       if (scan(k, minX, minY, maxX, maxY, cx, cy, 0)) return true;
     }
     const coarse = Math.min(COARSE_TIERS - 1, frame ? finestTier(frame.dpr) : COARSE_TIERS - 1);
@@ -337,7 +369,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
             return true;
           }
     }
-    if (!frame) return false;
+    if (!frame || tilted) return false;
     return scan(k, minX, minY, maxX, maxY, cx, cy, 1) || (k + 1 <= finestTier(frame.dpr) && scan(k + 1, minX, minY, maxX, maxY, cx, cy, 0)) || (k > 0 && scan(k - 1, minX, minY, maxX, maxY, cx, cy, 0));
   }
 
@@ -349,8 +381,12 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) if (needs(tier, ix, iy)) count++;
     }
     if (!frame) return count;
+    if (frame.camera.tilted) {
+      for (let i = 0; i < wantedCount; i++) if (wantedTier[i] >= COARSE_TIERS && needs(wantedTier[i], wantedX[i], wantedY[i])) count++;
+      return count;
+    }
     const [sx, sy, tx, ty] = frame.worldToPixel,
-      k = wantedTier(frame),
+      k = viewTier(frame),
       n = 2 ** k,
       ts = gridSize / n;
     const x0 = Math.max(0, Math.floor(-tx / sx / ts)),
@@ -396,12 +432,15 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     if (existing)
       existing.generation = generation; // replaced in place: no fade over its stale self
     else tiles.set(key, { tier, ix, iy, slot, generation, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
+    tileRevision++;
     return 'ok';
   }
 
   /** The tile is shown by the frame (directly or as an ancestor of a shown tile). */
   function shown(frame: LiveFrame, tier: number, ix: number, iy: number): boolean {
-    if (tier > wantedTier(frame)) return false;
+    // A tilted frame is selected again for any new tile (DrapeTiles.revision).
+    if (frame.camera.tilted) return true;
+    if (tier > viewTier(frame)) return false;
     const [sx, sy, tx, ty] = frame.worldToPixel,
       ts = gridSize / 2 ** tier;
     return ix * ts * sx + tx < frame.width && (ix + 1) * ts * sx + tx > 0 && iy * ts * sy + ty < frame.height && (iy + 1) * ts * sy + ty > 0;
@@ -439,8 +478,57 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     return false;
   }
 
+  /** The tiles as the draped ground of a tilted frame reads them. */
+  const drapeTiles: DrapeTiles = {
+    tilePixels: TILE,
+    mapSize: () => gridSize,
+    finestTier,
+    revision: () => tileRevision,
+    begin(): void {
+      stamp++;
+      wantedCount = 0;
+    },
+    resolve(tier: number, ix: number, iy: number, priority: number, out: DrapeTile): boolean {
+      if (wantedCount < MAX_WANTED && needs(tier, ix, iy)) {
+        wantedTier[wantedCount] = tier;
+        wantedX[wantedCount] = ix;
+        wantedY[wantedCount] = iy;
+        wantedDepth[wantedCount++] = priority;
+      }
+      for (let a = tier; a >= 0; a--) {
+        const shift = tier - a,
+          ax = ix >> shift,
+          ay = iy >> shift,
+          tile = tiles.get(tileKey(a, ax, ay));
+        if (!tile) continue;
+        tile.used = stamp;
+        const span = 1 / 2 ** shift;
+        out.page = Math.floor(tile.slot / LAYERS);
+        out.layer = tile.slot % LAYERS;
+        out.u0 = (ix - (ax << shift)) * span;
+        out.v0 = (iy - (ay << shift)) * span;
+        out.span = span;
+        return true;
+      }
+      return false;
+    },
+    pageCount: () => state?.pages.length ?? 0,
+    page: index => state!.pages[index],
+  };
+  /** The ground of the tilted frames; made with the first relief or the first tilted frame. */
+  let draped: DrapedGround | undefined;
+  const paperRgb = (): [number, number, number] => {
+    const css = options.paper();
+    if (css !== paperCss) {
+      paperCss = css;
+      paper = cssRgb(css);
+    }
+    return paper;
+  };
+
   return {
     name: 'ground',
+    tilts: true,
 
     ready(frame: LiveFrame): boolean {
       // Tier 0 covers the whole map (any generation: stale tiles stay on screen); the paper covers the rest.
@@ -454,19 +542,25 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const s = state;
       if (!s) return;
       const started = performance.now();
-      stamp++;
-      const css = options.paper();
-      if (css !== paperCss) {
-        paperCss = css;
-        paper = cssRgb(css);
+      if (frame.camera.tilted) {
+        draped ??= new DrapedGround(gl, drapeTiles);
+        draped.draw(frame, options.terrain(), paperRgb());
+        stats.drawCalls = draped.stats.drawCalls;
+        stats.triangles = draped.stats.triangles;
+        stats.patches = draped.stats.patches;
+        stats.patchUploads = draped.stats.uploads;
+        stats.ms = performance.now() - started;
+        return;
       }
+      stamp++;
+      paperRgb();
       gl.clearColor(paper[0], paper[1], paper[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
       const sx = frame.worldToPixel[0],
         sy = frame.worldToPixel[1],
         tx = frame.worldToPixel[2],
         ty = frame.worldToPixel[3];
-      const k = wantedTier(frame),
+      const k = viewTier(frame),
         n = 2 ** k,
         ts = gridSize / n;
       const minX = -tx / sx,
@@ -564,6 +658,9 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       if (!s) return false;
       if (size !== gridSize) resetTiles(size);
       if (frame) maxPages = pagesFor(frame.quality);
+      // The relief goes up once per terrain, before the camera first tilts.
+      const heights = options.terrain();
+      if (heights) (draped ??= new DrapedGround(gl, drapeTiles)).prepare(heights);
       const renderer = options.renderer();
       if (!renderer) return false;
       const revision = renderer.contentRevision();
@@ -571,6 +668,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         seenRenderer = renderer;
         seenRevision = revision;
         generation++;
+        tileRevision++;
       }
       const started = performance.now();
       if (started < blockedUntil) return true;
@@ -610,10 +708,14 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
 
     invalidate(): void {
       generation++;
+      tileRevision++;
     },
 
     contextLost(): void {
       state = undefined;
+      draped?.contextLost();
+      wantedCount = 0;
+      tileRevision++;
       tiles.clear();
       gridSize = 0;
       seenRenderer = undefined;
@@ -626,6 +728,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     },
 
     dispose(): void {
+      if (!gl.isContextLost()) draped?.dispose();
+      draped = undefined;
       release();
       gridSize = 0;
     },

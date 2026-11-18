@@ -8,10 +8,10 @@
  * `liveTally().late`) and never reads the context (errors: IdleErrorRead). `bake` rasterizes the area prefix of a band
  * once into a mipmapped texture, drawn by later frames as one quad.
  */
-import { GpuRasterError, IDENTITY, type ClipNode, type DisplayList, type Mat } from './displayList';
+import { GpuRasterError, IDENTITY, type BakedPrefix, type ClipNode, type DisplayList, type LivePart, type LiveRasterizer, type Mat } from './contract';
 import { IdleErrorRead } from './glErrors';
 import { Program } from './program';
-import { ListReplayer, type ReplayStats } from './replay';
+import { ListReplayer } from './replay';
 import { RECORDED_TOLERANCE } from './resources';
 import { SHADERS, type ProgramKind } from './shaders';
 import { compose } from './transforms';
@@ -20,56 +20,6 @@ import { compose } from './transforms';
 const BAKE_GUTTER = 2;
 /** Largest side of a baked band texture, whatever the card allows. */
 const BAKE_MAX_SIDE = 8192;
-
-/** The area prefix of a retained band (or a whole band: a snapshot), rasterized once into a texture of the live context. */
-export interface BakedPrefix {
-  readonly texture: WebGLTexture;
-  readonly width: number;
-  readonly height: number;
-  /** Recorded device pixels the texture covers (the band and its gutter): [x0, y0, x1, y1]. */
-  readonly box: readonly [number, number, number, number];
-  readonly bytes: number;
-}
-/** One band of a live replay: `baked` (if any) is drawn first as one quad, then `list` op by op, inside `scissor`
- * (device pixels of the target, y down). The layer mutates `post` and `scissor` in place between frames. */
-export interface LivePart {
-  list: DisplayList;
-  post: Mat;
-  scissor: readonly [number, number, number, number];
-  baked?: BakedPrefix;
-}
-
-export interface LiveRasterizer {
-  readonly lost: boolean;
-  /** Largest side of a baked texture in this context. */
-  readonly maxBakeSize: number;
-  /** Uploads what `list` needs (geometry, stroke instances, sprite instances, textures) without drawing. */
-  prepare(list: DisplayList, post?: Mat): void;
-  /** Replays `list` once into a transparent multisampled target of `list.width x list.height` recorded pixels times
-   * `density` (plus a gutter) and returns it resolved, with mipmaps. Null when the target cannot be made.
-   * `under`: an earlier bake of the same band drawn first, under the ops. `samples`: multisample count (default 4). */
-  bake(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }): BakedPrefix | null;
-  releaseBaked(baked: BakedPrefix): void;
-  /** Frees the multisampled scratch target of the bakes (a region is complete). */
-  releaseBakeScratch(): void;
-  /** Draws the parts into `target` (`width` x `height` device pixels) over what is there: no colour clear. The stencil
-   * of the target is used and left cleared to the clip of the last part. GL errors are read by an idle timer only and
-   * thrown by the next replay. */
-  replayLive(parts: readonly LivePart[], target: WebGLFramebuffer | null, width: number, height: number): void;
-  /** The context was lost: every handle is dead, nothing is deleted. */
-  dropContext(): void;
-  bytes(): number;
-  lastStats(): ReplayStats;
-  /** Triangles of the last `replayLive` by kind (fans of fills and clips, stroke instances, sprites); the same
-   * object at every call. */
-  liveTally(): { readonly fan: number; readonly stroke: number; readonly sprite: number; readonly late: number };
-  /** Creates what every replay and bake needs besides the data of a list: the vertex array and all the programs,
-   * compiled and linked without waiting (KHR_parallel_shader_compile; one program per call without it), their
-   * uniform locations read once. Call it from `work` until it answers true, and only then bake or replay: a frame
-   * creates nothing. `liveTally().late` counts what a frame still had to create or upload (expected 0). */
-  warm(): boolean;
-  dispose(): void;
-}
 
 class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
   /** Every program is linked and checked (`warm`). */

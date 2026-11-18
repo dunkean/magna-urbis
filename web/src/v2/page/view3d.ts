@@ -1,10 +1,52 @@
-/** Preview closure and cancellable 3D opening/capture controls. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { insertHTML, setText, setDynamicText, applyAppearancePatch, type UrbanBuilding, townUrban } from './dependencies';
+/**
+ * The 3D and preview buttons of the workbench bar. Mounted by main.ts after the appearance controls, whose status
+ * line it shares.
+ *
+ * The map has one camera: the "3D" button eases it to a tilt and back to the top view, and its label and pressed
+ * state follow the camera however it was tilted (`mountTiltButton`).
+ *
+ * With `?camera=dual` (render/live/policy.ts, temporary) the button opens the separate 3D view instead, as it did:
+ * loaded on first use, cancellable by a click on "2D" while it loads, with its PNG capture. That part goes with the
+ * 3D view.
+ */
+import type { PageActions, PageState } from './contract';
+import { insertHTML, setText, setDynamicText } from '../i18n';
+import { applyAppearancePatch } from '../../render/appearanceRecipe';
+import type { UrbanBuilding } from '../../gen/types';
+import { townUrban } from '../edits';
+import { dualCameras } from '../../render/live/policy';
+import { isTilted } from '../../render/world/camera';
 import { $ } from './dom';
 
-/** Preview closure and cancellable 3D opening/capture controls. Called by main.ts in startup order. */
+/** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
+const BUTTON_PITCH = 1;
+
+/** The "3D" button of the single camera: tilts the map in place, and comes back to the top view. */
+function mountTiltButton(state: PageState, actions: PageActions): void {
+  const button = $('#view3d'),
+    viewer = state.client.viewer;
+  let tilted = false;
+  // Pressed for any view that is not the plain map, a turned top view included: "2D" then brings the map back.
+  viewer.onCamera(view => {
+    if (tilted === isTilted(view)) return;
+    tilted = !tilted;
+    setText(button, tilted ? '2D' : '3D');
+    button.setAttribute('aria-pressed', String(tilted));
+    // The map tools pick on the top view: they end when the camera tilts and are offered again when it is back.
+    if (tilted) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' }));
+    state.editingTools.sync();
+  });
+  button.onclick = () => {
+    if (!state.world) {
+      actions.toast('Create the terrain first.');
+      return;
+    }
+    // The yaw is kept on the way up and reset on the way back: "2D" is the map, north up.
+    if (tilted) viewer.tiltTo(0, 0);
+    else viewer.tiltTo(BUTTON_PITCH);
+  };
+}
+
 export function mountView3d(state: PageState, actions: PageActions): void {
   insertHTML($('.style-control'), 'beforeend', '<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG 3D ↗</button>');
 
@@ -22,10 +64,13 @@ export function mountView3d(state: PageState, actions: PageActions): void {
     void actions.refresh3dWorld();
   };
 
-  /** Token of the 3D opening in flight (0 = none): the button stays enabled while the 3D view loads, and a click on "2D" abandons the opening. */
-  state.open3dToken = 0;
-  state.open3dSeq = 0;
+  if (!dualCameras()) {
+    mountTiltButton(state, actions);
+    return;
+  }
 
+  // state.open3dToken names the opening in flight (0 = none): the button stays enabled while the 3D view loads, and a
+  // click on "2D" abandons the opening.
   $('#view3d').onclick = async () => {
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' }));
     if (!state.world) {

@@ -8,7 +8,7 @@ import { createGroundDisplacementSampler } from '../../../../rust/bridge/terrain
 import { styleTraits } from '../../render/terrainStyle';
 import { createTerrainSurfaceSampler } from '../terrainSurface';
 import { DETAIL_FADE_MS } from './redraw';
-import type { HeightLayer, SurfaceSample, TerrainLook } from './types';
+import type { HeightLayer, SurfaceSample, TerrainLook } from './contract';
 
 /** An uploaded height layer: the CPU layer, its pyramid, its fade start (performance.now()). */
 export interface StackedLayer {

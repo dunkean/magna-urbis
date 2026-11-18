@@ -1,4 +1,4 @@
-import type { TerrainLook } from './terrainGl';
+import type { TerrainLook } from './terrain/contract';
 
 /** Isolated presentation surface. The derivative attenuation follows the idea
  * described by Inigo Quilez in function2009; analytic gradient noise and its

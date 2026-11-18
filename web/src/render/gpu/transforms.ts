@@ -2,7 +2,7 @@
  * Affine matrices and device-pixel boxes of the WebGL2 vector rasterizer (replay.ts, resources.ts).
  * `Mat` is the Canvas 2D matrix [a, b, c, d, e, f]; a `Box` is [x0, y0, x1, y1].
  */
-import type { Mat } from './displayList';
+import type { Mat } from './contract';
 
 export type Box = readonly [number, number, number, number];
 

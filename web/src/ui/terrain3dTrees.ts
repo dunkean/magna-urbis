@@ -55,10 +55,12 @@ export function treeLimits(distance: number): TreeLimits {
 const softCap = (x: number, cap: number): number => cap * Math.tanh(x / cap);
 /** World blocks between two partial installs of a stream that is still being built (nearest blocks first). */
 const PARTIAL_BLOCKS = 96;
-const SEGMENTS = 12,
-  BANDS = 6;
+/** Lathe of one tree: 10 segments around (even, for the alternating conifer bough tips), 8 bands between 9 rings: three
+ * for the stem (flared foot, breast height, crown base), six for the crown profile. */
+const SEGMENTS = 10,
+  BANDS = 8;
 export const TREE_VERTICES = SEGMENTS * BANDS * 6;
-/** Floats per instance: (x, y, ground z, r) (h, crown length, needle, phase) (r, g, b, leafless flag + .45 x snow load). */
+/** Floats per instance: (x, y, ground z, r) (h, crown length, form: 0 broadleaf 1 conifer 2 parasol broadleaf 3 parasol conifer, phase) (r, g, b, leafless flag + .45 x snow load). */
 export const TREE_STRIDE = 12;
 
 export interface TreeInputs {
@@ -209,43 +211,56 @@ interface Climate {
 }
 
 /** Live crown ratio (crown length over tree height) of a 3D tree by social class (ForestSocial.rank: young,
- * suppressed, intermediate, co-dominant, dominant, open-grown), broadleaf then conifer. Usual mensuration ranges:
- * 0.4-0.6 inside a stand, 0.6-0.9 for young and open-grown trees whose branches reach low, 0.9 and more for krummholz
- * and open-grown conifers. Stand trees take the upper half (a low-poly crown on a long bole reads as a lollipop at this
- * scale, and a spire must stay a spire). */
+ * suppressed, intermediate, co-dominant, dominant, open-grown), broadleaf then tall conifer. A forest-grown broadleaf
+ * carries its crown on the upper half to two thirds of the stem, a dominant's reaching lowest; young trees are crown
+ * almost to the ground, open-grown trees nearly as deep as they are tall (live crown ratio classes of forest inventories:
+ * 0.3-0.4 suppressed and crowded, 0.5-0.7 vigorous stand trees, over 0.8 open-grown). Tall forest conifers self-prune a
+ * long bare stem (0.5-0.6); shorter ones keep their boughs lower (see treeForm). */
 const CROWN_RATIO: readonly (readonly [number, number])[] = [
-  [0.64, 0.88],
-  [0.52, 0.55],
-  [0.48, 0.5],
-  [0.52, 0.55],
-  [0.56, 0.6],
-  [0.74, 0.88],
+  [0.85, 0.9],
+  [0.6, 0.55],
+  [0.6, 0.5],
+  [0.64, 0.55],
+  [0.68, 0.6],
+  [0.88, 0.92],
 ];
 /** Lightness of a class: young foliage reads lighter, shade crowns under the canopy darker. */
 const CLASS_TONE = [1.05, 0.93, 0.97, 1, 1, 1];
-/** 3D form of one tree on top of its painted crown's class: `height` over the stand top height, `crown` the live crown ratio, `tone`. */
+/** Tree forms (instance float 6, read by TREE_3D_GLSL): broadleaf ovoid, conifer spire, broadleaf parasol, conifer parasol. */
+const FORM_BROAD = 0,
+  FORM_SPIRE = 1,
+  FORM_PARASOL = 2;
+/** 3D form of one tree on top of its painted crown's class: `height` over the stand top height, `crown` the live crown
+ * ratio, `shape` the instance form, `tone`. */
 interface TreeForm {
   height: number;
   crown: number;
+  shape: number;
   tone: number;
 }
-/** Giants: tropical emergents and veterans carry a long bare bole under a wide crown (crown in the upper third to half),
- * landmark trees in open land a deep spreading crown; coastal rainforest conifer giants a long bare trunk. */
-function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, giant: boolean, needle: boolean, margin: number, krumm: number, savanna: number, tropical: number, wetConifer: number, v: number, w: number): void {
+/** Giants keep a full crown on a stout stem: temperate veterans about 0.7 of their height, tropical emergents a clear bole
+ * of about half their height, landmark trees in open land 0.85; coastal rainforest conifer giants a long bare trunk.
+ * Parasols (flat-topped crown in the upper third, on a bare bole): savanna acacias, the savanna share of broadleaves, and
+ * Mediterranean umbrella pines, half of the conifers of a Mediterranean climate; `pick` (0..1) draws them. */
+function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, giant: boolean, needle: boolean, margin: number, krumm: number, kind: readonly number[], wetConifer: number, top: number, v: number, w: number, pick: number): void {
   let crown: number;
   if (giant) {
     form.height = (needle ? mix(biome.giantHeight, 2.4, wetConifer) : biome.giantHeight) * (0.9 + 0.2 * v);
-    crown = social.rank === 5 ? 0.65 : needle ? mix(0.45, 0.35, wetConifer) : mix(0.55, 0.3, tropical);
+    crown = social.rank === 5 ? 0.85 : needle ? mix(0.55, 0.4, wetConifer) : mix(0.7, 0.5, kind[1]);
     form.tone = 1;
   } else {
     form.height = social.share;
     crown = CROWN_RATIO[social.rank][needle ? 1 : 0] + biome.crown;
+    // Conifers under ~15 m keep their boughs low; only tall forest conifers carry a long bare stem.
+    if (needle && social.rank < 5) crown = mix(0.8, crown, sstep(15, 30, top * social.share));
     // Crowns at a margin get side light and keep their lower branches.
-    if (social.rank < 5) crown += margin * (needle ? 0.25 : 0.15);
+    if (social.rank < 5) crown += margin * (needle ? 0.2 : 0.1);
     form.tone = CLASS_TONE[social.rank];
   }
-  // Umbrella savanna trees carry a flat crown on a tall bole (crown in the upper third); krummholz is branched to the ground.
-  if (!needle) crown = mix(crown, 0.35, savanna);
+  const parasol = krumm < 0.5 && pick < (needle ? 0.5 * kind[0] : kind[2]);
+  if (parasol) crown = 0.35;
+  form.shape = (needle ? FORM_SPIRE : FORM_BROAD) + (parasol ? FORM_PARASOL : 0);
+  // Krummholz is branched to the ground.
   crown = mix(crown, 0.95, krumm);
   form.crown = clamp(crown + (w - 0.5) * 0.12, 0.25, 0.97);
 }
@@ -500,7 +515,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     }
   blocks.sort((a, b) => a[0] - b[0]);
   const social: ForestSocial = { share: 1, width: 1, rank: 4 },
-    form: TreeForm = { height: 1, crown: 0.5, tone: 1 };
+    form: TreeForm = { height: 1, crown: 0.5, shape: 0, tone: 1 };
   let shown = count;
   for (let b = 0; b < blocks.length; b++) {
     yield;
@@ -632,7 +647,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           const z = inputs.height(cx, cy);
           if (z === undefined || z <= 0) continue;
           const hf = forestHash(i, j, level * 2 + 83, crownSeed);
-          treeForm(form, social, biome, giant, isNeedle, margin, krumm, kind[2], kind[1], wetConifer, u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(hf, 16));
+          treeForm(form, social, biome, giant, isNeedle, margin, krumm, kind, wetConifer, softCap(height * biome.stature, biome.cap), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(hf, 16), u8(hf, 0));
           // Approximate crown colour (display RGB): stand palette, per-tree tone, autumn hue, leaf fall, snow.
           const tint = u8(Math.imul(h2, 0x9e3779b9) >>> 0, 0),
             tone = (0.86 + 0.28 * tint) * form.tone;
@@ -678,7 +693,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             }
             if (overlaps) continue;
           }
-          emit(cx, cy, z, width, tree, form.crown * tree, isNeedle ? 1 : 0, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
+          emit(cx, cy, z, width, tree, form.crown * tree, form.shape, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
           if (count >= cap) return out.slice(0, count);
         }
     }
@@ -686,8 +701,8 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   return out.slice(0, count);
 }
 
-/** Instanced low-poly trees, one lathe per instance from gl_VertexID: a trunk, then stacked cones (conifers)
- * or a lumpy ellipsoid (broadleaf). Translated to WGSL by web/scripts/wgsl_shaders_3d.ts. */
+/** Instanced low-poly trees, one lathe per instance from gl_VertexID: a flared, tapering stem, then stacked cones
+ * (conifers), a lumpy ovoid (broadleaf) or a flat-topped parasol (savanna acacias, umbrella pines). Translated to WGSL by web/scripts/wgsl_shaders_3d.ts. */
 export const TREE_3D_GLSL = {
   vertex: `#version 300 es
 precision highp float;
@@ -707,10 +722,16 @@ out float treeLevel;
 // crown radius. Info: x needle, y no foliage (trunk, leafless crown), z snow share, w rim distance (0 top, 1 rim).
 out vec4 crownChart;
 out vec4 crownInfo;
-const float BROAD_U[5]=float[5](0.,.22,.5,.8,1.);
-const float BROAD_R[5]=float[5](.5,.93,1.,.74,0.);
-const float NEEDLE_U[5]=float[5](0.,.34,.37,.68,1.);
-const float NEEDLE_R[5]=float[5](1.,.62,.82,.42,0.);
+// Crown profiles, from the crown base (u 0) to the top (u 1), radius over the crown radius; a 0 radius closes on the
+// stem. Broadleaf: an ovoid widest below the middle of the crown with a rounded underside, as forest broadleaf crowns
+// (crown shape models, e.g. Pretzsch 2009). Conifer: three stacked whorl tiers of a
+// spire. Parasol: the flat-topped crown of savanna acacias and Mediterranean umbrella pines, widest near the top.
+const float BROAD_U[6]=float[6](0.,.1,.3,.55,.8,1.);
+const float BROAD_R[6]=float[6](0.,.72,.98,.9,.68,0.);
+const float NEEDLE_U[6]=float[6](0.,.3,.33,.62,.65,1.);
+const float NEEDLE_R[6]=float[6](1.,.6,.78,.4,.52,0.);
+const float PARASOL_U[6]=float[6](0.,.3,.62,.86,.96,1.);
+const float PARASOL_R[6]=float[6](0.,.55,.88,1.,.92,0.);
 void main(){
   int v=int(gl_VertexID),quad=v/6,corner=v-quad*6;
   int band=quad/${SEGMENTS},seg=quad-band*${SEGMENTS};
@@ -718,38 +739,49 @@ void main(){
   int ring=band+dring;
   float fade=1.-smoothstep(treeFade.z,treeFade.w,distance(treeBase.xy,treeFade.xy));
   if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
-  bool needle=treeShape.z>.5;
+  // Form (instance z): 0 broadleaf, 1 conifer spire, 2 broadleaf parasol, 3 conifer parasol (umbrella pine).
+  int form=int(treeShape.z+.5);bool needle=form==1||form==3,parasol=form>=2,spire=form==1;
   // The instance carries the crown length (live crown ratio times height, buildNearTreesSteps): the crown base.
   float r=treeBase.w,h=treeShape.x,bottom=clamp(h-treeShape.y,.02*h,.75*h);
   float angle=float(seg+dseg)*${((2 * Math.PI) / SEGMENTS).toFixed(7)}+treeShape.w;
   vec2 dir=vec2(cos(angle),sin(angle));
-  float trunk=max(.07*r,.12),radius,y;
+  // Stem girth: diameter at breast height from the slenderness of the tree (height over diameter 30-60 for broadleaves,
+  // 45-80 for conifers, low for dominant and open-grown trees; Wonn & O'Hara 2001) or from its crown, whichever is larger
+  // (crown diameter about 12-25 times the stem diameter for broadleaves, Hemery et al. 2005; about 8-12 for conifers), at
+  // the stout end of both ranges so a stem reads from afar. A 25 m broadleaf with a 10 m crown: 0.8 m; a 60 m emergent
+  // with a 28 m crown: about 2.3 m; a 30 m spruce: 0.67 m; open-grown trees with wide crowns get stout stems. Never under
+  // 0.5 m, about a pixel and a half at 300 m. The foot flares (to buttresses on the largest stems) and the stem tapers to
+  // about 0.65 of its breast-height girth under a high crown (stem taper curves, e.g. Kozak 1988).
+  float dbh=max(max(needle?h/45.:h/32.,2.*r/(needle?8.:12.)),.5),stem=.5*dbh,collar=stem*mix(1.,.65,smoothstep(1.5,10.,bottom));
+  float radius,y;
   // Snow: the mean load of the crown is the fraction of treeColor.w over .45 (its integer part is the leafless flag).
   // It lies on the top of the crown and on a spire's bough tips; the gaps between boughs and the underside stay dark.
   float load=fract(treeColor.w)/.45,cap=0.,arc=0.;
-  if(ring<2){radius=trunk;y=ring==0?-.4:bottom;}
+  if(ring<3){radius=ring==0?stem*(1.45+.55*smoothstep(1.,2.5,dbh)):ring==1?stem:collar;y=ring==0?-.4:ring==1?min(1.3,.4*bottom):bottom;}
   else {
-    int k=ring-2;float u=needle?NEEDLE_U[k]:BROAD_U[k];
-    for(int j=k;j<4;j++){
-      float du=(needle?NEEDLE_U[j+1]-NEEDLE_U[j]:BROAD_U[j+1]-BROAD_U[j])*(h-bottom),dr=(needle?NEEDLE_R[j+1]-NEEDLE_R[j]:BROAD_R[j+1]-BROAD_R[j])*r;
+    int k=ring-3;float u=parasol?PARASOL_U[k]:spire?NEEDLE_U[k]:BROAD_U[k];
+    for(int j=k;j<5;j++){
+      float du=(parasol?PARASOL_U[j+1]-PARASOL_U[j]:spire?NEEDLE_U[j+1]-NEEDLE_U[j]:BROAD_U[j+1]-BROAD_U[j])*(h-bottom);
+      float dr=(parasol?PARASOL_R[j+1]-PARASOL_R[j]:spire?NEEDLE_R[j+1]-NEEDLE_R[j]:BROAD_R[j+1]-BROAD_R[j])*r;
       arc+=sqrt(du*du+dr*dr);
     }
-    cap=needle?((seg+dseg)%2==0?1.3:.45)*mix(.8,1.2,u):mix(.45,1.4,u);
-    radius=r*(needle?NEEDLE_R[k]:BROAD_R[k]);y=bottom+u*(h-bottom);
+    cap=spire?((seg+dseg)%2==0?1.3:.45)*mix(.8,1.2,u):mix(.45,1.4,u);
+    // The underside closes on the stem: no flat disc and no ring of sky between trunk and crown.
+    radius=max(r*(parasol?PARASOL_R[k]:spire?NEEDLE_R[k]:BROAD_R[k]),k==0?collar:0.);y=bottom+u*(h-bottom);
     // Alternating branch tips keep spruce serrated from above while the stacked cones keep a narrow spire.
-    if(needle)radius*=((seg+dseg)%2==0?1.:.68)*(1.+.045*sin(3.*angle+treeShape.w));
+    if(spire)radius*=((seg+dseg)%2==0?1.:.68)*(1.+.045*sin(3.*angle+treeShape.w));
     // Leafless broadleaves keep a narrower, sparser outline; leafy ones get lumps.
-    if(!needle)radius*=(1.+.13*sin(3.*angle+2.*treeShape.w)*(1.-abs(u-.5)*1.4))*(treeColor.w>.5?.8:1.);
+    else radius*=(1.+.13*sin(3.*angle+2.*treeShape.w)*(1.-abs(u-.5)*1.4))*(!needle&&treeColor.w>.5?.8:1.);
   }
   vec3 local=vec3(dir.x*radius,y*fade,dir.y*radius);
-  if(ring<2)treeNormal=vec3(dir.x,0.,dir.y);
-  else if(needle)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
-  else {float mid=.5*(bottom+h),hd=max(.5*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
+  if(ring<3)treeNormal=vec3(dir.x,0.,dir.y);
+  else if(spire)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
+  else {float mid=bottom+(parasol?.72:.4)*(h-bottom),hd=max(.55*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
   world=vec3(treeBase.x-cameraOrigin.x+local.x,treeBase.z*exaggeration-cameraOrigin.y+local.y,treeBase.y-cameraOrigin.z+local.z);
-  tint=ring<2?vec3(.24,.19,.14):treeColor.rgb;
-  treeLevel=ring<2?0.:clamp((y-bottom)/max(h-bottom,.1),0.,1.);
+  tint=ring<3?vec3(.24,.19,.14):treeColor.rgb;
+  treeLevel=ring<3?0.:clamp((y-bottom)/max(h-bottom,.1),0.,1.);
   crownChart=vec4(dir*arc,fract(treeShape.w*.15915494),r);
-  crownInfo=vec4(needle?1.:0.,ring<2||treeColor.w>.5?1.:0.,ring<2?0.:min(load*cap,.95),min(arc/max(r,.1),1.));
+  crownInfo=vec4(needle?1.:0.,ring<3||treeColor.w>.5?1.:0.,ring<3?0.:min(load*cap,.95),min(arc/max(r,.1),1.));
   gl_Position=matrix*vec4(world,1.);
 }`,
   fragment: `#version 300 es

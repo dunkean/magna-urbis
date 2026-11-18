@@ -1,6 +1,7 @@
 /** Retained native canal water in public ribbons (urban/lagoon.rs), with bridges and lock gates. Its colour comes from
  * townWater.ts (the rivers' colour of the map) through the draw options. */
 import type { Layout, Shape } from '../../../rust/bridge/urban';
+import { CANAL } from './city/planLook';
 const cache = new WeakMap<object, { water: Path2D; bridges: Path2D }>();
 export function cityWaterwayPaths(layouts: readonly Layout[]): { water: Path2D; bridges: Path2D } {
   const path = (shape: Shape): Path2D => {
@@ -30,7 +31,7 @@ export function cityWaterwayPaths(layouts: readonly Layout[]): { water: Path2D; 
   }
   return paths;
 }
-export function drawCityWaterways(ctx: CanvasRenderingContext2D, layouts: readonly Layout[], mpp: number, color = '#8aaeb8'): void {
+export function drawCityWaterways(ctx: CanvasRenderingContext2D, layouts: readonly Layout[], mpp: number, color: string = CANAL.water): void {
   // Towns without canals (nearly all) build no paths and touch no context state.
   if (!layouts.some(layout => layout.structure?.waterways?.length)) return;
   const paths = cityWaterwayPaths(layouts);
@@ -38,8 +39,8 @@ export function drawCityWaterways(ctx: CanvasRenderingContext2D, layouts: readon
   ctx.lineWidth = Math.max(0.4, mpp * 0.6);
   ctx.fillStyle = color;
   ctx.fill(paths.water);
-  ctx.fillStyle = '#e6d9bb';
-  ctx.strokeStyle = '#6d6554';
+  ctx.fillStyle = CANAL.bridge;
+  ctx.strokeStyle = CANAL.bridgeEdge;
   ctx.fill(paths.bridges);
   ctx.stroke(paths.bridges);
   ctx.restore();

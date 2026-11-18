@@ -1,7 +1,10 @@
-/** Typed cross-module page callbacks. main.ts mounts them once before executing startup phases so existing forward references remain valid without running handlers early. */
-import type { PageState } from './state';
-import type { LocalFactsInput, Options, cityReachedPopulation, World, ExportLayers, Action, V2Settings, V2Progress, V2TownStage, LotShape, buildingAt, StageDef, StageFamily, UrbanSeedStage } from './dependencies';
-
+/**
+ * Assembles the page operations (`PageActions` in `contract.ts`) from their owner modules. main.ts calls it once,
+ * before the first mount: the control callbacks wired by the mounts call these operations later (user events, runs,
+ * the boot), and an operation reads the controls it needs from the state at call time. Building them creates
+ * closures only: no state read, no DOM work.
+ */
+import type { PageActions, PageState } from './contract';
 import { createPlacesActions } from './places';
 import { createStageChainActions } from './stageChain';
 import { createAppearanceActions } from './appearance';
@@ -10,102 +13,29 @@ import { createMapEditingActions } from './mapEditing';
 import { createSettingsActions } from './settings';
 import { createStatusActions } from './status';
 import { createGenerationActions } from './generation';
-import { mountTownInspector } from './townInspector';
-import { mountHouseInspector } from './houseInspector';
-import { createSubdivisionInspectorActions } from './subdivisionInspector';
+import { createTownInspector } from './townInspector';
+import { createHouseInspector } from './houseInspector';
+import { createSubdivisionInspector } from './subdivisionInspector';
 import { createProjectsActions } from './projects';
 import { createExportsActions } from './exports';
-export interface ToastAction {
-  detail?: string;
-  label: string;
-  run(): void;
-}
-export interface PageActions {
-  cityTargets(): string[] | undefined;
-  syncCitySelection(): void;
-  reachedPopulation(key: string, target: number): ReturnType<typeof cityReachedPopulation>;
-  neighbourWarnings(key: string): string[];
-  absorbedBy(key: string): string | undefined;
-  placeWarningText(key: string, target: number): string;
-  populationMarkup(key: string, target: number): string;
-  cityStageLabel(key: string): string;
-  runCities(stage?: V2TownStage, output?: string): void;
-  rerollCityStep(stage: UrbanSeedStage, keys: string[], output?: string): void;
-  rerollStage(stage: StageDef, family?: boolean): void;
-  refreshAppearance(): Promise<void>;
-  refresh3dWorld(): Promise<void>;
-  reportAppearanceError(error: unknown): void;
-  syncDisplayWidgets(): void;
-  writeRecipe(path: string, value: unknown): void;
-  scheduleChainSync(): void;
-  fullGenerationStatus(): string;
-  syncFullGenerationButton(family: StageFamily): void;
-  runFullGeneration(): Promise<void>;
-  runFamily(family: StageFamily): void;
-  runStage(stage: StageDef): void;
-  openExecutionSettings(): void;
-  syncNameOrigins(): void;
-  redrawEditedLabels(): void;
-  redrawNames(): Promise<void>;
-  cityControlDefaults(key: string): Partial<Options> | undefined;
-  openNeuralModelsSettings(): void;
-  inspectNeuralSelection(): Promise<void>;
-  syncPlacesPanel(family?: StageFamily): void;
-  disposeInspectorForms(): void;
-  syncUrbanBackend(): void;
-  toast(message: string, error?: boolean, action?: ToastAction): void;
-  reportGenerationFailure(message: string): Promise<void>;
-  scrollLog(): void;
-  renderLog(): void;
-  log(message: string): void;
-  dialog(id: string): void;
-  resetRegionEdits(previousParent?: string): void;
-  touchRecipe(): void;
-  updateExtent(): void;
-  syncControls(): Promise<void>;
-  selectTab(tab: string): void;
-  updateProgress(p: V2Progress): void;
-  setBusy(value: boolean): void;
-  labelEditorHostInert(value: boolean): void;
-  smallPlaceRecipeKey(): string;
-  generateMainOnly(): Promise<void>;
-  generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<boolean>;
-  updateWorld(keepInspector?: boolean): void;
-  applyDirectMapEdit(next: World): Promise<void>;
-  syncLocalFacts(): void;
-  appendLocalFacts(host: HTMLElement, key: string, selection?: LocalFactsInput['selection']): void;
-  showInspector(key: string, focus?: boolean): void;
-  showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void;
-  mountParcelMerge(key: string, id: string, index: number, shape: LotShape, currentRole?: string): void;
-  inspectSubdivision(kind: 'quarter' | 'block' | 'parcel', p: { x: number; y: number }, settlementKey?: string, selectedId?: string): boolean;
-  loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void>;
-  projectJob<T>(request: unknown, transfer?: Transferable[]): Promise<T>;
-  composeJob(request: unknown, transfer?: Transferable[]): Promise<{ settings: V2Settings; world?: World; mods: unknown[] }>;
-  download(blob: Blob, name: string): void;
-  svgExport(): Promise<Blob>;
-  exportLayers(): Partial<ExportLayers>;
-  pngMapExport(width: number, crop: boolean): Promise<Blob | null>;
-  exportWorld(world: World): World;
-  heightmapBlob(): Promise<{ blob: Blob; metadata: Blob }>;
-  syncExportOptions(): void;
-  inspectHardware(): Promise<void>;
-}
 
-/** Function declarations were hoisted in main.ts. Build the same callbacks before running any startup statement; callback construction reads no state and performs no DOM work. */
-export function mountPageActions(state: PageState, populationEstimator: typeof cityReachedPopulation): PageActions {
+export function createPageActions(state: PageState): PageActions {
+  // Each owner receives the finished object: its operations call the others only once start-up has run.
   const actions = {} as PageActions;
-  Object.assign(actions, createPlacesActions(state, actions, populationEstimator));
-  Object.assign(actions, createStageChainActions(state, actions));
-  Object.assign(actions, createAppearanceActions(state, actions));
-  Object.assign(actions, createRuntimeActions(state, actions));
-  Object.assign(actions, createMapEditingActions(state, actions));
-  Object.assign(actions, createSettingsActions(state, actions));
-  Object.assign(actions, createStatusActions(state, actions));
-  Object.assign(actions, createGenerationActions(state, actions));
-  Object.assign(actions, mountTownInspector(state, actions));
-  Object.assign(actions, mountHouseInspector(state, actions));
-  Object.assign(actions, createSubdivisionInspectorActions(state, actions));
-  Object.assign(actions, createProjectsActions(state, actions));
-  Object.assign(actions, createExportsActions(state, actions));
-  return actions;
+  return Object.assign(
+    actions,
+    createPlacesActions(state, actions),
+    createStageChainActions(state, actions),
+    createAppearanceActions(state, actions),
+    createRuntimeActions(state, actions),
+    createMapEditingActions(state, actions),
+    createSettingsActions(state, actions),
+    createStatusActions(state, actions),
+    createGenerationActions(state, actions),
+    createTownInspector(state, actions),
+    createHouseInspector(state, actions),
+    createSubdivisionInspector(state, actions),
+    createProjectsActions(state, actions),
+    createExportsActions(state, actions),
+  );
 }

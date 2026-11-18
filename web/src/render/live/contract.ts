@@ -27,8 +27,15 @@
  *    A layer that is not isolated draws straight over what is below it: it may only use source-over.
  *  - No `readPixels`, `finish`, `getError` or other synchronous query in `draw`.
  *  - Resources are created in this context only; `contextLost` drops every handle, the next `work`/`draw` rebuilds.
+ *
+ * One camera (render/world/contract.ts): a frame is the top view of the map, or the same world seen tilted
+ * (`frame.camera.tilted`). The 2D mapping of a frame (`rect`, `worldToClip`, `worldToPixel`) describes the top view of
+ * its centre and scale; a layer that only knows it is not drawn in a tilted frame (the page hides it). The ground
+ * draws both.
  */
 import type { Rect4, View } from '../view';
+import type { FrameCamera } from '../world/contract';
+import type { TerrainHeights } from '../world/heights';
 
 /** Context attributes of the compositor canvas. `getContext('webgl2', ...)` on that canvas returns this context. */
 export const LIVE_CONTEXT_ATTRIBUTES: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: false, depth: true, stencil: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
@@ -53,6 +60,9 @@ export interface LiveFrame {
   readonly worldToClip: Float32Array;
   /** Map metres -> device pixels of the target (origin top left, y down): `[sx, sy, tx, ty]`, px = x * sx + tx. */
   readonly worldToPixel: readonly [number, number, number, number];
+  /** The camera of the frame: the top view, where the 2D mapping above is the whole projection, or a tilted
+   * perspective with its 4x4 view-projection. */
+  readonly camera: FrameCamera;
   /** Framebuffer the layer draws into: null (the canvas) or the isolated group. */
   readonly target: WebGLFramebuffer | null;
   /** `performance.now()` of the frame. */
@@ -75,6 +85,9 @@ export interface LiveLayer {
   /** Drawn in the isolated multisampled group and composited with `opacity()`. Required for any blending other than
    * source-over, for stencil use, and for a group opacity. */
   readonly isolated?: boolean;
+  /** The layer draws the frames of a tilted camera (`frame.camera.tilted`) as well as the top view, with
+   * `frame.camera`. A layer without it only knows the 2D mapping: the compositor leaves it out of a tilted frame. */
+  readonly tilts?: boolean;
   /** Group opacity 0..1 of an isolated layer (default 1). Read per frame. */
   opacity?(): number;
   /** True when `draw` can show the layer for this frame from data already on the GPU. False: the compositor shows the
@@ -120,17 +133,6 @@ export function resetLiveState(gl: WebGL2RenderingContext, target: WebGLFramebuf
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
 }
 
-/** The matrices of a frame. */
-export function liveFrameMatrices(view: View, cssW: number, cssH: number, dpr: number): { worldToClip: Float32Array; worldToPixel: [number, number, number, number]; width: number; height: number } {
-  const width = Math.max(1, Math.round(cssW * dpr)),
-    height = Math.max(1, Math.round(cssH * dpr));
-  const s = view.scale * dpr,
-    tx = width / 2 - view.cx * s,
-    ty = height / 2 - view.cy * s;
-  // clip.x = px * 2 / width - 1; clip.y = 1 - py * 2 / height
-  return { width, height, worldToPixel: [s, s, tx, ty], worldToClip: new Float32Array([(2 * s) / width, 0, 0, 0, (-2 * s) / height, 0, (2 * tx) / width - 1, 1 - (2 * ty) / height, 1]) };
-}
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Ground: baked tiles (owner: the ground stream; ui/terrainGl.ts, ui/terrainGpu.ts, render/live/groundLayer.ts)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -153,6 +155,8 @@ export interface LiveGroundOptions {
   mapSize(): number;
   /** Paper colour under and around the map (CSS colour). */
   paper(): string;
+  /** The relief of the map, for the frames of a tilted camera; undefined: such a frame drapes the ground flat. */
+  terrain(): TerrainHeights | undefined;
   /** GPU memory the tile cache may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a new frame (a finer tile arrived). */

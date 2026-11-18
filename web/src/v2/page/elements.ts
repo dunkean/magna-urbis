@@ -1,11 +1,15 @@
-/** The page shell, dialogs and stable DOM ids. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { setHTML, LANGUAGES, logo, CULTURE_LABELS, STYLE_LIST, EXPORT_LAYER_NAMES } from './dependencies';
+/**
+ * The V2 page shell: header, workbench bar, sidebar, map area and dialogs, written into #app once by main.ts before any
+ * control mounts. The ids and data attributes here are the page's contract with its modules, tests and shot scripts.
+ */
+import { setHTML, LANGUAGES } from '../i18n';
+import logo from '../../ui/assets/logo-magna-urbis.png';
+import { CULTURE_LABELS } from '../../gen/options';
+import { STYLE_LIST } from '../../render/styles';
+import { EXPORT_LAYER_NAMES } from '../../render/exportLayers';
 import { $, icon, field, tri, wallStyles, layerNames } from './dom';
 
-/** The page shell, dialogs and stable DOM ids. Called by main.ts in startup order. */
-export function mountPageElements(state: PageState, actions: PageActions): void {
+export function mountPageShell(localEdition: boolean): void {
   setHTML(
     $('#app'),
     `
@@ -20,7 +24,7 @@ export function mountPageElements(state: PageState, actions: PageActions): void 
     <a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a>
     <span id="build-info"></span>
   </nav><div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="export-open">Export ↗</button></div>
-  <div class="header-tools"><span class="edition">${state.localEdition ? 'Desktop / local edition' : 'Web edition'}</span><label class="language-control header-language"><select id="language-select" aria-label="Interface language">${LANGUAGES.map(item => `<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><button id="hardware-open" title="Settings, engines and activity">${icon('settings-gear', 20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Settings</span></button></div>
+  <div class="header-tools"><span class="edition">${localEdition ? 'Desktop / local edition' : 'Web edition'}</span><label class="language-control header-language"><select id="language-select" aria-label="Interface language">${LANGUAGES.map(item => `<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><button id="hardware-open" title="Settings, engines and activity">${icon('settings-gear', 20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Settings</span></button></div>
 </header>
 <section class="workbench-bar" aria-label="Scene and editing tools">
   <div class="view-strip"><div class="style-control"><label class="strip-label" for="map-style">Appearance</label><select id="map-style" aria-label="Map style">${STYLE_LIST.map(s => `<option value="${s.id}">${s.label}</option>`).join('')}</select></div><div id="scene-controls" class="scene-controls"></div></div>

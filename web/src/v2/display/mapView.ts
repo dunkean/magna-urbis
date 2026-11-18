@@ -2,31 +2,38 @@
  * The 2D view of the map on screen: one frame per animation frame the page asks for (BenchRenderer.drawLive).
  *
  * It presents each frame through the composed view (composedView.ts, the live compositor) or, when that cannot draw
- * the frame, through the fallback view (fallbackView.ts), and holds what is common to both:
+ * the frame or `?display=fallback` forces it, through the fallback view (fallback/fallbackView.ts): this is the only
+ * place that chooses. It holds what is common to both:
  *  - the camera's motion (viewMotion.ts): moving or at rest;
  *  - the frozen picture of a style switch: while the appearance passes run, a copy of the last picture stays on screen
  *    and follows the view;
  *  - the capture frame: an exact frame laid over the view for a screenshot, kept until the camera moves.
+ *
+ * Only the composed view draws a tilted camera (render/world/): the element says so to the viewer
+ * (`data-camera="tilt"`), which then lets the camera tilt; under the fallback view the camera stays the top view.
  */
-import { noteFallbackFrame } from '../../render/live/compositor';
+import { noteFallbackFrame } from '../../render/live/liveStats';
+import { fallbackForced } from '../../render/live/policy';
 import { initializeDisplayQuality, noteDisplayNavigation, onDisplayQualityChange } from '../../render/displayQuality';
 import { onVectorEngineChange } from '../../render/vectorEngine';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
+import { isTilted } from '../../render/world/camera';
+import type { WorldRelief } from '../../render/world/contract';
+import { suspendFantasyRaster } from '../../ui/fantasyRaster';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
-import type { AppearanceListener } from './appearance';
 import { ComposedView, GROUND_WARMING } from './composedView';
+import type { AppearanceListener, DisplayParts, ViewFrame, ViewStatus } from './contract';
 import type { ExactFrame } from './exactFrame';
-import { FallbackView } from './fallbackView';
+import { FallbackView } from './fallback/fallbackView';
 import type { MapState } from './mapState';
-import { suspendStepwisePaints, type DisplayParts } from './parts';
 import type { DisplayReadiness } from './readiness';
-import { sameFrame, ViewMotion, type ViewFrame } from './viewMotion';
+import { sameFrame, ViewMotion } from './viewMotion';
 
 /** Which view presented the last frame. */
 type Presenter = 'none' | 'composed' | 'fallback';
 
-export class MapView implements AppearanceListener {
+export class MapView implements AppearanceListener, ViewStatus {
   /** The page element of the map: the canvases of the view in charge, the frozen picture and the capture frame. */
   readonly element = document.createElement('div');
   private readonly motion = new ViewMotion();
@@ -60,9 +67,6 @@ export class MapView implements AppearanceListener {
     };
   }
 
-  /** The view counts as moving: the names of an exact frame follow the map instead of being placed again. */
-  moving = (): boolean => this.motion.phase() === 'moving';
-
   draw(view: View, w: number, h: number, dpr: number): void {
     const map = this.map;
     if (map.suspended) return;
@@ -73,36 +77,56 @@ export class MapView implements AppearanceListener {
       return;
     }
     if (this.captured) {
-      if (sameFrame(this.captured, view, w, h, dpr)) return;
+      if (!isTilted(view) && sameFrame(this.captured, view, w, h, dpr)) return;
       this.releaseCapture();
     }
     const now = performance.now(),
       moved = this.motion.note(view, w, h, dpr, now);
     if (moved) {
       noteDisplayNavigation();
-      suspendStepwisePaints(map, this.parts);
+      this.suspendStepwisePaints();
     }
-    const blocked = this.composed.blocked(view, w, h, dpr);
+    const blocked = fallbackForced() ? 'forced fallback' : this.composed.blocked(view, w, h, dpr);
     map.stats.live = blocked ?? 'compositor';
     if (!blocked) {
       if (this.presenter === 'fallback') this.fallback.leave();
-      this.presenter = 'composed';
+      this.present('composed');
       this.composed.draw(view, w, h, dpr, moved, now);
       return;
     }
     if (this.presenter === 'composed') this.composed.leave();
-    this.presenter = 'fallback';
+    this.present('fallback');
     this.composed.standBy(blocked === GROUND_WARMING);
     noteFallbackFrame(blocked);
     this.fallback.draw(view, w, h, dpr, moved, now);
   }
-
+  /** Notes the view in charge, and tells the viewer through the element whether it draws a tilted camera. */
+  private present(presenter: Presenter): void {
+    if (this.presenter === presenter) return;
+    this.presenter = presenter;
+    if (presenter === 'composed') this.element.dataset.camera = 'tilt';
+    else delete this.element.dataset.camera;
+  }
+  /** The relief of the map on screen, for the viewer's zoom on the terrain (Viewer.setRelief). */
+  relief(): WorldRelief | undefined {
+    return this.composed.relief();
+  }
   private current(): ComposedView | FallbackView | undefined {
     return this.presenter === 'composed' ? this.composed : this.presenter === 'fallback' ? this.fallback : undefined;
   }
-  /** The view moves, or its picture at rest is still owed. */
+  /** Stops the stepwise paints of the exact renderers (overlay tiles, the kept town layer, illustrated stamps): the
+   * view moved, or the renderers are wanted elsewhere. */
+  private suspendStepwisePaints(): void {
+    const { cartography, town, ground } = this.parts;
+    cartography.renderer?.suspendStepwise();
+    if (this.map.ownsShared) town.city?.suspendStepwise();
+    if (ground.fantasy) suspendFantasyRaster(ground.fantasy);
+  }
+
+  // --- what the rest of the display asks or tells the view -----------------------------------------------------------
+
   busy(): boolean {
-    return this.motion.restOwed || this.moving();
+    return this.motion.restOwed || this.motion.phase() === 'moving';
   }
   pendingViewOnly(): number {
     return this.current()?.pendingViewOnly() ?? 0;
@@ -110,7 +134,16 @@ export class MapView implements AppearanceListener {
   pendingOverlay(): number {
     return this.current()?.pendingOverlay() ?? 0;
   }
-
+  /** Inside a compositor frame or work slice (MapState: a frame request raised there is a live layer's). */
+  inCompositor(): boolean {
+    return this.composed.inCompositor();
+  }
+  contoursChanged(): void {
+    this.composed.contoursChanged();
+  }
+  groundCaptureDropped(): void {
+    this.composed.groundCaptureDropped();
+  }
   setSuspended(value: boolean): void {
     const map = this.map;
     if (map.suspended === value) return;
@@ -118,7 +151,7 @@ export class MapView implements AppearanceListener {
     this.parts.ground.gpu?.setLivePaused(value || map.preparing);
     this.composed.syncWork();
     if (value) {
-      suspendStepwisePaints(map, this.parts);
+      this.suspendStepwisePaints();
       this.motion.restDone();
     } else map.invalidate();
   }
@@ -128,14 +161,14 @@ export class MapView implements AppearanceListener {
   beginAppearanceChange(): void {
     const map = this.map;
     this.releaseCapture();
-    suspendStepwisePaints(map, this.parts);
+    this.suspendStepwisePaints();
     if (!map.suspended) {
       this.motion.restDone();
       const at = this.motion.frame,
         sources = this.current()?.frozenSources();
       if (at && sources) this.frozen = { element: this.freeze(sources), view: { ...at.view }, w: at.w, h: at.h };
     }
-    // No tile is baked while the passes change the terrain renderer's state.
+    // The terrain renderer draws nothing by itself, and no tile is baked, while the passes change its state.
     map.preparing = true;
     this.parts.ground.gpu?.setLivePaused(true);
     this.composed.syncWork();
@@ -184,7 +217,7 @@ export class MapView implements AppearanceListener {
     const map = this.map;
     this.releaseCapture();
     map.townContent++;
-    suspendStepwisePaints(map, this.parts);
+    this.suspendStepwisePaints();
     this.motion.restDone();
     this.fallback.forget();
     this.composed.invalidateLayers();
@@ -198,14 +231,16 @@ export class MapView implements AppearanceListener {
   prepareCapture(): void {
     const map = this.map,
       frame = this.motion.frame;
-    suspendStepwisePaints(map, this.parts);
+    this.suspendStepwisePaints();
     this.motion.restDone();
+    // A tilted view is the compositor's frame as it is: the exact renderers paint the top view only.
+    if (this.presenter === 'composed' && this.composed.tilted) return;
     if (!frame || !map.world) {
       if (this.parts.ground.gpuActive) this.parts.ground.gpu!.redrawForCapture();
       return;
     }
     const canvas = this.captureCanvas;
-    this.exact.paint(canvas, frame.view, frame.w, frame.h, frame.dpr, false);
+    this.exact.paint(canvas, frame.view, frame.w, frame.h, frame.dpr, { stepwise: false, groundBeneath: false });
     canvas.style.cssText = `position:absolute;left:0;top:0;z-index:1;width:${frame.w}px;height:${frame.h}px`;
     this.element.append(canvas);
     this.captured = { view: { ...frame.view }, w: frame.w, h: frame.h, dpr: frame.dpr };
@@ -218,10 +253,15 @@ export class MapView implements AppearanceListener {
   }
 
   dispose(): void {
-    suspendStepwisePaints(this.map, this.parts);
+    this.suspendStepwisePaints();
     this.unlisten();
     this.motion.restDone();
+    this.releaseCapture();
     this.frozen?.element.remove();
+    this.frozen = undefined;
+    this.fallback.leave();
+    this.composed.leave();
     this.composed.dispose();
+    this.present('none');
   }
 }

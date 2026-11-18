@@ -7,7 +7,7 @@
  * (cityGlStyle.ts) folds the same operations into its per-feature colour tables. Neither holds a colour of its own.
  */
 import type { Shape } from '../../../../rust/bridge/urban';
-import type { CityBlock, CityDistrict, CityLayers, CityLod, CityPalette, CityParcel, CityView } from '../cityCanvas';
+import type { CityBlock, CityDistrict, CityLayers, CityLod, CityPalette, CityParcel, CityView } from './model/contract';
 import { groundRoadLook, type RoadLook } from '../composition';
 import { blendLine, blendTone, blendsGround, groundWash, isBlended, naturalGroundWash, type BlendTone, type Wash, type WashKind } from '../groundBlend';
 import { washAt } from '../groundTone';
@@ -16,7 +16,8 @@ import { mapGroundSnow } from '../seasonPalette';
 import { funeraryLandFill } from '../cityRoles';
 import { urbanFunctionColor } from '../urbanBuildingStyle';
 import { harbourPaint, harbourShown, type HarbourPaint } from '../harbourStyle';
-import { atLeast } from './levels';
+import { CITY_LOD_LIMITS, atLeast } from './levels';
+import { PAINTED_YARD, paintedPlan, type PlanPath } from './planPath';
 
 // ---------------------------------------------------------------- palettes
 export const ZONE_COLORS: Record<string, string> = { core: '#dfb973', middle: '#bfa4ca', edge: '#91bdc5', faubourg: '#a0bc84', village: '#dfb973' };
@@ -49,7 +50,7 @@ export const PARCH = {
   tower: '#4e3b28',
 };
 /** Night plan grounds, matched to render/styles.ts PALETTES.night urban colours and buildingColors (dark slate blocks under dark masses). */
-export const NIGHT_PLAN = { ink: '#04060e', inkSoft: '#04060e', block: '#182038', lot: '#1d2640', yard: '#141a2c', garden: '#14281f', place: '#2e2b30', market: '#3d372b', common: '#162a30', reserve: '#1a2236', footprint: '#18203a' };
+const NIGHT_PLAN = { ink: '#04060e', inkSoft: '#04060e', block: '#182038', lot: '#1d2640', yard: '#141a2c', garden: '#14281f', place: '#2e2b30', market: '#3d372b', common: '#162a30', reserve: '#1a2236', footprint: '#18203a' };
 export const DISTRICT_COLORS: Record<string, string> = {
   shanty: '#b69274',
   civic: '#d9a55b',
@@ -108,7 +109,7 @@ export function mix(a: string, b: string, t: number): string {
   return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
 /** Colour of a district role, paler for a poor district. */
-export const districtColor = (d: CityDistrict | undefined, fallback: string): string => {
+const districtColor = (d: CityDistrict | undefined, fallback: string): string => {
   const base = DISTRICT_COLORS[districtRoleKey(d?.role) ?? ''] ?? fallback;
   return d?.wealth === undefined ? base : mix(base, PAPER, Math.max(0, 0.45 - d.wealth * 0.45));
 };
@@ -131,10 +132,11 @@ export interface PaintOp {
   /** The fill is the parchment hatching (PARCHMENT_HATCH) instead of a colour. */ hatch?: true;
   /** A square or a market: textured materials replace the fill colour with the paving material. */ plaza?: boolean;
   /** The stroke is the wide, faint feather of a wash's edge, not an outline. */ feather?: true;
+  /** Paved square of the render background (planPath): the paved pass draws setts over the fill. */ paved?: boolean;
 }
 
 // ---------------------------------------------------------------- frame state
-export interface PlanFrameInput {
+interface PlanFrameInput {
   view: CityView;
   lod: CityLod;
   palette: CityPalette;
@@ -145,9 +147,10 @@ export interface PlanFrameInput {
   /** Unlit physical albedo tile (3D ground): earth washes, no lines. */ materialGround?: boolean;
   roadLook?: RoadLook;
   /** Texture images are in hand: squares and markets take the paving material. */ textured?: boolean;
+  /** The frame is the GPU plan renderer's (planPath.ts lists what it reads differently). */ planPath?: PlanPath;
 }
 /** What every plan rule of a frame reads. */
-export interface PlanFrame extends PlanFrameInput {
+interface PlanFrame extends PlanFrameInput {
   parchment: boolean;
   night: boolean;
   /** Parchment or night: the plan takes the table colours `C`. */ tabled: boolean;
@@ -185,14 +188,14 @@ export function planFrame(o: PlanFrameInput): PlanFrame {
     outline: night ? NIGHT_PLAN.ink : o.palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847',
     lineWidthPx: planLineWidthPx(o.width),
     // Squares and markets of a snowed town are trodden like its main streets (natural grounds only).
-    slush: naturalGround && !night ? mapGroundSnow() : 0,
+    slush: naturalGround && !night && !o.planPath ? mapGroundSnow() : 0,
     wash(kind, shape) {
       if (material) {
         const w = groundWash(kind, 'earth');
         return { color: w.color, alpha: Math.min(0.8, w.alpha * 1.8) };
       }
       const raw = washAt(kind, tone, shape),
-        w = naturalGround ? naturalGroundWash(raw, kind) : raw;
+        w = naturalGround && !o.planPath ? naturalGroundWash(raw, kind) : raw;
       return night ? { ...w, color: nightRoof(w.color, parchment) } : w;
     },
   };
@@ -222,14 +225,15 @@ export function blockOps(f: PlanFrame, b: CityBlock, hideLotLines: boolean | und
   const { view, lod, palette, layers, parchment, night, C } = f,
     reserve = b.kind.startsWith('reserve');
   if (reserve ? !layers.domains : !layers.blocks) return undefined;
-  const blockLine = layers.planLines !== false && (b.kind === 'place' || b.kind === 'common' || !hideLotLines);
+  const blockLine = layers.planLines !== false && (b.kind === 'place' || b.kind === 'common' || !hideLotLines),
+    painted = paintedPlan(f.planPath, palette);
   let fill: string | undefined;
-  if (palette === 'terrain' && view !== 'roles' && !f.blend) fill = undefined;
+  if (palette === 'terrain' && view !== 'roles' && (!f.blend || f.planPath)) fill = undefined;
   else if (reserve) fill = f.tabled ? C.reserve : '#cbc2a8';
   else if (b.kind === 'common') fill = f.tabled ? C.common : '#adc5bf';
   else if (b.kind === 'place') fill = f.tabled ? C.place : '#e8d6ae';
   else if (view === 'roles') fill = districtColor(b.district, growthColor(b.zone));
-  else if (view === 'buildings') fill = f.tabled ? C.yard : lod === 'mid' ? mix(districtColor(b.district, growthColor(b.zone)), PAPER, 0.35) : '#ece2cb';
+  else if (view === 'buildings') fill = f.tabled ? C.yard : lod === 'mid' ? mix(districtColor(b.district, growthColor(b.zone)), PAPER, 0.35) : painted ? mix(districtColor(b.district, growthColor(b.zone)), PAINTED_YARD.earth, PAINTED_YARD.share) : '#ece2cb';
   else if (night) fill = C.block;
   else if (palette === 'ink') fill = '#e3d1b5';
   else if (parchment) fill = PARCH.block;
@@ -246,7 +250,17 @@ export function blockOps(f: PlanFrame, b: CityBlock, hideLotLines: boolean | und
     if (lod === 'close' && !f.material && blockLine) ops.push({ stroke: f.softLine.color, widthPx: 0.5, alpha: f.softLine.alpha });
     return ops;
   }
-  const ops: PaintOp[] = [{ fill, plaza: isPlaza(b.kind), stroke: stroke ?? (blockLine && parchment && b.kind === 'place' ? PARCH.inkSoft : undefined), widthPx: f.lineWidthPx, alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1, dashPx: reserve ? [3, 2] : undefined }];
+  const ops: PaintOp[] = [
+    {
+      fill,
+      plaza: isPlaza(b.kind),
+      paved: painted && b.kind === 'place' && lod === 'close',
+      stroke: stroke ?? (blockLine && parchment && b.kind === 'place' ? PARCH.inkSoft : undefined),
+      widthPx: f.lineWidthPx,
+      alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1,
+      dashPx: reserve ? [3, 2] : undefined,
+    },
+  ];
   // Parchment: built blocks hatched in ink, as on the engraved plans.
   if (parchment && !night && !f.blend && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') ops.push({ hatch: true, alpha: view === 'buildings' ? 0.5 : 1 });
   return ops;
@@ -316,7 +330,15 @@ export function parcelOps(f: PlanFrame, p: CityParcel, hideLotLines: boolean | u
     if (p.allocation?.landmark) ops.push({ stroke: FAMILY_COLORS[family ?? 'civic'], widthPx: 1.6 });
   } else {
     // Buildings view: paved places and gardens, faint lot lines when close.
-    if (openFill) ops.push({ fill: openFill, plaza: isPlaza(use), stroke: lod === 'close' && lotLine ? (parchment ? PARCH.inkSoft : '#b9a98d') : lotLine && parchment && isPlaza(use) ? PARCH.inkSoft : undefined, widthPx: 0.6, alpha: parchment && lod === 'close' ? 0.9 : 1 });
+    if (openFill)
+      ops.push({
+        fill: openFill,
+        plaza: isPlaza(use),
+        paved: paintedPlan(f.planPath, palette) && lod === 'close' && isPlaza(use),
+        stroke: lod === 'close' && lotLine ? (parchment ? PARCH.inkSoft : '#b9a98d') : lotLine && parchment && isPlaza(use) ? PARCH.inkSoft : undefined,
+        widthPx: 0.6,
+        alpha: parchment && lod === 'close' ? 0.9 : 1,
+      });
     else if (lod === 'close' && lotLine) ops.push({ stroke: parchment ? PARCH.inkSoft : '#c4b597', widthPx: 0.6, alpha: parchment ? 0.45 : 1 });
   }
   return ops;
@@ -332,7 +354,7 @@ export const SELECTION: PaintOp = { stroke: '#197ea4', widthPx: 2 };
 export const quayPaint = (f: Pick<PlanFrame, 'lod' | 'parchment'>, kind: string, material: string): HarbourPaint | undefined => (harbourShown(kind, f.lod) ? harbourPaint(kind, material, f.parchment, f.parchment ? PARCH.ink : '#57534b') : undefined);
 
 // ---------------------------------------------------------------- town walls
-export interface WallLook {
+interface WallLook {
   /** Stroke width in metres at `mpp` (a wall keeps a minimum on screen). */ thick: number;
   outer: string;
   /** Dash of a palisade (metres at `mpp`), undefined for masonry. */ dash?: number[];
@@ -408,8 +430,19 @@ export const outlineOf = (ops: readonly PaintOp[]): PaintOp | undefined => {
 };
 
 // ---------------------------------------------------------------- canals
-/** Canal water, bridges and lock gates over the town ground. The same values as drawCityWaterways (cityWaterways.ts),
- * which paints the Canvas town's canals: keep the two in step until that module reads this table. */
+/** Canal water (when the map gives no water colour), bridges and lock gates over the town ground: read by the Canvas
+ * canals (cityWaterways.ts), the GPU town and the 3D city (city3dQuays.ts). */
 export const CANAL = { water: '#8aaeb8', bridge: '#e6d9bb', bridgeEdge: '#6d6554' } as const;
 /** Outline width of canal bridges, CSS px: 0.6 px, at least 0.4 m. */
 export const canalBridgeEdgePx = (mpp: number): number => Math.max(0.4 / mpp, 0.6);
+
+// ---------------------------------------------------------------- lot enclosures
+/** Lot enclosures (fences, hedges, walls on parcel limits) show from the mid level; across it they thin to this share
+ * of their minimum width and fade to 0.35 by its far end; none far. */
+export const ENCLOSURE_MID_WIDTH = 0.7;
+export function enclosureFade(lod: CityLod, mpp: number): number {
+  if (lod !== 'mid') return lod === 'far' ? 0 : 1;
+  return 1 - 0.65 * Math.max(0, Math.min(1, Math.log(mpp / CITY_LOD_LIMITS[1]) / Math.log(CITY_LOD_LIMITS[2] / CITY_LOD_LIMITS[1])));
+}
+/** Gate jambs: cart gates near (rank 0), doors too when close (rank 1), none further out (-1). */
+export const enclosureJambRank = (lod: CityLod): number => (lod === 'close' ? 1 : lod === 'near' ? 0 : -1);

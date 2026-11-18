@@ -2,51 +2,51 @@
  * The 2D map display of the V2: the object the page (v2/client.ts) talks to. It imports no generation entry point:
  * it shows retained products only.
  *
- * It only assembles and delegates; the work is in v2/display/:
+ * It builds the parts of the display and delegates to them (v2/display/, shared types in display/contract.ts):
  *
  *   mapState.ts            the map on display (world, settings, appearance) and the page's frame hook
  *   appearance.ts          set(): the appearance passes, which make the products below
- *   groundProducts.ts      terrain renderer or CPU raster, forest, programs, whole-map ground capture
+ *   groundProducts.ts      terrain renderer or CPU raster, forest, programs, whole-map ground capture, 3D background
  *   waterProducts.ts       GPU water textures, vector water raster
  *   contours.ts            contour lines inked on the overlay and the 3D drape
  *   cartographyProducts.ts overlay renderer, semantic land use, export overlays
- *   townProducts.ts        native city map and the hooks of the exact town renderer
+ *   townProducts.ts        native city map and the paint of the exact town renderer
  *   mapView.ts             the view on screen: motion, style-switch stand-in, capture frame
  *     composedView.ts        the live compositor, moving and at rest (the display path)
- *     fallbackView.ts        the view when the compositor cannot draw it
- *   exactFrame.ts          captures, exports, the 3D background
+ *     fallback/              the view when the compositor cannot draw it
+ *   exactFrame.ts          captures and exports
  *   miniature.ts           the miniature of the page
  *   readiness.ts           pending work and readiness marks
  */
 import { RenderReadiness } from '../render/renderReadiness';
-import { noteLiveUnit } from '../render/live/compositor';
+import { noteLiveUnit } from '../render/live/liveStats';
 import type { MaterialRasterContext } from '../../../rust/bridge/terrainMaterialContext';
 import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
+import type { WorldRelief } from '../render/world/contract';
 import type { ExportLayers } from '../render/exportLayers';
 import { ResourceCache } from './passes/pass';
 import type { ResourceSource } from './resourceLayer';
 import { AppearancePasses } from './display/appearance';
 import { CartographyProducts } from './display/cartographyProducts';
 import { ContourInk } from './display/contours';
+import type { SharedPassResources } from './display/contract';
 import { ExactFrame } from './display/exactFrame';
 import { GroundProducts } from './display/groundProducts';
-import { MapState, type SharedPassResources } from './display/mapState';
+import { MapState } from './display/mapState';
 import { MapView } from './display/mapView';
 import { Miniature } from './display/miniature';
-import type { DisplayParts } from './display/parts';
 import { DisplayReadiness } from './display/readiness';
 import { TownProducts } from './display/townProducts';
 import { WaterProducts } from './display/waterProducts';
 
-export { paintedBrushes } from './display/cartographyProducts';
-
 export class BenchRenderer {
   private readonly map: MapState;
-  private readonly parts: DisplayParts;
+  /** The products of set(), each built here and handed to the others through its read-only contract. */
+  private readonly products: { ground: GroundProducts; water: WaterProducts; contours: ContourInk; cartography: CartographyProducts; town: TownProducts };
   private readonly appearance: AppearancePasses;
   private readonly readiness: DisplayReadiness;
   private readonly exact: ExactFrame;
@@ -58,17 +58,20 @@ export class BenchRenderer {
   /** `invalidate`: asks the page for an animation frame. `rasterOnly`: never the GPU ground. `materialContext` and
    * `shared`: the page renderer's, for an export renderer that reuses its products. */
   constructor(invalidate: () => void, rasterOnly = false, materialContext?: MaterialRasterContext, shared?: SharedPassResources) {
-    const map = (this.map = new MapState(invalidate, shared ?? { cache: new ResourceCache() }, !shared));
-    const parts = {} as { -readonly [K in keyof DisplayParts]: DisplayParts[K] };
-    parts.ground = new GroundProducts(map, parts, rasterOnly, materialContext);
-    parts.water = new WaterProducts(map, parts);
-    parts.contours = new ContourInk(map);
-    parts.cartography = new CartographyProducts(map, parts);
-    parts.town = new TownProducts(map, parts);
-    this.parts = parts;
-    this.appearance = new AppearancePasses(map, parts);
+    // The products tell the view what it retains of them (the events below); the view is built last, from the
+    // complete set, so they reach it through `this`.
+    const map = (this.map = new MapState(invalidate, shared ?? { cache: new ResourceCache() }, !shared, () => this.view.inCompositor()));
+    const contours = new ContourInk(map, () => this.view.contoursChanged());
+    const ground = new GroundProducts(map, () => this.view.groundCaptureDropped(), rasterOnly, materialContext);
+    const water = new WaterProducts(map, { ground });
+    // The town paints the urban semantics of the cartography, which draws the names of the towns: one of the two
+    // reads the other lazily.
+    const town: TownProducts = new TownProducts(map, { water }, () => cartography.semantic);
+    const cartography = new CartographyProducts(map, { ground, water, contours, town });
+    const parts = (this.products = { ground, water, contours, cartography, town });
+    this.appearance = new AppearancePasses(map, { ground, water, cartography, town });
     this.readiness = new DisplayReadiness(map, parts, () => this.view);
-    this.exact = new ExactFrame(map, parts, () => this.view.moving());
+    this.exact = new ExactFrame(map, parts);
     this.view = new MapView(map, parts, this.exact, this.readiness);
     this.miniature = new Miniature(map, parts, this.view, () => this.readiness.pendingWork());
   }
@@ -96,11 +99,15 @@ export class BenchRenderer {
     return this.map.shared;
   }
   rasterContext(): MaterialRasterContext | undefined {
-    return this.parts.ground.rasterContext();
+    return this.products.ground.rasterContext();
   }
   /** Bytes held by the dormant cartography renderers of other looks. */
+  /** The relief of the map on screen: the viewer zooms towards the terrain point under the cursor when tilted. */
+  relief(): WorldRelief | undefined {
+    return this.view.relief();
+  }
   retainedBytes(): number {
-    return this.parts.cartography.retainedBytes();
+    return this.products.cartography.retainedBytes();
   }
 
   // --- appearance ----------------------------------------------------------------------------------------------------
@@ -109,7 +116,7 @@ export class BenchRenderer {
   }
   /** The physical land use of the overlay (composition mask, painted brushes, path caches) for the 3D ground tiles: no second scene. */
   physicalGround(): PhysicalGround | undefined {
-    return this.parts.cartography.physicalGround();
+    return this.products.cartography.physicalGround();
   }
 
   // --- the view on screen --------------------------------------------------------------------------------------------
@@ -144,13 +151,13 @@ export class BenchRenderer {
     return this.readiness.settled();
   }
   exactReady(): Promise<void> {
-    return this.parts.ground.exactReady();
+    return this.products.ground.exactReady();
   }
 
   // --- exact frames --------------------------------------------------------------------------------------------------
   /** Capture/export only: combines the layers into a single raster. */
   draw(view: View, w: number, h: number, dpr: number, canvas = this.surface): HTMLCanvasElement {
-    return this.exact.paint(canvas, view, w, h, dpr, false);
+    return this.exact.paint(canvas, view, w, h, dpr, { stepwise: false, groundBeneath: false });
   }
   /** The whole map at `size` pixels, with other export layers when given. */
   async capture(size: number, layers?: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
@@ -161,7 +168,7 @@ export class BenchRenderer {
   /** An exact frame of the view on screen, laid over it for a screenshot. */
   prepareCapture(): void {
     if (this.readiness.pendingWork()) throw new Error('HD loading… Wait for the renderer before capturing.');
-    if (this.parts.ground.programError) throw this.parts.ground.programError;
+    if (this.products.ground.programError) throw this.products.ground.programError;
     const capture = new RenderReadiness('capture');
     capture.mark('programs-ready');
     this.view.prepareCapture();
@@ -169,19 +176,21 @@ export class BenchRenderer {
   }
   /** Terrain-pass bitmap for 3D; invalidated with the ground, shared without PNG encoding and image decoding. */
   groundBackground(): HTMLCanvasElement | undefined {
-    return this.parts.ground.groundBackground();
+    return this.products.ground.groundBackground();
   }
+  /** The ground of the 3D view as one whole-map image URL. */
   backgroundUrl(): string | undefined {
-    return this.exact.backgroundUrl();
+    return this.products.ground.backgroundUrl(this.products.water.vectors);
   }
 
   dispose(): void {
-    const map = this.map;
+    const map = this.map,
+      { ground, cartography, town } = this.products;
     map.disposed = true;
     this.view.dispose();
-    this.parts.cartography.dispose();
-    this.parts.town.dispose();
-    this.parts.ground.dispose();
+    cartography.dispose();
+    town.dispose();
+    ground.dispose();
     if (map.ownsShared) map.shared.cache.clear();
     map.world = undefined;
   }

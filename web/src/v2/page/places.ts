@@ -1,30 +1,26 @@
-/** Places presentation and selection. main.ts mounts the list controls; generation and inspectors call the shared callbacks to keep selection and facts synchronized. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setHTML,
-  insertHTML,
-  setText,
-  setDynamicText,
-  translate,
-  nameHTML,
-  numberHTML,
-  settlementDisplayName,
-  localFactsHtml,
-  type LocalFactsInput,
-  activitySitesOf,
-  demographicClass,
-  nativeCityRecords,
-  populationText,
-  populationShortfallText,
-  nameNeighbourWarning,
-  townUrban,
-  stageById,
-  type StageFamily,
-} from './dependencies';
+/**
+ * The Places panel: the list of settlements and isolated buildings, the city selection that targets runs, population
+ * and warning texts, local facts cards, and `updateWorld`, which resyncs every control after the displayed world changes.
+ */
+import type { PageActions, PageState } from './contract';
+import { setHTML, insertHTML, setText, setDynamicText, translate, numberLocale, nameHTML, numberHTML } from '../i18n';
+import { settlementDisplayName } from '../mapPresentation';
+import { localFactsHtml, type LocalFactsInput } from '../localFacts';
+import { activitySitesOf } from '../activitySites';
+import { demographicClass } from '../../../../rust/bridge/settlementDemography';
+import { nativeCityRecords } from '../nativeProducts';
+import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
+import { nameNeighbourWarning } from '../townNeighbours';
+import { townUrban } from '../edits';
+import { stageById, type StageFamily } from '../stageRegistry';
 import { $, esc } from './dom';
 
-export function createPlacesActions(state: PageState, actions: PageActions, populationEstimator: typeof import('./dependencies').cityReachedPopulation) {
+/** Number formatting of the population texts, in the current language. */
+export const populationFormat = () => ({ t: translate, locale: numberLocale() });
+
+export function createPlacesActions(state: PageState, actions: PageActions) {
+  const placeName = (key: string): string => (state.world && settlementDisplayName(state.world, key, state.settings)) || key;
+
   function cityTargets(): string[] | undefined {
     return state.cityScope === 'all' ? undefined : [...state.selectedCities];
   }
@@ -48,7 +44,7 @@ export function createPlacesActions(state: PageState, actions: PageActions, popu
   function reachedPopulation(key: string, target: number) {
     const native = nativeCityRecords(state.world ?? undefined)?.[key];
     return native?.stage === 'buildings'
-      ? populationEstimator(
+      ? cityReachedPopulation(
           target,
           (native.programmePartitions ?? []).map(p => p.programme),
           native.scene,
@@ -70,16 +66,16 @@ export function createPlacesActions(state: PageState, actions: PageActions, popu
       .neighbourWarnings(key)
       .map(w => /^Neighbouring towns: no free land is left beside (.+?); the town is announced empty\.$/.exec(w))
       .find(Boolean);
-    return empty ? empty[1].split(', ').map(state.placeName).join(', ') : undefined;
+    return empty ? empty[1].split(', ').map(placeName).join(', ') : undefined;
   }
 
   /** The Places list ⚠: the capacity shortfall, else the neighbours' warnings (a place they leave short or empty). */
   function placeWarningText(key: string, target: number): string {
     const reached = actions.reachedPopulation(key, target);
-    if (reached?.shortfallHouseholds) return populationShortfallText(reached, state.popFormat());
+    if (reached?.shortfallHouseholds) return populationShortfallText(reached, populationFormat());
     return actions
       .neighbourWarnings(key)
-      .map(w => translate(nameNeighbourWarning(w, state.placeName)))
+      .map(w => translate(nameNeighbourWarning(w, placeName)))
       .join(' ');
   }
 
@@ -87,7 +83,7 @@ export function createPlacesActions(state: PageState, actions: PageActions, popu
     const absorbed = actions.absorbedBy(key);
     if (absorbed) return esc(translate('Absorbed by {name}').replace('{name}', absorbed));
     const reached = actions.reachedPopulation(key, target);
-    return reached ? esc(populationText(target, reached, state.popFormat())) : `${numberHTML(target)} hab.`;
+    return reached ? esc(populationText(target, reached, populationFormat())) : `${numberHTML(target)} hab.`;
   }
 
   function cityStageLabel(key: string): string {
@@ -216,7 +212,7 @@ export function createPlacesActions(state: PageState, actions: PageActions, popu
   return { cityTargets, syncCitySelection, reachedPopulation, neighbourWarnings, absorbedBy, placeWarningText, populationMarkup, cityStageLabel, syncPlacesPanel, disposeInspectorForms, updateWorld, syncLocalFacts, appendLocalFacts };
 }
 
-/** Places selection and collapse listeners. Called by main.ts in startup order. */
+/** The selection buttons and the collapse toggle of the Places panel. */
 export function mountPlaces(state: PageState, actions: PageActions): void {
   $('#cities-select-all').onclick = () => {
     state.selectedCities.clear();

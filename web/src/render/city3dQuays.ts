@@ -7,6 +7,7 @@ import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import { CityGlPacker, triangulatePolygons } from './cityGlBuild';
 import type { City3dHeight } from './city3dMeshes';
 import { harbourPlatform, harbourPrism } from './harbourStyle';
+import { CANAL } from './city/planLook';
 
 /** Weathered timber of piles and posts (final sRGB): a lit deck never reads white from above. */
 const PILE_TINT = '6b5640';
@@ -284,7 +285,7 @@ export function city3dQuays(layouts: readonly Layout[], heightAt?: City3dHeight,
 }
 
 /** Lagoon channels are water surfaces above the bed, with small dry crossings. */
-export function city3dWaterways(layouts: readonly Layout[], color = '#8aaeb8', waterSurfaces = true): PlacedBuilding[] {
+export function city3dWaterways(layouts: readonly Layout[], color: string = CANAL.water, waterSurfaces = true): PlacedBuilding[] {
   return layouts.flatMap((layout, li) =>
     (layout.structure?.waterways ?? []).flatMap((w, wi) =>
       [...(waterSurfaces ? [{ shape: w.shape, water: true }] : []), ...[...w.crossings, ...(w.locks ?? [])].map(shape => ({ shape, water: false }))].map(({ shape, water }, si) => {

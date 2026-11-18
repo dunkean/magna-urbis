@@ -504,6 +504,7 @@ export class StudioClient {
         if (this.benchActive && this.world && !this.view3dActive) this.viewer.contentChanged(this.world.mapSize, true);
       });
       this.bench.setSuspended(this.view3dActive);
+      this.viewer.setRelief(() => this.bench?.relief());
       this.bench.resourceSource = w => this.resources(w);
       // One bench set() at a time: two interleaved sets (style switch + language redraw) share the renderer's passes and
       // could leave the older look on screen. A newer show() waits for the one in flight; a superseded one gives up.
@@ -558,7 +559,7 @@ export class StudioClient {
       return drawn;
     } else {
       const displayed = { ...world, options: { ...world.options, contours: this.display.contours ?? world.options.contours, landuse: this.display.landuse ?? world.options.landuse, labels: this.display.labels ?? world.options.labels } };
-      const images = this.display.painted ? await (await import('./benchRenderer')).paintedBrushes() : undefined;
+      const images = this.display.painted ? await (await import('./display/paintedBrushes')).paintedBrushes() : undefined;
       this.syncRenderer = createCanvasRenderer(this.canvas, displayWorld(displayed, this.display.layers, this.display.buildings), this.display.style, {
         colors: this.display.colors,
         brushes: images ?? undefined,

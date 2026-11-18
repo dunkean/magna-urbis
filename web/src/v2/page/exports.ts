@@ -1,27 +1,22 @@
-/** Exact image/project exports and downloads. main.ts mounts availability and export controls after imports; captures and exports retain their worker and crop paths. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setText,
-  bindTree,
-  translate,
-  registerMessages,
-  mapPresentation,
-  ruralSemanticLegend,
-  resolveSettingsAppearance,
-  resolvedDisplayOptions,
-  type World,
-  type ExportLayers,
-  chooseExportArea,
-  chooseExportCrop,
-  canvasPng,
-  cropCanvasPng,
-  supportsSvgExport,
-  exportPng,
-  ExportWorker,
-  migrateUrbanSeeds,
-} from './dependencies';
+/**
+ * The export dialog: exact PNG and SVG maps (whole or cropped), projects, recipes, seeds and heightmaps, and the
+ * Save map shortcut. Also opens the page's dialogs, refreshing the export options first for the export dialog.
+ */
+import type { PageActions, PageState } from './contract';
+import { setText, bindTree, translate, registerMessages } from '../i18n';
+import { mapPresentation } from '../mapPresentation';
+import { ruralSemanticLegend } from '../../render/semanticLayer';
+import { resolveSettingsAppearance, resolvedDisplayOptions } from '../appearance';
+import type { World } from '../../gen/types';
+import type { ExportLayers } from '../../render/exportLayers';
+import { chooseExportArea, chooseExportCrop } from '../../ui/exportCrop';
+import { canvasPng, cropCanvasPng } from '../../ui/canvasExport';
+import { supportsSvgExport } from '../exportOptions';
+import { exportPng } from '../../ui/pngExport';
+import ExportWorker from '../export.worker?worker';
+import { migrateUrbanSeeds } from '../urbanSeeds';
 import { $ } from './dom';
+import { projectJob } from './projectWorkers';
 
 export function createExportsActions(state: PageState, actions: PageActions) {
   function download(blob: Blob, name: string): void {
@@ -36,7 +31,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
   }
 
   async function svgExport(): Promise<Blob> {
-    const layers = actions.exportLayers(),
+    const layers = exportLayers(),
       width = Number($<HTMLSelectElement>('#export-resolution').value);
     const resolved = resolveSettingsAppearance(state.settings, state.world, 'export');
     if (!supportsSvgExport(resolved)) throw new Error(translate('SVG is unavailable for the current style. Use PNG.'));
@@ -69,7 +64,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
         try {
           worker.postMessage({
             id: 1,
-            world: state.world ? actions.exportWorld(mapPresentation(state.world, state.settings)) : state.world,
+            world: state.world ? exportWorld(mapPresentation(state.world, state.settings)) : state.world,
             options: { width, style: resolved.palette.mapStyle, layers, roadLook: resolved.composition.networks.roads.look, roadEmphasis: resolved.composition.networks.roads.emphasis, roadNight: resolved.composition.ambience === 'night' },
             display,
             brushes,
@@ -91,7 +86,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
   async function pngMapExport(width: number, crop: boolean): Promise<Blob | null> {
     const resolved = resolveSettingsAppearance(state.settings, state.world, 'export');
     if (resolved.path === 'classic') {
-      let blob = await actions.svgExport(),
+      let blob = await svgExport(),
         dimensions: number | { width: number; height: number } = width;
       if (crop) {
         const result = await chooseExportCrop(blob, width, bindTree);
@@ -104,7 +99,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
         actions.log(`Export PNG : ${phase}`);
       });
     }
-    const image = await state.client.exportBench(state.settings, resolved, width, actions.exportLayers());
+    const image = await state.client.exportBench(state.settings, resolved, width, exportLayers());
     try {
       setText($('#export-note'), 'Encoding PNG…');
       const png = await canvasPng(image);
@@ -178,11 +173,13 @@ export function createExportsActions(state: PageState, actions: PageActions) {
                   : 'Visual exports use the current map without rerunning generation.',
     );
   }
-  return { download, svgExport, exportLayers, pngMapExport, exportWorld, heightmapBlob, syncExportOptions };
+  return { download, svgExport, pngMapExport, heightmapBlob, syncExportOptions };
 }
 
-/** Export translations, availability and save/download controls. Called by main.ts in startup order. */
 export function mountExports(state: PageState, actions: PageActions): void {
+  // The export operations that are not page actions (pngMapExport, svgExport, heightmapBlob).
+  const exporter = createExportsActions(state, actions);
+
   registerMessages({
     'SVG is unavailable for the current style. Use PNG.': { en: 'SVG is unavailable for the current style. Use PNG.', fr: 'Le SVG n’est pas disponible pour le style actuel. Utilisez le PNG.' },
     'SVG vector map · unavailable for this style': { en: 'SVG vector map · unavailable for this style', fr: 'Carte vectorielle SVG · indisponible pour ce style' },
@@ -206,11 +203,11 @@ export function mountExports(state: PageState, actions: PageActions): void {
     try {
       const name = `magna-urbis-${state.settings.options.seed.replace(/[^\w-]/g, '_').slice(0, 45)}`;
       if (format === 'binary') {
-        const buffer = await actions.projectJob<ArrayBuffer>({ action: 'serialize-binary', settings: state.settings, world: state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world, mods: state.mods });
+        const buffer = await projectJob<ArrayBuffer>({ action: 'serialize-binary', settings: state.settings, world: state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world, mods: state.mods });
         actions.download(new Blob([buffer], { type: 'application/octet-stream' }), `${name}.project.muproj`);
       } else if (format === 'project' || format === 'recipe') {
         actions.download(
-          await actions.projectJob<Blob>({
+          await projectJob<Blob>({
             action: 'serialize',
             settings: format === 'recipe' && state.world ? { ...state.settings, extent: state.world.mapSize, options: { ...state.settings.options, mapSize: state.world.mapSize } } : state.settings,
             world: format === 'project' ? (state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world) : undefined,
@@ -221,7 +218,7 @@ export function mountExports(state: PageState, actions: PageActions): void {
       } else if (format === 'seed') {
         actions.download(new Blob([JSON.stringify({ format: 'magna-urbis-v2-seed', version: 1, seed: state.settings.options.seed })], { type: 'application/json' }), `${name}.seed.json`);
       } else if (format === 'heightmap') {
-        const result = await actions.heightmapBlob();
+        const result = await exporter.heightmapBlob();
         actions.download(result.blob, `${name}.heightmap.png`);
         actions.download(result.metadata, `${name}.heightmap.metadata.json`);
       } else {
@@ -231,10 +228,10 @@ export function mountExports(state: PageState, actions: PageActions): void {
         const width = Number($<HTMLSelectElement>('#export-resolution').value),
           crop = $<HTMLInputElement>('#export-crop').checked;
         let blob: Blob | null;
-        if (format === 'png') blob = await actions.pngMapExport(width, crop);
+        if (format === 'png') blob = await exporter.pngMapExport(width, crop);
         else {
-          blob = await actions.svgExport();
-          if (crop) blob = (await chooseExportCrop(blob, width, bindTree))?.blob ?? null;
+          const svg = await exporter.svgExport();
+          blob = crop ? ((await chooseExportCrop(svg, width, bindTree))?.blob ?? null) : svg;
         }
         if (!blob) return;
         actions.download(blob, `${name}.${format}`);

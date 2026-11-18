@@ -1,24 +1,25 @@
-/** Execution settings, desktop integrations and capability checks. main.ts mounts each phase where it occurred among the generation controls. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setText,
-  translate,
-  loopbackServer,
-  mountSettingsPanel,
-  refreshBackends,
-  backendStatus,
-  backendAlternative,
-  backendFailure,
-  RUNTIME_FALLBACK,
-  mountNeuralModelManager,
-  mountDesktopNeural,
-  mountDesktopModules,
-  mountDesktopReleaseLink,
-  mountDesktopUpdates,
-  mountV2Illustration,
-} from './dependencies';
-import { $ } from './dom';
+/**
+ * The Settings & engines dialog and the desktop integrations: backend bindings, the settings panel, desktop modules
+ * and updates, the illustration tool, local service addresses, capability checks, and (mounted after the chain, whose
+ * relief stage holds its shortcut) the neural model manager. Generation failures that name a missing engine open it.
+ */
+import type { PageActions, PageState } from './contract';
+import { insertHTML, setText, translate } from '../i18n';
+import { loopbackServer } from '../platform';
+import { mountSettingsPanel, refreshBackends, backendStatus } from '../settingsPanel';
+import { backendAlternative, backendFailure, F as RUNTIME_FALLBACK } from '../runtimeChoices';
+import { mountNeuralModelManager } from '../neuralModelManager';
+import { mountDesktopNeural } from '../desktopNeural';
+import { mountDesktopModules } from '../desktopModules';
+import { mountDesktopReleaseLink, mountDesktopUpdates } from '../desktopUpdates';
+import { mountV2Illustration } from '../illustration';
+import { $, esc } from './dom';
+
+/** Engine capabilities as the client and the failure messages see them. */
+function runtimeCapabilities() {
+  const s = backendStatus();
+  return { checked: s.checked, servicesChecked: s.servicesChecked, webgpu: s.webgpu, native: s.native.available, python: s.python.available, nativeNeural: s.nativeNeural?.available };
+}
 
 export function createRuntimeActions(state: PageState, actions: PageActions) {
   function openExecutionSettings(): void {
@@ -70,7 +71,7 @@ export function createRuntimeActions(state: PageState, actions: PageActions) {
     } catch {
       /* The suggestion uses the last known capabilities. */
     }
-    const alternative = backendAlternative(state.settings, state.runtimeCapabilities(), failure);
+    const alternative = backendAlternative(state.settings, runtimeCapabilities(), failure);
     actions.toast(message, true, { detail: alternative ? translate(RUNTIME_FALLBACK.suggest).replace('{alternative}', translate(alternative)) : translate(RUNTIME_FALLBACK.check), label: RUNTIME_FALLBACK.open, run: actions.openExecutionSettings });
   }
 
@@ -86,9 +87,8 @@ export function createRuntimeActions(state: PageState, actions: PageActions) {
   return { openExecutionSettings, openNeuralModelsSettings, inspectNeuralSelection, reportGenerationFailure, inspectHardware };
 }
 
-/** Backend bindings, desktop integration and illustration controls. Called by main.ts in startup order. */
+/** The settings dialog, its engines and services, and the desktop integrations of the header. */
 export function mountRuntimeSettings(state: PageState, actions: PageActions): void {
-  /* The staged chain takes over the sidebar: the forms above are moved into their stage rows. */
   state.backendBindings = {
     localServer: () => state.settings.runtime?.localServer ?? state.bootRuntime.localServer ?? 'http://127.0.0.1:8791',
     pythonServer: () => state.settings.runtime?.pythonServer ?? state.bootRuntime.pythonServer ?? 'http://127.0.0.1:8793',
@@ -127,9 +127,47 @@ export function mountRuntimeSettings(state: PageState, actions: PageActions): vo
     beforeCapture2d: () => state.client.prepareViewportCapture(),
     navigation: { getView: () => state.client.viewer.getView(), setView: view => state.client.viewer.setView(view), ready: () => state.client.viewer.waitForFrame() },
   });
+
+  // Inserted after the desktop modules host, so it sits between the engines panel and the desktop modules.
+  insertHTML(
+    $('#hardware-details'),
+    'afterend',
+    `<details class="section"><summary>Local service addresses</summary><p class="hint">The desktop edition starts Rust automatically. Python can use an existing local service. Addresses stay on your machine.</p><label class="label" for="rust-server">Native Rust</label><input id="rust-server" type="url" value="${esc(state.bootRuntime.localServer)}"><label class="label" for="python-server">Neural Python</label><input id="python-server" type="url" value="${esc(state.bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Save & verify</button><p class="hint">Python and model configuration: <a href="./scientific/index.html#runtime" target="_blank" rel="noopener">read the atlas ↗</a></p></details>`,
+  );
+
+  if (!state.localEdition) {
+    $('#rust-server').hidden = true;
+    $('label[for="rust-server"]').hidden = true;
+    $('#rust-server').parentElement!.querySelector<HTMLElement>('p.hint')!.hidden = true;
+  }
+
+  state.client.runtimeCapabilities = runtimeCapabilities;
+
+  state.client.onRuntimeStatusChange = () => state.settingsPanel.render();
+
+  $('#hardware-open').onclick = () => {
+    actions.dialog('#hardware-dialog');
+    void actions.inspectHardware();
+  };
+
+  $('#hardware-refresh').onclick = () => void actions.inspectHardware();
+
+  $('#services-apply').onclick = () => {
+    try {
+      const localServer = loopbackServer($<HTMLInputElement>('#rust-server').value),
+        pythonServer = loopbackServer($<HTMLInputElement>('#python-server').value);
+      state.settings.runtime = { compute: 'auto', backend: 'rust', source: 'procedural', ...state.settings.runtime, localServer, pythonServer };
+      state.connectLocal = true;
+      actions.touchRecipe();
+      actions.syncControls();
+      void actions.inspectHardware();
+    } catch (e) {
+      actions.toast(String(e), true);
+    }
+  };
 }
 
-/** Neural model management and selection checks. Called by main.ts in startup order. */
+/** The neural model manager (browser or desktop) in the settings dialog, and its shortcut in the relief stage. */
 export function mountNeuralModels(state: PageState, actions: PageActions): void {
   // Model and service URLs (terrain schema) belong to Settings, next to the service checks.
   $('#hardware-dialog .dialog-actions').before($('#settings-endpoints-box'));
@@ -154,43 +192,5 @@ export function mountNeuralModels(state: PageState, actions: PageActions): void 
 
   state.chain.body('relief-neural-base').append(modelShortcut);
 
-  state.neuralSelectionRevision = 0;
-
   modelShortcut.onclick = actions.openNeuralModelsSettings;
-}
-
-/** Client capability and runtime-status callbacks. Called by main.ts in startup order. */
-export function mountRuntimeStatus(state: PageState, actions: PageActions): void {
-  state.runtimeCapabilities = () => {
-    const s = backendStatus();
-    return { checked: s.checked, servicesChecked: s.servicesChecked, webgpu: s.webgpu, native: s.native.available, python: s.python.available, nativeNeural: s.nativeNeural?.available };
-  };
-
-  state.client.runtimeCapabilities = state.runtimeCapabilities;
-
-  state.client.onRuntimeStatusChange = () => state.settingsPanel.render();
-}
-
-/** Settings opening, capability refresh and service connections. Called by main.ts in startup order. */
-export function mountRuntimeButtons(state: PageState, actions: PageActions): void {
-  $('#hardware-open').onclick = () => {
-    actions.dialog('#hardware-dialog');
-    void actions.inspectHardware();
-  };
-
-  $('#hardware-refresh').onclick = () => void actions.inspectHardware();
-
-  $('#services-apply').onclick = () => {
-    try {
-      const localServer = loopbackServer($<HTMLInputElement>('#rust-server').value),
-        pythonServer = loopbackServer($<HTMLInputElement>('#python-server').value);
-      state.settings.runtime = { compute: 'auto', backend: 'rust', source: 'procedural', ...state.settings.runtime, localServer, pythonServer };
-      state.connectLocal = true;
-      actions.touchRecipe();
-      actions.syncControls();
-      void actions.inspectHardware();
-    } catch (e) {
-      actions.toast(String(e), true);
-    }
-  };
 }

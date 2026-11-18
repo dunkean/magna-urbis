@@ -1,40 +1,27 @@
-/** Building inspection and native house editing. Page actions mount these callbacks before startup; map picking, generation and the 3D view invoke them. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setHTML,
-  insertHTML,
-  translate,
-  nameHTML,
-  getDistanceUnit,
-  unitFactor,
-  featureDisplayName,
-  groupCultureSelector,
-  organizeInspector,
-  nativeCityRecords,
-  type UrbanBuilding,
-  validateSettings,
-  houseControlDefaults,
-  urbanField,
-  mountParameterForm,
-  compatibleBuildingTypes,
-  polygonArea,
-  massingRoofs,
-  applyBuildingEdits,
-  buildingAt,
-  townUrban,
-  buildingSignature,
-  validateBuildingPatch,
-  type BuildingEdit,
-  mountUrbanControls,
-  resetSubdivisionChildren,
-  siteQuarter,
-  siteBlock,
-  rerollSeed,
-} from './dependencies';
+/**
+ * The house inspector: a building's metadata edits (kept as project mods) or, for an engine-built house, its generation
+ * form, parcel content and regeneration. Opened from a map click, the 3D view and the runs that kept a selected house.
+ */
+import type { PageActions, PageState } from './contract';
+import { setHTML, insertHTML, translate, nameHTML } from '../i18n';
+import { getDistanceUnit, unitFactor } from '../units';
+import { featureDisplayName } from '../mapPresentation';
+import { groupCultureSelector } from '../workbenchLayout';
+import { organizeInspector } from '../advancedPanel';
+import { nativeCityRecords } from '../nativeProducts';
+import type { UrbanBuilding } from '../../gen/types';
+import { validateSettings } from '../project';
+import { houseControlDefaults, urbanField } from '../urbanControlSchema';
+import { mountParameterForm } from '../parameterForm';
+import { compatibleBuildingTypes, polygonArea } from '../urbanEditOptions';
+import { massingRoofs, siteQuarter, siteBlock } from '../../../../rust/bridge/urbanHouseEdits';
+import { applyBuildingEdits, buildingAt, townUrban, buildingSignature, validateBuildingPatch, type BuildingEdit } from '../edits';
+import { mountUrbanControls } from '../urbanControls';
+import { resetSubdivisionChildren } from '../subdivisionEdits';
+import { rerollSeed } from '../../../../rust/bridge/generationSeed';
 import { $, esc, options } from './dom';
 
-export function mountHouseInspector(state: PageState, actions: PageActions) {
+export function createHouseInspector(state: PageState, actions: PageActions) {
   function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
     actions.showInspector(hit.settlement);
     state.selectedBuilding = hit;

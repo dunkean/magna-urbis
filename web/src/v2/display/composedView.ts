@@ -3,15 +3,15 @@
  * (render/live/compositor.ts) on one WebGL2 canvas from four live layers: the ground (baked tiles of the terrain
  * renderer), the overlay (the cartography's retained lists), the town (meshes) and the names (glyph atlas).
  *
- * This is the display path of the page; mapView.ts draws through it whenever `blocked()` answers undefined, and
- * through fallbackView.ts otherwise.
+ * This is the display path of the page; mapView.ts draws through it whenever `blocked()` answers undefined.
  *
  * A frame of a moving view is one compositor frame. When the view comes to rest, each of the overlay, the town and
  * the names is asked whether what its live layer draws is its picture at rest (LiveLayer.restExact):
  *  - yes: nothing else is painted for it, the compositor keeps drawing it, and a frame at rest costs what a moving
  *    frame costs;
- *  - no (a look its live layer does not cover, a layer that failed): the exact renderer paints that layer, in steps,
- *    into a 2D canvas stacked above the compositor's, shown once its paint is complete.
+ *  - no (a look its live layer does not cover, a layer that failed): the exact renderer of that layer paints it in
+ *    its stepwise mode (non-blocking: it paints what it has and asks for the frame again as it progresses) into a 2D
+ *    canvas stacked above the compositor's, shown once its paint is complete.
  * The exact canvases lie above the compositor's canvas, so a layer shown by one takes the layers above it with it:
  * the picture at rest is split at one level (`exactFrom`), the compositor below, exact canvases from there up.
  * A complete exact canvas also becomes the stand-in of its layer: the raster the compositor shows, moved with the
@@ -19,29 +19,36 @@
  *
  * The furniture (frame, cartouche, legend, scale bar) is screen-space: the live overlay layer does not draw it, a
  * small 2D canvas on top does.
+ *
+ * The map has one camera (render/world/): a view with a pitch or a yaw is the same world seen tilted. The compositor
+ * draws such a frame with the layers that take the camera, the ground on its relief for now (`drawTilted`); the
+ * overlay, the town, the names and the furniture return with the top view. This view gives the compositor and the
+ * ground layer the relief of the map (`relief`).
  */
-import { createLiveCompositor, liveStats, noteLiveUnit, type LiveCompositor } from '../../render/live/compositor';
+import { createLiveCompositor, type LiveCompositor } from '../../render/live/compositor';
+import { liveStats, noteLiveUnit } from '../../render/live/liveStats';
 import { createLiveGroundLayer } from '../../render/live/groundLayer';
 import { createLiveTextLayer } from '../../render/live/textLayer';
-import { fallbackForced } from '../../render/live/policy';
 import type { LiveCityEnv } from '../../render/live/contract';
 import type { CanvasRenderer } from '../../render/canvas';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
+import { dualCameras } from '../../render/live/policy';
+import { isTilted } from '../../render/world/camera';
+import { TerrainHeights } from '../../render/world/heights';
 import { getDisplayQuality } from '../../render/displayQuality';
-import { LiveTileFill } from '../../render/liveTileFill';
-import { noteLivePart } from '../../render/vectorEngine';
+import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import type { TerrainRenderer } from '../../ui/terrainRenderer';
 import type { NativeCityMap } from '../nativeCityMap';
 import { reportDrawnLabels } from '../drawnLabels';
+import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
 import type { DisplayReadiness } from './readiness';
-import type { ViewMotion } from './viewMotion';
+import { SETTLE_MS, type ViewMotion } from './viewMotion';
 
-/** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on under the fallback view. */
+/** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
 /** Exact layer canvases stacked above the compositor's: hidden until their exact paint is complete. */
 const EXACT_LAYER_CSS = 'position:absolute;left:0;top:0;visibility:hidden';
@@ -55,6 +62,11 @@ const NAMES_SLICE_MS = 2;
 /** The layers an exact canvas can show, bottom to top. */
 const EXACT_LAYERS = ['overlay', 'city', 'text'] as const;
 type ExactLayer = (typeof EXACT_LAYERS)[number];
+/** Notes one exact paint in the journal of slow units and starts the clock of the next. */
+const noteExact = (what: string, since: number): number => {
+  noteLiveUnit(what, since);
+  return performance.now();
+};
 /** `layer` is `from` or lies above it. */
 const atOrAbove = (layer: ExactLayer, from: ExactLayer | undefined): boolean => !!from && EXACT_LAYERS.indexOf(layer) >= EXACT_LAYERS.indexOf(from);
 
@@ -70,13 +82,13 @@ type RestPicture = 'due' | 'live' | 'awaiting-names' | 'painting' | 'exact';
 
 export class ComposedView {
   private live?: LiveCompositor;
-  /** No WebGL2, a software renderer or a layer factory that threw: the fallback view for good. */
+  /** No WebGL2, a software renderer or a layer factory that threw: `blocked` for good. */
   private refused = false;
   /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
   private owners: { gpu?: TerrainRenderer; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
   /** The compositor's canvas and the exact canvases are in the page. */
   private onPage = false;
-  /** The ground layer waits for its first tile under the fallback view: its baking goes on. */
+  /** Off the page, waiting for the first tile of the ground layer: its baking goes on. */
   private warming = false;
   /** The overlay canvas in the page (the cartography pass may swap the cartography's). */
   private overlayOnPage?: HTMLCanvasElement;
@@ -98,6 +110,17 @@ export class ComposedView {
   /** `MapState.paintRevision` the picture at rest was made for. */
   private paintedRevision = -1;
 
+  /** The relief of the terrain on display, for the camera and the draped ground; made again for another terrain or
+   * vertical exaggeration. */
+  private heights?: { terrain: TerrainData; relief: TerrainHeights };
+  /** Pitch and yaw of the last frame (0, 0: the top view). */
+  private pitch = 0;
+  private yaw = 0;
+  /** A tilted view counts as moving until then, and the timer asks for the frame that says it rests: the motion of
+   * the view (viewMotion.ts) follows the centre and the scale only. */
+  private tiltMovingUntil = 0;
+  private tiltTimer?: ReturnType<typeof setTimeout>;
+
   private readonly cityEnv: LiveCityEnv;
 
   constructor(
@@ -107,29 +130,53 @@ export class ComposedView {
     private readonly motion: ViewMotion,
     private readonly readiness: DisplayReadiness,
   ) {
-    const { ground, water, contours, cartography, town } = parts;
+    const { water, town } = parts;
     this.cityEnv = { appearance: () => map.resolved!, visibility: () => town.shownLayers(), water: () => water.cityWater, invalidate: map.compose };
-    map.inCompositor = () => !!this.live?.busy();
-    // The contours are inked through the overlay's semantic hook: its live lists are stale.
-    contours.onReady = () => this.live?.invalidateLayer('overlay');
-    // The whole-map capture may stand in for the live ground tiles (composeFrame): it showed the previous ground.
-    ground.onBackgroundDropped = () => this.live?.setStandIn('ground', undefined, WHOLE_VIEW, 1, 1);
-    // A town painted into its own exact canvas repeats its river cut on the exact overlay canvas under it.
-    town.canvasUnder = canvas => (canvas === this.cityCanvas && this.exactFrom === 'overlay' ? cartography.overlay.getContext('2d') : null);
+  }
+
+  /** Inside a compositor frame or work slice: a frame request raised now comes from a live layer. */
+  inCompositor(): boolean {
+    return !!this.live?.busy();
+  }
+  /** New contour paths: they are inked through the overlay's semantic hook, so its live lists are stale. */
+  contoursChanged(): void {
+    this.live?.invalidateLayer('overlay');
+  }
+  /** The whole-map capture of the ground may stand in for the live ground tiles (composeFrame): it showed the previous ground. */
+  groundCaptureDropped(): void {
+    this.live?.setStandIn('ground', undefined, WHOLE_VIEW, 1, 1);
+  }
+
+  /** The relief the camera stands on and the ground is draped over. Undefined without a terrain, and with
+   * `?camera=dual`, where the map does not tilt. */
+  relief(): TerrainHeights | undefined {
+    const terrain = this.map.native;
+    if (!terrain || dualCameras()) return undefined;
+    const exaggeration = this.map.resolved?.city.exaggeration ?? 1;
+    if (this.heights?.terrain !== terrain || this.heights.relief.exaggeration !== exaggeration) {
+      const grid = terrain.field ?? { n: terrain.resolution, data: terrain.height };
+      // The sea covers what lies below its level; the Underdark is drawn down to its floors.
+      const floor = this.map.world?.options.biome === 'underdark' ? -Infinity : 0;
+      this.heights = { terrain, relief: new TerrainHeights(grid.data, grid.n, terrain.width, floor, exaggeration) };
+    }
+    return this.heights.relief;
+  }
+  /** The last frame was drawn with a tilted camera. */
+  get tilted(): boolean {
+    return this.pitch !== 0 || this.yaw !== 0;
   }
 
   /** Why this frame cannot be composed (undefined: it can). Creates the compositor and its layers on the way. */
   blocked(view: View, w: number, h: number, dpr: number): string | undefined {
     const map = this.map,
       { ground } = this.parts;
-    if (fallbackForced()) return 'forced fallback';
     if (this.refused) return 'no hardware WebGL2';
     const r = map.resolved;
     if (!r || !map.world) return 'no map';
     if (r.target !== 'view2d') return 'not the 2D view';
     if (!ground.gpuActive || !ground.gpu) return 'CPU ground';
     if (ground.fantasy || isFantasyStyle(r.ground.style)) return 'illustrated ground';
-    const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality }));
+    const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality, relief: () => this.relief() }));
     if (!live) {
       this.refused = true;
       return 'no hardware WebGL2';
@@ -138,8 +185,8 @@ export class ComposedView {
     try {
       this.syncLayers(live);
     } catch (error) {
-      // A layer factory of another module threw: the map stays on the fallback view rather than failing every frame.
-      console.warn('Live compositor: layer setup failed, fallback display.', error);
+      // A layer factory of another module threw: the map is not composed, rather than failing every frame.
+      console.warn('Live compositor: layer setup failed, the map is not composed.', error);
       this.refused = true;
       map.stats.liveError = String(error);
       return 'layer setup failed';
@@ -158,7 +205,7 @@ export class ComposedView {
     if (owners.gpu !== ground.gpu) {
       owners.gpu = ground.gpu;
       owners.ground = false;
-      live.setLayer('ground', ground.gpu ? createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, invalidate: map.compose }) : undefined);
+      live.setLayer('ground', ground.gpu ? createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), invalidate: map.compose }) : undefined);
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
     // restarts the compositor's work loop.
@@ -242,7 +289,7 @@ export class ComposedView {
       }
     }
   }
-  /** The fallback view takes the page: the compositor's canvas and the exact canvases leave it. */
+  /** Another view takes the page: the compositor's canvas and the exact canvases leave it. */
   leave(): void {
     if (!this.onPage) return;
     this.onPage = false;
@@ -258,10 +305,12 @@ export class ComposedView {
     this.townPending = false;
     this.rest = 'due';
     this.cssW = this.cssH = 0;
+    this.pitch = this.yaw = 0;
+    clearTimeout(this.tiltTimer);
   }
-  /** While the fallback view is on screen: `warming`, the ground layer still bakes its first tile and its work goes
-   * on; otherwise the compositor rests (its ground layer bakes in the terrain renderer's own canvas, which the
-   * fallback view shows). */
+  /** While the composed view is off the page: `warming`, the ground layer still bakes its first tile and its work
+   * goes on; otherwise the compositor rests (its ground layer bakes in the terrain renderer's own canvas, which
+   * another view may be showing). */
   standBy(warming: boolean): void {
     this.warming = warming;
     this.syncWork();
@@ -290,6 +339,11 @@ export class ComposedView {
       map = this.map;
     this.enter(live, w, h);
     map.dpr = dpr;
+    if (isTilted(view)) {
+      this.drawTilted(live, view, w, h, dpr, moved, now);
+      return;
+    }
+    this.pitch = this.yaw = 0;
     if (this.motion.phase(now) === 'moving') {
       // A frame of a gesture: the compositor alone. No exact renderer runs; their canvases are hidden.
       this.show(undefined);
@@ -307,16 +361,37 @@ export class ComposedView {
   private viewRested = (): void => {
     if (!this.map.disposed && this.map.world) this.map.repaint();
   };
+  /** One frame of a tilted camera: the compositor alone, which draws the ground on its relief. No picture at rest
+   * is made: the layers that only know the top view (overlay, town, names, furniture) are not shown, and the next
+   * frame of the top view makes its picture at rest anew. DRAPING THEM IS THE NEXT STEP: each live layer takes the
+   * camera of the frame (LiveLayer.tilts) and then needs no branch here. */
+  private drawTilted(live: LiveCompositor, view: View, w: number, h: number, dpr: number, moved: boolean, now: number): void {
+    const pitch = view.pitch ?? 0,
+      yaw = view.yaw ?? 0,
+      changed = moved || pitch !== this.pitch || yaw !== this.yaw;
+    this.pitch = pitch;
+    this.yaw = yaw;
+    this.show(undefined);
+    this.rest = 'due';
+    this.motion.restDone();
+    if (changed) {
+      this.tiltMovingUntil = now + SETTLE_MS;
+      clearTimeout(this.tiltTimer);
+      this.tiltTimer = setTimeout(this.viewRested, SETTLE_MS + 1);
+    }
+    this.composeFrame(live, view, w, h, dpr, now < this.tiltMovingUntil, now);
+  }
 
   /** One compositor frame: ground, water, and the live layers whose exact canvas is not shown. */
   private composeFrame(live: LiveCompositor, view: View, w: number, h: number, dpr: number, moving: boolean, now: number, repaintFurniture = false): void {
-    const t = performance.now(),
-      ratio = Math.min(2, dpr),
+    const ratio = Math.min(2, dpr),
       map = this.map,
-      { ground, water } = this.parts;
-    // The water raster of this frame; a moving view keeps the one it has (a finer one is rasterized at rest).
-    const vectors = water.vectorRaster(view, w, h, dpr, !moving);
-    live.setWater(vectors?.image, vectors?.region);
+      { ground, water } = this.parts,
+      tilted = isTilted(view);
+    // The water raster of this frame; a moving view keeps the one it has (a finer one is rasterized at rest). A
+    // tilted frame does not show it and keeps the one of the top view for its return.
+    const vectors = tilted ? undefined : water.vectorRaster(view, w, h, dpr, !moving);
+    if (!tilted) live.setWater(vectors?.image, vectors?.region);
     live.setPaper(map.groundPaper);
     live.setLayerShown('overlay', !atOrAbove('overlay', this.shownFrom));
     live.setLayerShown('text', !atOrAbove('text', this.shownFrom));
@@ -340,7 +415,6 @@ export class ComposedView {
         tiles = stats.layers.ground;
       if (vectors || (tiles?.ready && !tiles.standIn && !stats.pending.ground)) water.noteWaterShown();
     }
-    if (moving) noteLivePart('frame', t);
     this.paintFurniture(view, w, h, dpr, now, moving, repaintFurniture);
   }
 
@@ -351,7 +425,8 @@ export class ComposedView {
       renderer = this.parts.cartography.renderer,
       hidden = canvas.style.visibility === 'hidden';
     // The exact overlay canvas holds the furniture, and so does its raster when it stands in for the live layer.
-    if (!renderer || this.shownFrom === 'overlay' || liveStats().layers.overlay?.standIn) {
+    // The furniture belongs to the top view (its scale bar measures it).
+    if (!renderer || isTilted(view) || this.shownFrom === 'overlay' || liveStats().layers.overlay?.standIn) {
       if (!hidden) canvas.style.visibility = 'hidden';
       return;
     }
@@ -409,31 +484,26 @@ export class ComposedView {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         return ctx;
       };
-      // The ground is the compositor's canvas below: the town clears its own pixels over the rivers (waterAbove).
-      town.groundRedraw = undefined;
-      LiveTileFill.track(map, () => {
+      // The exact renderers in their stepwise mode: each paints what it has now and asks for the frame again.
+      StepwisePaint.track(map, () => {
         let t = performance.now();
         if (exactFrom === 'overlay') {
-          const overlay = cartography.overlay;
-          if (overlay.width !== pixelW) overlay.width = pixelW;
-          if (overlay.height !== pixelH) overlay.height = pixelH;
-          renderer!.draw(view, { live: true });
-          noteLiveUnit('exact:overlay', t);
-          t = noteLivePart('cartography', t);
+          cartography.paintOverlay(view, pixelW, pixelH, true);
+          t = noteExact('exact:overlay', t);
         }
         if (exactFrom !== 'text') {
           const ctx = cleared(this.cityCanvas);
-          if (cityOn) map.stats.city = town.city?.draw(ctx, view, w, h, dpr, map.resolved!, town.shownLayers(), town.hooks, { key: map.townContent, moving: false });
-          noteLiveUnit('exact:city', t);
-          t = noteLivePart('city', t);
+          // The ground is the compositor's canvas below: the town clears its own pixels over the rivers, and those
+          // of the exact overlay canvas under it.
+          if (cityOn) map.stats.city = town.draw(ctx, view, w, h, dpr, { stepwise: { key: map.townContent, moving: false }, overlayBelow: exactFrom === 'overlay' ? cartography.overlay.getContext('2d') : null });
+          t = noteExact('exact:city', t);
         }
         const names = cleared(this.textCanvas);
-        renderer?.drawText(names, view, w, h, false);
-        noteLiveUnit('exact:text', t);
-        noteLivePart('text', t);
+        renderer?.drawText(names, view, w, h);
+        noteExact('exact:text', t);
       });
       this.townPending = exactFrom !== 'text' && cityOn && !!(map.stats.city as { pending?: boolean } | undefined)?.pending;
-      overlayPending = exactFrom === 'overlay' && (LiveTileFill.pending(map) > 0 || (renderer?.lastStats().rasterPending ?? 0) > 0);
+      overlayPending = exactFrom === 'overlay' && (StepwisePaint.pending(map) > 0 || (renderer?.lastStats().rasterPending ?? 0) > 0);
     }
     const complete = !!exactFrom && !this.townPending && !overlayPending;
     this.show(this.nextShown(exactFrom, complete, !!exactFrom && (live.layerReady(exactFrom, view, w, h, ratio) || live.hasStandIn(exactFrom))));
@@ -445,7 +515,7 @@ export class ComposedView {
       live.setStandIn('text', renderer ? this.textCanvas : undefined, view, w, h);
     }
     this.rest = exactFrom ? (complete ? 'exact' : 'painting') : namesAwaited ? 'awaiting-names' : 'live';
-    noteLivePart('frame', started);
+    noteLiveUnit('rest', started);
     this.readiness.notePresented();
   }
   /** The lowest of the overlay, the town and the names whose live layer is not its picture at rest for this view;
@@ -507,6 +577,7 @@ export class ComposedView {
     this.syncWork();
   }
   dispose(): void {
+    clearTimeout(this.tiltTimer);
     this.live?.dispose();
     this.live = undefined;
   }

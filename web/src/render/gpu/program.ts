@@ -8,7 +8,7 @@
  *   result later and reads every active uniform location once, from the live layer's `work` (liveRasterizer.ts
  *   `warm`): a frame then never asks the context anything (each query waits for the graphics process).
  */
-import { GpuRasterError } from './displayList';
+import { GpuRasterError } from './contract';
 import { SHADERS, type ProgramKind } from './shaders';
 
 export class Program {

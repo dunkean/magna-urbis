@@ -137,7 +137,7 @@ function drawTownBridge(ctx: CanvasRenderingContext2D, sh: BridgeShapes, pal: Pa
   ctx.lineCap = 'round';
 }
 
-export function drawBridges(ctx: CanvasRenderingContext2D, world: World, pal: Palette, rect: Rect4, sc: number): void {
+function drawBridges(ctx: CanvasRenderingContext2D, world: World, pal: Palette, rect: Rect4, sc: number): void {
   for (const b of world.bridges ?? []) {
     if (Math.max(b.a.x, b.b.x) < rect.minX || Math.min(b.a.x, b.b.x) > rect.maxX || Math.max(b.a.y, b.b.y) < rect.minY || Math.min(b.a.y, b.b.y) > rect.maxY) continue;
     // small town bridges (footbridges, arches, fords) at true size, by kind

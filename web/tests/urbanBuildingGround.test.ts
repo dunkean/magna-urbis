@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { UrbanBuildingGround } from '../src/ui/urbanBuildingGround';
-import { Terrain3d } from '../src/ui/terrain3d';
+import { TerrainBuildings } from '../src/ui/view3d/terrain/buildings';
+import type { TerrainSurface } from '../src/ui/view3d/terrain/surface';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 
 function ground(xs = [60], heights = [4]): UrbanBuildingGround {
@@ -52,8 +53,9 @@ describe('3D terrain beside native foundations', () => {
         },
       ],
     } as unknown as Building3dScene;
-    const view = { buildingScene: undefined, buildingsVisible: true, buildingGround: new UrbanBuildingGround(), buildings: { setScene() {} }, clearPatches() {}, setForest() {}, request() {} };
-    const set = (visible: boolean) => Terrain3d.prototype.setBuildings.call(view as unknown as Terrain3d, scene, { style: 'cartographic', diagnostic: 'none' }, visible);
+    const view = { buildingGround: new UrbanBuildingGround() } as TerrainSurface;
+    const buildings = new TerrainBuildings(view);
+    const set = (visible: boolean) => buildings.assign(scene, { style: 'cartographic', diagnostic: 'none' }, visible);
     set(false);
     expect(view.buildingGround.constrain(5, 5, 12)).toBe(12);
     set(true);

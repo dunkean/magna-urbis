@@ -1,29 +1,22 @@
-/** Project/recipe imports, heightmaps and project workers. main.ts mounts the file/dialog listeners after map picking; boot recovery uses the same load callback. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setHTML,
-  setText,
-  getLanguage,
-  type World,
-  readHeightmap,
-  acceptHeightmap,
-  imageHeightmap,
-  validateSettings,
-  type V2Settings,
-  runtimeWorkerOptions,
-  applyBuildingEdits,
-  ProjectWorker,
-  isBinaryProject,
-  MAX_BINARY_PROJECT_BYTES,
-  resultTransferBuffers,
-  ComposeWorker,
-  resolveAutoBackend,
-  applyLabelEdits,
-  renameMap,
-  mountCityCodeSharing,
-} from './dependencies';
+/**
+ * Opening a project: the import dialog (project, recipe or composition, heightmap), the expert recipe dialog, city
+ * codes and links, and `loadProject`, which replaces the page's project (also used by the autosave restore).
+ */
+import type { PageActions, PageState } from './contract';
+import { setHTML, insertHTML, setText, getLanguage } from '../i18n';
+import type { World } from '../../gen/types';
+import { readHeightmap } from '../../ui/heightmap';
+import { acceptHeightmap, imageHeightmap } from '../heightmapModel';
+import { validateSettings } from '../project';
+import type { V2Settings } from '../contracts';
+import { applyBuildingEdits } from '../edits';
+import { isBinaryProject, MAX_BINARY_PROJECT_BYTES } from '../projectBinary';
+import { resolveAutoBackend } from '../runtimeChoices';
+import { applyLabelEdits } from '../mapLabels';
+import { renameMap } from '../mapNaming';
+import { mountCityCodeSharing } from '../cityCodeSharing';
 import { $ } from './dom';
+import { composeJob, projectJob } from './projectWorkers';
 
 export function createProjectsActions(state: PageState, actions: PageActions) {
   async function loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void> {
@@ -70,46 +63,16 @@ export function createProjectsActions(state: PageState, actions: PageActions) {
     }
   }
 
-  function projectJob<T>(request: unknown, transfer: Transferable[] = []): Promise<T> {
-    if ((request as { action?: string }).action === 'serialize-binary') {
-      request = structuredClone(request);
-      transfer = resultTransferBuffers(request);
-    }
-    const worker = new ProjectWorker(runtimeWorkerOptions());
-    return new Promise<T>((resolve, reject) => {
-      worker.onmessage = ({ data }) => {
-        worker.terminate();
-        if (data.error) reject(new Error(data.error));
-        else resolve(data.result);
-      };
-      worker.onerror = e => {
-        worker.terminate();
-        reject(new Error(e.message));
-      };
-      worker.postMessage(request, transfer);
-    });
-  }
-
-  function composeJob(request: unknown, transfer: Transferable[] = []): Promise<{ settings: V2Settings; world?: World; mods: unknown[] }> {
-    const worker = new ComposeWorker(runtimeWorkerOptions());
-    return new Promise((resolve, reject) => {
-      worker.onmessage = ({ data }) => {
-        worker.terminate();
-        if (data.error) reject(new Error(data.error));
-        else resolve(data.result);
-      };
-      worker.onerror = e => {
-        worker.terminate();
-        reject(new Error(e.message));
-      };
-      worker.postMessage(request, transfer);
-    });
-  }
-  return { loadProject, projectJob, composeJob };
+  return { loadProject };
 }
 
-/** Dialogs, expert recipe, project/code import and heightmaps. Called by main.ts in startup order. */
 export function mountProjectFiles(state: PageState, actions: PageActions): void {
+  insertHTML(
+    $('#project-file'),
+    'beforebegin',
+    `<label class="label" for="import-scope">What should be imported from this file?</label><select id="import-scope"><option value="complete">Complete project · map + recipe + edits</option><option value="terrain">Territory · keep my settlement recipe</option><option value="urban">Settlement recipe · keep my territory</option></select><p class="hint" style="margin:8px 0 14px">Compositions retain the exact terrain and reset urban geometry: rebuild the settlements with the selected recipe.</p>`,
+  );
+
   document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach(
     b =>
       (b.onclick = () => {
@@ -183,8 +146,8 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
         scope = $<HTMLSelectElement>('#import-scope').value;
       const project =
         scope === 'complete'
-          ? await actions.projectJob<{ settings: V2Settings; world?: World; mods: unknown[] }>({ action: binary ? 'parse-binary' : 'parse', ...source }, transfer)
-          : await actions.composeJob({ scope, ...source, current: state.settings, world: state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world, mods: state.mods }, transfer);
+          ? await projectJob<{ settings: V2Settings; world?: World; mods: unknown[] }>({ action: binary ? 'parse-binary' : 'parse', ...source }, transfer)
+          : await composeJob({ scope, ...source, current: state.settings, world: state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world, mods: state.mods }, transfer);
       await actions.loadProject(project);
       $<HTMLDialogElement>('#import-dialog').close();
       actions.log(`Import ${scope} : ${file.name}`);

@@ -13,9 +13,16 @@
  */
 import { styleTraits, terrainStyle } from '../../render/terrainStyle';
 import { biomePalette } from '../../render/biomes';
-import type { Rect4 } from '../../render/view';
+import type { Rect4, View } from '../../render/view';
 import type { WaterSurface } from '../../render/terrainWater';
-import type { HeightLayer, TerrainLook, ViewState } from './types';
+import type { HeightLayer, TerrainLook } from './contract';
+
+/** The view a redraw draws: camera and size in CSS pixels. */
+export interface ViewState {
+  view: View;
+  width: number;
+  height: number;
+}
 
 /** Style pixel ratio of the live 2D map (CSS-pixel strokes, river widths, banks): the live redraw's default.
  * World tiles key the material's detail on their own density and only take this ratio for those screen-sized strokes,

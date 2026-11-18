@@ -11,7 +11,7 @@ interface TimerExtension {
   GPU_DISJOINT_EXT: number;
 }
 
-export interface GpuTimer {
+interface GpuTimer {
   /** Looks the extension up; once per context. */
   init(): void;
   /** Results of earlier frames that have arrived go to `record`, in milliseconds. */

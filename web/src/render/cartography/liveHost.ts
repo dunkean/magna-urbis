@@ -2,18 +2,19 @@
  * The host of the live overlay layer (render/live/overlayLayer.ts): the region a view needs (a margin, edges on a
  * lattice, the half-octave scale, horizontal bands), its key, and the recording of one band with the crisp mark that
  * splits the baked area prefix from the replayed layers. The layer itself owns its regions, their uploads and bakes.
- * Reads: everything drawVector reads, the host's semantic and road keys. Writes: activeLive, activeLight, activeDpr
+ * Reads: everything drawVector reads, the host's semantic and road keys. Writes: stepwise, activeLight, activeDpr
  * and markCrisp for the duration of a recording.
  */
 import { roadCanopyRevision } from '../roadStyle';
 import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
 import { RecordingCanvas } from '../gpu/recorder';
-import type { DisplayList } from '../gpu/displayList';
+import type { DisplayList } from '../gpu/contract';
 import type { LiveLayer } from '../live/contract';
 import { createOverlayLayer, type OverlayBand, type OverlayPlan } from '../live/overlayLayer';
-import { noteLivePart, getVectorEngine, noteGpuFallback } from '../vectorEngine';
-import { CanvasLike } from './types';
+import { getVectorEngine, noteGpuFallback } from '../vectorEngine';
+import { noteLiveUnit } from '../live/liveStats';
+import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
 import { drawVector } from './vector';
 import { releaseDrapeTemps } from './woods';
@@ -83,21 +84,21 @@ export function createLiveHost(c: CartographyContext) {
       },
       plan: regionPlan,
       record(plan, band, light) {
-        // A live recording at the region's quality and at the compositor's pixel ratio.
-        const live = c.activeLive,
+        // One band is one step: recorded at the region's quality and at the compositor's pixel ratio.
+        const stepwise = c.stepwise,
           wasLight = c.activeLight,
           dprBefore = c.activeDpr,
           t = now();
-        c.activeLive = true;
+        c.stepwise = true;
         c.activeLight = light;
         c.activeDpr = plan.dpr;
         try {
           return recordBand(plan, band);
         } finally {
-          c.activeLive = live;
+          c.stepwise = stepwise;
           c.activeLight = wasLight;
           c.activeDpr = dprBefore;
-          noteLivePart('record-step', t);
+          noteLiveUnit('record:band', t);
         }
       },
       invalidate: () => {

@@ -20,7 +20,7 @@ import type { CrownDetail } from '../../render/crownClumpAtlas';
 import type { WaterSurface } from '../../render/terrainWater';
 import { isNeuralRefinement } from '../terrainRefinement';
 import { fadeProgress, waterBand, type LookPalettes, type RedrawFrame } from './redraw';
-import { hex, type HeightLayer, type TerrainLook } from './types';
+import type { HeightLayer, TerrainLook } from './contract';
 import type { StackedLayer } from './layers';
 
 /** Typed parameter writes, as glUniform* (vectors of floats unless named otherwise). */
@@ -77,6 +77,18 @@ export interface LookParamsState {
   city: readonly [number, number];
 }
 
+/** '#rgb' or '#rrggbb' as linear 0-1 components (no colour-space conversion). */
+const hex = (value: string): [number, number, number] => {
+  const v = value.replace('#', '');
+  const full =
+    v.length === 3
+      ? v
+          .split('')
+          .map(c => c + c)
+          .join('')
+      : v;
+  return [parseInt(full.slice(0, 2), 16) / 255, parseInt(full.slice(2, 4), 16) / 255, parseInt(full.slice(4, 6), 16) / 255];
+};
 const hexCache = new Map<string, [number, number, number]>();
 /** hex() of a palette colour, parsed once (the arrays are only read). */
 const rgb = (value: string): [number, number, number] => {

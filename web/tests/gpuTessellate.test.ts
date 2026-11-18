@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PathGeometry } from '../src/render/gpu/displayList';
+import type { PathGeometry } from '../src/render/gpu/contract';
 import { DISC_STRIDE, JOIN_STRIDE, SEGMENT_STRIDE, STROKE_CLOSED, STROKE_DOT, STROKE_END, STROKE_START, fillFans, strokeSegments, type StrokeOptions } from '../src/render/gpu/tessellate';
 
 function geometry(points: number[], starts: number[], closed: number[]): PathGeometry {

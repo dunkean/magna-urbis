@@ -1,38 +1,30 @@
-/** Settlement inspection and local generation controls. Page actions mount these callbacks before startup, like the original hoisted functions; places and map picking invoke them. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setHTML,
-  insertHTML,
-  setText,
-  translate,
-  getLanguage,
-  nameHTML,
-  numberHTML,
-  registerMessages,
-  settlementDisplayName,
-  groupCultureSelector,
-  organizeInspector,
-  CULTURE_LABELS,
-  nativeCityRecords,
-  populationText,
-  populationShortfallText,
-  validateSettings,
-  type V2TownStage,
-  urbanParameterHelp,
-  townUrban,
-  type BuildingEdit,
-  mountUrbanControls,
-  writeUrbanControl,
-  mountNameOriginControls,
-  mountPlaceRename,
-  mountDeletedSubdivisions,
-  rerollSettlement,
-  resetUrbanChildren,
-} from './dependencies';
+/**
+ * The settlement inspector: local settings of one town (culture, population, walls, recipe JSON), its rename and
+ * name origin, rebuild and stage-by-stage runs, the engine report and restored deletions. Opened from the Places list,
+ * a map click and the runs that targeted the town.
+ */
+import type { PageActions, PageState } from './contract';
+import { setHTML, insertHTML, setText, translate, getLanguage, nameHTML, numberHTML, registerMessages } from '../i18n';
+import { settlementDisplayName } from '../mapPresentation';
+import { groupCultureSelector } from '../workbenchLayout';
+import { organizeInspector } from '../advancedPanel';
+import { CULTURE_LABELS } from '../../gen/options';
+import { nativeCityRecords } from '../nativeProducts';
+import { populationText, populationShortfallText } from '../../render/cityPopulation';
+import { validateSettings } from '../project';
+import type { V2TownStage } from '../contracts';
+import { urbanParameterHelp } from '../urbanParameterHelp';
+import { townUrban, type BuildingEdit } from '../edits';
+import { mountUrbanControls, writeUrbanControl } from '../urbanControls';
+import { mountNameOriginControls } from '../nameOriginControls';
+import { mountPlaceRename } from '../placeRename';
+import { mountDeletedSubdivisions } from '../localUrbanEditor';
+import { rerollSettlement } from '../urbanSeeds';
+import { resetUrbanChildren } from '../generationEdits';
 import { $, esc, options, wallStyles } from './dom';
+import { populationFormat } from './places';
 
-export function mountTownInspector(state: PageState, actions: PageActions) {
+export function createTownInspector(state: PageState, actions: PageActions) {
   function showInspector(key: string, focus = false): void {
     if (!state.world) return;
     const source = state.world.settlements?.find(s => s.key === key);
@@ -60,7 +52,7 @@ export function mountTownInspector(state: PageState, actions: PageActions) {
     $('#inspector').hidden = false;
     setHTML(
       $('#inspector'),
-      `<button class="close" aria-label="Close inspector">×</button><span class="eyebrow">Local settings</span><h2>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</h2><p class="hint">${actions.reachedPopulation(key, s.population) ? actions.populationMarkup(key, s.population) : `${numberHTML(s.population)} inhabitants`} · <span>${esc(s.archetype)}</span></p>${populationShortfallText(actions.reachedPopulation(key, s.population), state.popFormat()) ? `<p class="warning">${esc(populationShortfallText(actions.reachedPopulation(key, s.population), state.popFormat()))}</p>` : ''}<div class="breadcrumbs">Territory › ${nameHTML(s.name, s.key)}</div><p class="inspect-note">The fields show the current values. Previous stages and other settlements are retained.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="1" max="5000000" value="${current.population}"></div><div><label class="label">Sprawl</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Fortifications</label><select id="local-walls">${options(
+      `<button class="close" aria-label="Close inspector">×</button><span class="eyebrow">Local settings</span><h2>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</h2><p class="hint">${actions.reachedPopulation(key, s.population) ? actions.populationMarkup(key, s.population) : `${numberHTML(s.population)} inhabitants`} · <span>${esc(s.archetype)}</span></p>${populationShortfallText(actions.reachedPopulation(key, s.population), populationFormat()) ? `<p class="warning">${esc(populationShortfallText(actions.reachedPopulation(key, s.population), populationFormat()))}</p>` : ''}<div class="breadcrumbs">Territory › ${nameHTML(s.name, s.key)}</div><p class="inspect-note">The fields show the current values. Previous stages and other settlements are retained.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="1" max="5000000" value="${current.population}"></div><div><label class="label">Sprawl</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Fortifications</label><select id="local-walls">${options(
         [
           ['none', 'None'],
           ['single', 'Simple'],
@@ -215,7 +207,7 @@ export function mountTownInspector(state: PageState, actions: PageActions) {
         insertHTML(
           $('#inspector'),
           'beforeend',
-          `<details class="section" ${refusals.length || warnings.length ? 'open' : ''}><summary>Engine report · ${refusals.length} refusals</summary><p class="hint">${esc(populationText(s.population, actions.reachedPopulation(key, s.population), state.popFormat()))}</p>${populationShortfallText(actions.reachedPopulation(key, s.population), state.popFormat()) ? `<p class="warning">${esc(populationShortfallText(actions.reachedPopulation(key, s.population), state.popFormat()))}</p>` : ''}<p class="hint">Stage: ${esc(native.stage)} · ${esc(native.backend)}. ${native.lastBuildingRequests ?? 0} house request(s) recomputed in the last run.</p>${warnings.length ? `<pre class="job-log">${esc(warnings.map(warning => translate(warning)).join('\n'))}</pre>` : '<p class="hint">No generation warnings.</p>'}${refusals
+          `<details class="section" ${refusals.length || warnings.length ? 'open' : ''}><summary>Engine report · ${refusals.length} refusals</summary><p class="hint">${esc(populationText(s.population, actions.reachedPopulation(key, s.population), populationFormat()))}</p>${populationShortfallText(actions.reachedPopulation(key, s.population), populationFormat()) ? `<p class="warning">${esc(populationShortfallText(actions.reachedPopulation(key, s.population), populationFormat()))}</p>` : ''}<p class="hint">Stage: ${esc(native.stage)} · ${esc(native.backend)}. ${native.lastBuildingRequests ?? 0} house request(s) recomputed in the last run.</p>${warnings.length ? `<pre class="job-log">${esc(warnings.map(warning => translate(warning)).join('\n'))}</pre>` : '<p class="hint">No generation warnings.</p>'}${refusals
             .slice(0, 20)
             .map(refusal => {
               const id = (native.sites ?? native.requests)?.find(r => r.id === refusal.id || r.parcel_id === refusal.parcel_id)?.id ?? refusal.id;

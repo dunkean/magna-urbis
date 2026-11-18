@@ -1,4 +1,4 @@
-import type { HeightLayer } from './terrainGl';
+import type { HeightLayer } from './terrain/contract';
 import { assertRefinementRegistrationBudget } from '../surface/refinementBudget';
 
 export type TerrainAmplification = 'classic' | 'phasor' | 'mse' | 'hybrid';

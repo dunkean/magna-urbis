@@ -1,5 +1,6 @@
 import { mountTextOverlay3d } from '../src/ui/textOverlay3d';
-import { Terrain3d } from '../src/ui/terrain3d';
+import type { Terrain3d } from '../src/ui/terrain3d';
+import { TerrainProjection } from '../src/ui/view3d/terrain/projection';
 import { TEXT_GROUPS } from '../src/render/textLayer';
 import { buildMapLabels, placeMapLabels, estimateWidth, type MapLabelWorld } from '../src/render/mapLabels';
 import { placedMapLabelsSvg } from '../src/render/svgLabels';
@@ -355,10 +356,11 @@ it('projects 3D anchors using terrain heights and rejects the frustum and terrai
     surface: (_x: number, _y: number) => 0,
     frameGeometry: () => ({ eye: [0, 10, 0], targetHeight: 0, forward: [0, 0, 1], right: [1, 0, 0], up: [0, 1, 0], focal: 300 }),
   };
-  const projection = Terrain3d.prototype.labelProjector.call(view as unknown as Terrain3d)!;
+  const projector = () => new TerrainProjection(view, view as never, view as never, () => []).labelProjector();
+  const projection = projector()!;
   expect(projection.project(0, 100)?.[0]).toBe(400);
   expect(projection.project(0, -100)).toBeNull();
   expect(projection.project(1000, 100)).toBeNull();
   view.surface = (_x, y) => (y > 40 && y < 60 ? 20 : 0);
-  expect(Terrain3d.prototype.labelProjector.call(view as unknown as Terrain3d)!.project(0, 100)).toBeNull();
+  expect(projector()!.project(0, 100)).toBeNull();
 });

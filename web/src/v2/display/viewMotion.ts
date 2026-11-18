@@ -9,20 +9,14 @@
  * Used by the map view (v2/display/mapView.ts), which notes every frame, and by the composed and fallback views.
  */
 import type { View } from '../../render/view';
+import type { ViewFrame } from './contract';
 
 /** A view stays `moving` this long after its last change. */
 export const SETTLE_MS = 160;
 
-/** The view of a frame and the size it is drawn at. */
-export interface ViewFrame {
-  view: View;
-  w: number;
-  h: number;
-  dpr: number;
-}
 export const sameFrame = (frame: ViewFrame | undefined, view: View, w: number, h: number, dpr: number): boolean => !!frame && frame.w === w && frame.h === h && frame.dpr === dpr && frame.view.cx === view.cx && frame.view.cy === view.cy && frame.view.scale === view.scale;
 
-export type MotionPhase = 'moving' | 'resting';
+type MotionPhase = 'moving' | 'resting';
 
 export class ViewMotion {
   /** The frame last asked for: one object, refilled in place. */

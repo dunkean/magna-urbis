@@ -87,6 +87,17 @@ describe('near trees: biomes and giants', () => {
     expect(Math.max(...column(built.get('tropical')!, 4))).toBeGreaterThan(55); // emergents
   });
 
+  it('gives broadleaves ovoid crowns over half the stem, parasols only to savanna trees and umbrella pines', () => {
+    const forms = (zone: ClimateZone): number[] => column(built.get(zone)!, 6),
+      ratios = (zone: ClimateZone): number[] => column(built.get(zone)!, 5).map((c, i) => c / column(built.get(zone)!, 4)[i]);
+    expect(forms('temperate').every(f => f === 0 || f === 1)).toBe(true);
+    expect(quantile(ratios('temperate'), 0.5)).toBeGreaterThan(0.55);
+    expect(forms('tropical').every(f => f === 0)).toBe(true);
+    expect(forms('savanna').filter(f => f === 2).length / forms('savanna').length).toBeGreaterThan(0.8);
+    const med = buildNearTrees(stand(235, fieldByte(11.5), 200, 'mediterranean'), view);
+    expect(column(med, 6).filter(f => f === 3).length).toBeGreaterThan(0);
+  });
+
   it('places rare giants in groves, far above and wider than their stand', () => {
     const trees = built.get('temperate')!,
       heights = column(trees, 4),

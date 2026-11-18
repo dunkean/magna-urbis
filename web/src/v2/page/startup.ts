@@ -1,10 +1,13 @@
-/** Browser recovery, message registration and the initial recipe. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { translate, numberLocale, registerMessages, settlementDisplayName, DEMOGRAPHIC_CLASSES, applySceneClock, DEFAULT_SCENE, showBrowserAdvice, defaultSettings, runtimeOptions, projectFileMessages, resolveAutoBackend } from './dependencies';
+/**
+ * First statements of the V2 page, run by main.ts before the shell is written: browser advice, a reload when a
+ * redeploy replaced the lazy chunks, and the registration of the page's own messages.
+ */
+import { registerMessages } from '../i18n';
+import { DEMOGRAPHIC_CLASSES } from '../../../../rust/bridge/settlementDemography';
+import { showBrowserAdvice } from '../../ui/browserAdvice';
+import { projectFileMessages } from '../projectFileMessages';
 
-/** Browser recovery, message registration and the initial recipe. Called by main.ts in startup order. */
-export function mountPageStartup(state: PageState, actions: PageActions): void {
+export function mountPageStartup(): void {
   showBrowserAdvice();
 
   // A redeploy replaces the hashed chunks: a page opened before it fails to load a lazy module ("Failed to fetch
@@ -109,37 +112,10 @@ export function mountPageStartup(state: PageState, actions: PageActions): void {
 
   registerMessages({ 'Full generation': { en: 'Full generation', fr: 'Génération complète' } });
 
-  state.settings = defaultSettings();
-
-  applySceneClock(state.settings, DEFAULT_SCENE);
-
-  state.world = undefined;
-
-  state.pristine = undefined;
-
-  /** Inspection can replace the display without discarding the completed project. */
-  state.previewBase = undefined;
-
   registerMessages({
     'Stage output': { en: 'Stage output', fr: 'Sortie de l’étape' },
     'Elevations from this stage. Later stages remain to be run.': { en: 'Elevations from this stage. Later stages remain to be run.', fr: 'Altitudes de cette étape. Les étapes suivantes restent à exécuter.' },
   });
-
-  state.mods = [];
-
-  /** Background build of small places (assigned with the generation helpers below). */
-  state.smallPlaces = undefined;
-
-  /** City recipe key of the map produced by the last run that built towns; undefined = no background pass on this map. */
-  state.smallPlaceRecipe = undefined;
-
-  state.lastGesture = 0;
-
-  state.selectedTown = 'main';
-
-  state.cityScope = 'all';
-
-  state.selectedCities = new Set<string>();
 
   registerMessages({
     'Build targeted cities': { en: 'Build targeted cities', fr: 'Construire les villes ciblées' },
@@ -161,38 +137,6 @@ export function mountPageStartup(state: PageState, actions: PageActions): void {
     'Capacity shortfall: {households} households (≈ {people} inh.) not housed.': { en: 'Capacity shortfall: {households} households (≈ {people} inh.) not housed.', fr: 'Capacité insuffisante : {households} ménages (≈ {people} hab.) non logés.' },
     'Absorbed by {name}': { en: 'Absorbed by {name}', fr: 'Absorbé par {name}' },
   });
-
-  state.placeName = (key: string): string => (state.world && settlementDisplayName(state.world, key, state.settings)) || key;
-
-  state.popFormat = () => ({ t: translate, locale: numberLocale() });
-
-  state.selectedBuilding = null;
-
-  state.selectedSubdivision = undefined;
-
-  state.busy = false;
-  state.cancelled = false;
-  state.currentTab = 'terrain';
-  state.toastTimer = undefined;
-
-  state.elapsedTimer = undefined;
-
-  state.logs = [];
-
-  state.projectRevision = 0;
-
-  state.bootRuntime = runtimeOptions();
-
-  state.localEdition = state.bootRuntime.profile === 'local';
-
-  state.connectLocal = state.localEdition;
-
-  // The installed launcher already owns a ready native service; avoid loading WASM for the same CPU work.
-  if (state.localEdition) {
-    state.settings.generation = 'procedural';
-    state.settings.runtime = { ...state.settings.runtime!, backend: 'native', source: 'procedural', localServer: state.bootRuntime.localServer, pythonServer: state.bootRuntime.pythonServer };
-    delete state.settings.runtime.autoBackend;
-  } else resolveAutoBackend(state.settings);
 
   registerMessages(projectFileMessages);
 }

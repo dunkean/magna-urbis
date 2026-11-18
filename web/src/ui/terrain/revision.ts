@@ -6,6 +6,9 @@
  */
 import { liveStyleRatio } from './redraw';
 
+/** What an input setter changed: nothing, only the need to draw again, or the pixels (a revision bump). */
+export type InputChange = 'none' | 'redraw' | 'content';
+
 export class ContentRevision {
   private revision = 0;
   private ratio = 0;

@@ -8,7 +8,7 @@ import { heightPyramid } from '../../terrainSurface';
 import { AuxPassKey } from '../redraw';
 import { RetainedWaterRaster } from '../retainedWater';
 import type { StackedLayer } from '../layers';
-import type { HeightLayer } from '../types';
+import type { HeightLayer } from '../contract';
 
 export type GlTarget = { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
 /** A height layer on the GPU: R32F with its pyramid, and the cavern mask. */

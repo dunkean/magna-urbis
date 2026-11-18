@@ -19,14 +19,14 @@ import type { CartographyContext } from './context';
 import { frac, clumpNoise, addRing, layerHash } from './geometry';
 
 /** Share of conifers in the woods of each climate; a broad noise mixes the stands at the transitions. */
-export const CONIFER_SHARE: Partial<Record<string, number>> = { tundra: 0.88, forest: 0.5, steppe: 0.3, temperate: 0.14 };
+const CONIFER_SHARE: Partial<Record<string, number>> = { tundra: 0.88, forest: 0.5, steppe: 0.3, temperate: 0.14 };
 export const indicator = (field: Float32Array, test: (value: number, index: number) => boolean): Float32Array => {
   const out = new Float32Array(field.length);
   for (let i = 0; i < out.length; i++) if (test(field[i], i)) out[i] = 1;
   return out;
 };
 export type ForestWash = { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Float32Array; reach: Float32Array; n: number };
-export const sharedForestWashes = new Map<string, ForestWash>();
+const sharedForestWashes = new Map<string, ForestWash>();
 /** Quarter masks preserve explicit park/garden holes; their union remains exact across retained parts. */
 export function forestClip(c: CartographyContext, rect: Rect4): Path2D | null {
   const { S, P, polyL, cached } = c;

@@ -339,14 +339,14 @@ export function cityWallDetails(scene: CityScene): Array<WallDetail | undefined>
   }
   return list;
 }
-const legacyScenes = new WeakMap<CityScene, CityScene>();
-/** The scene with its legacy walls only (old stroke and disc-tower drawing). */
-export function cityLegacyWalls(scene: CityScene): CityScene {
-  let s = legacyScenes.get(scene);
+const strokedScenes = new WeakMap<CityScene, CityScene>();
+/** The scene with only the walls drawn as plain strokes and disc towers (those without detailed fortifications). */
+export function cityStrokedWalls(scene: CityScene): CityScene {
+  let s = strokedScenes.get(scene);
   if (!s) {
     const d = cityWallDetails(scene);
     s = d.some(Boolean) ? { ...scene, walls: scene.walls.filter((_, i) => !d[i]) } : scene;
-    legacyScenes.set(scene, s);
+    strokedScenes.set(scene, s);
   }
   return s;
 }

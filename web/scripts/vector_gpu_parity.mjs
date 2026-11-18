@@ -292,14 +292,18 @@ try {
       const r = await page.evaluate(() => {
         globalThis.__framesStop = true;
         globalThis.__obs?.disconnect();
-        const s = globalThis.__muVectorEngine.stats();
+        const s = globalThis.__muVectorEngine.stats(),
+          live = globalThis.__muLive;
+        // Per-part times come from the compositor's journal of slow units (LiveStats.slow) and its per-layer series.
+        const parts = {};
+        for (const [what, ms] of live?.slow ?? []) parts[what] = Math.max(parts[what] ?? 0, ms);
         return {
           frames: globalThis.__frames.slice(1),
           long: globalThis.__long,
           longMax: globalThis.__longMax,
-          parts: s.liveParts,
-          work: s.liveSeries.frame ?? [],
-          ground: s.liveSeries.ground ?? [],
+          parts,
+          work: live?.frameMs ?? [],
+          ground: live?.layerMs?.ground ?? [],
           engine: s.engine,
           demoted: s.demoted ?? null,
           fallbacks: s.fallbackTiles,
@@ -514,7 +518,7 @@ try {
             return globalThis.__frames.slice(1);
           });
           const sorted = [...f].sort((x, y) => x - y);
-          const parts = await page.evaluate(() => globalThis.__muVectorEngine.stats().liveParts);
+          const parts = await page.evaluate(() => Object.fromEntries((globalThis.__muLive?.slow ?? []).map(([what, ms]) => [what, ms])));
           pair.gesture[choice] = { parts, frames: f.length, median: r2(median(f)), p95: r2(sorted[Math.floor(sorted.length * 0.95)] ?? null), max: r2(sorted[sorted.length - 1] ?? null) };
           await settle(1000);
         }

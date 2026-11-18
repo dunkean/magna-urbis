@@ -1,4 +1,4 @@
-import type { LineCap, LineJoin, PathGeometry } from './displayList';
+import type { LineCap, LineJoin, PathGeometry } from './contract';
 
 export const SEGMENT_STRIDE = 6; // ax, ay, bx, by, length at a, flags
 export const DISC_STRIDE = 4; // x, y, length, flags

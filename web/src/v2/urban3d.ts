@@ -12,7 +12,7 @@ import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import type { Decor } from '../ui/decor';
 import type { City3d, City3dDetailService, City3dOptions, City3dGround, City3dPhysicalGround, City3dSurface, City3dViewSettings, City3dWaterDisplay } from '../ui/city3d';
 import type { Terrain3dGroundSettings } from '../ui/terrain3d';
-import type { TerrainLook } from '../ui/terrainGl';
+import type { TerrainLook } from '../ui/terrain/contract';
 import { renderScene } from './renderScene';
 import { nativeCitiesOf, nativeTerrainOf } from './nativeProducts';
 import { resolveSettingsAppearance } from './appearance';

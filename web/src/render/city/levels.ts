@@ -3,7 +3,7 @@
  *
  * Part of the town's look (city/look.ts); read by both town renderers (cityCanvas.ts, cityGl.ts) and by their hosts.
  */
-import type { CityLod } from '../cityCanvas';
+import type { CityLod } from './model/contract';
 
 /** Finest first. */
 export const LOD_ORDER: readonly CityLod[] = ['close', 'near', 'mid', 'far'];

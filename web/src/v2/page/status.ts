@@ -1,8 +1,14 @@
-/** Progress, busy state, logs and toasts. main.ts connects the client callbacks after runtime setup; handlers share the same page state and timing. */
-import type { PageState } from './state';
-import type { PageActions, ToastAction } from './actions';
-import { setText, translate, numberLocale, type V2Progress, RUNTIME_FALLBACK, isNativeConnectionFailure } from './dependencies';
+/**
+ * What the page tells the user: toasts, the generation log, dialogs, and the busy state that locks the controls during
+ * a run. Called by every module; owns no mount.
+ */
+import type { PageActions, ToastAction, PageState } from './contract';
+import { setText, translate, numberLocale } from '../i18n';
+import { F as RUNTIME_FALLBACK } from '../runtimeChoices';
+import { isNativeConnectionFailure } from '../../../../rust/bridge/nativeAvailability';
 import { $ } from './dom';
+
+const logLine = (entry: { time: Date; message: string }): string => `${entry.time.toLocaleTimeString(numberLocale())}  ${translate(entry.message)}`;
 
 export function createStatusActions(state: PageState, actions: PageActions) {
   function toast(message: string, error = false, action?: ToastAction): void {
@@ -55,8 +61,8 @@ export function createStatusActions(state: PageState, actions: PageActions) {
   }
 
   function renderLog(): void {
-    $('#job-log').textContent = state.logs.map(state.logLine).join('\n');
-    actions.scrollLog();
+    $('#job-log').textContent = state.logs.map(logLine).join('\n');
+    scrollLog();
   }
 
   /** Append-only: the whole log is re-rendered only when the oldest line drops or the language changes. */
@@ -65,35 +71,28 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     state.logs.push(entry);
     if (state.logs.length > 150) {
       state.logs.shift();
-      actions.renderLog();
+      renderLog();
       return;
     }
     const el = $('#job-log');
-    el.append((state.logs.length > 1 ? '\n' : '') + state.logLine(entry));
-    actions.scrollLog();
+    el.append((state.logs.length > 1 ? '\n' : '') + logLine(entry));
+    scrollLog();
   }
 
   function dialog(id: string): void {
-    if (id === '#export-dialog') actions.syncExportOptions();
+    if (id === '#export-dialog') {
+      // "Save map" has its own button and leaves the format on the project file; the dialog is for map exports, whose
+      // options (layers, size, area) only show for PNG and SVG.
+      const format = $<HTMLSelectElement>('#export-format');
+      if (format.value === 'binary') format.value = 'png';
+      actions.syncExportOptions();
+    }
     $<HTMLDialogElement>(id).showModal();
-  }
-
-  function updateProgress(p: V2Progress): void {
-    setText($('#progress-label'), p.label);
-    const meter = $<HTMLProgressElement>('#progress');
-    if (p.total > 0) meter.value = Math.max(0, Math.min(100, (100 * p.completed) / p.total));
-    else meter.removeAttribute('value');
-    meter.setAttribute('aria-labelledby', 'progress-label');
-    meter.setAttribute('aria-describedby', 'progress-detail');
-    const cache = p.cache === 'memory' ? 'Memory cache reused' : p.cache === 'disk' ? 'Terrain restored from disk' : 'Computing in a worker';
-    state.chain.progress(p);
-    setText($('#progress-detail'), p.detail ?? cache);
-    actions.log(p.label + (p.cache ? ` · ${p.cache}` : ''));
   }
 
   function setBusy(value: boolean): void {
     if (value) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'busy' }));
-    actions.labelEditorHostInert(value);
+    labelEditorHostInert(value);
     state.busy = value;
     $('#progress-card').hidden = !value;
     $('#hardware-led').classList.toggle('busy-led', value);
@@ -152,14 +151,5 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     const panel = document.querySelector<HTMLElement>('.map-label-editor');
     if (panel) panel.inert = value;
   }
-  return { toast, scrollLog, renderLog, log, dialog, updateProgress, setBusy, labelEditorHostInert };
-}
-
-/** Log formatting/scroll state and engine-reset callback. Called by main.ts in startup order. */
-export function mountPageStatus(state: PageState, actions: PageActions): void {
-  state.logLine = (entry: { time: Date; message: string }): string => `${entry.time.toLocaleTimeString(numberLocale())}  ${translate(entry.message)}`;
-
-  state.logScroll = 0;
-
-  state.client.onEngineReset = () => state.chain.clearResults();
+  return { toast, renderLog, log, dialog, setBusy };
 }

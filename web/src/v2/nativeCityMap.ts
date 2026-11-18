@@ -1,7 +1,13 @@
-/** Retained City Bench plans and native roofs on the V2 2D camera. No generation.
- * Same 2D engine as City Bench: WebGL2 cityGl (render/cityGlView.ts) draws the plans and city volumes
- * whenever the shared rule allows it (cityContract.cityGlBlockReason); Canvas 2D drawCity paints the
- * overlay (labels, glyphs, diagnostics, native house plans) and the whole frame otherwise. */
+/**
+ * The exact town of the V2's 2D map: the towns of a world (plans, city volumes, native house plans, activity sites)
+ * painted into a 2D context for one view. No generation.
+ *
+ * Who: the display (v2/display) for captures, exports, the fallback display and every frame at rest that the live
+ * town layer does not cover; it also makes that live layer (`createLiveLayer`) from the same towns. The Canvas town
+ * (render/city/canvas/town.ts) paints the frame; where the shared rule allows it (cityContract.cityGlBlockReason) the
+ * GPU plan (render/cityGlView.ts) draws the plans and city volumes under a Canvas overlay (labels, glyphs,
+ * diagnostics, native house plans). `draw` paints at once, or in its stepwise mode (render/city/canvas/stepwiseTown.ts).
+ */
 import { drawCityWaterways } from '../render/cityWaterways';
 import { townWaterColour } from '../render/townWater';
 import type { World } from '../gen/types';
@@ -29,6 +35,7 @@ import { cityGroundFor } from '../render/cityGround';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
 import type { LiveCityEnv, LiveLayer } from '../render/live/contract';
 import { createLiveCityLayer } from '../render/live/cityLayer';
+import { createStepwiseTown, type NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
 
 export interface NativeCityMapStats {
   native: boolean;
@@ -43,7 +50,7 @@ export interface NativeCityMapStats {
   drawCalls?: number;
   pending: boolean;
   ms: number;
-  /** Live view: Canvas work of the last complete repaint of the town layer (0 before the first one). */
+  /** Stepwise mode: Canvas work of the last complete repaint of the town layer (0 before the first one). */
   paintMs?: number;
   materialFaces: number;
   frames: CityFrameStats[];
@@ -57,21 +64,14 @@ export interface NativeCityHooks {
   /** Canvas 2D town: puts the map's water back over the town ground and streets, before quays and bridges. */
   waterAbove?(ctx: CanvasRenderingContext2D, box: Box, over?: () => void): void;
 }
-/** Live view: the town layer of a view is kept between frames, and a new view repaints it over several short tasks
- * while the previous layer follows the view. Captures and exports omit this and paint at once. */
-export interface NativeCityLive {
-  /** Changes whenever what the hooks and the shared render state paint may have changed (a new appearance or world). */
-  key: number | string;
-  /** The view is moving: no long repaint is started, the last painted layer follows the view. */
-  moving: boolean;
-}
-/** `content`: what the towns show changed (textures arrived, a mesh was uploaded); `progress`: the live layer of the
+export type { NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
+/** `content`: what the towns show changed (textures arrived, a mesh was uploaded); `progress`: the stepwise layer of the
  * current view is complete, the same frame can now be composed exactly. */
 export type NativeCityInvalidation = 'content' | 'progress';
 export interface NativeCityMap {
-  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks, live?: NativeCityLive): NativeCityMapStats;
-  /** Stops the live repaint in progress, if any (the view moves again, or the renderer is busy elsewhere). */
-  suspendLive(): void;
+  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks, stepwise?: NativeCityStepwise): NativeCityMapStats;
+  /** Stops the stepwise repaint in progress, if any (the view moves again, or the renderer is busy elsewhere). */
+  suspendStepwise(): void;
   /** The city plans (activity sites included), for the semantic district layer. */
   scenes(): readonly CityScene[];
   /** Uploads the WebGL2 plan a frame with this appearance would use, if any (exports draw synchronously). */
@@ -214,14 +214,6 @@ export async function createNativeCityMapAsync(world: World, onInvalidate: (kind
   releaseCityBuildingWorkers();
   return createNativeCityMap(world, onInvalidate, { plans, buildings });
 }
-/** Live town layer: Canvas work run in the frame that asks for a new view before the repaint continues in the
- * background, share of a frame a moving view may spend on it, and Canvas work of one background step (first, least
- * and most: the step follows what the graphics process keeps up with). */
-const LIVE_INLINE_MS = 8,
-  LIVE_MOVING_MS = 6,
-  LIVE_SLICE_MS = 5,
-  LIVE_SLICE_MIN_MS = 2.5,
-  LIVE_SLICE_MAX_MS = 14;
 const objectIds = new WeakMap<object, number>();
 let objectSeq = 0;
 const idOf = (value: object | undefined): number => {
@@ -272,7 +264,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   // Bounded, display-only geometry. Retained native meshes and plan objects are
   // read, never copied into generated geometry or mutated.
   const textures = new Map<PlacedBuilding, MaterialGeometry>();
-  /** Bumped whenever the towns may paint differently for the same frame: a kept live layer is then stale. */
+  /** Bumped whenever the towns may paint differently for the same frame: a kept stepwise layer is then stale. */
   let contentRevision = 0;
   const invalidate = (): void => {
     contentRevision++;
@@ -346,7 +338,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   const newStats = (): NativeCityMapStats => ({ native: entries.length > 0, cities: entries.length, layouts, buildings, visibleBuildings: 0, renderer: 'canvas2d', pending: false, ms: 0, materialFaces: 0, frames: [], houses: [] });
   /** Paints every town of a frame into `ctx` (the frame's device pixels), in resumable steps: the same Canvas calls in
    * the same order whether they run at once (captures, exports, opaque towns: `drawCity`) or, `resumable`, over
-   * several tasks (the live layer: `drawCitySteps`, the same function with pauses). */
+   * several tasks (the stepwise mode: `drawCitySteps`, the same function with pauses). */
   function* paintSteps(ctx: CanvasRenderingContext2D, f: TownFrame, stats: NativeCityMapStats, resumable = false): Generator<void, void> {
     const { view, w, h, dpr, appearance, visibility, hooks, lod } = f,
       city = appearance.city;
@@ -439,190 +431,26 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     }
   }
 
-  // Live town layer. The isolated layer of the last painted view is kept: a frame of the same view composes it again
-  // (a redraw for a ground, water or label update costs the town nothing), and a new view repaints a second layer in
-  // short tasks while the kept one follows the view, scaled. The final frame composes the same layer pixels as a
-  // repaint at once: only the moment they are produced changes.
-  interface TownLayer {
-    canvas: LayerCanvas;
-    ctx: CanvasRenderingContext2D;
-    key: string;
-    look: string;
-    view: View;
-    dpr: number;
-    stats: NativeCityMapStats;
-  }
-  type LiveJob = { layer: TownLayer; steps: Generator<void, void>; ms: number };
-  let shownLayer: TownLayer | undefined, spareLayer: TownLayer | undefined, liveJob: LiveJob | undefined;
-  let liveScheduled = false,
-    liveBroken = false,
-    lastPaintMs = 0,
-    tierRevision = 0;
-  // One step per animation frame. The graphics process spends two to three times a step's Canvas time rasterizing
-  // it, and what is queued cannot be withdrawn: steps run back to back left it most of a second behind, and the first
-  // frames of the next gesture waited for that. A frame that comes on time means it kept up (the next step may be
-  // longer); a late one, that it is behind (shorter).
-  let sliceBudget = LIVE_SLICE_MS,
-    sliceAt = 0,
-    frameFloor = Infinity;
-  const framePaced = typeof requestAnimationFrame === 'function';
-  const freeLayer = (held: TownLayer | undefined): void => {
-    if (held) held.canvas.width = held.canvas.height = 1;
-  };
-  const recycleLayer = (held: TownLayer): void => {
-    if (!spareLayer) spareLayer = held;
-    else freeLayer(held);
-  };
-  function stopLive(): void {
-    const job = liveJob;
-    if (!job) return;
-    liveJob = undefined;
-    try {
-      job.steps.return();
-    } catch {
-      /* The layer is discarded either way. */
-    }
-    recycleLayer(job.layer);
-  }
-  // Chrome records the Canvas calls and rasterizes them when the canvas is read. A layer painted over a second would be
-  // rasterized in one go by the frame that composes it, and the display would stop for that long although the page
-  // stays free. Reading the layer into a scratch pixel after every step sends that step's calls to the graphics
-  // process, which then has a few milliseconds of work at a time, between its own frames.
-  const flushSurface = canvas(1, 1),
-    flushContext = flushSurface?.getContext('2d') as CanvasRenderingContext2D | undefined;
-  function flushLayer(held: TownLayer): void {
-    if (!flushSurface || !flushContext) return;
-    try {
-      flushContext.drawImage(held.canvas, 0, 0, 1, 1);
-      flushSurface.width = 1;
-    } catch {
-      /* Only a hint. */
-    }
-  }
-  /** Runs the job for about `budget` ms of Canvas work; true once the layer is complete. */
-  function runLive(job: LiveJob, budget: number): boolean {
-    if (!(budget > 0)) return false;
-    const t = performance.now();
-    let done = false;
-    try {
-      do {
-        done = !!job.steps.next().done;
-      } while (!done && performance.now() - t < budget);
-    } finally {
-      job.ms += performance.now() - t;
-    }
-    if (budget !== Infinity) flushLayer(job.layer);
-    return done;
-  }
-  function showLive(job: LiveJob): TownLayer {
-    const previous = shownLayer;
-    shownLayer = job.layer;
-    lastPaintMs = job.ms;
-    if (previous) recycleLayer(previous);
-    // Content still arriving (house tiles, textures): the layer is repainted, as a frame painted at once would be.
-    if (job.layer.stats.pending) invalidate();
-    return job.layer;
-  }
-  function liveSlice(): void {
-    liveScheduled = false;
-    const job = liveJob;
-    if (!job || disposed) return;
-    const now = performance.now(),
-      gap = now - sliceAt;
-    sliceAt = now;
-    if (gap < 250) {
-      frameFloor = Math.min(frameFloor * 1.01, gap);
-      sliceBudget = gap > frameFloor * 1.4 + 2 ? Math.max(LIVE_SLICE_MIN_MS, sliceBudget * 0.6) : Math.min(LIVE_SLICE_MAX_MS, sliceBudget * 1.25);
-    } else sliceBudget = LIVE_SLICE_MS;
-    let done = false;
-    // A failed step: the next frame paints at once and reports the error as before.
-    try {
-      done = runLive(job, sliceBudget);
-    } catch {
-      liveBroken = true;
-      stopLive();
-      onInvalidate('progress');
-      return;
-    }
-    if (!done) {
-      scheduleLive();
-      return;
-    }
-    liveJob = undefined;
-    showLive(job);
-    onInvalidate('progress');
-  }
-  function scheduleLive(): void {
-    if (liveScheduled) return;
-    liveScheduled = true;
-    if (framePaced) requestAnimationFrame(liveSlice);
-    else setTimeout(liveSlice, 0);
-  }
-  /** The town layer to compose for a live frame: `exact` when it is this frame's, else the last painted layer (another
-   * view, drawn scaled) while this frame's is painted. Undefined: no layer can be kept, the frame paints at once. */
-  function liveTown(f: TownFrame, live: NativeCityLive, pixelsW: number, pixelsH: number): { layer?: TownLayer; exact: boolean } | undefined {
-    if (liveBroken) return undefined;
-    const look = `${live.key}|${idOf(f.appearance)}|${idOf(f.hooks?.water?.())}|${JSON.stringify(f.visibility)}|${getRenderMode()}`;
-    const key = `${contentRevision}|${tierRevision}|${look}|${f.view.cx}|${f.view.cy}|${f.view.scale}|${f.w}|${f.h}|${f.dpr}|${f.lod}`;
-    if (shownLayer?.key === key) {
-      stopLive();
-      return { layer: shownLayer, exact: true };
-    }
-    // The same towns in the same look stand in while this frame is painted: seen from another view, or from this one
-    // before a texture or a mesh arrived.
-    const standIn = shownLayer?.look === look ? shownLayer : undefined;
-    if (liveJob && liveJob.layer.key !== key) stopLive();
-    if (liveJob) return { layer: standIn, exact: false };
-    if (live.moving && standIn && lastPaintMs > LIVE_MOVING_MS) return { layer: standIn, exact: false };
-    let layer = spareLayer;
-    spareLayer = undefined;
-    if (!layer) {
-      const surface = canvas(pixelsW, pixelsH),
-        ctx = surface?.getContext('2d') as CanvasRenderingContext2D | undefined;
-      if (!surface || !ctx) return undefined;
-      layer = { canvas: surface, ctx, key: '', look: '', view: f.view, dpr: f.dpr, stats: newStats() };
-    }
-    if (layer.canvas.width !== pixelsW) layer.canvas.width = pixelsW;
-    if (layer.canvas.height !== pixelsH) layer.canvas.height = pixelsH;
-    // A stopped repaint may have left drawing state behind: start from a clean context.
-    (layer.ctx as { reset?: () => void }).reset?.();
-    layer.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    layer.ctx.clearRect(0, 0, pixelsW, pixelsH);
-    Object.assign(layer, { key, look, view: { ...f.view }, dpr: f.dpr, stats: { ...newStats(), lod: f.lod } });
-    const job: LiveJob = { layer, steps: paintSteps(layer.ctx, f, layer.stats, true), ms: 0 };
-    // Nothing to show meanwhile (first frame, new appearance): paint at once, as before. Otherwise a short share of
-    // this frame when the last repaint was short (small towns and far views complete in place); a long one starts
-    // after the frame, so the frame a view rests on never waits for the town.
-    let done = false;
-    try {
-      done = runLive(job, !standIn ? Infinity : live.moving ? LIVE_MOVING_MS : lastPaintMs > LIVE_INLINE_MS ? 0 : LIVE_INLINE_MS);
-    } catch (error) {
-      recycleLayer(layer);
-      throw error;
-    }
-    if (done) return { layer: showLive(job), exact: true };
-    if (live.moving) {
-      // Too long for a moving frame: the kept layer follows the view until it rests.
-      try {
-        job.steps.return();
-      } catch {
-        /* Discarded. */
-      }
-      recycleLayer(layer);
-      lastPaintMs = Math.max(lastPaintMs, 4 * LIVE_MOVING_MS);
-      return { layer: standIn, exact: false };
-    }
-    liveJob = job;
-    scheduleLive();
-    return { layer: standIn, exact: false };
-  }
-  // Live compositor layers (render/live/cityLayer.ts). They share the merged plan of the GL path and keep their own
+  // The stepwise mode of the exact town (render/city/canvas/stepwiseTown.ts): its kept layers and its scheduler.
+  let tierRevision = 0;
+  const stepwiseTown = createStepwiseTown<TownFrame, NativeCityMapStats>({
+    paint: (ctx, frame, stats) => paintSteps(ctx, frame, stats, true),
+    newStats,
+    canvas,
+    revision: () => `${contentRevision}|${tierRevision}`,
+    lookKey: f => `${idOf(f.appearance)}|${idOf(f.hooks?.water?.())}|${JSON.stringify(f.visibility)}|${getRenderMode()}`,
+    contentPending: invalidate,
+    progressed: () => {
+      if (!disposed) onInvalidate('progress');
+    },
+  });
+  // Live compositor layers (render/city/live/townLayer.ts). They share the merged plan of the GL path and keep their own
   // tier of the very large towns: the merged buildings of the tiers last handed out, reused while no tier changes.
   const liveLayers = new Set<LiveLayer>();
   let liveTier: { parts: (CityBuildings | undefined)[]; merged: CityBuildings } | undefined, liveRefused: ReadonlySet<string> | undefined;
   // The live scene also holds the towns and activity sites drawn by the native house renderer (entry.houses), as their
   // city volumes (entry.buildings: massing silhouettes with roof pans and cast shadows, built with the entry): the
-  // classic GL scene leaves them to the house renderer, which only Canvas 2D runs.
+  // plan path leaves them to the house renderer, which only Canvas 2D runs.
   const liveParts = (parts: readonly (CityBuildings | undefined)[]) => entries.map((entry, i) => ({ plan: entry.plan, buildings: parts[i] }));
   const sameParts = (parts: readonly (CityBuildings | undefined)[]): boolean => !!liveTier && liveTier.parts.length === parts.length && liveTier.parts.every((part, i) => part === parts[i]);
   function liveMerged(parts: (CityBuildings | undefined)[]): CityBuildings {
@@ -630,7 +458,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     return liveTier!.merged;
   }
   /** The live scene in resumable steps (a few milliseconds each): the GL path's merged plan when it has none yet, then
-   * every entry's buildings. The classic draw may build its plan meanwhile; the first one made is kept. */
+   * every entry's buildings. The exact draw may build its plan meanwhile; the first one made is kept. */
   function* liveSceneSteps(): Generator<void, { plan: CityScene; buildings: CityBuildings }> {
     if (!glScene) {
       const merged = yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings })));
@@ -645,19 +473,19 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     return { plan, buildings: liveTier!.merged };
   }
   /** Towns with a far raster on satellite grounds (drawCitySteps `farTown`: not the house-renderer ones), with the whole
-   * town's buildings as the classic draw hands them to drawFarTown. */
+   * town's buildings as the exact draw hands them to drawFarTown. */
   let liveFarTowns: { plan: CityScene; buildings: CityBuildings }[] | undefined;
   const farTowns = () => (liveFarTowns ??= entries.filter(entry => !entry.houses).map(entry => ({ plan: entry.plan, buildings: entry.large?.base ?? entry.buildings })));
   /** The buildings of a resting view for the live layer: each large town's tier for that view (largeTownBuildings), the
-   * others as they are. Builds a detail tier on this thread when the view needs one, as the classic draw does. */
+   * others as they are. Builds a detail tier on this thread when the view needs one, as the exact draw does. */
   function liveBuildings(viewport: Box, mpp: number): CityBuildings | undefined {
     if (disposed) return undefined;
     return liveMerged(entries.map(entry => (entry.large ? largeTownBuildings(entry, viewport, mpp) : entry.buildings)));
   }
   return {
     scenes: () => textScenes,
-    suspendLive: stopLive,
-    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks, live) {
+    suspendStepwise: () => stepwiseTown.stop(),
+    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks, stepwise) {
       const started = performance.now();
       const stats = newStats();
       if (disposed || !entries.length || !(view.scale > 0) || !(w > 0) || !(h > 0) || !(dpr > 0)) return stats;
@@ -683,8 +511,8 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       if (swapped) tierRevision++;
       if (swapped && glScene) gl?.setBuildings(mergeCityBuildings(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings }))));
       const frame: TownFrame = { view, w, h, dpr, appearance, visibility, hooks, lod };
-      // Live view with a translucent town: the kept layer (see liveTown).
-      const kept = opacity < 1 && live ? liveTown(frame, live, pixelsW, pixelsH) : undefined;
+      // Stepwise mode with a translucent town: the kept layer (stepwiseTown.layerFor).
+      const kept = opacity < 1 && stepwise ? stepwiseTown.layerFor(frame, stepwise, pixelsW, pixelsH) : undefined;
       let isolated = !!kept;
       if (kept) {
         const held = kept.layer;
@@ -749,10 +577,10 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
           }
         }
       }
-      // A kept layer reports its own pending content when its repaint ends (showLive).
+      // A kept layer reports its own pending content when its repaint ends (stepwiseTown).
       if (!kept && stats.pending) invalidate();
       stats.ms = performance.now() - started;
-      stats.paintMs = lastPaintMs;
+      stats.paintMs = stepwiseTown.paintMs;
       reportRenderStats({ path: stats.renderer === 'webgl2' ? 'gpu' : 'cpu', ms: stats.ms, drawCalls: stats.drawCalls ?? 0, reason: stats.renderer === 'webgl2' ? undefined : (stats.reason ?? undefined) });
       return stats;
     },
@@ -794,10 +622,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       gl?.dispose();
       gl = undefined;
       glScene = undefined;
-      stopLive();
-      freeLayer(shownLayer);
-      freeLayer(spareLayer);
-      shownLayer = spareLayer = undefined;
+      stepwiseTown.release();
       for (const entry of entries) entry.houses?.replaceScene({ buildings: [] });
       entries.length = 0;
       textures.clear();

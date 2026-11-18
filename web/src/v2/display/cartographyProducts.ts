@@ -32,15 +32,16 @@ import { hydrologySegments, hydrologyWaterColour } from '../../../../rust/bridge
 import { passKeys } from '../passes/pass';
 import { buildScene, type SceneMask, type Scene } from '../../render/scene';
 import { drawRuralSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../../render/semanticLayer';
-import { contourDrawOf, type SemanticLook } from '../../render/composition';
+import { contourDrawOf } from '../../render/composition';
 import type { SemanticLegendEntry } from '../../render/legend';
 import { sceneDirty, worldDirty, changedShapes, shapeKey, mergeRects } from '../../render/sceneDiff';
 import type { Rect } from '../../render/tileindex';
 import { seedSubset } from '../../../../rust/bridge/generationSeed';
 import { cityRegionalNetwork } from '../../render/cityBridges';
-import { decodeBrushes, type BrushImages } from '../../render/brushes';
+import type { View } from '../../render/view';
+import type { Cartography, DisplayParts, SemanticState, WorldBox } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
+import { paintedBrushes } from './paintedBrushes';
 
 /** Pixel width of the whole-map renderSvg overlay of exports. */
 const EXPORT_OVERLAY_PX = 4096;
@@ -50,14 +51,9 @@ const displaySeed = (seed: string): string => seedSubset(seed, key => !key.start
 const clearingBuildings = (world: World) => [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
 /** Reach of the overlay products derived from a changed shape (forest wash fringe 140 m, lone trees 120 m, clearings, sprites). */
 const DERIVED_REACH = 220;
-let brushes: Promise<BrushImages | null> | undefined;
-/** The painted brush images, decoded once for the page. */
-export async function paintedBrushes(): Promise<BrushImages | null> {
-  return (brushes ??= import('../../render/assets/brushAssets').then(({ BRUSH_SOURCES }) => decodeBrushes(BRUSH_SOURCES)));
-}
 type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World }; physical?: PhysicalGround };
 
-export class CartographyProducts {
+export class CartographyProducts implements Cartography {
   renderer?: CanvasRenderer;
   /** The canvas the overlay renderer draws into; swapped when the renderer of another look comes back from the store. */
   overlay = document.createElement('canvas');
@@ -69,8 +65,16 @@ export class CartographyProducts {
 
   constructor(
     private readonly map: MapState,
-    private readonly parts: DisplayParts,
+    private readonly parts: Pick<DisplayParts, 'ground' | 'water' | 'contours' | 'town'>,
   ) {}
+
+  paintOverlay(view: View, pixelW: number, pixelH: number, stepwise: boolean): HTMLCanvasElement | undefined {
+    if (!this.renderer) return undefined;
+    if (this.overlay.width !== pixelW) this.overlay.width = pixelW;
+    if (this.overlay.height !== pixelH) this.overlay.height = pixelH;
+    this.renderer.draw(view, { stepwise });
+    return this.overlay;
+  }
 
   /** renderSvg overlay of an export (explicit layers), whole map at EXPORT_OVERLAY_PX: used only where it is not stretched. */
   exportOverlay?: HTMLCanvasElement;
@@ -214,7 +218,7 @@ export class CartographyProducts {
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: {
         key: () =>
-          `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}:${this.parts.contours.contourRevision}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey(), this.parts.water.vectorView?.region]) : ''}`,
+          `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}:${this.parts.contours.revision}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey(), this.parts.water.vectorView?.region]) : ''}`,
         draw: (ctx, rect, mpp, quality) => {
           this.paintRural(ctx, rect, mpp, quality === 'light');
           this.parts.water.cutWater(ctx, rect);
@@ -236,8 +240,10 @@ export class CartographyProducts {
       ready: (box, pixels) => this.parts.contours.contoursAt(pixels / (box.maxX - box.minX), box),
       preview: (target, box) => renderer.drawCachedMap(target, box),
       paint: (target, box, options, defer) => {
-        const ground = renderer.drawGround(target, box, options);
-        return this.parts.contours.drapeContours(target, box, displayQualityFor(!!options?.live) === 'light', defer) || ground;
+        // The 3D drape calls its interactive paint `live`: for the exact renderer it is the stepwise one.
+        const stepwise = !!options?.live,
+          ground = renderer.drawGround(target, box, options && { stepwise });
+        return this.parts.contours.drapeContours(target, box, displayQualityFor(stepwise) === 'light', defer) || ground;
       },
     };
     this.map.passes.reset('overlays');
@@ -247,7 +253,7 @@ export class CartographyProducts {
   private storeCartography(): void {
     if (this.renderer && this.cartographyState) {
       const product: CartographyProduct = { renderer: this.renderer, overlay: this.overlay, state: this.cartographyState, physical: this.physical };
-      product.renderer.suspendLive();
+      product.renderer.suspendStepwise();
       this.retained.put('product:' + this.cartographyKey, product, product.renderer.retainedBytes() + product.overlay.width * product.overlay.height * 4, () => {
         product.renderer.dispose();
         product.overlay.width = product.overlay.height = 0;
@@ -312,7 +318,7 @@ export class CartographyProducts {
     );
   }
   /** Semantic land use state: looks, opacity and classes. Painted per frame from the canonical polygons (cartography hook, export branch of ExactFrame.paint, city hook), so nothing else re-runs. */
-  semantic?: { rural: SemanticLook; urban: SemanticLook; opacity: number; classes: Readonly<Record<LandKind, boolean>>; key: string };
+  semantic?: SemanticState;
   semanticPass(inline = false): void | Promise<void> {
     const c = this.map.resolved!.composition.landuse,
       layers = this.map.exportLayers,
@@ -338,7 +344,7 @@ export class CartographyProducts {
     // redo it now when the state moved (the inline call from the overlays pass is already up to date).
     if (!inline && before && before.key !== this.semantic.key && this.renderer) return this.overlaysPass();
   }
-  paintRural(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, light = false): void {
+  paintRural(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, light = false): void {
     this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
     const s = this.semantic;
     const lineView = this.map.resolved?.composition.variant === 'topographic';

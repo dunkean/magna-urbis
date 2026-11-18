@@ -5,43 +5,22 @@
  * capture; the marks (`first-useful-frame`, `programs-ready`, `visible-complete`) go to the RenderReadiness of the
  * last `set()`.
  */
-import { RenderReadiness } from '../../render/renderReadiness';
-import { LiveTileFill } from '../../render/liveTileFill';
-import { cityContoursPending } from '../../render/cityContours';
+import { StepwisePaint } from '../../render/stepwisePaint';
+import type { DisplayParts, ViewStatus } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
-
-/** What the readiness needs to know of the view on screen. */
-export interface ReadinessView {
-  /** Pending work that only concerns the view on screen (the picture at rest, the town layer, names being prepared). */
-  pendingViewOnly(): number;
-  /** Overlay rasters the last exact paint of the cartography still waits for. */
-  pendingOverlay(): number;
-}
 
 export class DisplayReadiness {
   constructor(
     private readonly map: MapState,
     private readonly parts: DisplayParts,
-    private readonly view: () => ReadinessView,
+    private readonly view: () => ViewStatus,
   ) {}
 
   /** Display work still owed to the map on screen; 0 once it is complete. */
   pendingWork(): number {
     const { ground, water, contours } = this.parts,
       view = this.view();
-    return (
-      Number(this.map.preparing) +
-      Number(!!ground.forestJob) +
-      Number(!!ground.programWork) +
-      Number(!!ground.programError) +
-      Number(!!water.vectorRequest) +
-      view.pendingViewOnly() +
-      LiveTileFill.pending(this.map) +
-      view.pendingOverlay() +
-      cityContoursPending(this.map.native) +
-      contours.contourWaiters.size
-    );
+    return Number(this.map.preparing) + Number(!!ground.forestJob) + Number(!!ground.programWork) + Number(!!ground.programError) + Number(water.vectorPending) + view.pendingViewOnly() + StepwisePaint.pending(this.map) + view.pendingOverlay() + contours.pending();
   }
   /** A picture of the view at rest was presented. */
   notePresented(): void {
@@ -58,15 +37,16 @@ export class DisplayReadiness {
   }
   /** Resolves once the progressive updates (woods after a town build) are on screen. */
   async settled(): Promise<void> {
-    await this.parts.ground.exactReady();
+    const ground = this.parts.ground;
+    await ground.exactReady();
     while (!this.map.disposed && !this.map.suspended && (this.pendingWork() || !this.map.request?.has('visible-complete'))) {
-      if (this.parts.ground.programError) throw this.parts.ground.programError;
+      if (ground.programError) throw ground.programError;
       this.map.repaint();
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     }
   }
   /** Work still deriving products after `set()` returned (contours in the worker, the woods, the look's programs). */
   derivedPending(): number {
-    return cityContoursPending(this.map.native) + this.parts.contours.contourWaiters.size + Number(!!this.parts.ground.forestJob) + Number(!!this.parts.ground.programWork);
+    return this.parts.contours.pending() + Number(!!this.parts.ground.forestJob) + Number(!!this.parts.ground.programWork);
   }
 }

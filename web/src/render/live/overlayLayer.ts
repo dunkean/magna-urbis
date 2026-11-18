@@ -20,8 +20,9 @@
  */
 import { resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerStats } from './contract';
 import type { Rect4, View } from '../view';
-import { CRISP_MARK, type DisplayList } from '../gpu/displayList';
-import { createLiveRasterizer, type BakedPrefix, type LivePart } from '../gpu/glRaster';
+import { CRISP_MARK, type DisplayList } from '../gpu/contract';
+import { createLiveRasterizer } from '../gpu/liveRasterizer';
+import type { BakedPrefix, LivePart } from '../gpu/contract';
 import { clipList, cullList, markIndex, splitList } from '../gpu/listTools';
 
 export interface OverlayPlan {
@@ -42,7 +43,7 @@ export interface OverlayBand {
 }
 
 /** What the renderer that owns the map gives the layer (render/cartography/liveHost.ts). */
-export interface OverlayHost {
+interface OverlayHost {
   /** True while the GPU vector engine draws the live map; otherwise the layer is never ready (its stand-in shows). */
   active(): boolean;
   /** Everything a retained region depends on besides its rectangle; undefined when it cannot be recorded. */

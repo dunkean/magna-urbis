@@ -10,7 +10,9 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 //   await __v2Test.view('2d' | '2d-core' | '2d-b')   // frame the town as City Bench's "City" button does, in the real viewport
 //   await __v2Test.code()                      // the MU3 generation code of the prepared town (V2 Share dialog)
 //   __v2Test.summary()                         // town, site scores, shore distances, camp extent, activity yard
-//   __v2Test.camera3d() / __v2Test.setCamera3d(camera)   // the 3D view's camera, once opened with #view3d
+//   __v2Test.camera3d() / __v2Test.setCamera3d(camera)   // the tilt of the map's camera: { x, y, scale, pitch, yaw }, radians,
+//                                                          // pitch 0 = straight down, yaw clockwise from north; any subset to set.
+//                                                          // With ?camera=dual: the separate 3D view's camera, once opened with #view3d
 //
 // The world is the saved decor (web/decors/<id>.decor, City Bench `artifact=`): relief, sea, lakes and rivers with their widths
 // are its own cells (settings.decor, v2/decorTerrain.ts). The town is placed by the same rule as City Bench (ui/cityPlacementRule.ts):
@@ -20,6 +22,7 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 import type { SettlementSpec, SettlementOutput } from '../../../rust/bridge/settlements';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { setStepSeed } from '../../../rust/bridge/generationSeed';
+import { dualCameras } from '../render/live/policy';
 import type { View } from '../render/view';
 import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
@@ -334,8 +337,20 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
     },
     /** Complete the exact, full-quality 2D overlay before a review-sheet screenshot. */
     prepareCapture: () => bindings.prepareCapture?.(),
-    camera3d: () => bindings.get3d()?.getCamera(),
-    setCamera3d: (camera: unknown) => bindings.get3d()?.setCamera(camera),
+    /** The camera that shows the relief: the map's own (centre, scale, pitch, yaw), or with `?camera=dual` the
+     * separate 3D view's. */
+    camera3d: () => {
+      if (dualCameras()) return bindings.get3d()?.getCamera();
+      const view = bindings.getViewer().getView();
+      return { x: view.cx, y: view.cy, scale: view.scale, pitch: view.pitch ?? 0, yaw: view.yaw ?? 0 };
+    },
+    setCamera3d: (camera: unknown) => {
+      if (dualCameras()) return bindings.get3d()?.setCamera(camera);
+      const viewer = bindings.getViewer(),
+        view = viewer.getView(),
+        wanted = (camera ?? {}) as { x?: number; y?: number; scale?: number; pitch?: number; yaw?: number };
+      viewer.setView({ cx: wanted.x ?? view.cx, cy: wanted.y ?? view.cy, scale: wanted.scale ?? view.scale, pitch: wanted.pitch ?? view.pitch, yaw: wanted.yaw ?? view.yaw });
+    },
     /** The 3D view's stats (buildings shown, terrain tile loading: lod.tiles / ready / pending), for the sheet's settle wait. */
     stats3d: () => bindings.get3d()?.stats?.(),
   };

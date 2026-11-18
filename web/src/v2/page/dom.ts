@@ -1,10 +1,11 @@
-/** Pure HTML helpers and option tables shared by the page shell and inspectors. The mounts call them without querying or changing the DOM during module evaluation. */
-import { type ExportLayers, iconUrl, type IconId } from './dependencies';
+/** HTML helpers and option tables of the page shell and the inspectors. No DOM access at load. */
+import type { ExportLayers } from '../../render/exportLayers';
+import { iconUrl, type IconId } from '../stageIcons';
 
 export const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 export const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export const icon = (id: IconId, size = 22): string => `<img class="v2-icon" src="${iconUrl(id) ?? ''}" alt="" width="${size}" height="${size}" aria-hidden="true">`;
-export type Item = string | readonly [string, string];
+type Item = string | readonly [string, string];
 export function options(items: readonly Item[]): string {
   return items
     .map(item => {
@@ -34,15 +35,6 @@ export const wallStyles: Item[] = [
   ['rammed-earth', 'Rammed-earth wall'],
   ['wengcheng', 'Wall with barbicans (wengcheng)'],
   ['bastioned', 'Bastioned fortification'],
-];
-const BIOME_LABELS: readonly Item[] = [
-  ['temperate', 'Temperate countryside'],
-  ['forest', 'Temperate forest'],
-  ['desert', 'Desert & oases'],
-  ['steppe', 'Steppe'],
-  ['tropical', 'Tropical forest'],
-  ['tundra', 'Tundra'],
-  ['underdark', 'Underdark'],
 ];
 export const layerNames: Record<keyof ExportLayers, string> = {
   background: 'Map background',

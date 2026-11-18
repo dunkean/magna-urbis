@@ -5,7 +5,7 @@
  * suffix replayed at every frame; the suffix is culled to its band once, when recorded, so a frame never submits
  * geometry its scissor would drop whole.
  */
-import type { ClipNode, DisplayList, DrawOp, Mat, PathGeometry, RecordedPath } from './displayList';
+import type { ClipNode, DisplayList, DrawOp, Mat, PathGeometry, RecordedPath } from './contract';
 import { tolerance } from './transforms';
 
 type Box = readonly [number, number, number, number];
@@ -85,7 +85,7 @@ export function cullList(list: DisplayList, box: Box): DisplayList {
 
 /** Flattening tolerance of a recorded transform: the rule of the live rasterizer (transforms.ts `tolerance` of the
  * recorded transform), so a polygon clipped here has the vertices the live replay would have drawn. */
-export function flattenTolerance(m: Mat): number {
+function flattenTolerance(m: Mat): number {
   return tolerance(m);
 }
 

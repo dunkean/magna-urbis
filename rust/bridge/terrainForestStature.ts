@@ -66,7 +66,7 @@ export const FOREST_BIOMES: readonly ForestBiome[] = [
   row(2.4, 21, 1.05, 2, 0, 0.06, 0.05, 0.01, 1.6, 1.7), // steppe: 13 m on H 6 m
   row(2.6, 11, 1.15, 1.9, 0, 0.08, 0.1, 0.02, 1.6, 1.8), // desert: 7 m on H 3 m
   row(1.76, 15, 1.65, 1.5, 0, 0.06, 0, 0.03, 1.8, 2), // savanna: 9 m on H 6 m, crowns wider than tall, baobabs
-  row(1.31, 64, 0.8, 1, 0.06, 0, -0.12, 0.05, 1.55, 1.9), // tropical: 40 m on H 34 m, emergents ~62 m
+  row(1.31, 64, 0.8, 1, 0.06, 0, -0.05, 0.05, 1.55, 1.9), // tropical: 40 m on H 34 m, emergents ~62 m
   row(0.95, 23, 0.65, 0.9, 0.06, 0.02, 0.05, 0.012, 1.7, 1.6), // wetland: 14 m on H 16 m
   row(1.1, 28, 1, 1, 0, 0, 0, 0.01, 1.6, 1.6), // no zone: the former sizes
 ];

@@ -16,6 +16,7 @@ import { contourDrawOf } from '../../render/composition';
 import type { Rect } from '../../render/tileindex';
 import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady } from '../../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
+import type { Contours } from './contract';
 import type { MapState } from './mapState';
 
 /** Contour width factor on the 3D drape tiles. */
@@ -73,20 +74,25 @@ const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index
   return (parsed[kind] ??= new Path2D(set[kind]));
 };
 
-export class ContourInk {
-  /** The overlay's live lists hold the contours: told when new paths arrive (set by the composed view). */
-  onReady?: () => void;
+export class ContourInk implements Contours {
+  revision = 0;
+  private contourWaiters = new Map<TerrainData, Set<() => void>>();
 
-  constructor(private readonly map: MapState) {}
+  constructor(
+    private readonly map: MapState,
+    /** New paths arrived: whoever retains the contours of the overlay (its live lists) is told. */
+    private readonly onChanged: () => void,
+  ) {}
 
-  contourRevision = 0;
+  pending(): number {
+    return cityContoursPending(this.map.native) + this.contourWaiters.size;
+  }
   private contoursReady = (): void => {
     if (this.map.disposed) return;
-    this.contourRevision++;
-    this.onReady?.();
+    this.revision++;
+    this.onChanged();
     this.map.invalidate();
   };
-  contourWaiters = new Map<TerrainData, Set<() => void>>();
   private afterContours(ready: () => void): void {
     const terrain = this.map.native!;
     let callbacks = this.contourWaiters.get(terrain);
@@ -120,7 +126,7 @@ export class ContourInk {
     await cityContourPathsReady(terrain, look.landform, scale, topographic, mode.detail, mode.sparse);
     while (cityContoursPending(terrain)) await new Promise(resolve => setTimeout(resolve, 16));
   }
-  /** Contours live on the vector overlay, above the land-use tints and the parchment backdrop that would hide a ground-shader line. */
+  /** Contours are drawn on the vector overlay, above the land-use tints and the parchment backdrop that would hide a ground-shader line. */
   contourLook(): { landform: string } | undefined {
     const r = this.map.resolved,
       t = this.map.native,

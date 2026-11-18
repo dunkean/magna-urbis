@@ -29,14 +29,16 @@ import { reportDisplayRenderer } from '../../render/displayQuality';
 import type { GroundTileRenderer } from '../../render/live/contract';
 import { underdarkSceneLook } from '../../render/underdarkLighting';
 import { nativeCitiesOf } from '../nativeProducts';
+import { SOFTWARE_GL } from '../../render/softwareGl';
+import { fantasyRasterImages } from '../../ui/fantasyRaster';
+import type { Ground } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
 import { svgOf, wholeMap } from './mapSvg';
 
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { svg: string; image?: HTMLCanvasElement; fantasy?: FantasyRaster };
 
-export class GroundProducts {
+export class GroundProducts implements Ground {
   gpuCanvas = document.createElement('canvas');
   gpu?: TerrainRenderer;
   /** The terrain renderer holds the current terrain and can draw it. */
@@ -45,23 +47,22 @@ export class GroundProducts {
   private uploaded?: TerrainData;
   /** Terrain raster (CPU relief, sea): natural content, whole map. */
   base?: HTMLCanvasElement;
-  terrainSvg = '';
+  private terrainSvg = '';
   /** Illustrated grounds: washes and stamps painted on canvas over `base` (web/src/ui/fantasyRaster.ts). */
   fantasy?: FantasyRaster;
-  fantasyImages?: { wash: string; stamps: string };
-  /** The 3D background as a URL (exactFrame.ts) and as a bitmap; dropped with the ground they show. */
-  backgroundHref?: string;
+  private fantasyImages?: { wash: string; stamps: string };
+  /** The whole-map capture of the ground as a URL and as a bitmap; dropped with the ground they show. */
+  private backgroundHref?: string;
   private backgroundImage?: HTMLCanvasElement;
   /** The compilation of the look's programs, and its failure: reported by exactReady() and settled(). */
   programWork?: Promise<void>;
   programError?: unknown;
   private ownsMaterialContext: boolean;
-  /** The whole-map capture was dropped: it may be standing in for the live ground tiles (set by the composed view). */
-  onBackgroundDropped?: () => void;
 
   constructor(
     private readonly map: MapState,
-    private readonly parts: DisplayParts,
+    /** The whole-map capture was dropped: whoever shows it (it may stand in for the live ground tiles) is told. */
+    private readonly onCaptureDropped: () => void,
     rasterOnly: boolean,
     private materialContext?: MaterialRasterContext,
   ) {
@@ -100,7 +101,7 @@ export class GroundProducts {
         throw error;
       },
     ));
-    // An exact consumer observes the original rejection; live rendering reports it on its next frame.
+    // An exact consumer observes the original rejection; the view on screen reports it on its next frame.
     void pending.catch(() => {});
     return pending;
   }
@@ -132,7 +133,17 @@ export class GroundProducts {
   dropBackground(): void {
     this.backgroundHref = undefined;
     this.backgroundImage = undefined;
-    this.onBackgroundDropped?.();
+    this.onCaptureDropped();
+  }
+  /** A new set(): the program state of the previous one is forgotten. */
+  beginAppearance(): void {
+    this.programError = undefined;
+    this.programWork = undefined;
+  }
+  /** set() failed: the renderer is as usable as it was before (`gpuWasActive`), and no forest update stays wanted. */
+  rollback(gpuWasActive: boolean): void {
+    this.gpuActive = gpuWasActive && !!this.gpu;
+    this.forestUpdate.cancel();
   }
   /** GPU: context, height/cave/water-surface textures (once per terrain product). CPU: nothing. */
   async terrainDataPass(): Promise<void> {
@@ -156,7 +167,7 @@ export class GroundProducts {
         noteMapRenderer(name);
         if (!gl) throw new Error('WebGL2 indisponible pour la carte.');
         this.materialContext = { canvas: this.gpuCanvas, gl };
-        if (/swiftshader|llvmpipe|software/i.test(name)) {
+        if (SOFTWARE_GL.test(name)) {
           this.gpuUnavailable = true;
           this.map.stats.gpuFallback = 'Software WebGL material raster on the map context';
           return;
@@ -181,7 +192,6 @@ export class GroundProducts {
   /** GPU: look uniforms only. CPU: the terrain raster (the only thing re-rasterized). */
   async terrainLookPass(): Promise<void> {
     this.dropBackground();
-    this.parts.water.vectorsDirty = true;
     const t = this.map.native!,
       world = this.map.world!,
       settings = this.map.settings!,
@@ -324,8 +334,8 @@ export class GroundProducts {
     }
     return this.occupationCache.data;
   }
-  /** Live forest update still running after set() returned (progressive display). */
-  forestUpdate = new BackgroundJob();
+  /** Forest update still running after set() returned (progressive display). */
+  private forestUpdate = new BackgroundJob();
   get forestJob(): Promise<void> | undefined {
     return this.forestUpdate.running;
   }
@@ -335,7 +345,7 @@ export class GroundProducts {
     this.forestUpdate.cancel();
     // The natural road painter fades ways under the same canopy as the ground shader (roadStyle.ts setRoadCanopy).
     if (!this.gpuActive) {
-      // Raster and Illustrated grounds carry the same forest product as the live GPU ground.
+      // Raster and Illustrated grounds carry the same forest product as the GPU ground.
       const world = this.map.world!,
         request = this.map.request;
       const [field, occupation] = await Promise.all([v2DisplayForestAsync(world, this.map.settings!, this.map.resolved!), this.groundOccupation()]);
@@ -345,7 +355,7 @@ export class GroundProducts {
     this.dropBackground();
     // The Rust forest field and the occupation worker are independent: run them at once.
     const job = Promise.all([v2DisplayForestAsync(this.map.world!, this.map.settings!, this.map.resolved!), this.groundOccupation()]);
-    // Progressive display: a live map that already shows woods shows the new town at once, the woods follow when ready.
+    // Progressive display: a map on screen that already shows woods shows the new town at once, the woods follow when ready.
     if (this.forestShown && this.map.resolved!.target !== 'export') {
       // Applied for any later request that keeps this forest key (a newer world with the same revisions included):
       // the pass will not run again for it. A moved key reruns the pass, which supersedes this job.
@@ -400,6 +410,30 @@ export class GroundProducts {
     if (this.programWork || this.forestJob || this.programError) return undefined;
     if (this.gpuActive) return (this.backgroundImage ??= this.gpu!.captureMap(1024));
     return undefined;
+  }
+  /** The ground of the 3D view as one whole-map image URL, with the vector water body of the map (`vectors`) when
+   * the ground is not the GPU's. */
+  backgroundUrl(vectors: string): string | undefined {
+    if (!this.backgroundHref) {
+      // The open 3D view also polls while a new world prepares its GPU look.
+      // Keep the background pending until the bitmap is ready; never cache a preview.
+      if (this.gpuActive) this.backgroundHref = this.groundBackground()?.toDataURL('image/png');
+      else if (this.terrainSvg || vectors) {
+        // Illustrated: the canvas-painted ground enters the 3D background draped, as in 2D: wash under the water, stamps over it.
+        let painted = '',
+          wash = '';
+        if (this.fantasy && isFantasyStyle(this.map.resolved!.ground.style)) {
+          const f = this.fantasy,
+            frame = f.painting.frame!,
+            images = (this.fantasyImages ??= fantasyRasterImages(f));
+          const at = `x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.width}" preserveAspectRatio="none"`;
+          wash = `<image class="fantasy-wash" ${at} href="${images.wash}"/>`;
+          painted = `<image class="fantasy-stamps" ${at} href="${images.stamps}"/>`;
+        }
+        this.backgroundHref = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgOf(this.terrainSvg + wash + vectors + painted, wholeMap(this.map.native!.width)))}`;
+      }
+    }
+    return this.backgroundHref;
   }
   dispose(): void {
     this.gpu?.dispose();

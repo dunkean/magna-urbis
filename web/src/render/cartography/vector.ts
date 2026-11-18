@@ -12,11 +12,11 @@
 import { selectLod, lineWidth, BAND_MIN_EDGE, type Lod } from '../lod';
 import { viewRect, type Rect4, type View } from '../view';
 import { RecordingContext } from '../gpu/recorder';
-import { CRISP_MARK } from '../gpu/displayList';
+import { CRISP_MARK } from '../gpu/contract';
 import type { LineLayer, PolyLayer } from '../scene';
 import { growRect, linePath, polyPath } from './geometry';
 import type { CartographyContext, DrawMode } from './context';
-import type { CanvasLike, FrameStats } from './types';
+import type { CanvasLike, FrameStats } from './contract';
 import type { FrameBase, VectorFrame } from './frame';
 import { layerTilesFitView } from './woods';
 import { landPainters, paintContours, paintLandMask, paintLandUse } from './landuse';

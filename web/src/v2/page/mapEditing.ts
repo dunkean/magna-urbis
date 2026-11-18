@@ -1,18 +1,22 @@
-/** Map labels and direct network/town edits. main.ts mounts these after the chain; callbacks retain the serialized naming work and world replacement path. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { getLanguage, registerMessages, settlementDisplayName, type World, applyBuildingEdits, mountMapLabelEditor, mountNetworkEditor, mountTownMoveEditor, translateLand, renameMap } from './dependencies';
+/**
+ * Direct edits of the map: the names and labels editor (and the name redraw, serialized and superseded by revision),
+ * the river and road editors, and the town mover. Each edit replaces the displayed world through `applyDirectMapEdit`.
+ */
+import type { PageActions, PageState } from './contract';
+import { getLanguage, registerMessages } from '../i18n';
+import { settlementDisplayName } from '../mapPresentation';
+import type { World } from '../../gen/types';
+import { applyBuildingEdits } from '../edits';
+import { mountMapLabelEditor } from '../mapLabelEditor';
+import { mountNetworkEditor } from '../networkEditor';
+import { mountTownMoveEditor } from '../townMoveEditor';
+import { translateLand } from '../../ui/urbanSnapshot';
+import { renameMap } from '../mapNaming';
 import { $ } from './dom';
 
 export function createMapEditingActions(state: PageState, actions: PageActions) {
   function syncNameOrigins(): void {
     state.nameOrigins.forEach(form => form.sync());
-  }
-
-  function redrawEditedLabels(): void {
-    // Recompose from the frozen generated names before applying the current edits.
-    // Clearing a moved label or a free-text replacement therefore restores its original name and placement.
-    void actions.redrawNames();
   }
 
   function redrawNames(): Promise<void> {
@@ -63,19 +67,16 @@ export function createMapEditingActions(state: PageState, actions: PageActions) 
     actions.updateWorld();
     void actions.refresh3dWorld();
   }
-  return { syncNameOrigins, redrawEditedLabels, redrawNames, applyDirectMapEdit };
+  return { syncNameOrigins, redrawNames, applyDirectMapEdit };
 }
 
-/** Names, labels, rivers, roads and town movement. Called by main.ts in startup order. */
 export function mountMapEditing(state: PageState, actions: PageActions): void {
-  state.nameOrigins = [];
-
-  state.labelBaseline = undefined;
-
   state.labelEditor = mountMapLabelEditor($('#edit-labels'), {
     getWorld: () => (state.previewBase ? undefined : state.world),
     getSettings: () => state.settings,
-    onChange: actions.redrawEditedLabels,
+    // Recompose from the frozen generated names before applying the current edits: clearing a moved label or a
+    // free-text replacement therefore restores its original name and placement.
+    onChange: () => void actions.redrawNames(),
     onNames: () => {
       void actions.redrawNames();
     },
@@ -163,7 +164,4 @@ export function mountMapEditing(state: PageState, actions: PageActions): void {
       await actions.applyDirectMapEdit(next);
     },
   });
-
-  state.namingRevision = 0;
-  state.namingWork = Promise.resolve();
 }

@@ -1,38 +1,24 @@
-/** Language/units, layout, reset, name origins and road display. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setText,
-  translate,
-  setLanguage,
-  onLanguageChange,
-  initializeLanguage,
-  numberLocale,
-  registerMessages,
-  type Language,
-  getDistanceUnit,
-  onUnitsChange,
-  unitFactor,
-  type DistanceUnit,
-  mountWorkbenchLayout,
-  mountRoadDisplayControl,
-  mountNameOriginControls,
-  saveAutosaveNow,
-  resetSettings,
-  markAllStagesStale,
-  RESET_LABEL,
-  RESET_TITLE,
-  RESET_CONFIRM,
-  RESET_DONE,
-} from './dependencies';
+/**
+ * The last controls of the page: language and units (and what they redraw), the workbench layout, the reset button, the
+ * settlements' name origin and the road display control. Mounted after every form they sync; `initializeLanguage`
+ * runs here, once the page's texts and language listeners exist.
+ */
+import type { PageActions, PageState } from './contract';
+import { setText, translate, setLanguage, onLanguageChange, initializeLanguage, numberLocale, registerMessages, type Language } from '../i18n';
+import { getDistanceUnit, onUnitsChange, unitFactor, type DistanceUnit } from '../units';
+import { mountWorkbenchLayout } from '../workbenchLayout';
+import { mountRoadDisplayControl } from '../roadDisplayControl';
+import { mountNameOriginControls } from '../nameOriginControls';
+import { saveAutosaveNow } from '../autosave';
+import { resetSettings, markAllStagesStale, RESET_LABEL, RESET_TITLE, RESET_CONFIRM, RESET_DONE } from '../settingsReset';
 import { $ } from './dom';
 
-/** Language/units, layout, reset, name origins and road display. Called by main.ts in startup order. */
 export function mountPreferences(state: PageState, actions: PageActions): void {
   $<HTMLSelectElement>('#language-select').onchange = event => setLanguage((event.target as HTMLSelectElement).value as Language);
 
-  state.preferenceDraw = Promise.resolve();
-  state.preferenceRevision = 0;
+  // Unit and language redraws are serialized; a newer one supersedes the queued one.
+  let preferenceDraw = Promise.resolve(),
+    preferenceRevision = 0;
 
   const refreshPresentation = () => {
     actions.syncLocalFacts();
@@ -50,13 +36,13 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
     }
     if (state.world && !state.busy) {
       const shown = state.world,
-        revision = ++state.preferenceRevision;
-      state.preferenceDraw = state.preferenceDraw
+        revision = ++preferenceRevision;
+      preferenceDraw = preferenceDraw
         .catch(() => {})
         .then(async () => {
-          if (revision !== state.preferenceRevision || state.world !== shown || state.busy) return;
+          if (revision !== preferenceRevision || state.world !== shown || state.busy) return;
           await state.client.show(shown, true);
-          if (revision === state.preferenceRevision && state.world === shown) state.city3d?.refresh();
+          if (revision === preferenceRevision && state.world === shown) state.city3d?.refresh();
         })
         .catch(actions.reportAppearanceError);
     }
@@ -160,8 +146,7 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
     getSettings: () => state.settings,
     onChange: () => {
       state.projectRevision++;
-      clearTimeout(state.renderTimer);
-      state.renderTimer = setTimeout(() => void actions.refreshAppearance(), 120);
+      actions.scheduleAppearance();
     },
   });
 }

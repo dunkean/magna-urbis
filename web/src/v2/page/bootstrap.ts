@@ -1,10 +1,13 @@
-/** Client initialization, test hook, links, autosave and hardware probe. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { setText, mountV2TestHook, armAutosave, takeAutosave, mountNewButton } from './dependencies';
+/**
+ * The end of start-up, run by main.ts after every mount: build stamp, recipe sync, client init (then the boot splash
+ * goes), the test hook (`window.__v2Test`), a city code or link, the autosave restore, and the first engine probe.
+ */
+import type { PageActions, PageState } from './contract';
+import { setText } from '../i18n';
+import { mountV2TestHook } from '../testHook';
+import { armAutosave, takeAutosave, mountNewButton } from '../autosave';
 import { $ } from './dom';
 
-/** Client initialization, test hook, links, autosave and hardware probe. Called by main.ts in startup order. */
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
   setText($('#build-info'), `${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);
 

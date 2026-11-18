@@ -1,15 +1,15 @@
 /**
  * The vector rasterizer of the exact outputs: one shared private canvas (an OffscreenCanvas with its own WebGL2
  * context, 4x MSAA) that replays a recorded list and hands back an ImageBitmap. Called through the engine policy
- * (vectorEngine.ts) by the cartography's raster tiles, captures, the 3D drape and the progressive fallback display.
+ * (vectorEngine.ts) by the cartography's exact tiles: captures, the 3D drape and the stepwise paints.
  * Each `rasterize` resizes the canvas to the list, clears it and presents; the error flags follow SampledErrorRead.
  */
-import { GpuRasterError, IDENTITY, type DisplayList, type GpuRasterizer, type ImageSource, type Mat } from './displayList';
+import { GpuRasterError, IDENTITY, type DisplayList, type GpuRasterizer, type ImageSource, type Mat } from './contract';
 import { SampledErrorRead } from './glErrors';
 import { ListReplayer } from './replay';
 import { REPLAY_TOLERANCE } from './resources';
+import { SOFTWARE_GL } from '../softwareGl';
 
-const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|basic render|microsoft warp|software/i;
 type Surface = HTMLCanvasElement | OffscreenCanvas;
 
 class TileRasterizer extends ListReplayer implements GpuRasterizer {
@@ -91,7 +91,7 @@ class TileRasterizer extends ListReplayer implements GpuRasterizer {
   }
 }
 
-export function createGpuRasterizer(canvas?: Surface): GpuRasterizer | null {
+function createGpuRasterizer(canvas?: Surface): GpuRasterizer | null {
   let surface = canvas;
   let gl: WebGL2RenderingContext | null;
   try {

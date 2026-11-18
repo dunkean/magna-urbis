@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CROWN_WATER_GLSL, crownRooted, waterUnderCrown } from '../../rust/bridge/terrainCrownWater';
 import { UNDERDARK_GLSL } from '../../rust/bridge/terrainRenderUnderdark';
-import { TERRAIN_FS } from '../src/ui/terrainGl';
+import { TERRAIN_FS } from '../src/ui/terrain/gl/shaders';
 
 // One rule for trees and Underdark mushroom caps over rivers, lakes and the sea shore (terrainCrownWater.ts).
 describe('crowns over water', () => {

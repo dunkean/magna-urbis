@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RetainedBudget } from '../src/render/retainedBudget';
-import { LiveTileFill } from '../src/render/liveTileFill';
+import { StepwisePaint } from '../src/render/stepwisePaint';
 import { RenderReadiness } from '../src/render/renderReadiness';
 import { projectedTexturePixels } from '../src/ui/terrain3dTextureSize';
 
@@ -58,15 +58,15 @@ describe('progressive completion', () => {
     let now = 0;
     const owner = {},
       other = {},
-      fill = new LiveTileFill(() => (now += 10)),
-      stamp = new LiveTileFill(() => (now += 10)),
+      fill = new StepwisePaint(() => (now += 10)),
+      stamp = new StepwisePaint(() => (now += 10)),
       changed = vi.fn();
     const tick = () => {
       const jobs = [...frames];
       frames.clear();
       for (const [, run] of jobs) run(now);
     };
-    LiveTileFill.track(owner, () => {
+    StepwisePaint.track(owner, () => {
       fill.start(
         'tile',
         function* () {
@@ -75,7 +75,7 @@ describe('progressive completion', () => {
         changed,
         vi.fn(),
       );
-      LiveTileFill.track(other, () =>
+      StepwisePaint.track(other, () =>
         stamp.start(
           'stamp',
           function* () {
@@ -86,14 +86,14 @@ describe('progressive completion', () => {
         ),
       );
     });
-    expect(LiveTileFill.pending(owner)).toBe(1);
-    expect(LiveTileFill.pending(other)).toBe(1);
+    expect(StepwisePaint.pending(owner)).toBe(1);
+    expect(StepwisePaint.pending(other)).toBe(1);
     tick();
-    expect(LiveTileFill.pending(owner)).toBe(1);
+    expect(StepwisePaint.pending(owner)).toBe(1);
     tick();
-    expect(LiveTileFill.pending(owner)).toBe(0);
+    expect(StepwisePaint.pending(owner)).toBe(0);
     expect(changed).toHaveBeenCalledTimes(2);
-    LiveTileFill.track(owner, () =>
+    StepwisePaint.track(owner, () =>
       fill.start(
         'new',
         function* () {
@@ -104,7 +104,7 @@ describe('progressive completion', () => {
       ),
     );
     fill.suspend();
-    expect(LiveTileFill.pending(owner)).toBe(0);
+    expect(StepwisePaint.pending(owner)).toBe(0);
     expect(frames.size).toBe(0);
   });
   it('keeps first useful, programs, visible completion and capture separate and request-scoped', () => {

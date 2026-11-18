@@ -14,6 +14,10 @@
  *
  * The `water` layer is the compositor's own: the vector water raster of the page (a world-region image).
  *
+ * The frame has one camera (render/world/camera.ts): the top view, or the same world tilted. A tilted frame is drawn
+ * by the layers that take the camera (`LiveLayer.tilts`: the ground, for now); the others and the stand-ins wait for
+ * the top view.
+ *
  * This file is one unit: the frame, the layer table with its stand-ins, the work loop with its pacing and the context
  * loss all share the state of one compositor. What stands alone is beside it: rasterQuad.ts (textured quads and
  * raster uploads), isolatedGroup.ts (the multisampled group), gpuTimer.ts (GPU time of a frame), liveStats.ts
@@ -24,10 +28,11 @@ import { createGpuTimer } from './gpuTimer';
 import { createIsolatedGroup } from './isolatedGroup';
 import { liveStats, noteLiveUnit, pushSample } from './liveStats';
 import { createRasterQuad, dropRaster, uploadRaster, type Raster, type RasterQuad } from './rasterQuad';
+import { SOFTWARE_GL } from '../softwareGl';
 import type { View } from '../view';
+import { createFrameCamera, frameCamera, isTilted, topViewMapping } from '../world/camera';
+import type { WorldRelief } from '../world/contract';
 
-/** Same test as render/cityGl.ts: a software rasterizer composes slower than the fallback view it would replace. */
-const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|basic render|microsoft warp|software/i;
 const WORK_MOVING_MS = 3,
   WORK_REST_MS = 8;
 /** Share of a work slice the ground may take while another layer still has work (it is first and would starve them). */
@@ -37,17 +42,17 @@ const GESTURE_MS = 120;
 
 const WORK_UNIT: Record<LiveLayerName, string> = { ground: 'work:ground', water: 'work:water', overlay: 'work:overlay', city: 'work:city', text: 'work:text' };
 const DRAW_UNIT: Record<LiveLayerName, string> = { ground: 'draw:ground', water: 'draw:water', overlay: 'draw:overlay', city: 'draw:city', text: 'draw:text' };
-export { liveStats, noteLiveUnit, noteFallbackFrame } from './liveStats';
-
 const stats = liveStats();
 
-export interface LiveCompositorOptions {
+interface LiveCompositorOptions {
   /** Asks the page for a new animation frame (the viewer's invalidate): the compositor never draws by itself. */
   invalidate(): void;
   quality(): 'full' | 'light';
+  /** The relief the camera of a tilted frame stands on; undefined: a flat map. Only asked for a tilted view. */
+  relief(): WorldRelief | undefined;
 }
 /** World square of a raster, in map metres. */
-export interface LiveRasterRegion {
+interface LiveRasterRegion {
   x: number;
   y: number;
   width: number;
@@ -129,6 +134,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   }
   delete stats.errors;
 
+  const camera = createFrameCamera();
   const frame: Frame = {
     gl,
     view: { cx: 0, cy: 0, scale: 1 },
@@ -140,6 +146,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     rect: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
     worldToClip: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
     worldToPixel: [1, 1, 0, 0],
+    camera,
     target: null,
     now: 0,
     moving: false,
@@ -161,10 +168,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   const fillFrame = (view: View, cssW: number, cssH: number, dpr: number, moving: boolean, now: number): void => {
     const width = Math.max(1, Math.round(cssW * dpr)),
       height = Math.max(1, Math.round(cssH * dpr));
-    const s = view.scale * dpr,
-      tx = width / 2 - view.cx * s,
-      ty = height / 2 - view.cy * s,
-      hw = cssW / (2 * view.scale),
+    const hw = cssW / (2 * view.scale),
       hh = cssH / (2 * view.scale);
     frame.view.cx = view.cx;
     frame.view.cy = view.cy;
@@ -178,21 +182,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     frame.rect.minY = view.cy - hh;
     frame.rect.maxX = view.cx + hw;
     frame.rect.maxY = view.cy + hh;
-    const m = frame.worldToClip,
-      p = frame.worldToPixel;
-    m[0] = (2 * s) / width;
-    m[1] = 0;
-    m[2] = 0;
-    m[3] = 0;
-    m[4] = (-2 * s) / height;
-    m[5] = 0;
-    m[6] = (2 * tx) / width - 1;
-    m[7] = 1 - (2 * ty) / height;
-    m[8] = 1;
-    p[0] = s;
-    p[1] = s;
-    p[2] = tx;
-    p[3] = ty;
+    topViewMapping(view, width, height, dpr, frame.worldToClip, frame.worldToPixel);
+    frameCamera(camera, view, cssW, cssH, width, height, dpr, isTilted(view) ? options.relief() : undefined);
     frame.target = null;
     frame.now = now;
     frame.moving = moving;
@@ -350,7 +341,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         more = layer.work(left, last);
         noteLiveUnit(WORK_UNIT[name], unit);
         // A layer that was not ready for the last frame and now is: the frame is due (its `invalidate` may say so too).
-        if (last && shown[name] && !states[name].ready && layer.ready(last)) {
+        if (last && shown[name] && !states[name].ready && (!last.camera.tilted || layer.tilts) && layer.ready(last)) {
           states[name].ready = true;
           options.invalidate();
         }
@@ -691,7 +682,9 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         continue;
       }
       const t = performance.now(),
-        layer = layers[name];
+        // A tilted frame is drawn by the layers that take its camera; the others (and every stand-in, a flat raster
+        // of the top view) are left out of it.
+        layer = !camera.tilted || layers[name]?.tilts ? layers[name] : undefined;
       let ready = false,
         standIn = false;
       frame.target = null;
@@ -711,7 +704,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
           ready = false;
         }
       }
-      if (!ready) {
+      if (!ready && !camera.tilted) {
         const raster = standIns[name];
         if (raster) {
           if (raster.pending) {

@@ -10,7 +10,7 @@ import { rgbaTarget, type GlViewTargets } from './resources';
 import { waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import type { GlPrograms } from './programs';
 import type { RetainedWaterSource } from '../retainedWater';
-import type { TerrainLook } from '../types';
+import type { TerrainLook } from '../contract';
 
 /** What the water passes of one redraw read; built once per draw. */
 export interface GlWaterPass {

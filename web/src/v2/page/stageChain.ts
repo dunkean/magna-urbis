@@ -1,32 +1,37 @@
-/** Generation controls and stage orchestration. main.ts mounts the terrain, chain and urban forms around the intervening runtime/editor setup to preserve listener order. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setText,
-  translate,
-  registerMessages,
-  firstPendingGeneration,
-  runRemainingGeneration,
-  type Options,
-  type V2TownStage,
-  type BuildingEdit,
-  mountTerrainControls,
-  batchUrbanSync,
-  mountUrbanControls,
-  type UrbanControlParts,
-  mountStageChain,
-  type StageDef,
-  type StageFamily,
-  mountHeightmapSource,
-  backendStatus,
-  mountRegionControls,
-  mountMapControls,
-  migrateUrbanSeeds,
-  rerollUrbanSeeds,
-  type UrbanSeedStage,
-  rerollSeed,
-} from './dependencies';
+/**
+ * The generation chain in the sidebar: the terrain and region forms, the stage chain with its families and the map
+ * stage controls, the urban forms mounted into the city stages, and the commands that run stages and families.
+ * main.ts mounts it in three steps because other controls mount between them (see main.ts).
+ */
+import type { PageActions, PageState } from './contract';
+import type { V2Progress } from '../contracts';
+import { setText, translate, registerMessages } from '../i18n';
+import { firstPendingGeneration, runRemainingGeneration } from '../fullGeneration';
+import type { Options } from '../../gen/options';
+import type { V2TownStage, UrbanSeedStage } from '../contracts';
+import type { BuildingEdit } from '../edits';
+import { mountTerrainControls } from '../terrainControls';
+import { batchUrbanSync, mountUrbanControls, type UrbanControlParts } from '../urbanControls';
+import { mountStageChain } from '../stageChain';
+import type { StageDef, StageFamily } from '../stageRegistry';
+import { mountHeightmapSource } from '../heightmapLibrary';
+import { backendStatus } from '../settingsPanel';
+import { mountRegionControls } from '../regionControls';
+import { mountMapControls } from '../mapControls';
+import { migrateUrbanSeeds, rerollUrbanSeeds } from '../urbanSeeds';
+import { rerollSeed } from '../../../../rust/bridge/generationSeed';
 import { $ } from './dom';
+
+/** Tooltip of the full-generation button for each family. */
+const FULL_GENERATION_HELP: Record<StageFamily, { en: string; fr: string }> = {
+  region: { en: 'Run every unfinished or stale stage, from relief through cities', fr: 'Exécuter toutes les étapes manquantes ou périmées, du relief aux villes' },
+  settlements: { en: 'Run every unfinished or stale stage, including relief if needed, through cities', fr: 'Exécuter toutes les étapes manquantes ou périmées, y compris le relief si nécessaire, jusqu’aux villes' },
+  cities: { en: 'Run every unfinished or stale stage through the targeted cities, including earlier stages if needed', fr: 'Exécuter toutes les étapes manquantes ou périmées jusqu’aux villes ciblées, y compris les étapes précédentes si nécessaire' },
+  map: { en: 'Run every unfinished or stale stage, from relief through cities, then redraw the map', fr: 'Exécuter toutes les étapes manquantes ou périmées, du relief aux villes, puis redessiner la carte' },
+};
+
+/** Label of the sidebar's main button for each family (run by runFamily). */
+const FAMILY_LABELS: Record<StageFamily, string> = { region: 'Create the relief', settlements: 'Place & connect', cities: 'Build targeted cities', map: 'Redraw the map' };
 
 export function createStageChainActions(state: PageState, actions: PageActions) {
   function runCities(stage?: V2TownStage, output?: string): void {
@@ -86,7 +91,7 @@ export function createStageChainActions(state: PageState, actions: PageActions) 
 
   function syncFullGenerationButton(family: StageFamily): void {
     const button = $<HTMLButtonElement>('#run-chain'),
-      label = translate(state.fullGenerationHelp[family].en);
+      label = translate(FULL_GENERATION_HELP[family].en);
     button.title = label;
     button.setAttribute('aria-label', label);
     button.hidden = false;
@@ -105,7 +110,10 @@ export function createStageChainActions(state: PageState, actions: PageActions) 
   }
 
   function runFamily(family: StageFamily): void {
-    state.familyActions[family][1]();
+    if (family === 'region') void actions.generate('terrain');
+    else if (family === 'settlements') void actions.generate('region');
+    else if (family === 'cities') actions.runCities();
+    else void actions.refreshAppearance();
   }
 
   function runStage(stage: StageDef): void {
@@ -139,10 +147,22 @@ export function createStageChainActions(state: PageState, actions: PageActions) 
       place = source?.settlements?.find(place => place.key === key);
     return source && place ? { ...place.options, culture: String(source.stats[`v2.culture:${key}`] ?? place.culture), population: Number(source.stats[`v2.population:${key}`] ?? place.population) } : undefined;
   }
-  return { runCities, rerollCityStep, rerollStage, scheduleChainSync, fullGenerationStatus, syncFullGenerationButton, runFullGeneration, runFamily, runStage, cityControlDefaults };
+  function updateProgress(p: V2Progress): void {
+    setText($('#progress-label'), p.label);
+    const meter = $<HTMLProgressElement>('#progress');
+    if (p.total > 0) meter.value = Math.max(0, Math.min(100, (100 * p.completed) / p.total));
+    else meter.removeAttribute('value');
+    meter.setAttribute('aria-labelledby', 'progress-label');
+    meter.setAttribute('aria-describedby', 'progress-detail');
+    const cache = p.cache === 'memory' ? 'Memory cache reused' : p.cache === 'disk' ? 'Terrain restored from disk' : 'Computing in a worker';
+    state.chain.progress(p);
+    setText($('#progress-detail'), p.detail ?? cache);
+    actions.log(p.label + (p.cache ? ` · ${p.cache}` : ''));
+  }
+  return { runCities, rerollCityStep, rerollStage, scheduleChainSync, fullGenerationStatus, syncFullGenerationButton, runFullGeneration, runFamily, runStage, cityControlDefaults, updateProgress };
 }
 
-/** Terrain and region forms, including placement picking. Called by main.ts in startup order. */
+/** Terrain and region forms, including placement picking on the map. */
 export function mountGenerationControls(state: PageState, actions: PageActions): void {
   state.terrainControls = mountTerrainControls($('#terrain-controls'), {
     getSettings: () => state.settings,
@@ -154,11 +174,6 @@ export function mountGenerationControls(state: PageState, actions: PageActions):
     disabled: () => state.busy,
     context: { getWorld: () => state.world, onApply: () => void actions.generate('terrain') },
   });
-
-  // City Bench forms are mounted per stage once the chain exists (below).
-  state.urbanControls = { sync() {}, dispose() {} };
-
-  state.pendingRegionPosition = undefined;
 
   state.regionControls = mountRegionControls($('#region-controls'), {
     getSettings: () => state.settings,
@@ -176,35 +191,17 @@ export function mountGenerationControls(state: PageState, actions: PageActions):
   window.addEventListener('v2-edit-mode', event => {
     if ((event as CustomEvent<string>).detail !== 'placement') state.pendingRegionPosition = undefined;
   });
-
-  state.inspectorForms = [];
 }
 
-/** Generation families, stage chain and map controls. Called by main.ts in startup order. */
+/** The stage chain (families, stages, staging fields) and the map stage controls (names, export). */
 export function mountStageControls(state: PageState, actions: PageActions): void {
-  state.chainSyncFrame = 0;
-
-  state.fullGenerationHelp = {
-    region: { en: 'Run every unfinished or stale stage, from relief through cities', fr: 'Exécuter toutes les étapes manquantes ou périmées, du relief aux villes' },
-    settlements: { en: 'Run every unfinished or stale stage, including relief if needed, through cities', fr: 'Exécuter toutes les étapes manquantes ou périmées, y compris le relief si nécessaire, jusqu’aux villes' },
-    cities: { en: 'Run every unfinished or stale stage through the targeted cities, including earlier stages if needed', fr: 'Exécuter toutes les étapes manquantes ou périmées jusqu’aux villes ciblées, y compris les étapes précédentes si nécessaire' },
-    map: { en: 'Run every unfinished or stale stage, from relief through cities, then redraw the map', fr: 'Exécuter toutes les étapes manquantes ou périmées, du relief aux villes, puis redessiner la carte' },
-  };
-
-  for (const copy of Object.values(state.fullGenerationHelp)) registerMessages({ [copy.en]: copy });
+  for (const copy of Object.values(FULL_GENERATION_HELP)) registerMessages({ [copy.en]: copy });
 
   registerMessages({
     'Will run from Relief': { en: 'Will run from Relief', fr: 'La génération commencera au relief' },
     'Will run from Settlements': { en: 'Will run from Settlements', fr: 'La génération commencera aux peuplements' },
     'Will run from Cities': { en: 'Will run from Cities', fr: 'La génération commencera aux villes' },
   });
-
-  state.familyActions = {
-    region: ['Create the relief', () => void actions.generate('terrain')],
-    settlements: ['Place & connect', () => void actions.generate('region')],
-    cities: ['Build targeted cities', () => actions.runCities()],
-    map: ['Redraw the map', () => void actions.refreshAppearance()],
-  };
 
   state.chain = mountStageChain({
     root: $('#terrain-controls'),
@@ -241,8 +238,7 @@ export function mountStageControls(state: PageState, actions: PageActions): void
     },
     onAppearance: () => {
       state.projectRevision++;
-      clearTimeout(state.renderTimer);
-      state.renderTimer = setTimeout(() => void actions.refreshAppearance(), 120);
+      actions.scheduleAppearance();
     },
     run: actions.runStage,
     reroll: actions.rerollStage,
@@ -277,7 +273,7 @@ export function mountStageControls(state: PageState, actions: PageActions): void
     onFamily: family => {
       actions.syncFullGenerationButton(family);
       window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: family === 'map' && state.world && !state.busy ? 'labels' : 'family' }));
-      setText($('#generate-label'), state.familyActions[family][0]);
+      setText($('#generate-label'), FAMILY_LABELS[family]);
       actions.syncPlacesPanel(family);
     },
   });
@@ -291,9 +287,11 @@ export function mountStageControls(state: PageState, actions: PageActions): void
     },
     onExport: () => actions.dialog('#export-dialog'),
   });
+
+  state.client.onEngineReset = () => state.chain.clearResults();
 }
 
-/** Urban forms mounted into the existing chain stages. Called by main.ts in startup order. */
+/** The urban forms, one per city stage, mounted into the chain's stage bodies; they replace the inert stand-in of `state.urbanControls`. */
 export function mountUrbanStageForms(state: PageState, actions: PageActions): void {
   const urbanParts: [string, UrbanControlParts][] = [
     ['city-composition', { sections: ['layout', 'footprint', 'growth', 'fortifications', 'ports'], extras: ['header', 'phases', 'archetypes'] }],

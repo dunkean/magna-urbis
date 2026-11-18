@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newPath } from '../src/render/gpu/path';
 import { RecordingCanvas, type RecordingContext } from '../src/render/gpu/recorder';
-import { CRISP_MARK, type FillOp, type PathGeometry, type StrokeOp } from '../src/render/gpu/displayList';
+import { CRISP_MARK, type FillOp, type PathGeometry, type StrokeOp } from '../src/render/gpu/contract';
 import { clipGeometry, clipList, cullList, cullSegments, markIndex, splitList } from '../src/render/gpu/listTools';
 
 const record = (w: number, h: number): { canvas: RecordingCanvas; ctx: CanvasRenderingContext2D } => {

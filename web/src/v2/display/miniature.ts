@@ -6,16 +6,8 @@
  * terrain renderer. The page asks for it after a frame of new content and again until `complete`.
  */
 
+import type { DisplayParts, ViewStatus } from './contract';
 import type { MapState } from './mapState';
-import type { DisplayParts } from './parts';
-
-/** What the miniature needs to know of the view on screen. */
-export interface MiniatureView {
-  /** The view moves, or its picture at rest is still owed. */
-  busy(): boolean;
-  /** Pending work that only concerns the view on screen (the picture at rest, the town layer). */
-  pendingViewOnly(): number;
-}
 
 export class Miniature {
   private readonly canvas = document.createElement('canvas');
@@ -25,7 +17,7 @@ export class Miniature {
   constructor(
     private readonly map: MapState,
     private readonly parts: DisplayParts,
-    private readonly view: MiniatureView,
+    private readonly view: ViewStatus,
     private readonly pendingWork: () => number,
   ) {}
 

@@ -6,7 +6,7 @@
  * Whether the group is complete is a synchronous query (the page waits for the graphics process to drain its queue):
  * it is asked once per sample count, since completeness depends on the formats and the samples, not on the size.
  */
-export interface GroupTarget {
+interface GroupTarget {
   /** Multisampled framebuffer the layer draws into. */
   readonly fbo: WebGLFramebuffer;
   /** Framebuffer of `texture`, the resolved colour. */
@@ -21,7 +21,7 @@ interface Group extends GroupTarget {
   samples: number;
 }
 
-export interface IsolatedGroup {
+interface IsolatedGroup {
   /** The group at this size and sample count, allocated again when they changed. False: it cannot be made (isolated
    * layers then show their stand-in: drawn straight on the canvas their blending would be wrong). */
   ensure(width: number, height: number, samples: number): boolean;

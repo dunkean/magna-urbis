@@ -1,7 +1,7 @@
 /**
  * Trees as sprites: tree marks per index tile, the canopy sprite batches of a GPU recording, the sprite layer tiles
  * (woods and parchment symbols pre-composited per density and tile), and the woods of the 3D drape tiles.
- * Reads: scene, world, palette, canopy, brushes, activeLive, layerTilesFit, recordingNow. Writes: treeMarks,
+ * Reads: scene, world, palette, canopy, brushes, stepwise, layerTilesFit, recordingNow. Writes: treeMarks,
  * treeSprites, layerTiles, layerTilesFailed, recordedTiles, drapeTemps, canopyScratch.
  */
 import { canopyMarks } from '../canopy';
@@ -10,22 +10,22 @@ import { TextureLayer, pointInRenderPoly, type Mark } from '../scene';
 import { Rect4 } from '../view';
 import { RecordingContext } from '../gpu/recorder';
 import { existingGpuRasterizer } from '../vectorEngine';
-import { CanvasLike } from './types';
+import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
 import { growRect, vhash, clumpNoise, addRing } from './geometry';
 import { forestClip, forestWeight, roomOf, coniferOf } from './forest';
 
 /** Sprite layers (woods, parchment symbols) are pre-composited in tiles of this many pixels, one tile set per
  * power-of-two pixel density up to LAYER_TILE_MAX_DENSITY px/m; closer views stamp their few sprites directly. */
-export const LAYER_TILE_PX = 512,
-  LAYER_TILE_GUTTER = 2,
-  LAYER_TILE_MAX_DENSITY = 4,
+const LAYER_TILE_PX = 512,
+  LAYER_TILE_MAX_DENSITY = 4;
+/** Texels around a layer tile (filtering at the seams), and the byte budget of the layer tiles (context.ts). */
+export const LAYER_TILE_GUTTER = 2,
   LAYER_TILE_BYTES = 128 * 1024 * 1024;
 /** Farthest reach of a sprite from its mark (m): the largest canopy crown is 10 x 1.59 m from its centre. */
 export const LAYER_TILE_REACH = 16;
-/** Live overlay layer: a recorded region extends this share of the view beyond each side. */
 /** GPU engine: most woods sprites one cached batch may hold (one instanced draw; a far view of a wooded map). */
-export const GPU_SPRITE_BATCH_MAX = 400_000;
+const GPU_SPRITE_BATCH_MAX = 400_000;
 /** GPU engine: sprite marks in view under which a layer stamps them directly on the recording (instanced) instead of pre-compositing layer tiles. */
 export const GPU_SPRITE_BUDGET = 60_000;
 /** Tree centres of a wood or orchard layer within `area`, in draw order (cached per index tile). */
@@ -37,7 +37,7 @@ export function treeMarksIn(c: CartographyContext, tl: TextureLayer, area: Rect4
   return marks.sort((a, b) => a.y - b.y || a.x - b.x);
 }
 /** Tree marks of one index tile (all of them, cached for the whole map). */
-export function tileTreeMarks(c: CartographyContext, tl: TextureLayer, tile: number): Mark[] {
+function tileTreeMarks(c: CartographyContext, tl: TextureLayer, tile: number): Mark[] {
   const { pal, canopy, brushes, treeMarks, polyL } = c;
   let entries = treeMarks.get(tl);
   if (!entries) {
@@ -162,8 +162,8 @@ export function drawLayerTiles(c: CartographyContext, ctx: CanvasRenderingContex
   if (t.b || t.c || !(t.a > 0) || Math.abs(t.d - t.a) > t.a * 1e-6) return false;
   const density = 2 ** Math.ceil(Math.log2(t.a));
   if (density > LAYER_TILE_MAX_DENSITY) return false;
-  // A cold sprite tile must not expand one small progressive map tile into a 512 px raster job.
-  const tilePx = c.activeLive ? 256 : LAYER_TILE_PX;
+  // A cold sprite tile must not expand one small stepwise map tile into a 512 px raster job.
+  const tilePx = c.stepwise ? 256 : LAYER_TILE_PX;
   const span = tilePx / density,
     g = LAYER_TILE_GUTTER,
     side = tilePx + 2 * g;

@@ -35,7 +35,7 @@ function controls(source: World) {
     targets: () => undefined as string[] | undefined,
     redraw: vi.fn(async () => {}),
     generate: vi.fn(async (action: FullGenerationAction, keys?: string[], through?: V2TownStage) => {
-      // A cancelled run returns false and leaves the previous map in place (main.ts generate).
+      // A cancelled run returns false and leaves the previous map in place (page/generation.ts generate).
       if (cancelled.delete(action)) return false;
       if (action === 'terrain') world = await generateTerrain(settings, undefined, new TerrainCache());
       else if (action === 'region') world = await planRegion(world, settings);
@@ -77,7 +77,7 @@ describe('a seed change resets every downstream product', () => {
   it('a placement seed change drops the frozen list and the previous places, without cancellation', async () => {
     const api = controls(complete),
       settings = api.settings();
-    // Moving a town freezes the whole automatic draw into a list (main.ts town mover).
+    // Moving a town freezes the whole automatic draw into a list (page/mapEditing.ts town mover).
     settings.region!.placement = { mode: 'list', list: complete.settlements!.map(place => ({ ...regionSpec(place.key, 31), position: { ...place.center } })) };
     changeSeed(settings, rerollSeed(settings.options.seed, ['settle-sites', 'city/*/default']));
     expect(settings.region!.placement!.list).toBeUndefined();

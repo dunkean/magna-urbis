@@ -9,7 +9,7 @@
  *   a read there waited for all of that, up to a second. A timer reads once the replays have stopped; an error it
  *   finds is thrown by the next replay.
  */
-import { GpuRasterError } from './displayList';
+import { GpuRasterError } from './contract';
 
 /** Replays of a context that read the GL error flags at once, and the longest time between two reads afterwards (ms). */
 const ERROR_READ_FIRST = 2,

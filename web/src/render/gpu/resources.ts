@@ -6,7 +6,7 @@
  * `counting`: set by the live rasterizer while a frame replays; everything created or uploaded then is counted in
  * `late` (it should have been made by `warm` or `prepare`, in the layer's `work`).
  */
-import { GpuRasterError, SPRITE_STRIDE, type ImageSource, type Mat, type PathGeometry, type RecordedPath, type SpriteOp, type StrokeOp } from './displayList';
+import { GpuRasterError, SPRITE_STRIDE, type ImageSource, type Mat, type PathGeometry, type RecordedPath, type SpriteOp, type StrokeOp } from './contract';
 import { fillFans, strokeSegments, type StrokeGeometry } from './tessellate';
 import { tolerance } from './transforms';
 
@@ -110,7 +110,7 @@ export interface GeometryData {
   strokes: Map<string, StrokeSlices>;
   bytes: number;
 }
-export interface TextureData {
+interface TextureData {
   texture: WebGLTexture;
   width: number;
   height: number;

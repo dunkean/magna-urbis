@@ -1,494 +1,441 @@
 /**
- * Terrain3d facade and virtual backend hooks, called by 3D owners and the WebGPU subclass.
- * Reads/writes: Owns the Terrain3dState instance and constructor callbacks; passes that instance explicitly to responsibility modules while preserving virtual dispatch.
+ * Terrain3d, the 3D terrain view the owners hold (V2 3D view, City 3D, terrain bench, illustration captures): it
+ * assembles the parts under terrain/ around one shared context, takes their inputs, and is the WebGL2 backend through
+ * its protected resource and frame hooks, which the WebGPU view (gpu/view.ts) overrides. The renderer host
+ * (host/host.ts) may replace one view by another with transferTo.
  */
-import { Terrain3dState } from './terrainState';
-
 import { onDisplayQualityChange } from '../../render/displayQuality';
-import { type ForestTextures, type HeightLayer } from '../terrainGl';
-import { type ForestField, type ForestOccupation, type LandDetail } from '../../../../rust/bridge/terrainForest';
-import { type CavernField, type UnderdarkCavern3d } from '../../render/underdarkCavern';
-import { type TerrainStitchedPiece } from '../terrain3dStitch';
+import type { ForestTextures } from '../terrain/gl/forest';
+import type { HeightLayer } from '../terrain/contract';
+import type { ForestField, ForestOccupation, LandDetail } from '../../../../rust/bridge/terrainForest';
+import type { CavernField } from '../../render/underdarkCavern';
 import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { Building3dVisual, Building3dScene } from '../../render/urbanBuildingGeometry';
-import type { BuildingFrame } from '../urbanBuilding3d';
-import { UrbanGroundCuts } from '../urbanGroundCuts';
-import { type TreeInputs } from '../terrain3dTrees';
-import { type Terrain3dBillboard, type Terrain3dBillboards } from '../terrain3dBillboards';
-import { Terrain3dTileContent, WaterSurface, Terrain3dGroundSettings, Terrain3dLookSettings, Terrain3dTile, Patch, Node, Terrain3dCamera, Terrain3dStatus, Terrain3dOptions, RenderPiece, FrameGeometry, MaterialRef, PatchMaterial, PatchDraw } from './terrainTypes';
-import type { Terrain3dContext } from './terrainContext';
-import * as terrainLifecycle from './terrainLifecycle';
-import * as terrainPrograms from './terrainPrograms';
-import * as terrainCavern from './terrainCavern';
-import * as terrainWebglResources from './terrainWebglResources';
-import * as terrainInputs from './terrainInputs';
-import * as terrainTiles from './terrainTiles';
-import * as terrainPatches from './terrainPatches';
-import * as terrainSampling from './terrainSampling';
-import * as terrainProjection from './terrainProjection';
-import * as terrainCamera from './terrainCamera';
-import * as terrainSelection from './terrainSelection';
-import * as terrainMesh from './terrainMesh';
-import * as terrainMorph from './terrainMorph';
-import * as terrainWebglFrame from './terrainWebglFrame';
-import * as terrainBillboards from './terrainBillboards';
-import * as terrainTrees from './terrainTrees';
-import * as terrainFungi from './terrainFungi';
-import * as terrainNavigation from './terrainNavigation';
-import * as terrainCapture from './terrainCapture';
-import * as terrainFrame from './terrainFrame';
-import * as terrainAntialiasing from './terrainAntialiasing';
+import { UrbanBuildingPass } from '../urbanBuilding3d';
+import { UrbanBuildingGround } from '../urbanBuildingGround';
+import type { UrbanGroundCuts } from '../urbanGroundCuts';
+import type { Terrain3dBillboard, Terrain3dBillboards } from '../terrain3dBillboards';
+import { TerrainViewContext } from './terrain/context';
+import type { FrameGeometry, Patch, PatchDraw, Terrain3dCamera, Terrain3dForestSettings, Terrain3dGroundSettings, Terrain3dLookSettings, Terrain3dOptions, Terrain3dStatus, Terrain3dTile, Terrain3dTileContent, TerrainResources, WaterSurface } from './terrain/contract';
+import { FOV } from './terrain/policy';
+import { TerrainStatus } from './terrain/status';
+import { TerrainSurface } from './terrain/surface';
+import { TerrainCavern } from './terrain/cavern';
+import { TerrainCameraRig } from './terrain/camera';
+import { TerrainNavigation } from './terrain/navigation';
+import { TerrainBuildings } from './terrain/buildings';
+import { TerrainForest } from './terrain/forest';
+import { PatchTree } from './terrain/patchTree';
+import { PatchMeshes } from './terrain/meshes';
+import { TileMaterials } from './terrain/tiles';
+import { NearTrees } from './terrain/trees';
+import { UnderdarkFungi } from './terrain/fungi';
+import { TerrainBillboards } from './terrain/billboards';
+import { TerrainProjection, type LabelProjector } from './terrain/projection';
+import { TerrainFrameLoop, type TerrainLod } from './terrain/frame';
+import type { TerrainParts } from './terrain/parts';
+import { GlTerrainRenderer } from './gl/renderer';
 
-/** Quadtree geometry and regional map materials, independent of generation. WebGL2 backend; the WebGPU
- * backend (terrain3dGpu.ts) overrides the protected GPU hooks (attach, upload*, release*, renderFrame...). */
-export class Terrain3d extends Terrain3dState {
+export class Terrain3d {
+  protected readonly context: TerrainViewContext;
+  protected readonly parts: TerrainParts;
+  private readonly navigation: TerrainNavigation;
+  private readonly projection: TerrainProjection;
+  private readonly frames: TerrainFrameLoop;
+  /** The WebGL2 backend's objects (absent in the WebGPU view). */
+  private webgl?: GlTerrainRenderer;
+  /** The whole-map texture and its stamps as given, replayed on a restored context or another view. */
+  private textureSource?: TexImageSource;
+  private unlistenQuality?: () => void;
+
   constructor(
     protected canvas: HTMLCanvasElement,
-    private onChange: () => void,
-    private onRender?: () => void,
+    onChange: () => void,
+    onRender?: () => void,
     protected options: Terrain3dOptions = {},
   ) {
-    super();
-    const context = this as unknown as Terrain3dContext;
-    context.element = options.element ?? canvas;
-    context.silent = !!options.silent;
-    context.attach();
-    context.element.style.touchAction = 'none';
-    context.interactions();
-    context.unlistenQuality = onDisplayQualityChange(() => {
-      context.invalidateTiles();
-      context.billboardDirty = true;
+    const element = options.element ?? canvas;
+    const context = (this.context = new TerrainViewContext(
+      canvas,
+      element,
+      options,
+      () => this.frames.request(),
+      () => this.contextLost(),
+    ));
+    // The parts reach the backend through these hooks, so the WebGPU view's overrides apply to them.
+    const resources: TerrainResources = {
+      uploadTexture: source => this.uploadTexture(source),
+      deleteTexture: texture => this.deleteTexture(texture),
+      uploadWaterMask: water => this.uploadWaterMask(water),
+      uploadMacroField: layer => this.uploadMacroField(layer),
+      uploadCavern: field => this.uploadCavern(field),
+      uploadRoof: mesh => this.uploadRoof(mesh),
+      uploadForest: field => this.uploadForest(field),
+      releaseForest: textures => this.releaseForest(textures),
+      uploadOccupation: occupation => this.uploadOccupation(occupation),
+      uploadLandDetail: detail => this.uploadLandDetail(detail),
+      uploadMesh: (patch, values) => this.uploadMesh(patch, values),
+      releaseMesh: patch => this.releaseMesh(patch),
+      uploadTrees: values => this.uploadTrees(values),
+      uploadFungi: values => this.uploadFungi(values),
+      uploadBillboards: (values, atlas) => this.uploadBillboards(values, atlas),
+    };
+    const status = new TerrainStatus(element, !!options.silent);
+    const surface: TerrainSurface = new TerrainSurface(context, () => cavern.field);
+    const rig: TerrainCameraRig = new TerrainCameraRig(
+      context,
+      surface,
+      () => cavern.field,
+      (x, y) => this.projection.screenToWorld(x, y),
+      onChange,
+    );
+    const cavern: TerrainCavern = new TerrainCavern(
+      context,
+      resources,
+      () => rig.camera,
+      () => this.clearPatches(),
+    );
+    const buildings = new TerrainBuildings(surface);
+    const forest = new TerrainForest(
+      context,
+      resources,
+      () => buildings.scene,
+      procedural => this.selectTerrainProgram(procedural),
+    );
+    const release = (texture: WebGLTexture): void => tiles.release(texture),
+      requireHeights = (): boolean => tiles.requireHeights;
+    const tree = new PatchTree(context, surface, rig, resources, release, requireHeights);
+    const meshes = new PatchMeshes(context, surface, tree, rig, resources, release, requireHeights);
+    const tiles: TileMaterials = new TileMaterials(
+      context,
+      resources,
+      surface,
+      rig,
+      tree,
+      () => meshes,
+      (x, y, width) => trees.waterMaskChanged(x, y, width),
+      () => this.clearPatches(),
+    );
+    const waterAt = (x: number, y: number): number => tiles.waterAt(x, y);
+    const trees = new NearTrees(context, resources, surface, rig, forest, waterAt);
+    const fungi = new UnderdarkFungi(context, resources, surface, rig, cavern, forest, waterAt);
+    const billboards = new TerrainBillboards(context, resources, surface, rig, () => this.billboardsReady());
+    this.parts = { status, surface, cavern, rig, buildings, forest, tree, meshes, tiles, trees, fungi, billboards };
+    this.navigation = new TerrainNavigation(context, rig, surface);
+    this.frames = new TerrainFrameLoop(context, this.parts, (frame, w, h, draws) => this.renderFrame(frame, w, h, draws), onRender);
+    this.projection = new TerrainProjection(context, surface, rig, () => this.frames.displayedGrids, buildings);
+    this.attach();
+    element.style.touchAction = 'none';
+    this.navigation.install();
+    this.unlistenQuality = onDisplayQualityChange(() => {
+      this.invalidateTiles();
+      billboards.dirty = true;
       context.request();
     });
   }
-  protected mark(key: Terrain3dStatus, value: string): void {
-    return terrainLifecycle.mark(this as unknown as Terrain3dContext, key, value);
-  }
+
   getStatus(key: Terrain3dStatus): string | undefined {
-    return terrainLifecycle.getStatus(this as unknown as Terrain3dContext, key);
+    return this.parts.status.get(key);
   }
+
   showStatus(): void {
-    return terrainLifecycle.showStatus(this as unknown as Terrain3dContext);
+    this.parts.status.show();
   }
-  protected attach(): void {
-    return terrainLifecycle.attach(this as unknown as Terrain3dContext);
-  }
-  private initialize(): void {
-    return terrainLifecycle.initialize(this as unknown as Terrain3dContext);
-  }
-  protected selectTerrainProgram(procedural: boolean): void {
-    return terrainPrograms.selectTerrainProgram(this as unknown as Terrain3dContext, procedural);
-  }
-  protected prepareMapShader(): void {
-    return terrainPrograms.prepareMapShader(this as unknown as Terrain3dContext);
-  }
+
   getShaderProfile(): 'map' | 'procedural' {
-    return terrainPrograms.getShaderProfile(this as unknown as Terrain3dContext);
+    return this.context.useMapShader ? 'map' : 'procedural';
   }
-  private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
-    return terrainPrograms.groundShader(this as unknown as Terrain3dContext, settings);
+
+  /** The draped-map shader unless a material ground (or a forest) needs the procedural one. */
+  protected selectTerrainProgram(procedural: boolean): void {
+    const context = this.context;
+    context.useMapShader = !!context.options.fastMapShader && !procedural;
+    if (context.useMapShader) this.prepareMapShader();
+    this.parts.status.mark('terrainShader', context.useMapShader ? 'map' : 'procedural');
   }
-  private uniform(name: string, shader = (this as unknown as Terrain3dContext).terrainProgram): WebGLUniformLocation | null {
-    return terrainPrograms.uniform(this as unknown as Terrain3dContext, name, shader);
-  }
-  protected uploadCavern(field: CavernField): WebGLTexture {
-    return terrainCavern.uploadCavern(this as unknown as Terrain3dContext, field);
-  }
-  protected refreshCavern(force = false): void {
-    return terrainCavern.refreshCavern(this as unknown as Terrain3dContext, force);
-  }
-  protected uploadMacroField(layer?: HeightLayer): WebGLTexture {
-    return terrainWebglResources.uploadMacroField(this as unknown as Terrain3dContext, layer);
-  }
-  private rectangleIndices(tile: Terrain3dTile, clip: Terrain3dTile): { buffer: WebGLBuffer; count: number } {
-    return terrainWebglResources.rectangleIndices(this as unknown as Terrain3dContext, tile, clip);
-  }
-  protected uploadTexture(source: TexImageSource | Uint8Array): WebGLTexture {
-    return terrainWebglResources.uploadTexture(this as unknown as Terrain3dContext, source);
-  }
-  setSurface(layer: HeightLayer, water?: WaterSurface, waterVisible = true): void {
-    return terrainInputs.setSurface(this as unknown as Terrain3dContext, layer, water, waterVisible);
-  }
-  setHeightSampler(sample: ((x: number, y: number, metresPerPixel: number) => number) | undefined): void {
-    return terrainInputs.setHeightSampler(this as unknown as Terrain3dContext, sample);
-  }
-  setGroundMaterial(settings: Terrain3dGroundSettings | undefined): void {
-    return terrainInputs.setGroundMaterial(this as unknown as Terrain3dContext, settings);
-  }
-  setRenderV2Season(season: number): void {
-    return terrainInputs.setRenderV2Season(this as unknown as Terrain3dContext, season);
-  }
-  setLook(look: Terrain3dLookSettings): void {
-    return terrainInputs.setLook(this as unknown as Terrain3dContext, look);
-  }
-  setTileBoundaries(visible: boolean): void {
-    return terrainInputs.setTileBoundaries(this as unknown as Terrain3dContext, visible);
-  }
-  setGroundCuts(cuts: UrbanGroundCuts): void {
-    return terrainInputs.setGroundCuts(this as unknown as Terrain3dContext, cuts);
-  }
-  setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
-    return terrainInputs.setBuildings(this as unknown as Terrain3dContext, scene, appearance, visible);
-  }
-  replaceBuildings(changes: readonly Building3dVisual[]): string[] {
-    return terrainInputs.replaceBuildings(this as unknown as Terrain3dContext, changes);
-  }
-  setForest(field: ForestField | undefined, occupation?: ForestOccupation, settings = this.forestSettings): void {
-    return terrainInputs.setForest(this as unknown as Terrain3dContext, field, occupation, settings);
-  }
-  protected uploadForest(field: ForestField): ForestTextures {
-    return terrainWebglResources.uploadForest(this as unknown as Terrain3dContext, field);
-  }
-  protected releaseForest(textures: ForestTextures | undefined): void {
-    return terrainWebglResources.releaseForest(this as unknown as Terrain3dContext, textures);
-  }
-  protected uploadOccupation(occupation: ForestOccupation): WebGLTexture {
-    return terrainWebglResources.uploadOccupation(this as unknown as Terrain3dContext, occupation);
-  }
-  protected uploadLandDetail(detail: LandDetail): WebGLTexture {
-    return terrainWebglResources.uploadLandDetail(this as unknown as Terrain3dContext, detail);
-  }
-  protected deleteTexture(texture: WebGLTexture): void {
-    return terrainWebglResources.deleteTexture(this as unknown as Terrain3dContext, texture);
-  }
-  protected uploadWaterMask(water: NonNullable<Terrain3dTileContent['water']>): WebGLTexture {
-    return terrainWebglResources.uploadWaterMask(this as unknown as Terrain3dContext, water);
-  }
-  protected uploadMesh(patch: Patch, values: Float32Array): void {
-    return terrainWebglResources.uploadMesh(this as unknown as Terrain3dContext, patch, values);
-  }
-  protected releaseMesh(patch: Patch): void {
-    return terrainWebglResources.releaseMesh(this as unknown as Terrain3dContext, patch);
-  }
-  protected contextLost(): boolean {
-    return terrainWebglResources.contextLost(this as unknown as Terrain3dContext);
-  }
-  setTileLoader(loader: ((tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>) | undefined, requireHeights = false): void {
-    return terrainTiles.setTileLoader(this as unknown as Terrain3dContext, loader, requireHeights);
-  }
-  invalidateTiles(region?: { minX: number; minY: number; maxX: number; maxY: number } | string): void {
-    return terrainTiles.invalidateTiles(this as unknown as Terrain3dContext, region);
-  }
-  private applyStaleTiles(): void {
-    return terrainTiles.applyStaleTiles(this as unknown as Terrain3dContext);
-  }
-  getLodInfo(): Terrain3dContext['lod'] & { covered: boolean } {
-    return terrainPatches.getLodInfo(this as unknown as Terrain3dContext);
-  }
+
+  /** Every input of the surface: patches, grids, meshes and streams are rebuilt under a new epoch. */
   private clearPatches(): void {
-    return terrainPatches.clearPatches(this as unknown as Terrain3dContext);
+    const { meshes, trees, fungi, billboards, tree } = this.parts;
+    ++this.context.epoch;
+    this.context.preparation.clear();
+    meshes.clear();
+    trees.reset();
+    fungi.reset();
+    billboards.dirty = true;
+    tree.clear();
+    this.frames.clear();
   }
-  private surface(x: number, y: number, metresPerPixel: number, detail = true, carved = true): number {
-    return terrainSampling.surface(this as unknown as Terrain3dContext, x, y, metresPerPixel, detail, carved);
+
+  setSurface(layer: HeightLayer, water?: WaterSurface, waterVisible = true): void {
+    const { surface, billboards, cavern, rig } = this.parts;
+    if (surface.same(layer, water, waterVisible)) return;
+    surface.layer = layer;
+    surface.water = water;
+    surface.waterVisible = waterVisible;
+    billboards.dirty = true;
+    this.deleteTexture(surface.macroTexture);
+    surface.macroTexture = this.uploadMacroField(layer);
+    cavern.refresh(layer);
+    surface.measure();
+    this.clearPatches();
+    rig.limit();
+    this.context.request();
   }
-  heightAt(x: number, y: number): number | undefined {
-    return terrainSampling.heightAt(this as unknown as Terrain3dContext, x, y);
+
+  setHeightSampler(sample: ((x: number, y: number, metresPerPixel: number) => number) | undefined): void {
+    if (sample === this.parts.surface.heightSampler) return;
+    this.parts.surface.heightSampler = sample;
+    this.clearPatches();
+    this.context.request();
+    this.parts.billboards.dirty = true;
   }
-  groundAt(x: number, y: number): number | undefined {
-    return terrainSampling.groundAt(this as unknown as Terrain3dContext, x, y);
+
+  setGroundMaterial(settings: Terrain3dGroundSettings | undefined): void {
+    const context = this.context,
+      { surface, cavern, rig, tiles, forest } = this.parts,
+      previous = context.ground;
+    if (settings && (settings.ambience !== undefined || settings.waterLook !== undefined)) this.setLook(settings);
+    // Compile before committing the switch: a failed optional material keeps
+    // the current renderer and retained geometry usable.
+    this.selectTerrainProgram(!!settings || !!forest.textures);
+    context.ground = settings;
+    cavern.refresh(surface.layer);
+    rig.reframeOnTowns();
+    if (settings?.renderV2 && !previous?.renderV2 && !this.textureSource) {
+      this.deleteTexture(tiles.material);
+      tiles.material = this.uploadTexture(new Uint8Array([0, 0, 0, 0]));
+    }
+    if (
+      !!previous?.displacement !== !!settings?.displacement ||
+      (settings?.displacement && (previous?.seed !== settings.seed || previous?.sourceCell !== settings.sourceCell || previous?.climate.temperature !== settings.climate.temperature || previous?.climate.precipitation !== settings.climate.precipitation))
+    )
+      this.clearPatches();
+    rig.limit();
+    context.request();
   }
-  pickBuilding(x: number, y: number): string | undefined {
-    return terrainProjection.pickBuilding(this as unknown as Terrain3dContext, x, y);
+
+  setRenderV2Season(season: number): void {
+    if (this.context.ground?.renderV2) {
+      this.context.ground = { ...this.context.ground, v2Season: season };
+      this.context.request();
+    }
   }
-  screenToWorld(x: number, y: number): [number, number] | null {
-    return terrainProjection.screenToWorld(this as unknown as Terrain3dContext, x, y);
+
+  setLook(look: Terrain3dLookSettings): void {
+    const current = this.context.look;
+    if (current.paperMap === look.paperMap && current.ambience === look.ambience && current.waterLook === look.waterLook && current.waterVisible === look.waterVisible && current.groundCover === look.groundCover) return;
+    this.context.look = { ...look };
+    this.context.request();
   }
-  worldToScreen(x: number, y: number): [number, number] | null {
-    return terrainProjection.worldToScreen(this as unknown as Terrain3dContext, x, y);
+
+  setTileBoundaries(visible: boolean): void {
+    this.context.tileBounds = visible;
+    this.context.request();
   }
-  labelProjector(): { scale: number; project(x: number, y: number): [number, number] | null } | undefined {
-    return terrainProjection.labelProjector(this as unknown as Terrain3dContext);
+
+  /** Ground cuts (town moats): built once per set of circuits; a new set reshapes the patches. */
+  setGroundCuts(cuts: UrbanGroundCuts): void {
+    if (cuts === this.parts.surface.groundCuts) return;
+    this.parts.surface.groundCuts = cuts;
+    this.clearPatches();
+    this.context.request();
   }
-  private patch(level: number, ix: number, iy: number): Patch {
-    return terrainPatches.patch(this as unknown as Terrain3dContext, level, ix, iy);
+
+  /** Presentation consumes the same immutable native scene as the map. */
+  setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
+    const { buildings, billboards, forest } = this.parts;
+    if (buildings.assign(scene, appearance, visible)) {
+      billboards.dirty = true;
+      this.clearPatches();
+      forest.refresh();
+    }
+    buildings.pass.setScene(buildings.shown(), appearance);
+    this.context.request();
   }
-  private frameGeometry(): FrameGeometry {
-    return terrainCamera.frameGeometry(this as unknown as Terrain3dContext);
+
+  /** Swap a few buildings of the current scene (native exteriors in or out):
+   * only their sectors rebuild; relief, patches and forest stay untouched. */
+  replaceBuildings(changes: readonly Building3dVisual[]): string[] {
+    const buildings = this.parts.buildings;
+    if (!buildings.visible || !changes.length) return [];
+    const missing = buildings.pass.replaceBuildings(changes);
+    this.context.request();
+    return missing;
   }
-  private nodeError(patch: Patch, frame: FrameGeometry): number {
-    return terrainSelection.nodeError(this as unknown as Terrain3dContext, patch, frame);
+
+  /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
+  setForest(field: ForestField | undefined, occupation?: ForestOccupation, settings: Terrain3dForestSettings | undefined = this.parts.forest.settings): void {
+    this.parts.forest.set(field, occupation, settings);
   }
-  private select(frame: FrameGeometry): void {
-    return terrainSelection.select(this as unknown as Terrain3dContext, frame);
+
+  setTileLoader(loader: ((tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>) | undefined, requireHeights = false): void {
+    this.parts.tiles.setLoader(loader, requireHeights);
   }
-  private *grid(patch: Patch): Generator<void, Float32Array> {
-    return yield* terrainMesh.grid(this as unknown as Terrain3dContext, patch);
+
+  /** Repaint the ground textures: all of them, the tiles overlapping a world `region`, or one tile by its key.
+   * A tile keeps showing its current texture until the replacement is built and uploaded (swap on ready). */
+  invalidateTiles(region?: { minX: number; minY: number; maxX: number; maxY: number } | string): void {
+    this.parts.tiles.invalidate(region);
   }
-  private *decodedGrid(tile: Terrain3dTile, layer: HeightLayer): Generator<void, Float32Array> {
-    return yield* terrainMesh.decodedGrid(this as unknown as Terrain3dContext, tile, layer);
-  }
-  private installHeights(patch: Patch, heights: Float32Array): void {
-    return terrainMesh.installHeights(this as unknown as Terrain3dContext, patch, heights);
-  }
-  private containsLivePatch(patch: Patch): boolean {
-    return terrainPatches.containsLivePatch(this as unknown as Terrain3dContext, patch);
-  }
-  private *buildMesh(patch: Patch): Generator<void, void> {
-    return yield* terrainMesh.buildMesh(this as unknown as Terrain3dContext, patch);
-  }
-  private prepareMeshes(): boolean {
-    return terrainMesh.prepareMeshes(this as unknown as Terrain3dContext);
-  }
-  private loadTiles(): void {
-    return terrainTiles.loadTiles(this as unknown as Terrain3dContext);
-  }
-  private closestTexture(patch: Patch): { texture: WebGLTexture; rect: [number, number, number, number]; texel: number; ready: boolean } {
-    return terrainTiles.closestTexture(this as unknown as Terrain3dContext, patch);
-  }
-  private texturedAncestor(patch: Patch): boolean {
-    return terrainTiles.texturedAncestor(this as unknown as Terrain3dContext, patch);
-  }
-  private subtreeTextured(node: Node): boolean {
-    return terrainPatches.subtreeTextured(this as unknown as Terrain3dContext, node);
-  }
-  private covered(node: Node): boolean {
-    return terrainPatches.covered(this as unknown as Terrain3dContext, node);
-  }
-  private protectMaterial(ref: MaterialRef): void {
-    return terrainTiles.protectMaterial(this as unknown as Terrain3dContext, ref);
-  }
-  private materialFor(patch: Patch, geometryBlend = 1, depth = 0): PatchMaterial {
-    return terrainTiles.materialFor(this as unknown as Terrain3dContext, patch, geometryBlend, depth);
-  }
-  protected textureRect(ref: MaterialRef, tile: Terrain3dTile): [number, number, number, number] {
-    return terrainTiles.textureRect(this as unknown as Terrain3dContext, ref, tile);
-  }
-  protected overlayRect(ref: MaterialRef, tile: Terrain3dTile, ground = false): [number, number, number, number] {
-    return terrainTiles.overlayRect(this as unknown as Terrain3dContext, ref, tile, ground);
-  }
-  private advanceMorphs(node: Node, incomingFull = true): void {
-    return terrainMorph.advanceMorphs(this as unknown as Terrain3dContext, node, incomingFull);
-  }
-  private collectPieces(node: Node, pieces: RenderPiece[], incomingMorph = 1, ancestor?: { patch: Patch; morph: number }): void {
-    return terrainMorph.collectPieces(this as unknown as Terrain3dContext, node, pieces, incomingMorph, ancestor);
-  }
-  private patchDraw(patch: Patch, drawn: Patch[], incomingMorph: number, clip: Terrain3dTile, stitched: TerrainStitchedPiece): PatchDraw | undefined {
-    return terrainMorph.patchDraw(this as unknown as Terrain3dContext, patch, drawn, incomingMorph, clip, stitched);
-  }
-  private renderPatch(draw: PatchDraw, frame: FrameGeometry): void {
-    return terrainWebglFrame.renderPatch(this as unknown as Terrain3dContext, draw, frame);
-  }
-  private releaseMaterial(texture: WebGLTexture): void {
-    return terrainTiles.releaseMaterial(this as unknown as Terrain3dContext, texture);
-  }
-  private releasePatch(patch: Patch, preserveMesh = false): void {
-    return terrainPatches.releasePatch(this as unknown as Terrain3dContext, patch, preserveMesh);
-  }
-  private trim(): void {
-    return terrainPatches.trim(this as unknown as Terrain3dContext);
-  }
+
+  /** The whole-map material, and the raised stamps drawn with it. */
   setTexture(source: TexImageSource, billboards?: Terrain3dBillboards): void {
-    return terrainInputs.setTexture(this as unknown as Terrain3dContext, source, billboards);
+    this.textureSource = source;
+    this.setBillboards(billboards?.stamps, billboards?.atlas);
+    this.parts.tiles.setWholeMap(source);
   }
+
+  /** Also accepted by setTexture so the renderer host mirrors this input during backend replacement. */
   setBillboards(stamps: readonly Terrain3dBillboard[] | undefined, atlas?: HTMLCanvasElement): void {
-    return terrainBillboards.setBillboards(this as unknown as Terrain3dContext, stamps, atlas);
+    this.parts.billboards.set(stamps, atlas);
   }
-  protected prepareBillboards(): void {
-    return terrainBillboards.prepareBillboards(this as unknown as Terrain3dContext);
-  }
-  protected uploadBillboards(values: Float32Array, atlas?: HTMLCanvasElement): void {
-    return terrainBillboards.uploadBillboards(this as unknown as Terrain3dContext, values, atlas);
-  }
-  private treeInputs(): TreeInputs | undefined {
-    return terrainTrees.treeInputs(this as unknown as Terrain3dContext);
-  }
-  private waterAt(x: number, y: number): number {
-    return terrainTrees.waterAt(this as unknown as Terrain3dContext, x, y);
-  }
-  private waterMaskChanged(x: number, y: number, width: number): void {
-    return terrainTrees.waterMaskChanged(this as unknown as Terrain3dContext, x, y, width);
-  }
-  protected prepareTrees(frame: FrameGeometry): void {
-    return terrainTrees.prepareTrees(this as unknown as Terrain3dContext, frame);
-  }
-  private updateTrees(frame: FrameGeometry): void {
-    return terrainTrees.updateTrees(this as unknown as Terrain3dContext, frame);
-  }
-  protected uploadTrees(values: Float32Array): void {
-    return terrainTrees.uploadTrees(this as unknown as Terrain3dContext, values);
-  }
-  protected forestTreesUniform(frame: FrameGeometry): [number, number, number, number] {
-    return terrainTrees.forestTreesUniform(this as unknown as Terrain3dContext, frame);
-  }
-  protected treesShown(): boolean {
-    return terrainTrees.treesShown(this as unknown as Terrain3dContext);
-  }
+
   setNearTrees(enabled: boolean): void {
-    return terrainTrees.setNearTrees(this as unknown as Terrain3dContext, enabled);
+    this.parts.trees.setEnabled(enabled);
   }
+
   setTreeDistance(metres: number): void {
-    return terrainTrees.setTreeDistance(this as unknown as Terrain3dContext, metres);
+    this.parts.trees.setDistance(metres);
   }
-  protected treeLight(): [number, number, number] {
-    return terrainTrees.treeLight(this as unknown as Terrain3dContext);
+
+  getLodInfo(): TerrainLod & { covered: boolean } {
+    return this.frames.lodInfo();
   }
-  protected fogDistance(): number {
-    return terrainCamera.fogDistance(this as unknown as Terrain3dContext);
+
+  heightAt(x: number, y: number): number | undefined {
+    return this.parts.surface.heightAt(x, y);
   }
-  protected cavernSettings(): UnderdarkCavern3d {
-    return terrainCavern.cavernSettings(this as unknown as Terrain3dContext);
+
+  groundAt(x: number, y: number): number | undefined {
+    return this.parts.surface.groundAt(x, y);
   }
-  protected cavernParameters(): [number, number, number, number] {
-    return terrainCavern.cavernParameters(this as unknown as Terrain3dContext);
+
+  pickBuilding(x: number, y: number): string | undefined {
+    return this.projection.pickBuilding(x, y);
   }
-  private drawTrees(frame: FrameGeometry): void {
-    return terrainTrees.drawTrees(this as unknown as Terrain3dContext, frame);
+
+  screenToWorld(x: number, y: number): [number, number] | null {
+    return this.projection.screenToWorld(x, y);
   }
-  protected prepareFungi(): void {
-    return terrainFungi.prepareFungi(this as unknown as Terrain3dContext);
+
+  worldToScreen(x: number, y: number): [number, number] | null {
+    return this.projection.worldToScreen(x, y);
   }
-  protected uploadFungi(values: Float32Array): void {
-    return terrainFungi.uploadFungi(this as unknown as Terrain3dContext, values);
+
+  labelProjector(): LabelProjector | undefined {
+    return this.projection.labelProjector();
   }
-  protected fungusArea(): [number, number, number, number] {
-    return terrainFungi.fungusArea(this as unknown as Terrain3dContext);
-  }
+
   framingView(x: number, y: number, distance: number): { x: number; y: number; distance: number; pitch: number } {
-    return terrainCamera.framingView(this as unknown as Terrain3dContext, x, y, distance);
+    return this.parts.rig.framingView(x, y, distance);
   }
-  protected fungusFade(): [number, number, number, number] {
-    return terrainFungi.fungusFade(this as unknown as Terrain3dContext);
-  }
-  protected townGlowUniform(): { values: Float32Array; count: number } {
-    return terrainCavern.townGlowUniform(this as unknown as Terrain3dContext);
-  }
-  protected uploadRoof(mesh: { vertices: Float32Array; indices: Uint32Array } | undefined): void {
-    return terrainCavern.uploadRoof(this as unknown as Terrain3dContext, mesh);
-  }
-  protected roofReveal(): [number, number, number, number] {
-    return terrainCavern.roofReveal(this as unknown as Terrain3dContext);
-  }
-  protected roofShown(): boolean {
-    return terrainCavern.roofShown(this as unknown as Terrain3dContext);
-  }
+
   framingPitch(x?: number, y?: number, distance?: number): number {
-    return terrainCamera.framingPitch(this as unknown as Terrain3dContext, x, y, distance);
+    return this.parts.rig.framingPitch(x, y, distance);
   }
-  private drawRoof(frame: FrameGeometry): void {
-    return terrainCavern.drawRoof(this as unknown as Terrain3dContext, frame);
-  }
-  private drawFungi(frame: FrameGeometry): void {
-    return terrainFungi.drawFungi(this as unknown as Terrain3dContext, frame);
-  }
-  protected billboardsReady(): boolean {
-    return terrainBillboards.billboardsReady(this as unknown as Terrain3dContext);
-  }
-  protected raisedBlend(frame: FrameGeometry): number {
-    return terrainBillboards.raisedBlend(this as unknown as Terrain3dContext, frame);
-  }
-  private drawBillboards(frame: FrameGeometry, blend: number): void {
-    return terrainBillboards.drawBillboards(this as unknown as Terrain3dContext, frame, blend);
-  }
+
   setCamera(camera: Terrain3dCamera): void {
-    return terrainCamera.setCamera(this as unknown as Terrain3dContext, camera);
+    this.navigation.stopWalking();
+    this.parts.rig.set(camera);
   }
+
   getCamera(): Terrain3dCamera {
-    return terrainCamera.getCamera(this as unknown as Terrain3dContext);
+    return { ...this.parts.rig.camera };
   }
+
   setNavigation(navigation: 'orbit' | 'walk' | 'fly'): void {
-    return terrainNavigation.setNavigation(this as unknown as Terrain3dContext, navigation);
+    this.navigation.setNavigation(navigation);
   }
-  private prepareCapture(): Promise<void> {
-    return terrainCapture.prepareCapture(this as unknown as Terrain3dContext);
-  }
-  capture(): Promise<Blob> {
-    return terrainCapture.capture(this as unknown as Terrain3dContext);
-  }
-  captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
-    return terrainCapture.captureIllustration(this as unknown as Terrain3dContext);
-  }
-  protected captureFrame(near: number, far: number): Promise<{ color: HTMLCanvasElement; depth: HTMLCanvasElement }> {
-    return terrainCapture.captureFrame(this as unknown as Terrain3dContext, near, far);
-  }
-  setActive(active: boolean): void {
-    return terrainFrame.setActive(this as unknown as Terrain3dContext, active);
-  }
-  resize(width: number, height: number): void {
-    return terrainFrame.resize(this as unknown as Terrain3dContext, width, height);
-  }
+
   fit(x?: number, y?: number, visibleWidth?: number): void {
-    return terrainCamera.fit(this as unknown as Terrain3dContext, x, y, visibleWidth);
+    if (!this.parts.surface.layer) return;
+    this.navigation.stopWalking();
+    this.parts.rig.fit(x, y, visibleWidth);
   }
+
   zoom(factor: number, cursorX?: number, cursorY?: number): void {
-    return terrainCamera.zoom(this as unknown as Terrain3dContext, factor, cursorX, cursorY);
+    this.parts.rig.zoom(factor, cursorX, cursorY);
   }
-  private cursorGround(x: number, y: number): [number, number] | null {
-    return terrainCamera.cursorGround(this as unknown as Terrain3dContext, x, y);
-  }
+
   north(): void {
-    return terrainCamera.north(this as unknown as Terrain3dContext);
+    this.parts.rig.north();
   }
-  private interacting(): boolean {
-    return terrainAntialiasing.interacting(this as unknown as Terrain3dContext);
+
+  setActive(active: boolean): void {
+    this.context.active = active;
+    if (active) this.context.request();
+    else {
+      this.navigation.stopWalking();
+      this.frames.cancel();
+      this.parts.rig.rest();
+      this.navigation.release();
+    }
   }
-  private dpr(): number {
-    return terrainAntialiasing.dpr(this as unknown as Terrain3dContext);
+
+  resize(width: number, height: number): void {
+    this.context.width = Math.max(1, width);
+    this.context.height = Math.max(1, height);
+    this.parts.rig.limit();
+    this.context.request();
   }
-  private maxScale(): number {
-    return terrainAntialiasing.maxScale(this as unknown as Terrain3dContext);
+
+  /** Refine live previews through the original whole-tile painter before encoding. */
+  private async prepareCapture(): Promise<void> {
+    const context = this.context,
+      { tiles, meshes } = this.parts;
+    context.captureMode = true;
+    try {
+      do {
+        this.frames.draw(true);
+        if (!context.active || context.disposed || this.contextLost()) throw new DOMException('Capture cancelled', 'AbortError');
+        if (!tiles.jobs.size && !context.preparation.pending && !meshes.jobs.size && !context.animating) return;
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      } while (true);
+    } catch (error) {
+      context.captureMode = false;
+      throw error;
+    }
   }
-  private limitCamera(): void {
-    return terrainCamera.limitCamera(this as unknown as Terrain3dContext);
+
+  /** Draw and read in the same task: no permanent drawing-buffer retention. */
+  async capture(): Promise<Blob> {
+    const context = this.context;
+    if (!context.active || !this.parts.surface.layer || this.contextLost()) return Promise.reject(new Error('Ouvrez la vue 3D avant de la capturer.'));
+    await this.prepareCapture();
+    try {
+      return await new Promise<Blob>((resolve, reject) => this.canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.'))), 'image/png'));
+    } finally {
+      context.captureMode = false;
+      context.request();
+    }
   }
-  private cameraMoving(): void {
-    return terrainCamera.cameraMoving(this as unknown as Terrain3dContext);
-  }
-  private changed(): void {
-    return terrainCamera.changed(this as unknown as Terrain3dContext);
-  }
-  private keepEyeOutOfGround(): void {
-    return terrainCamera.keepEyeOutOfGround(this as unknown as Terrain3dContext);
-  }
-  protected request(): void {
-    return terrainFrame.request(this as unknown as Terrain3dContext);
-  }
-  private draw(fullQuality = false): void {
-    return terrainFrame.draw(this as unknown as Terrain3dContext, fullQuality);
-  }
-  private drawFrame(): void {
-    return terrainFrame.drawFrame(this as unknown as Terrain3dContext);
-  }
-  protected renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
-    return terrainWebglFrame.renderFrame(this as unknown as Terrain3dContext, frame, w, h, draws);
-  }
-  private releaseMsaa(): void {
-    return terrainAntialiasing.releaseMsaa(this as unknown as Terrain3dContext);
-  }
-  private msaaTarget(width: number, height: number): NonNullable<Terrain3d['msaa']> | undefined {
-    return terrainAntialiasing.msaaTarget(this as unknown as Terrain3dContext, width, height);
-  }
-  protected buildingFrame(frame: FrameGeometry): BuildingFrame {
-    return terrainWebglFrame.buildingFrame(this as unknown as Terrain3dContext, frame);
-  }
-  private navigationDistance(): number {
-    return terrainCamera.navigationDistance(this as unknown as Terrain3dContext);
-  }
-  private navigationScale(): number {
-    return terrainCamera.navigationScale(this as unknown as Terrain3dContext);
-  }
-  private orbit(dx: number, dy: number): void {
-    return terrainCamera.orbit(this as unknown as Terrain3dContext, dx, dy);
-  }
-  private pan(dx: number, dy: number): void {
-    return terrainCamera.pan(this as unknown as Terrain3dContext, dx, dy);
-  }
-  private walk(forward: number, right: number, seconds: number, fast = false): void {
-    return terrainNavigation.walk(this as unknown as Terrain3dContext, forward, right, seconds, fast);
-  }
-  private fly(forward: number, right: number, up: number, seconds: number, fast = false): void {
-    return terrainNavigation.fly(this as unknown as Terrain3dContext, forward, right, up, seconds, fast);
-  }
-  private stopWalking(): void {
-    return terrainNavigation.stopWalking(this as unknown as Terrain3dContext);
-  }
-  private startWalking(): void {
-    return terrainNavigation.startWalking(this as unknown as Terrain3dContext);
-  }
-  private touchGesture(): { x: number; y: number; distance: number } | undefined {
-    return terrainNavigation.touchGesture(this as unknown as Terrain3dContext);
-  }
-  private interactions(): void {
-    return terrainNavigation.interactions(this as unknown as Terrain3dContext);
+
+  /** The frame, its normalized inverse depth and the camera that drew it, for the illustration pipeline. */
+  async captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
+    const context = this.context,
+      { surface, rig } = this.parts;
+    if (!context.active || !surface.layer || this.contextLost()) throw new Error('Ouvrez la vue 3D avant de la capturer.');
+    await this.prepareCapture();
+    try {
+      const camera = this.getCamera(),
+        geometry = rig.frameGeometry();
+      camera.heightAboveTargetMetres = geometry.eye[1];
+      camera.viewAngleDegrees = (Math.atan2(-geometry.forward[1], Math.hypot(geometry.forward[0], geometry.forward[2])) * 180) / Math.PI;
+      // Map north is decreasing world y; yaw=0 puts the eye south of the target.
+      camera.azimuthDegrees = ((((-camera.yaw * 180) / Math.PI) % 360) + 360) % 360;
+      camera.verticalFovDegrees = (FOV * 180) / Math.PI;
+      if (camera.exaggeration === 1) camera.altitudeMetres = geometry.targetHeight + geometry.eye[1];
+      const far = Math.max(camera.distance * 4, surface.layer!.width * 2 + surface.heightRange * camera.exaggeration * 2);
+      const frame = await this.captureFrame(Math.max(0.02, camera.distance * 0.0002), far);
+      context.request();
+      const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.'))), 'image/png'));
+      const [image, depth] = await Promise.all([encode(frame.color), encode(frame.depth)]);
+      return { image, depth, camera };
+    } finally {
+      context.captureMode = false;
+      context.request();
+    }
   }
 
   /** Replays the retained CPU-side inputs on another view (backend switch, device recovery): relief, water,
@@ -496,37 +443,201 @@ export class Terrain3d extends Terrain3dState {
    * texture, size, camera and activity. GPU objects are not shared: the target re-uploads, and its tiles
    * load again through the same loader. */
   transferTo(target: Terrain3d): void {
-    const context = this as unknown as Terrain3dContext;
-    target.setGroundMaterial(context.groundSettings);
-    target.setLook(context.lookSettings);
-    if (context.layer) target.setSurface(context.layer, context.water, context.waterVisible);
-    target.setHeightSampler(context.heightSampler);
-    target.setGroundCuts(context.groundCuts);
+    const context = this.context,
+      { surface, buildings, forest, trees, tiles, billboards, rig } = this.parts;
+    target.setGroundMaterial(context.ground);
+    target.setLook(context.look);
+    if (surface.layer) target.setSurface(surface.layer, surface.water, surface.waterVisible);
+    target.setHeightSampler(surface.heightSampler);
+    target.setGroundCuts(surface.groundCuts);
     target.setTileBoundaries(context.tileBounds);
-    target.setBuildings(context.buildingScene, context.buildingAppearance, context.buildingsVisible);
-    const replaced = context.buildings.replacedBuildings();
+    target.setBuildings(buildings.scene, buildings.appearance, buildings.visible);
+    const replaced = buildings.pass.replacedBuildings();
     if (replaced.length) target.replaceBuildings(replaced);
-    target.setForest(context.forestField, context.forestOccupation, context.forestSettings);
-    target.setTreeDistance(context.treeDistance);
-    target.setNearTrees(context.nearTrees);
-    target.setTileLoader(context.tileLoader, context.requireHeights);
-    if (context.textureSource) target.setTexture(context.textureSource, context.billboardSource);
-    else target.setBillboards(context.billboardSource?.stamps, context.billboardSource?.atlas);
+    target.setForest(forest.field, forest.source, forest.settings);
+    target.setTreeDistance(trees.distance);
+    target.setNearTrees(trees.enabled);
+    target.setTileLoader(tiles.loader, tiles.requireHeights);
+    if (this.textureSource) target.setTexture(this.textureSource, billboards.source);
+    else target.setBillboards(billboards.source?.stamps, billboards.source?.atlas);
     target.resize(context.width, context.height);
-    target.setCamera(context.camera);
-    (target as unknown as Terrain3dContext).orbitBeforeWalk = context.orbitBeforeWalk && { ...context.orbitBeforeWalk };
+    target.setCamera(rig.camera);
+    target.navigation.orbitBeforeWalk = this.navigation.orbitBeforeWalk && { ...this.navigation.orbitBeforeWalk };
     target.setActive(context.active);
   }
+
   isSettled(): boolean {
-    return terrainFrame.isSettled(this as unknown as Terrain3dContext);
+    return this.frames.isSettled();
   }
+
   get isActive(): boolean {
-    return (this as unknown as Terrain3dContext).active;
+    return this.context.active;
   }
+
   dispose(): void {
-    return terrainLifecycle.dispose(this as unknown as Terrain3dContext);
+    const context = this.context,
+      { rig, buildings, surface, forest, tiles, billboards } = this.parts;
+    rig.rest();
+    this.unlistenQuality?.();
+    context.disposed = true;
+    context.active = false;
+    this.navigation.stopWalking();
+    this.frames.cancel();
+    context.events.abort();
+    this.clearPatches();
+    buildings.pass.dispose();
+    buildings.scene = undefined;
+    surface.buildingGround = new UrbanBuildingGround();
+    forest.clear();
+    this.disposeBackend();
+    forest.forget();
+    this.textureSource = undefined;
+    surface.layer = undefined;
+    surface.water = undefined;
+    surface.heightSampler = undefined;
+    tiles.loader = undefined;
+    this.navigation.forgetPointers();
+    billboards.source = undefined;
   }
+
+  // WebGL2 backend hooks. The WebGPU view overrides every one of them (gpu/view.ts).
+
+  /** Takes the canvas context and creates the GPU objects (called by the constructor, before any
+   * subclass field exists: the WebGPU backend overrides it with a no-op and initializes afterwards). */
+  protected attach(): void {
+    const canvas = this.canvas,
+      context = this.context;
+    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: false, powerPreference: 'high-performance' });
+    if (!gl) throw new Error('La vue 3D nécessite WebGL2.');
+    this.webgl = new GlTerrainRenderer(gl, context, this.parts);
+    this.initialize();
+    this.parts.status.mark('renderer', 'webgl');
+    canvas.addEventListener(
+      'webglcontextlost',
+      event => {
+        event.preventDefault();
+        this.frames.cancel();
+        ++context.epoch;
+        this.parts.tree.forget();
+      },
+      { signal: context.events.signal },
+    );
+    canvas.addEventListener(
+      'webglcontextrestored',
+      () => {
+        if (context.disposed) return;
+        this.initialize();
+        if (this.textureSource) this.setTexture(this.textureSource, this.parts.billboards.source);
+        context.request();
+      },
+      { signal: context.events.signal },
+    );
+  }
+
+  /** Creates every object of a new or restored WebGL context and re-uploads the retained inputs. */
+  private initialize(): void {
+    const webgl = this.webgl!,
+      { tiles, billboards, buildings, surface, cavern, forest } = this.parts;
+    webgl.restart();
+    tiles.raised.clear();
+    billboards.dirty = true;
+    this.selectTerrainProgram(!!this.context.ground || !!forest.field);
+    webgl.programs.createSky();
+    buildings.pass?.dispose();
+    buildings.pass = new UrbanBuildingPass(webgl.gl, () => this.context.request());
+    buildings.pass.setScene(buildings.shown(), buildings.appearance);
+    webgl.createPatchBuffers();
+    tiles.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
+    surface.macroTexture = this.uploadMacroField(surface.layer);
+    cavern.forgetTexture();
+    cavern.refresh(surface.layer, true);
+    webgl.createEmpty();
+    // A restored context comes back empty: re-upload the retained forest rasters.
+    forest.reupload();
+  }
+
+  protected prepareMapShader(): void {
+    this.webgl!.programs.prepareMap();
+  }
+
+  protected contextLost(): boolean {
+    return this.webgl!.gl.isContextLost();
+  }
+
+  protected uploadCavern(field: CavernField): WebGLTexture {
+    return this.webgl!.uploadCavern(field);
+  }
+
+  protected uploadMacroField(layer?: HeightLayer): WebGLTexture {
+    return this.webgl!.uploadMacroField(layer);
+  }
+
+  protected uploadTexture(source: TexImageSource | Uint8Array): WebGLTexture {
+    return this.webgl!.uploadTexture(source);
+  }
+
+  protected deleteTexture(texture: WebGLTexture): void {
+    this.webgl!.deleteTexture(texture);
+  }
+
+  protected uploadWaterMask(water: NonNullable<Terrain3dTileContent['water']>): WebGLTexture {
+    return this.webgl!.uploadWaterMask(water);
+  }
+
+  protected uploadForest(field: ForestField): ForestTextures {
+    return this.webgl!.uploadForest(field);
+  }
+
+  protected releaseForest(textures: ForestTextures | undefined): void {
+    this.webgl!.releaseForest(textures);
+  }
+
+  protected uploadOccupation(occupation: ForestOccupation): WebGLTexture {
+    return this.webgl!.uploadOccupation(occupation);
+  }
+
+  protected uploadLandDetail(detail: LandDetail): WebGLTexture {
+    return this.webgl!.uploadLandDetail(detail);
+  }
+
+  protected uploadMesh(patch: Patch, values: Float32Array): void {
+    this.webgl!.uploadMesh(patch, values);
+  }
+
+  protected releaseMesh(patch: Patch): void {
+    this.webgl!.releaseMesh(patch);
+  }
+
+  protected uploadTrees(values: Float32Array): void {
+    this.webgl!.instances.uploadTrees(values);
+  }
+
+  protected uploadFungi(values: Float32Array): void {
+    this.webgl!.instances.uploadFungi(values);
+  }
+
+  protected uploadRoof(mesh: { vertices: Float32Array; indices: Uint32Array } | undefined): void {
+    this.webgl!.instances.uploadRoof(mesh);
+  }
+
+  protected uploadBillboards(values: Float32Array, atlas?: HTMLCanvasElement): void {
+    this.webgl!.uploadBillboards(values, atlas);
+  }
+
+  protected billboardsReady(): boolean {
+    return this.webgl!.instances.billboardsReady();
+  }
+
+  protected renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
+    return this.webgl!.renderFrame(frame, w, h, draws);
+  }
+
+  protected captureFrame(near: number, far: number): Promise<{ color: HTMLCanvasElement; depth: HTMLCanvasElement }> {
+    return this.webgl!.captureFrame(near, far);
+  }
+
+  /** Releases the backend's own objects (patches and buildings are already released). */
   protected disposeBackend(): void {
-    return terrainLifecycle.disposeBackend(this as unknown as Terrain3dContext);
+    this.webgl!.dispose();
   }
 }

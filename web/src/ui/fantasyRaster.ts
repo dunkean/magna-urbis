@@ -6,7 +6,7 @@ import type { LandUseLayer } from '../gen/types';
 import type { Rect4 } from '../render/view';
 import type { ForestWaterRaster } from '../../../rust/bridge/terrainMaterialRaster';
 import { TileIndex } from '../render/tileindex';
-import { LiveTileFill } from '../render/liveTileFill';
+import { StepwisePaint } from '../render/stepwisePaint';
 
 /** One holding or strip, drawn as a vector at draw time so field edges and furrows stay crisp at any zoom. */
 interface FieldShape {
@@ -312,7 +312,7 @@ const STAMP_TILE_PX = 512,
   STAMP_TILE_BYTES = 128 * 1024 * 1024;
 type StampTile = CanvasImageSource | null;
 type StampTilePair = { images: [StampTile, StampTile]; x: number; y: number; density: number };
-type StampTileCache = { entries: Map<string, StampTilePair>; bytes: number; failed: boolean; fill: LiveTileFill };
+type StampTileCache = { entries: Map<string, StampTilePair>; bytes: number; failed: boolean; fill: StepwisePaint };
 const stampTiles = new WeakMap<FantasyRaster, StampTileCache>();
 const releaseTile = (image: StampTile): void => {
   if (!image) return;
@@ -330,7 +330,7 @@ export function suspendFantasyRaster(raster: FantasyRaster): void {
 function drawStampTiles(ctx: CanvasRenderingContext2D, raster: FantasyRaster, rect: Rect4, fine: boolean, live: boolean): boolean {
   let cache = stampTiles.get(raster);
   if (!cache) {
-    cache = { entries: new Map(), bytes: 0, failed: false, fill: new LiveTileFill() };
+    cache = { entries: new Map(), bytes: 0, failed: false, fill: new StepwisePaint() };
     stampTiles.set(raster, cache);
   }
   if (cache.failed) return false;

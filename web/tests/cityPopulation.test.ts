@@ -33,6 +33,6 @@ describe('reached population', () => {
     expect(populationShortfallText(r)).toBe('');
   });
   it('is shared by the V2 and City Bench', () => {
-    for (const file of ['src/v2/main.ts', 'src/ui/urbanCitySummary.ts']) expect(readFileSync(file, 'utf8')).toContain('cityReachedPopulation');
+    for (const file of ['src/v2/page/places.ts', 'src/ui/urbanCitySummary.ts']) expect(readFileSync(file, 'utf8')).toContain('cityReachedPopulation');
   });
 });

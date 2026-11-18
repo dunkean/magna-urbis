@@ -5,11 +5,13 @@
  * (URL `?vector=` over storage), demoted for the session on a context loss or a raster error. Slow GPU tiles
  * start a trial instead: the processor draws a few tiles, the faster engine stays, and the GPU is tried again later.
  */
-import type { GpuRasterizer, VectorEngine, VectorEngineChoice } from './gpu/displayList';
-import { sharedGpuRasterizer } from './gpu/glRaster';
+import type { GpuRasterizer } from './gpu/contract';
+import { sharedGpuRasterizer } from './gpu/tileRasterizer';
 
-export const VECTOR_ENGINE_CHOICES = ['auto', 'gpu', 'cpu'] as const;
-export const VECTOR_ENGINE_STORAGE_KEY = 'magna-urbis-vector-engine';
+export type VectorEngineChoice = 'auto' | 'gpu' | 'cpu';
+type VectorEngine = 'gpu' | 'cpu';
+const VECTOR_ENGINE_CHOICES = ['auto', 'gpu', 'cpu'] as const;
+const VECTOR_ENGINE_STORAGE_KEY = 'magna-urbis-vector-engine';
 /** Median raster time over the last GPU tiles above which `auto` tries the processor. Only replays that waited for
  * the graphics process count (`synced`): the others return before the GPU has drawn anything. */
 const SLOW_RASTER_MS = 40,
@@ -22,7 +24,7 @@ const CPU_WINS = 0.8;
 const RETRY_MS = 30000,
   RETRY_MAX_MS = 300000;
 
-export interface VectorEngineStats {
+interface VectorEngineStats {
   preference: VectorEngineChoice;
   engine: VectorEngine;
   renderer: string;
@@ -35,8 +37,6 @@ export interface VectorEngineStats {
   recordMs: number[];
   rasterMs: number[];
   cpuMs: number[];
-  liveParts: Record<string, number>;
-  liveSeries: Record<string, number[]>;
 }
 
 const valid = (value: unknown): value is VectorEngineChoice => VECTOR_ENGINE_CHOICES.includes(value as VectorEngineChoice);
@@ -223,21 +223,6 @@ export function noteGpuFailure(error: unknown): void {
   demote(error instanceof Error ? error.message : String(error));
 }
 
-/** Slowest live frame part seen since the last reset (ms), for diagnosing pan/zoom hitches. */
-let liveParts: Record<string, number> = {};
-/** Records `now - since` under `part` (kept as a maximum) and returns now. */
-export function noteLivePart(part: string, since: number): number {
-  const t = performance.now(),
-    ms = t - since;
-  liveParts[part] = Math.max(liveParts[part] ?? 0, ms);
-  if (part === 'frame' || part === 'ground') {
-    const list = (liveSeries[part] ??= []);
-    if (list.length < 4000) list.push(ms);
-  }
-  return t;
-}
-/** Every live frame's work and ground submit time since the last reset (profiling). */
-let liveSeries: Record<string, number[]> = {};
 export function vectorEngineStats(): VectorEngineStats {
   const engine = getVectorEngine(),
     raster = rasterizer ?? null;
@@ -254,19 +239,15 @@ export function vectorEngineStats(): VectorEngineStats {
     recordMs: [...recordMs],
     rasterMs: [...rasterMs],
     cpuMs: [...cpuMs],
-    liveParts: { ...liveParts },
-    liveSeries: { ...liveSeries },
   };
 }
 
-export function resetVectorEngineStats(): void {
+function resetVectorEngineStats(): void {
   gpuTiles = cpuTiles = fallbackTiles = 0;
   lastFallback = undefined;
   recordMs = [];
   rasterMs = [];
   cpuMs = [];
-  liveParts = {};
-  liveSeries = {};
   syncedRaster = [];
   syncedTile = [];
 }

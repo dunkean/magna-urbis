@@ -4,7 +4,7 @@ import { cityGroundSettings, cityGroundLook, cityForestInput, cityForestSettings
 import { cityRegionalStreets } from '../render/cityContract';
 import { city3dPlanOptions } from '../render/cityDrawOptions';
 import { benchOverlayChange, benchMaterialNightChange } from './benchComposition';
-import type { TerrainLook } from './terrainGl';
+import type { TerrainLook } from './terrain/contract';
 import { moonlightSvg } from '../render/materialLook';
 import { benchSettlementTextWorld, benchTextLayer } from './benchComposition';
 import { createTerrainSettlements } from './terrainSettlements';

@@ -1,25 +1,23 @@
-/** Foreground generation and idle small-place work. main.ts mounts gesture tracking and the queue after recipe/status setup so all world swaps use the same state. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setText,
-  settlementDisplayName,
-  type UrbanBuilding,
-  type Action,
-  type V2TownStage,
-  forcedUseRefusal,
-  applyBuildingEdits,
-  townUrban,
-  buildingSignature,
-  stagesForAction,
-  effectiveRegion,
-  cityStageValidityKeys,
-  SmallPlaceQueue,
-  boundedSmallPlaceRun,
-  applyLabelEdits,
-  migrateUrbanSeeds,
-  scheduleAutosave,
-} from './dependencies';
+/**
+ * Runs: `generate` (one action of the chain, then the world swap and the inspector it kept), and the background
+ * queue that builds the small places while the user does not touch the map. The queue is mounted by main.ts after
+ * the recipe tracking; its gesture listeners capture every pointer, wheel and key event of the window.
+ */
+import type { PageActions, PageState } from './contract';
+import { setText } from '../i18n';
+import { settlementDisplayName } from '../mapPresentation';
+import type { UrbanBuilding } from '../../gen/types';
+import type { Action } from '../client';
+import type { V2TownStage } from '../contracts';
+import { forcedUseRefusal } from '../urbanEditOptions';
+import { applyBuildingEdits, townUrban, buildingSignature } from '../edits';
+import { stagesForAction } from '../stageRegistry';
+import { effectiveRegion } from '../regionSettings';
+import { cityStageValidityKeys } from '../stageValidity';
+import { SmallPlaceQueue, boundedSmallPlaceRun } from '../smallPlaces';
+import { applyLabelEdits } from '../mapLabels';
+import { migrateUrbanSeeds } from '../urbanSeeds';
+import { scheduleAutosave } from '../autosave';
 import { $ } from './dom';
 
 export function createGenerationActions(state: PageState, actions: PageActions) {
@@ -139,9 +137,7 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
   return { smallPlaceRecipeKey, generateMainOnly, generate };
 }
 
-/** Gesture tracking and the background small-place queue. Called by main.ts in startup order. */
 export function mountBackgroundPlaces(state: PageState, actions: PageActions): void {
-  // ── Small places built in the background (smallPlaces.ts) ───────────────────────────────
   for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const)
     window.addEventListener(
       type,

@@ -13,7 +13,7 @@ import { viewRect, type View } from '../view';
 import { polyPath } from './geometry';
 import { drawVector } from './vector';
 import type { CartographyContext } from './context';
-import type { CanvasLike } from './types';
+import type { CanvasLike } from './contract';
 import type { VectorFrame } from './frame';
 
 /** The graticule: a screen-size grid, under the land-use tints. */

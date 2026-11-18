@@ -6,7 +6,7 @@
  * drawRoofedBuildings) paints what these rules return; the GPU town (cityGlStyle.ts) writes the same values into its
  * per-feature tables and applies the frame-dependent ones (grain level and strength, rims) in its shader.
  */
-import type { CityBuilding, CityLod, CityPalette, CityRoofs, CityView } from '../cityCanvas';
+import type { CityBuilding, CityLod, CityPalette, CityRoofs, CityView } from './model/contract';
 import type { RenderColors } from '../customColors';
 import { coverGrainFrame } from '../buildingMaterials';
 import { tintedWallColor } from '../buildingPalette';
@@ -19,6 +19,7 @@ import { urbanFunctionColor } from '../urbanBuildingStyle';
 import { CITY_LOD_OFF, atLeast } from './levels';
 import { FAMILY_COLORS, mix } from './planLook';
 import { farTownBuildingsShown } from './farTown';
+import { paintedBuildings, type PlanPath } from './planPath';
 
 // ---------------------------------------------------------------- when buildings show
 export interface BuildingsShownInput {
@@ -36,7 +37,7 @@ export const farTownShown = (o: BuildingsShownInput): boolean => !!o.farTown && 
 /** The building bodies are drawn. */
 export const buildingsShown = (o: BuildingsShownInput): boolean => o.buildingsVisible && (o.footprint || (farTownShown(o) ? farTownBuildingsShown(o.mpp) : atLeast(o.lod, 'near'))) && (o.footprint || o.view === 'buildings' || o.view === 'roles');
 /** Roof pans and cast shadows are drawn over the bodies. */
-export const roofPansShown = (o: Pick<BuildingsShownInput, 'view' | 'footprint' | 'diagnostic'>): boolean => !o.footprint && o.view === 'buildings' && o.diagnostic !== 'uses';
+export const roofPansShown = (o: Pick<BuildingsShownInput, 'view' | 'footprint' | 'diagnostic'> & { planPath?: PlanPath }): boolean => !o.footprint && (!!o.planPath || (o.view === 'buildings' && o.diagnostic !== 'uses'));
 
 // ---------------------------------------------------------------- bodies
 export interface BuildingFrame {
@@ -45,6 +46,7 @@ export interface BuildingFrame {
   footprint: boolean;
   diagnostic: string;
   /** The user's building and edge colours (night tables included). */ colors?: RenderColors;
+  /** The frame is the GPU plan renderer's (planPath.ts). */ planPath?: PlanPath;
 }
 /** Outline ink of a building body: the user's, else dark (pale on the dark masses of parchment footprints). */
 export const buildingEdgeInk = (colors: RenderColors | undefined, footprint: boolean, parchment: boolean): string => colors?.buildingEdge ?? (footprint && parchment ? '#f1e5c6' : '#2e261d');
@@ -54,21 +56,29 @@ export const buildingEdgePx = (footprint: boolean, parchment: boolean): number =
 export const FOOTPRINT_EDGE_PX = 0.4;
 /** Fill, outline and outline width of a building body. `roofed`: the town has roof pans (the body is then the wall
  * base under them). Party walls: every body keeps a dark edge, so adjoining houses of a row stay distinct. */
-export function buildingBody(f: BuildingFrame, b: CityBuilding, roofed: boolean): { fill: string; stroke: string; widthPx: number } {
+export function buildingBody(f: BuildingFrame, b: CityBuilding, roofed: boolean): { fill: string; stroke: string; strokeAlpha: number; widthPx: number } {
   const parchment = f.palette === 'parchment',
     tint = planBuildingColors(b, f.footprint ? 'terrain' : f.palette);
-  const fill = f.view === 'roles' ? (FAMILY_COLORS[b.family] ?? '#5a4b3c') : f.diagnostic === 'uses' ? urbanFunctionColor(b.fn) : (f.colors?.building ?? (f.footprint ? tint.roof : roofed ? tintedWall(tint.wall, b.material?.tint, f.palette, b.material?.wall) : tint.roof));
-  if (!f.footprint && b.stilts) return { fill, stroke: '#514431', widthPx: 0.6 };
-  return { fill, stroke: buildingEdgeInk(f.colors, f.footprint, parchment), widthPx: buildingEdgePx(f.footprint, parchment) };
+  const fill =
+    f.view === 'roles'
+      ? (FAMILY_COLORS[b.family] ?? '#5a4b3c')
+      : f.diagnostic === 'uses'
+        ? urbanFunctionColor(b.fn)
+        : (f.colors?.building ?? (f.footprint ? tint.roof : roofed ? (f.planPath ? tint.wall : tintedWall(tint.wall, b.material?.tint, f.palette, b.material?.wall)) : tint.roof));
+  // Render background (planPath): dark party-wall edges at 0.8, pale landmark edges.
+  const painted = !f.footprint && paintedBuildings(f.planPath, f.palette, f.view, f.diagnostic),
+    strokeAlpha = painted && !b.landmark ? 0.8 : 1;
+  if (!f.footprint && b.stilts) return { fill, stroke: '#514431', strokeAlpha, widthPx: 0.6 };
+  return { fill, stroke: painted && !f.colors?.buildingEdge ? (b.landmark ? '#e2d3a6' : '#1f1811') : buildingEdgeInk(f.colors, f.footprint, parchment), strokeAlpha, widthPx: buildingEdgePx(f.footprint, parchment) };
 }
 
 // ---------------------------------------------------------------- walls and shadows
 /** Walls whose top shows around a flat roof as a parapet of their own material. */
-export const MASONRY = /^(brick|stone|coral|concrete|ashlar)$/;
+const MASONRY = /^(brick|stone|coral|concrete|ashlar)$/;
 /** Wall colour on a natural ground: pulled three quarters of the way to the muted tone of the tint the building asks
  * for (its beige, its grey, the darker or warmer glass of a tower: buildingPalette.ts tintedWallColor, shared with
  * the 3D meshes); the drawn plans keep their own conventions. `material`: the wall material. */
-export function tintedWall(wall: string, tint: string | undefined, palette: CityPalette, material = ''): string {
+function tintedWall(wall: string, tint: string | undefined, palette: CityPalette, material = ''): string {
   if (!tint || palette !== 'terrain') return wall;
   const v = parseInt(wall.slice(1), 16),
     c = tintedWallColor([((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255], tint, material);
@@ -97,7 +107,7 @@ export function castShadowFill(palette: CityPalette, night: boolean, snowAltitud
 const MOSSY = /^(tile|slate|stone|thatch|reed|palm|shingle|bark|turf)$/;
 /** Age is a tone of the whole roof (a new cover a touch lighter, an old one darker), and the shaded pans of an old
  * roof are a little greener than its sunny ones. */
-export function weatheredRoof(color: string, light: number, age: number, cover: string): string {
+function weatheredRoof(color: string, light: number, age: number, cover: string): string {
   const shade = Math.max(0, Math.min(1, -light * 2.4)),
     toned = planShade(color, (0.5 - age) * 0.07);
   return shade > 0 && MOSSY.test(cover) ? mix(toned, '#4b4f38', shade * (0.04 + 0.1 * age)) : toned;
@@ -114,7 +124,7 @@ export const RIM_DEVICE_MPP = 0.55;
 /** Pan light under which a snow patch takes the shaded mantle. */
 export const SNOW_SHADE_LIGHT = -0.08;
 /** Grain strength under which nothing is laid. */
-export const GRAIN_MIN = 0.03;
+const GRAIN_MIN = 0.03;
 /** Shift of the snow mantle and of the cover grain per unit of building age (pattern tiles): every building its own
  * piece of the tile. */
 export const SNOW_SHIFT: readonly [number, number] = [53.1, 71.9],
@@ -122,7 +132,7 @@ export const SNOW_SHIFT: readonly [number, number] = [53.1, 71.9],
 /** Pan edges (eaves, ridges, hips): ink on the drawn plans, a soft joint on a natural ground; width in CSS px. */
 export const PAN_EDGE = { parchment: { color: '#2c2117', alpha: 0.65, widthPx: 0.3 }, natural: { color: '#1f1811', alpha: 0.45, widthPx: 0.5 }, plan: { color: '#1f1811', alpha: 0.65, widthPx: 0.5 } } as const;
 
-export interface RoofFrameInput {
+interface RoofFrameInput {
   palette: CityPalette;
   /** Metres per CSS pixel and device pixel ratio. */ mpp: number;
   dpr: number;
@@ -132,7 +142,7 @@ export interface RoofFrameInput {
   /** The user's building colours. */ colors?: RenderColors;
   /** Textured materials replace the procedural grain. */ textured?: boolean;
 }
-export interface RoofFrame {
+interface RoofFrame {
   palette: CityPalette;
   night: boolean;
   cave: boolean;
@@ -204,3 +214,21 @@ export function roofPanGrain(f: RoofFrame, roofs: CityRoofs, k: number, ground: 
   const strength = f.grain!.alpha[family - 1] * gain;
   return strength > GRAIN_MIN ? { family, strength } : undefined;
 }
+
+// ---------------------------------------------------------------- cast shadow tint, mill marks
+const shadowTints = new Map<string, [number, number, number, number]>();
+/** The cast shadow fill by day as a straight RGBA tint (the snow of the first building's ground, as the Canvas town's
+ * shadow pass reads it). The plan path keeps black at 0.3 on every ground but parchment (planPath.ts). */
+export function castShadowTint(palette: CityPalette, planPath: PlanPath | undefined, snowAltitude?: number): [number, number, number, number] {
+  const css = planPath && palette !== 'parchment' ? 'rgba(0,0,0,0.3)' : castShadowFill(palette, false, snowAltitude);
+  let tint = shadowTints.get(css);
+  if (!tint) {
+    const m = /rgba?\((\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?/.exec(css);
+    tint = m ? [+m[1] / 255, +m[2] / 255, +m[3] / 255, m[4] === undefined ? 1 : +m[4]] : [0, 0, 0, 0.3];
+    shadowTints.set(css, tint);
+  }
+  return tint;
+}
+/** Mill works seen from above on a natural ground: the cast of the sails (as wide as their cloth, at least `minPx`),
+ * the pale bar of the sails across the cap, the dark timber of a water wheel and its float boards (close only). */
+export const MILL_MARKS = { shadow: { clothShare: 0.6, minPx: 1.2 }, sails: { ink: 'rgba(226,220,202,0.92)', widthPx: 1.1, minWidth: 0.35 }, wheel: { fill: '#3b3127' }, paddles: { ink: 'rgba(128,112,88,0.7)', widthPx: 0.5, minWidth: 0.1, maxMpp: 0.5 } } as const;

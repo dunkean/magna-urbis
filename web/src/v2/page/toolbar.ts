@@ -1,21 +1,14 @@
-/** Inspector target selector and editing tool availability. Recipe, generation, navigation and map-selection listeners. Unload cleanup in the existing disposal order. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { insertHTML, mountEditingTools, screenToWorld, adaptedExtent, buildingAt, nearestSettlement, migrateUrbanSeeds } from './dependencies';
+/**
+ * The page's direct controls: recipe fields of the staging area, the seed, run buttons, cancel, zoom, the style
+ * selector, the mobile toggle, and the map click that picks a label, a placement position or what to inspect.
+ */
+import type { PageActions, PageState } from './contract';
+import { screenToWorld } from '../../render/view';
+import { adaptedExtent } from '../settings';
+import { buildingAt, nearestSettlement } from '../edits';
+import { migrateUrbanSeeds } from '../urbanSeeds';
 import { $ } from './dom';
 
-/** Inspector target selector and editing tool availability. Called by main.ts in startup order. */
-export function mountEditingToolbar(state: PageState, actions: PageActions): void {
-  insertHTML(
-    $('#inspect-mode').parentElement!,
-    'beforeend',
-    `<select id="inspect-target" aria-label="Inspection level" style="width:90px;padding:3px 5px;font-size:10px"><option value="settlement">Settlements</option><option value="quarter">Quarter</option><option value="block">Block</option><option value="parcel">Parcel</option><option value="house">House</option></select>`,
-  );
-
-  state.editingTools = mountEditingTools({ canEdit: () => !!state.world && !state.busy && !state.previewBase && !state.city3d?.active });
-}
-
-/** Recipe, generation, navigation and map-selection listeners. Called by main.ts in startup order. */
 export function mountToolbar(state: PageState, actions: PageActions): void {
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-option]').forEach(input =>
     input.addEventListener('change', () => {
@@ -87,14 +80,14 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
     $('#mobile-toggle').setAttribute('aria-expanded', String(!closed));
   };
 
-  state.pointerStart = { x: 0, y: 0 };
+  let pointerStart = { x: 0, y: 0 };
 
   $('#map').addEventListener('pointerdown', e => {
-    state.pointerStart = { x: e.clientX, y: e.clientY };
+    pointerStart = { x: e.clientX, y: e.clientY };
   });
 
   $('#map').addEventListener('click', e => {
-    if (!state.world || state.busy || (!state.pendingRegionPosition && !state.labelEditor.active() && !$<HTMLInputElement>('#inspect-mode').checked) || Math.hypot(e.clientX - state.pointerStart.x, e.clientY - state.pointerStart.y) > 5) return;
+    if (!state.world || state.busy || (!state.pendingRegionPosition && !state.labelEditor.active() && !$<HTMLInputElement>('#inspect-mode').checked) || Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) > 5) return;
     const rect = $('#map').getBoundingClientRect(),
       [x, y] = screenToWorld(state.client.viewer.getView(), rect.width, rect.height, e.clientX - rect.left, e.clientY - rect.top),
       p = { x, y };
@@ -135,20 +128,5 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
     const town = nearestSettlement(state.world, p);
     if (town) actions.showInspector(town.key);
     else actions.toast('Select a settlement or a house. Zoom in to reach the buildings.');
-  });
-}
-
-/** Unload cleanup in the existing disposal order. Called by main.ts in startup order. */
-export function mountPageDisposal(state: PageState, actions: PageActions): void {
-  window.addEventListener('beforeunload', () => {
-    clearTimeout(state.renderTimer);
-    state.renderControls.dispose();
-    state.city3d?.dispose();
-    state.terrainControls.dispose();
-    state.urbanControls.dispose();
-    state.regionControls.dispose();
-    state.neuralModelManager.dispose();
-    actions.disposeInspectorForms();
-    state.client.destroy();
   });
 }

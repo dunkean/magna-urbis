@@ -3,6 +3,10 @@ export interface View {
   cx: number;
   cy: number;
   /** CSS pixels per meter */ scale: number;
+  /** Tilt of the camera in radians: 0 or absent looks straight down (the 2D map). See render/world/camera.ts. */
+  pitch?: number;
+  /** Compass direction at the top of the screen, in radians clockwise from north; 0 or absent: north. */
+  yaw?: number;
 }
 export interface Rect4 {
   minX: number;

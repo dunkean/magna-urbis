@@ -11,7 +11,7 @@
  */
 import { styleTraits } from '../../render/terrainStyle';
 import { mapGpuLight, mapGpuLowEnd } from '../glContextRecovery';
-import type { TerrainLook } from './types';
+import type { TerrainLook } from './contract';
 
 export interface TerrainVariant {
   mode: number;

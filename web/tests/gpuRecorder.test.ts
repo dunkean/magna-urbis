@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RecPath2D, isRecordedPath, newPath } from '../src/render/gpu/path';
 import { RecordingCanvas, parseColor } from '../src/render/gpu/recorder';
-import { SPRITE_STRIDE, type FillOp, type PathGeometry, type SpriteOp, type StrokeOp } from '../src/render/gpu/displayList';
+import { SPRITE_STRIDE, type FillOp, type PathGeometry, type SpriteOp, type StrokeOp } from '../src/render/gpu/contract';
 
 const subpaths = (g: PathGeometry): [number, number][][] => {
   const out: [number, number][][] = [];

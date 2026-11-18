@@ -11,14 +11,13 @@
  * Two subclasses own a context each and differ only in what this class leaves to them: tileRasterizer.ts (a private
  * canvas: exact tiles, captures, the 3D drape) and liveRasterizer.ts (the live compositor's context).
  */
-import { GpuRasterError, IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type FillRule, type Mat, type Paint, type RecordedPath, type SpriteOp, type StrokeOp } from './displayList';
+import { GpuRasterError, IDENTITY, SPRITE_STRIDE, type ClipNode, type Composite, type DisplayList, type FillRule, type Mat, type Paint, type RecordedPath, type SpriteOp, type StrokeOp, type ReplayStats } from './contract';
 import { DISC_STRIDE, JOIN_STRIDE, SEGMENT_STRIDE } from './tessellate';
 import { compose, intersect, inverse, overlaps, scale, transformedBox, union, type Box } from './transforms';
 import { GpuResources, type GeometryData, type Slice, type StrokeSlices, type ToleranceRule } from './resources';
 import { Program } from './program';
 import type { ProgramKind } from './shaders';
 
-export type ReplayStats = { drawCalls: number; triangles: number; ms: number; clips: number; ops: number; synced: boolean };
 export const emptyStats = (): ReplayStats => ({ drawCalls: 0, triangles: 0, ms: 0, clips: 0, ops: 0, synced: false });
 
 export abstract class ListReplayer {

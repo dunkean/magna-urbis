@@ -12,7 +12,7 @@ import { MAP_FORMAT, type GpuShared } from './device';
 import { gpuTarget, type GpuImage, type GpuViewTargets, type Target } from './resources';
 import type { Params } from './params';
 import type { RetainedWaterSource } from '../retainedWater';
-import type { TerrainLook } from '../types';
+import type { TerrainLook } from '../contract';
 import * as WGSL from '../../terrainWgsl.generated';
 
 /** What the water passes of one redraw read; built once per draw. */

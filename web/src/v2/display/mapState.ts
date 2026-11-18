@@ -1,9 +1,18 @@
 /**
  * The map on display: what the last `set()` was given, and the page's frame hook.
  *
- * Every part of the display (v2/display/) reads the map from here: the appearance passes write it; the products, the
- * views, the exact frames and the miniature read it. It also carries the three ways the display asks the page for an
- * animation frame, which differ in what they make due:
+ * Every part of the display (v2/display/) reads the map from here. Written by:
+ *   appearance.ts : `world`, `scene`, `settings`, `resolved`, `exportLayers`, `native`, the papers, `input`, `request`,
+ *                   `townContent`, and `stats.passes/style/renderer/terrainBackend`;
+ *   mapView.ts    : `suspended`, `preparing`, `townContent` (another display quality or vector engine), `stats.live`;
+ *   the paints    : `dpr` (ExactFrame.paint, ComposedView.draw) and `stats.city` (the statistics of the last exact
+ *                   town paint);
+ *   the products  : `stats.gpuFallback`, `stats.cartographyUpdate`, `stats.resourcesError`, `passes.reset` (a product
+ *                   that must be made again);
+ *   benchRenderer : `disposed`, `resourceSource`.
+ *
+ * It also carries the three ways the display asks the page for an animation frame, which differ in what they make
+ * due:
  *
  *   invalidate : the content changed (a product arrived, a look moved): the picture at rest and the miniature are due;
  *   repaint    : same content, but the picture at rest is due again (a stepwise paint progressed, the view rested);
@@ -16,16 +25,10 @@ import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { ExportLayers } from '../../render/exportLayers';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import type { RenderScene } from '../renderScene';
-import { PassState, ResourceCache } from '../passes/pass';
+import { PassState } from '../passes/pass';
 import type { ResourceSource } from '../resourceLayer';
 import type { PassInput } from '../passes/pass';
-import type { NativeCityMap } from '../nativeCityMap';
-
-/** Resources a live renderer shares with its exports: derived products keyed by revisions, and the native city map. */
-export interface SharedPassResources {
-  cache: ResourceCache;
-  city?: { key: string; map: NativeCityMap };
-}
+import type { SharedPassResources } from './contract';
 
 export class MapState {
   world?: World;
@@ -58,14 +61,14 @@ export class MapState {
   redrawOnly = false;
   /** Bumped whenever the picture at rest is due again; a view compares it with the revision it painted. */
   paintRevision = 0;
-  /** Set by the composed view: true inside a compositor frame or work slice. A request raised there comes from a live
-   * layer (the overlay layer reports through the cartography's `invalidate`), not from new content. */
-  inCompositor: () => boolean = () => false;
 
   constructor(
     private readonly notify: () => void,
     readonly shared: SharedPassResources,
     readonly ownsShared: boolean,
+    /** True inside a compositor frame or work slice. A request raised there comes from a live layer (the overlay
+     * layer reports through the cartography's `invalidate`), not from new content. */
+    private readonly inCompositor: () => boolean,
   ) {}
 
   invalidate(): void {
@@ -93,7 +96,7 @@ export class MapState {
     }
   }
   /** Ground layers of the appearance, less what an export switched off. */
-  layers(): any {
+  layers(): ResolvedAppearance['ground']['layers'] {
     const r = this.resolved!,
       l = this.exportLayers;
     return { ...r.ground.layers, relief: l.terrain !== false && r.ground.layers.relief, water: l.water !== false && r.ground.layers.water, frame: l.decor !== false && r.ground.layers.frame };

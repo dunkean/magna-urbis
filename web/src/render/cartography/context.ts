@@ -3,9 +3,8 @@
  * and its scene, the palette, the draw mode of the moment, and the caches every layer reads (paths per index tile,
  * patterns, bitmaps of the terrain, water, density and cave rock, forest washes, woods and symbol marks).
  *
- * One object per renderer instead of a closure: each module says in its header what it reads and writes here. The
- * helpers are arrow properties, so a module can take them out of the object (`const { polyL, cached } = c`).
- * Written by: render/canvas.ts (`update`, `dispose`), the exact tiles (`activeLive`, `activeLight`, `activeDpr`,
+ * Each module says in its header what it reads and writes here. The helpers are arrow properties, so a module can take them out of the object (`const { polyL, cached } = c`).
+ * Written by: render/canvas.ts (`update`, `dispose`), the exact tiles (`stepwise`, `activeLight`, `activeDpr`,
  * `rasterFailed`), drawVector (`recordingNow`, `layerTilesFit`, `stats`), the live host (`markCrisp`).
  */
 import { CanvasCanopy } from '../canopy';
@@ -27,7 +26,7 @@ import { legendModel, type Panel } from '../legend';
 import { FONT_STACKS } from '../labelStyles';
 import { RecOnlyPath2D, RecPath2D } from '../gpu/path';
 import { RecordingContext } from '../gpu/recorder';
-import { noteLivePart } from '../vectorEngine';
+import { noteLiveUnit } from '../live/liveStats';
 import type { World } from '../../gen/types';
 import type { Palette, MapStyle } from '../styles';
 import type { Rect4, View } from '../view';
@@ -37,7 +36,7 @@ import { LAYER_TILE_BYTES } from './woods';
 import type { ParchmentSymbols } from '../parchmentSymbols';
 import type { ForestRoom } from '../forestRoom';
 import { addRing, polyPath } from './geometry';
-import type { CanvasLike, CanvasRendererDeps, FrameStats, Overlays } from './types';
+import type { CanvasLike, CanvasRendererDeps, FrameStats, Overlays } from './contract';
 import type { ForestWash } from './forest';
 import type { PenMark } from './symbols';
 
@@ -52,7 +51,7 @@ export type DrawMode = 'all' | 'map' | 'overlays' | 'ground';
 
 export const emptyStats = (): FrameStats => ({ band: 0, scale: 0, ms: 0, tilesDrawn: 0, bigDrawn: 0, pathsBuilt: 0, pathCache: 0, buildingsCandidate: 0, buildingsDrawn: false, textureTiles: 0 });
 
-export function defaultCreateCanvas(w: number, h: number): CanvasLike | null {
+function defaultCreateCanvas(w: number, h: number): CanvasLike | null {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h) as unknown as CanvasLike;
   if (typeof document !== 'undefined') {
     const c = document.createElement('canvas');
@@ -87,9 +86,10 @@ export class CartographyContext {
   stats: FrameStats = emptyStats();
   /** Paths built since the renderer started (FrameStats.pathsBuilt is a difference of it). */
   built = 0;
-  /** The draw in progress: a live view (density buckets, progressive work), its quality tier, its pixel ratio when it
-   * is not the renderer's (a band recorded for the compositor, the furniture of another canvas). */
-  activeLive = false;
+  /** The draw in progress: a stepwise one (one step of a paint spread over frames: small sprite tiles, the quality
+   * policy), its quality tier, its pixel ratio when it is not the renderer's (a band recorded for the compositor, the
+   * furniture of another canvas). */
+  stepwise = false;
   activeLight = false;
   activeDpr: number | undefined;
   /** True while drawVector records for the GPU engine (set at each drawVector entry). */
@@ -242,14 +242,14 @@ export class CartographyContext {
     return p;
   };
 
-  /** Diagnostics: slowest recording of a drawVector section (vectorEngineStats().liveParts, keys 'rec:*'). */
+  /** Diagnostics: a drawVector section recorded for the GPU that held the main thread too long goes to the journal (`record:*`). */
   readonly timedRec = <T>(name: string, f: () => T): T => {
     if (!this.recordingNow) return f();
     const t = this.now();
     try {
       return f();
     } finally {
-      noteLivePart('rec:' + name, t);
+      noteLiveUnit('record:' + name, t);
     }
   };
 

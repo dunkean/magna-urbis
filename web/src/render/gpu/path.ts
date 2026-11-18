@@ -5,7 +5,7 @@
  * so the CPU canvas and the display-list recorder draw the very same objects. `PlainPath` records only (the recorder's
  * default path and rectangles). Both flatten to `PathGeometry` with Canvas semantics.
  */
-import type { Mat, PathGeometry, RecordedPath } from './displayList';
+import type { Mat, PathGeometry, RecordedPath } from './contract';
 
 // Command stream: opcode followed by its numbers.
 const MOVE = 0,
@@ -392,7 +392,7 @@ export function pReset(p: PathData): void {
   p.version++;
 }
 
-export function pBounds(p: PathData): Box {
+function pBounds(p: PathData): Box {
   if (p.boxVersion === p.version) return p.box;
   const c = p.cmds;
   let x0 = Infinity,
@@ -612,7 +612,7 @@ const ANY_TOLERANCE = 1000;
 /** Flattened geometry, cached per power-of-two tolerance bucket (the bucket value never exceeds `tolerance`).
  * A path of straight segments flattens identically at any tolerance: one geometry object serves all zooms, so the
  * rasterizer keeps its GPU upload across scale changes. */
-export function pGeometry(p: PathData, tolerance: number): PathGeometry {
+function pGeometry(p: PathData, tolerance: number): PathGeometry {
   const tol = tolerance > 0 && finite(tolerance) ? tolerance : 0.25;
   const bucket = Math.max(-24, Math.min(24, Math.floor(Math.log2(tol))));
   if (p.geoVersion !== p.version || !p.geo) {

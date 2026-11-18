@@ -7,7 +7,7 @@ import { retainedWaterPaths, type RetainedWaterPath } from '../../render/retaine
 import { waterClimate } from '../../render/waterRegime';
 import { paintRetainedWaterView, retainedRegime, type RetainedRegime } from '../retainedWaterRegime';
 import type { TerrainStyle } from '../../render/terrainStyle';
-import type { RetainedWaterOptions } from './types';
+import type { RetainedWaterOptions } from './contract';
 
 /** The retained water input: its paths, seasonal regime and city-zoom river colour. */
 export class RetainedWaterSource {
@@ -30,13 +30,9 @@ export class RetainedWaterSource {
     this.city = svg && options?.city ? [1, 0.5 * waterClimate(options.season ?? {}).sediment] : [0, 0];
     return true;
   }
-  /** Forgets the input (device rebuilt: the next set() always applies). */
-  clear(): void {
-    this.key = '';
-  }
 }
 
-/** The viewport raster of the retained water for one set of view targets, and the view it was painted for. */
+/** The viewport raster of the retained water for one set of view targets, and the input and view it was painted for. */
 export class RetainedWaterRaster {
   canvas?: HTMLCanvasElement;
   /** Encoded regime of the painted raster (uRegime of the painted-water composite). */
@@ -49,9 +45,11 @@ export class RetainedWaterRaster {
   private stop = '';
   private painted = false;
   private style = '';
+  private source?: RetainedWaterSource;
+  private sourceKey = '';
   /** Paints the viewport when it differs from the painted one (or `force`); true when the canvas changed. */
   paint(source: RetainedWaterSource, origin: [number, number], px: number, width: number, height: number, stop: string, painted: boolean, style: TerrainStyle, force = false): boolean {
-    if (!force && origin[0] === this.x && origin[1] === this.y && px === this.px && width === this.width && height === this.height && stop === this.stop && painted === this.painted && style === this.style) return false;
+    if (!force && source === this.source && source.key === this.sourceKey && origin[0] === this.x && origin[1] === this.y && px === this.px && width === this.width && height === this.height && stop === this.stop && painted === this.painted && style === this.style) return false;
     const canvas = (this.canvas ??= document.createElement('canvas'));
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
@@ -64,6 +62,8 @@ export class RetainedWaterRaster {
     this.stop = stop;
     this.painted = painted;
     this.style = style;
+    this.source = source;
+    this.sourceKey = source.key;
     return true;
   }
   /** The next paint() repaints. */

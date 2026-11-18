@@ -1,10 +1,14 @@
-/** The client, throttled scale label, measure tool and selection overlay. main.ts calls the mounts at the original startup positions to preserve page side effects. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { setText, numberLocale, StudioClient, createSelectionOverlay, mountMeasureTool } from './dependencies';
+/**
+ * The map: the StudioClient on #map-canvas (2D view, minimap, runs), its scale label, the measure tool and the selection
+ * outline. Mounted by main.ts right after the shell; every later module reaches the map through `state.client`.
+ */
+import type { PageActions, PageState } from './contract';
+import { setText, numberLocale } from '../i18n';
+import { StudioClient } from '../client';
+import { createSelectionOverlay } from '../selectionOverlay';
+import { mountMeasureTool } from '../measureTool';
 import { $ } from './dom';
 
-/** The client, throttled scale label, measure tool and selection overlay. Called by main.ts in startup order. */
 export function mountMapClient(state: PageState, actions: PageActions): void {
   state.canvas = $<HTMLCanvasElement>('#map-canvas');
 
@@ -12,16 +16,16 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
   // frame of a gesture, its attribute and text mutations made the page recompute styles and lay the label out per frame.
   const SCALE_LABEL_MS = 120;
 
-  state.scaleLabelText = '';
-  state.scaleLabelAt = 0;
-  state.scaleLabelTimer = undefined;
+  let scaleLabelText = '',
+    scaleLabelAt = 0,
+    scaleLabelTimer: ReturnType<typeof setTimeout> | undefined;
 
   const writeScaleLabel = (): void => {
-    state.scaleLabelTimer = undefined;
-    state.scaleLabelAt = performance.now();
+    scaleLabelTimer = undefined;
+    scaleLabelAt = performance.now();
     const text = `≈ ${Math.round(80 / state.client.viewer.getView().scale).toLocaleString(numberLocale())} m`;
-    if (text !== state.scaleLabelText) {
-      state.scaleLabelText = text;
+    if (text !== scaleLabelText) {
+      scaleLabelText = text;
       setText($('#scale-label'), text);
     }
   };
@@ -33,10 +37,10 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
     actions.updateProgress,
     e => void actions.reportGenerationFailure(e.message),
     () => {
-      if (state.scaleLabelTimer !== undefined) return;
-      const wait = SCALE_LABEL_MS - (performance.now() - state.scaleLabelAt);
+      if (scaleLabelTimer !== undefined) return;
+      const wait = SCALE_LABEL_MS - (performance.now() - scaleLabelAt);
       if (wait <= 0) writeScaleLabel();
-      else state.scaleLabelTimer = setTimeout(writeScaleLabel, wait);
+      else scaleLabelTimer = setTimeout(writeScaleLabel, wait);
     },
   );
 

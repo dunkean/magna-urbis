@@ -1,8 +1,15 @@
-/** Recipe changes, form synchronization and service/import fields. main.ts mounts the interleaved DOM additions and parent tracking at their original positions. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import { insertHTML, setText, setDynamicText, numberLocale, getDistanceUnit, formatDistance, adaptedExtent, type V2Settings, resetRegionalChildren, regionalParentKey, scheduleAutosave } from './dependencies';
-import { $, esc } from './dom';
+/**
+ * The recipe: what follows a change (autosave, chain sync, extent, background places), the reset of regional edits when
+ * the regional parent changes, the sync of every form from the recipe, and the family tab. Mounted by main.ts once
+ * the forms exist, to seed the regional parent of the recipe they normalized.
+ */
+import type { PageActions, PageState } from './contract';
+import { setText, setDynamicText, numberLocale } from '../i18n';
+import { getDistanceUnit, formatDistance } from '../units';
+import { adaptedExtent } from '../settings';
+import { resetRegionalChildren, regionalParentKey } from '../generationEdits';
+import { scheduleAutosave } from '../autosave';
+import { $ } from './dom';
 
 export function createSettingsActions(state: PageState, actions: PageActions) {
   function syncUrbanBackend(): void {
@@ -85,32 +92,6 @@ export function createSettingsActions(state: PageState, actions: PageActions) {
   return { syncUrbanBackend, resetRegionEdits, touchRecipe, updateExtent, syncControls, selectTab };
 }
 
-/** Service-address and import-scope DOM additions. Called by main.ts in startup order. */
-export function mountSettingsDialogs(state: PageState, actions: PageActions): void {
-  // Layer toggles live in the Display stages (widget:layer-*).
-  insertHTML(
-    $('#hardware-details'),
-    'afterend',
-    `<details class="section"><summary>Local service addresses</summary><p class="hint">The desktop edition starts Rust automatically. Python can use an existing local service. Addresses stay on your machine.</p><label class="label" for="rust-server">Native Rust</label><input id="rust-server" type="url" value="${esc(state.bootRuntime.localServer)}"><label class="label" for="python-server">Neural Python</label><input id="python-server" type="url" value="${esc(state.bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Save & verify</button><p class="hint">Python and model configuration: <a href="./scientific/index.html#runtime" target="_blank" rel="noopener">read the atlas ↗</a></p></details>`,
-  );
-
-  if (!state.localEdition) {
-    $('#rust-server').hidden = true;
-    $('label[for="rust-server"]').hidden = true;
-    $('#rust-server').parentElement!.querySelector<HTMLElement>('p.hint')!.hidden = true;
-  }
-
-  insertHTML(
-    $('#project-file'),
-    'beforebegin',
-    `<label class="label" for="import-scope">What should be imported from this file?</label><select id="import-scope"><option value="complete">Complete project · map + recipe + edits</option><option value="terrain">Territory · keep my settlement recipe</option><option value="urban">Settlement recipe · keep my territory</option></select><p class="hint" style="margin:8px 0 14px">Compositions retain the exact terrain and reset urban geometry: rebuild the settlements with the selected recipe.</p>`,
-  );
-}
-
-/** Workbench handles and regional recipe parent tracking. Called by main.ts in startup order. */
-export function mountRecipeTracking(state: PageState, actions: PageActions): void {
-  state.workbenchLayout = undefined;
-  state.roadDisplay = undefined;
-
-  state.regionalParents = new WeakMap<V2Settings, string>([[state.settings, regionalParentKey(state.settings)]]);
+export function mountRecipeTracking(state: PageState): void {
+  state.regionalParents.set(state.settings, regionalParentKey(state.settings));
 }

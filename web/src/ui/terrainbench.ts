@@ -57,7 +57,8 @@ import { DEFAULT_HYDROLOGY, riverAreaFor, type HydrologySettings, type Hydrology
 import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateOf, type ClimateValues, type NeuralTuning } from '../../../rust/bridge/terrain';
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
-import { TerrainGl, type TerrainLook } from './terrainGl';
+import { TerrainGl } from './terrainGl';
+import type { TerrainLook } from './terrain/contract';
 import { createTerrainRenderer, type TerrainRenderer } from './terrainRenderer';
 import { TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3d, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { createTerrain3d } from './terrain3dRenderer';

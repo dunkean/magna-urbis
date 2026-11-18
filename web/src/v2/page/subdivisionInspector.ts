@@ -1,32 +1,28 @@
-/** Quarter/block/parcel inspection and parcel merging. main.ts initializes picking state before toolbar listeners; inspector actions preserve descendant edits and regeneration. */
-import type { PageState } from './state';
-import type { PageActions } from './actions';
-import {
-  setHTML,
-  insertHTML,
-  setText,
-  translate,
-  getLanguage,
-  organizeInspector,
-  nativeCityRecords,
-  type UrbanBuilding,
-  validateSettings,
-  type QuarterOverride,
-  type BlockOverride,
-  type ParcelOverride,
-  polygonArea,
-  mergedOutline,
-  type LotShape,
-  blockEditId,
-  pointInRing,
-  townUrban,
-  mountUrbanControls,
-  mountSubdivisionActions,
-  resetSubdivisionChildren,
-} from './dependencies';
+/**
+ * The quarter, block and parcel inspector: local overrides of one subdivision (reset of its descendants, regeneration)
+ * and the parcel merge tool. Opened from a map click at those inspection levels and after the runs that kept it.
+ */
+import type { PageActions, PageState } from './contract';
+import { setHTML, insertHTML, setText, translate, getLanguage } from '../i18n';
+import { organizeInspector } from '../advancedPanel';
+import { nativeCityRecords } from '../nativeProducts';
+import type { UrbanBuilding } from '../../gen/types';
+import { validateSettings } from '../project';
+import type { QuarterOverride, BlockOverride, ParcelOverride } from '../../../../rust/bridge/urbanConfig';
+import { polygonArea } from '../urbanEditOptions';
+import { mergedOutline, type LotShape } from '../parcelMerge';
+import { blockEditId } from '../../../../rust/bridge/urbanBlockEdits';
+import { pointInRing } from '../../gen/geo/poly';
+import { townUrban } from '../edits';
+import { mountUrbanControls } from '../urbanControls';
+import { mountSubdivisionActions } from '../localUrbanEditor';
+import { resetSubdivisionChildren } from '../subdivisionEdits';
 import { $, esc } from './dom';
 
-export function createSubdivisionInspectorActions(state: PageState, actions: PageActions) {
+export function createSubdivisionInspector(state: PageState, actions: PageActions) {
+  /** Merge tool of the parcel inspector: while it is on, each map click on a parcel of the same block grows the
+   * selected lot's outline over it (a native lot shape edit: the engine absorbs the covered neighbour, keeps the
+   * selected lot's id and use); Regenerate area applies it. Repeated clicks merge more lots. */
   function mountParcelMerge(key: string, id: string, index: number, shape: LotShape, currentRole?: string): void {
     state.parcelMerge = undefined;
     const button = document.createElement('button');
@@ -218,7 +214,7 @@ export function createSubdivisionInspectorActions(state: PageState, actions: Pag
       };
       const controls = $('#subdivision-controls');
       const allocation = kind === 'parcel' ? native?.programmePartitions?.[0]?.programme?.allocations.find(a => a.parcelId === nativeId) : undefined;
-      if (kind === 'parcel') actions.mountParcelMerge(settlement.key, nativeId, item.index, item.shape, allocation?.role);
+      if (kind === 'parcel') mountParcelMerge(settlement.key, nativeId, item.index, item.shape, allocation?.role);
       const quarter = layout?.quarters[Number(quarterId)];
       const defaults: Record<string, unknown> =
         kind === 'quarter'
@@ -261,13 +257,5 @@ export function createSubdivisionInspectorActions(state: PageState, actions: Pag
     }
     return false;
   }
-  return { mountParcelMerge, inspectSubdivision };
-}
-
-/** Initial parcel-merge selection state. Called by main.ts in startup order. */
-export function mountSubdivisionInspector(state: PageState, actions: PageActions): void {
-  /** Merge tool of the parcel inspector: while it is on, each map click on a parcel of the same block grows the
-   * selected lot's outline over it (a native lot shape edit: the engine absorbs the covered neighbour, keeps the
-   * selected lot's id and use); Regenerate area applies it. Repeated clicks merge more lots. */
-  state.parcelMerge = undefined;
+  return { inspectSubdivision };
 }

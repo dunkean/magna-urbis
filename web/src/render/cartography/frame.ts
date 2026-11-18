@@ -10,7 +10,7 @@ import type { LineLayer, PolyLayer } from '../scene';
 import type { Palette } from '../styles';
 import type { BrushKind } from '../brushes';
 import type { RoadStyle, strokeNaturalRoad } from '../roadStyle';
-import type { FrameStats } from './types';
+import type { FrameStats } from './contract';
 import type { DrawMode } from './context';
 
 export interface FrameBase {

@@ -7,7 +7,7 @@
  * the frame's scale. A paint is a colour or a named pattern (`StreetPaint`): the Canvas town (cityCanvas.ts) resolves
  * a pattern with its context, the GPU town (cityGlStyle.ts) with its flat equivalent until it samples the pattern.
  */
-import type { CityLayers, CityLod, CityPalette, CityStreet } from '../cityCanvas';
+import type { CityLayers, CityLod, CityPalette, CityStreet } from './model/contract';
 import type { RenderColors } from '../customColors';
 import { groundRoadLook, type RoadLook } from '../composition';
 import { isBoardwalk } from '../cityGround';
@@ -23,7 +23,7 @@ import { PARCH, SLUSH } from './planLook';
 /** Stroked over the street surface. A causeway is not one: it joins the surface as an ordinary raised road. */
 export const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
 /** Stroked even near and close: square-ended structures and stepped ways. */
-export const SURFACE_SKIP = new Set(['mole', 'stairs', 'port-stairs', 'landing']);
+const SURFACE_SKIP = new Set(['mole', 'stairs', 'port-stairs', 'landing']);
 /** Untrodden snow in the shade of a quiet lane. */
 const LANE_SNOW = 'rgb(130,151,170)';
 
@@ -64,15 +64,17 @@ export const streetShown = (s: Pick<CityStreet, 'rank' | 'role'>, lod: CityLod):
 /** Draw order key: descending rank, crossings last. */
 export const streetOrder = (s: Pick<CityStreet, 'rank' | 'role'>): number => (CROSSINGS.has(s.role) ? -1 : s.rank);
 /** Minimum on-screen width of a street, CSS px. */
-export const streetMinPx = (role: string, rank: number): number => (isBoardwalk(role) ? 0.8 : role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, Math.max(0, rank))]);
+export const streetMinPx = (role: string, rank: number, planPath = false): number => (isBoardwalk(role) ? 0.8 : role === 'mole' ? 3.4 : (planPath ? PLAN_PATH_STREET_MIN_PX : STREET_MIN_PX)[Math.min(4, Math.max(0, rank))]);
+/** The plan path's own floors (planPath.ts): ranks 2 to 4 a tenth of a pixel narrower. */
+const PLAN_PATH_STREET_MIN_PX: readonly number[] = [3, 2.4, 1.6, 1.1, 0.8];
 /** Natural grounds: on-screen width a street narrower than the pixel thins to (it then fades with its true share). */
-export const NATURAL_STREET_FLOOR_PX = 1.1;
+const NATURAL_STREET_FLOOR_PX = 1.1;
 /** How streets are painted in a frame: a tone of the ground, a translucent wash, or the ink of the plan. */
 export type StreetMode = 'natural' | 'soft' | 'ink';
 /** Width of the casing (ink), soft edge (wash) or shoulder (natural, before its 9 % of the street width) on each side, CSS px. */
 export const streetEdgePx = (mode: StreetMode, lod: CityLod): number => (mode === 'natural' ? (lod === 'mid' ? 0.9 : 1.4) : mode === 'soft' ? (lod === 'mid' ? 0.8 : 1.1) : lod === 'far' ? 0 : lod === 'mid' ? 0.7 : 0.9);
 /** Casing of bridges and moles on each side: metres, at least 1.4 px. */
-export const deckEdge = (mpp: number): number => Math.max(1.2, 1.4 * mpp);
+const deckEdge = (mpp: number): number => Math.max(1.2, 1.4 * mpp);
 
 /** A colour, or a pattern the renderer resolves: the ground-textured road paint of a rank (roadStyle.ts roadPaint),
  * the aggregate grain (roadGrain), a textured material layer with the colour that stands for it. */
@@ -80,7 +82,7 @@ export type StreetPaint = string | { road: RoadRank; style: RoadStyle } | { grai
 /** Draw layers of the stroked ways, bottom to top: casings, ways under the surfaced streets, [surface casings, bodies
  * and carriageways], wear and winter marks, crossings, rails and treads. */
 export type StreetLayer = 'casing' | 'under' | 'marks2' | 'over' | 'marks';
-export interface StreetStroke {
+interface StreetStroke {
   layer: StreetLayer;
   paint: StreetPaint;
   /** World metres. */ width: number;
@@ -103,7 +105,7 @@ export interface StreetSurface {
   inner?: StreetFill;
   end?: 'square' | 'taper' | 'butt';
 }
-export interface StreetLook {
+interface StreetLook {
   mode: StreetMode;
   strokes: StreetStroke[];
   surface?: StreetSurface;
@@ -111,7 +113,7 @@ export interface StreetLook {
   /** Treads across a stepped way (close). */ stairs?: { paint: string; width: number };
 }
 
-export interface StreetFrameInput {
+interface StreetFrameInput {
   lod: CityLod;
   palette: CityPalette;
   /** Ink streets of another palette than the blocks (the 3D plan). */ streetPalette?: CityPalette;
@@ -127,7 +129,7 @@ export interface StreetFrameInput {
   /** Colours and ambience of the natural road paint (the building appearance's). */ paintColors?: RenderColors;
   paintNight?: boolean;
 }
-export interface StreetFrame extends StreetFrameInput {
+interface StreetFrame extends StreetFrameInput {
   night: boolean;
   natural: boolean;
   /** Washes instead of ink where the ground gives no tone. */ soft: boolean;
@@ -143,7 +145,7 @@ export function streetFrame(o: StreetFrameInput): StreetFrame {
   return { ...o, night: !!o.night, natural: groundRoadLook(o.roadLook), soft: o.roadLook !== 'ink' && (o.groundBlend ?? isBlended()) && !o.textured, tone: o.materialGround ? 'earth' : blendTone(o.palette), emphasis, roadStyle, pavedStyle: { ...roadStyle, pavement: 'asphalt' } };
 }
 /** What a street's paint reads from its town. */
-export interface StreetContext {
+interface StreetContext {
   /** Surface of the street (roadPavement.ts layoutStreetPavements). */ pavement?: RoadPavement;
   /** Population of the street's town: the main streets of a centre are cobbled (rendered roads). */ population?: number;
 }

@@ -1,5 +1,5 @@
 import { FRACTAL_ROTATIONS } from '../../../rust/bridge/terrainAdjust';
-import type { HeightLayer, TerrainLook } from './terrainGl';
+import type { HeightLayer, TerrainLook } from './terrain/contract';
 import { createTerrain3dNoiseSampler } from './terrain3dNoise';
 import { floatPyramid } from '../render/floatPyramid';
 

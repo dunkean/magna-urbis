@@ -33,7 +33,7 @@ import { markStyleCustomized } from '../ui/renderStyleCustomization';
 import { applySceneClock } from './sceneClock';
 import { setDisplayQualityPreference, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
 import { getVectorEnginePreference, onVectorEngineChange, setVectorEnginePreference } from '../render/vectorEngine';
-import type { VectorEngineChoice } from '../render/gpu/displayList';
+import type { VectorEngineChoice } from '../render/vectorEngine';
 
 export interface RenderControlBindings {
   getSettings(): V2Settings;

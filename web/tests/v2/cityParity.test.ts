@@ -34,7 +34,7 @@ import { passKeys } from '../../src/v2/passes/pass';
 import { FallbackGround } from '../../src/ui/terrain/fallbackGround';
 import { terrain3dPixelRatio, TERRAIN_3D_MOVING_PIXELS, TERRAIN_3D_FRAME_PIXELS } from '../../src/ui/terrain3dResolution';
 import { DISPLAY_QUALITIES, displayQualityFor, displayQualityUniform, onDisplayQualityChange, setDisplayQualityPreference, setDisplayAppearanceQuality } from '../../src/render/displayQuality';
-import { LiveTileFill } from '../../src/render/liveTileFill';
+import { StepwisePaint } from '../../src/render/stepwisePaint';
 import { drawFantasyRaster, suspendFantasyRaster, KEEP_NONE, type FantasyRaster } from '../../src/ui/fantasyRaster';
 import { STRUCTURE_ROLES } from '../../src/render/groundBlend';
 import { streetColors } from '../../src/render/cityGlStyle';
@@ -53,7 +53,7 @@ describe('shared live tile filling', () => {
       return id;
     });
     vi.stubGlobal('cancelAnimationFrame', (frame: number) => frames.delete(frame));
-    const fill = new LiveTileFill(() => clock),
+    const fill = new StepwisePaint(() => clock),
       built: string[] = [],
       invalidate = vi.fn(),
       failed = vi.fn();
@@ -96,7 +96,7 @@ describe('shared live tile filling', () => {
     vi.stubGlobal('cancelAnimationFrame', () => {
       callback = undefined;
     });
-    const fill = new LiveTileFill(() => clock),
+    const fill = new StepwisePaint(() => clock),
       invalidate = vi.fn();
     function* work(): Generator<boolean, void> {
       try {
@@ -305,27 +305,27 @@ describe('V2 and City Bench stay in sync', () => {
     for (let i = 0; i < step.value.length; i += 12) expect(step.value[i]).toBeGreaterThanOrEqual(40);
   });
 
-  it('reuses the live ground during a pan, refreshes borders cheaply, and restores exact density at rest', () => {
+  it('moves the fallback ground painted at rest while the view moves, and paints it again at rest', () => {
     const canvas = { style: {} } as HTMLCanvasElement,
-      ground = new FallbackGround(),
-      ratios: number[] = [];
-    const render = (ratio: number): boolean => {
-      ratios.push(ratio);
+      ground = new FallbackGround();
+    let paints = 0;
+    const paint = (): boolean => {
+      paints++;
       return true;
     };
     const view = { cx: 0, cy: 0, scale: 1 };
-    ground.present(canvas, view, 1000, 800, 2, false, render);
-    for (let x = 1; x <= 60; x++) ground.present(canvas, { ...view, cx: x }, 1000, 800, 2, true, render);
-    expect(ratios).toEqual([2]);
-    ground.present(canvas, { ...view, cx: 500 }, 1000, 800, 2, true, render);
-    expect(ratios).toEqual([2, 1.1]);
-    ground.present(canvas, { ...view, cx: 500 }, 1000, 800, 2, false, render);
-    expect(ratios).toEqual([2, 1.1, 2]);
-    ground.invalidate(canvas); // A capture or a changed terrain/look invalidates the retained frame.
+    ground.present(canvas, view, 1000, 800, 2, false, paint);
+    // However far the view moves, the picture follows it by a transform: no paint until the view rests.
+    for (let x = 1; x <= 600; x += 10) ground.present(canvas, { ...view, cx: x }, 1000, 800, 2, true, paint);
+    ground.present(canvas, { cx: 591, cy: 0, scale: 0.25 }, 1000, 800, 2, true, paint);
+    expect(paints).toBe(1);
+    expect(canvas.style.transform).toBe('translate(-147.75px,0px) scale(0.25)');
+    ground.present(canvas, { ...view, cx: 500 }, 1000, 800, 2, false, paint);
+    expect(paints).toBe(2);
     expect(canvas.style.transform).toBe('');
-    expect(canvas.style.width).toBe('1000px');
-    ground.present(canvas, { ...view, cx: 501 }, 1000, 800, 2, true, render);
-    expect(ratios).toEqual([2, 1.1, 2, 1.1]);
+    ground.invalidate(canvas); // A capture, a world tile or a changed input invalidates the picture.
+    ground.present(canvas, { ...view, cx: 501 }, 1000, 800, 2, true, paint);
+    expect(paints).toBe(3);
   });
   it('shares the 3D motion budget while the normal/capture budget stays full', () => {
     const pixels = (moving: boolean): number => {
@@ -599,7 +599,7 @@ describe('V2 and City Bench stay in sync', () => {
     hidden.buildings.visible = false;
     expect(resolveAppearance({ style: 'parchment', composition: hidden }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').city.layers.lotEnclosures).toBe(false);
     // Both draw paths gate the fences on lotEnclosures alone (parcelOverlay is the parcel diagram).
-    expect(read('../../src/render/cityCanvas.ts')).toContain('if (layers.lotEnclosures !== false) drawLotEnclosures(');
+    expect(read('../../src/render/city/canvas/town.ts')).toContain('if (layers.lotEnclosures !== false) drawLotEnclosures(');
     expect(read('../../src/ui/view3d/cityBuildings.ts')).toContain('yardsShown = !flat && yardLayers?.lotEnclosures !== false;');
   });
 
@@ -632,8 +632,8 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/render/cartography/structures.ts')).toContain('c.world.site && deps.urbanPlan?.() !== false) drawSiteMarker(');
     expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('urbanPlan: () => this.map.resolved?.city.plan !== false,');
     // Dashed refused-lot outlines are plan lines in both draw paths.
-    expect(read('../../src/render/cityCanvas.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
-    expect(read('../../src/render/cityGlStyle.ts')).toContain("layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size");
+    expect(read('../../src/render/city/canvas/town.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
+    expect(read('../../src/render/city/gl/styleTables.ts')).toContain("layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size");
   });
 
   it('builds the drawCity options of both pages with the shared function only', () => {
@@ -1206,7 +1206,7 @@ describe('causeways are ordinary raised roads', () => {
     // One set for both town renderers (city/streetLook.ts): neither keeps a copy.
     expect(CROSSINGS.has('bridge')).toBe(true);
     expect(CROSSINGS.has('causeway')).toBe(false);
-    for (const file of ['../../src/render/cityCanvas.ts', '../../src/render/cityGlBuild.ts']) expect(read(file)).not.toContain('const CROSSINGS');
+    for (const file of ['../../src/render/city/canvas/town.ts', '../../src/render/cityGlBuild.ts']) expect(read(file)).not.toContain('const CROSSINGS');
   });
 });
 
