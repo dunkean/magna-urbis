@@ -22,6 +22,8 @@ interface Tile {
   generation: number;
   /** `stamp` of the last frame that showed it. */
   used: number;
+  /** Painted without a product still being made (DrapeCanvas.provisional): stale when one arrives. */
+  provisional: boolean;
 }
 
 /** Numeric key of a tile (tier <= 20, indices < 2^21): no string, no allocation. */
@@ -32,8 +34,9 @@ export const tileKey = (tier: number, ix: number, iy: number): number => (tier *
  * coarser one. `out` gets the part of the tile under the square (its page and layer are the caller's).
  * The finer side comes first because a square whose wanted tier just dropped (the camera moved away, turned) was
  * shown by the finer tile: it keeps it rather than falling to a distant ancestor until the coarser tile is baked,
- * which made the map drape blink away and back as squares crossed tiers. */
-export function findTile<T>(tiles: ReadonlyMap<number, T>, squareTier: number, sx: number, sy: number, tier: number, out: DrapeTile): T | undefined {
+ * which made the map drape blink away and back as squares crossed tiers. A tile `accept` refuses (a tile of another
+ * look) is passed over as if it were not baked. */
+export function findTile<T>(tiles: ReadonlyMap<number, T>, squareTier: number, sx: number, sy: number, tier: number, out: DrapeTile, accept?: (tile: T) => boolean): T | undefined {
   for (let d = 0; tier + d <= squareTier || tier - d >= 0; d++) {
     for (let side = d ? 0 : 1; side < 2; side++) {
       const t = side ? tier - d : tier + d;
@@ -42,7 +45,7 @@ export function findTile<T>(tiles: ReadonlyMap<number, T>, squareTier: number, s
         tx = sx >> shift,
         ty = sy >> shift,
         tile = tiles.get(tileKey(t, tx, ty));
-      if (tile === undefined) continue;
+      if (tile === undefined || (accept && !accept(tile))) continue;
       const span = 1 / 2 ** shift;
       out.u0 = (sx - (tx << shift)) * span;
       out.v0 = (sy - (ty << shift)) * span;
@@ -91,6 +94,16 @@ export class TilePyramid {
   stale(): void {
     this.generation++;
     this.revision++;
+  }
+  /** A product made per scale arrived: the tiles painted without it are stale, the others stay. */
+  staleProvisional(): void {
+    let any = false;
+    for (const tile of this.tiles.values())
+      if (tile.provisional && tile.generation === this.generation) {
+        tile.generation = -1;
+        any = true;
+      }
+    if (any) this.revision++;
   }
   /** The tile is missing or stale. */
   needs(tier: number, ix: number, iy: number): boolean {
@@ -173,14 +186,15 @@ export class TilePyramid {
   }
   /** The tile was baked into `slot` (from `spare`) with the current content: it is shown from there, and the layer
    * it was shown from is free. */
-  baked(tier: number, ix: number, iy: number, slot: number): void {
+  baked(tier: number, ix: number, iy: number, slot: number, provisional = false): void {
     const key = tileKey(tier, ix, iy),
       existing = this.tiles.get(key);
     if (existing) {
       this.free.push(existing.slot);
       existing.slot = slot;
       existing.generation = this.generation;
-    } else this.tiles.set(key, { tier, ix, iy, slot, generation: this.generation, used: this.stamp });
+      existing.provisional = provisional;
+    } else this.tiles.set(key, { tier, ix, iy, slot, generation: this.generation, used: this.stamp, provisional });
     this.revision++;
   }
   /** The bake into `slot` (from `spare`) was given up: the layer is free again. */

@@ -61,6 +61,17 @@ const FLOATS = 10;
 const RETRY_MS = 100;
 /** Tiles a tilted frame may ask for: one per square it draws at most. */
 const MAX_WANTED = 1024;
+/** After a look switch the layer is not ready (the page keeps its last picture) until tier 0 of the new look is baked,
+ * at most this long: a renderer that cannot draw the new look yet then lets the old tiles show. */
+const LOOK_HOLD_MS = 1500;
+/** A moving view bakes first the stretch it will uncover in this time: at a brisk drag (800 CSS px/s) about one tile
+ * (256 to 512 device pixels) ahead of its leading edge. */
+const LEAD_S = 0.4;
+/** Two frames further apart than this are not one motion: no velocity is read from them. */
+const MOTION_GAP_S = 0.12;
+/** Tiles baked after a moving frame (each costs about 0.4 ms of CPU and a 576 px square of the ground shader on the
+ * GPU, a fraction of the whole view the display without tiles drew every frame); the work budget stops it sooner. */
+const MOVING_BAKES = 3;
 
 const VS = `#version 300 es
 layout(location=0) in vec4 aDst;
@@ -150,6 +161,12 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   let gridSize = 0;
   /** Content generation: a tile whose generation differs is stale (shown until re-baked). */
   let generation = 0;
+  /** First generation of the current look (`lookChanged`), and when it began. Once tier 0 holds the current look, no
+   * tile of an older look is drawn: a missing or older tile shows its nearest ancestor of this look instead. */
+  let lookGeneration = 0,
+    lookAt = -Infinity;
+  /** Tiles below this generation are not drawn (set per frame: the current look's once its tier 0 is baked). */
+  let shownFrom = 0;
   let seenRenderer: GroundTileRenderer | undefined,
     seenRevision = NaN;
   let blockedUntil = 0;
@@ -167,8 +184,13 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   /** Per draw: page, first instance, count. */
   const ranges = new Int32Array(2 * MAX_PAGES * 3);
   /** `patches`: squares of the terrain mesh in the last tilted frame; `patchUploads`: lists of squares sent to the GPU;
-   * `otherTier`, `drapeOtherTier`: squares of the last tilted frame shown by another tier than wanted (DrapedGroundStats). */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, tiles: 0, bytes: 0, pending: 0, bakeMs: 0, baked: 0, tier: 0, patches: 0, patchUploads: 0, otherTier: 0, drapeOtherTier: 0 };
+   * `otherTier`, `drapeOtherTier`: squares of the last tilted frame shown by another tier than wanted (DrapedGroundStats);
+   * in the top view `otherTier` counts the visible tiles shown by an ancestor (below). */
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, tiles: 0, bytes: 0, pending: 0, bakeMs: 0, baked: 0, tier: 0, patches: 0, patchUploads: 0, otherTier: 0, drapeOtherTier: 0, coarseAgeMs: 0 };
+  /** Visible tiles of the last top-view frame shown by an ancestor, by key, with the time each began to be (stats
+   * `otherTier`, and `coarseAgeMs` the wait of the oldest: how far the wanted tier lags behind the view). */
+  let coarseSince = new Map<number, number>(),
+    coarseNext = new Map<number, number>();
   /** The tiles the last tilted frame wanted and did not find fresh, with the depth of the square that wants each. */
   const wantedTier = new Uint8Array(MAX_WANTED),
     wantedX = new Int32Array(MAX_WANTED),
@@ -283,6 +305,11 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     return false;
   }
   const needs = (tier: number, ix: number, iy: number): boolean => tiles.get(tileKey(tier, ix, iy))?.generation !== generation;
+  /** Tier 0 holds the current look: the whole map can be shown in it. */
+  const lookBaked = (): boolean => (tiles.get(0)?.generation ?? -1) >= lookGeneration;
+  /** The generation from which tiles may be drawn by this frame. */
+  const drawFloor = (): number => (shownFrom = lookBaked() ? lookGeneration : -1);
+  const drawable = (tile: Tile): boolean => tile.generation >= shownFrom;
 
   /** First tile needing a bake in the square rings around (cx, cy), within the world rectangle grown by `pad` tiles. */
   function scan(tier: number, minX: number, minY: number, maxX: number, maxY: number, cx: number, cy: number, pad: number): boolean {
@@ -318,8 +345,27 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     return false;
   }
 
+  /** The view's centre in the last top-view frame, its time, and the velocity of a moving view (metres per second). */
+  let lastCx = NaN,
+    lastCy = NaN,
+    lastAt = 0,
+    velX = 0,
+    velY = 0;
+  function track(frame: LiveFrame): void {
+    const dt = (frame.now - lastAt) / 1000;
+    if (!frame.moving) velX = velY = 0;
+    else if (dt > 0 && dt < MOTION_GAP_S && Number.isFinite(lastCx)) {
+      velX = velX * 0.5 + ((frame.view.cx - lastCx) / dt) * 0.5;
+      velY = velY * 0.5 + ((frame.view.cy - lastCy) / dt) * 0.5;
+    }
+    lastCx = frame.view.cx;
+    lastCy = frame.view.cy;
+    lastAt = frame.now;
+  }
+
   /** The next tile to bake, in priority order: tier 0 (one tile: no hole after it), the view at the wanted tier centre
-   * outwards (what the user looks at; thin rivers and paths are under a pixel in the coarse tiers), the other coarse
+   * outwards (what the user looks at; thin rivers and paths are under a pixel in the coarse tiers; a moving view from
+   * where it is going), the other coarse
    * tiers, a ring of one tile around the view, the view one tier finer, then one tier coarser. */
   function nextBake(frame: LiveFrame | undefined): boolean {
     if (needs(0, 0, 0)) {
@@ -355,7 +401,11 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       cx = frame.view.cx;
       cy = frame.view.cy;
       k = viewTier(frame);
-      if (scan(k, minX, minY, maxX, maxY, cx, cy, 0)) return true;
+      // A moving view first bakes where it is going: the view and the stretch it will uncover in the next LEAD_S,
+      // nearest first to where it will then be centred (the leading edge before the trailing one).
+      const ax = frame.moving ? velX * LEAD_S : 0,
+        ay = frame.moving ? velY * LEAD_S : 0;
+      if (scan(k, Math.min(minX, minX + ax), Math.min(minY, minY + ay), Math.max(maxX, maxX + ax), Math.max(maxY, maxY + ay), cx + ax, cy + ay, 0)) return true;
     }
     const coarse = Math.min(COARSE_TIERS - 1, frame ? finestTier(frame.dpr) : COARSE_TIERS - 1);
     for (let tier = 1; tier <= coarse; tier++) {
@@ -429,9 +479,11 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, s.pages[Math.floor(slot / LAYERS)]);
     gl.copyTexSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, slot % LAYERS, GUTTER, GUTTER, TILE, TILE);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
-    if (existing)
-      existing.generation = generation; // replaced in place: no fade over its stale self
-    else tiles.set(key, { tier, ix, iy, slot, generation, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
+    if (existing) {
+      // Replaced in place: no fade over its stale self; a tile of another look was not drawn, it fades in over its ancestor.
+      if (existing.generation < lookGeneration) existing.shownAt = tier > 0 ? performance.now() : -Infinity;
+      existing.generation = generation;
+    } else tiles.set(key, { tier, ix, iy, slot, generation, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
     tileRevision++;
     return 'ok';
   }
@@ -467,7 +519,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         ax = ix >> shift,
         ay = iy >> shift,
         tile = tiles.get(tileKey(a, ax, ay));
-      if (!tile) continue;
+      if (!tile || !drawable(tile)) continue;
       tile.used = stamp;
       const span = 1 / 2 ** shift,
         u0 = (ix - (ax << shift)) * span,
@@ -487,6 +539,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     begin(): void {
       stamp++;
       wantedCount = 0;
+      drawFloor();
     },
     resolve(squareTier: number, sx: number, sy: number, tier: number, priority: number, out: DrapeTile): boolean {
       const shift = squareTier - tier,
@@ -498,7 +551,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         wantedY[wantedCount] = iy;
         wantedDepth[wantedCount++] = priority;
       }
-      const tile = findTile(tiles, squareTier, sx, sy, tier, out);
+      const tile = findTile(tiles, squareTier, sx, sy, tier, out, drawable);
       if (!tile) return false;
       tile.used = stamp;
       out.page = Math.floor(tile.slot / LAYERS);
@@ -525,7 +578,9 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
 
     ready(frame: LiveFrame): boolean {
       // Tier 0 covers the whole map (any generation: stale tiles stay on screen); the paper covers the rest.
-      return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && frame.width > 0;
+      // After a look switch, tier 0 of the new look first: until then the page keeps its last picture whole rather than
+      // show the old look's tiles under the new look's other layers.
+      return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && frame.width > 0 && (lookBaked() || performance.now() - lookAt > LOOK_HOLD_MS);
     },
 
     /** The tiles are the ground: a finer tile that arrives refines this picture, no other renderer replaces it. */
@@ -548,6 +603,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         return;
       }
       stamp++;
+      drawFloor();
+      track(frame);
       paperRgb();
       gl.clearColor(paper[0], paper[1], paper[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -577,8 +634,10 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
           for (let ix = x0; ix <= x1; ix++) {
             const px0 = ix * ts * sx + tx,
               px1 = (ix + 1) * ts * sx + tx;
-            const tile = tiles.get(tileKey(k, ix, iy));
-            if (!tile) {
+            const key = tileKey(k, ix, iy),
+              tile = tiles.get(key);
+            if (!tile || !drawable(tile)) {
+              coarseNext.set(key, coarseSince.get(key) ?? frame.now);
               pushAncestor(k, ix, iy, px0, py0, px1, py1);
               continue;
             }
@@ -638,6 +697,12 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         gl.bindVertexArray(null);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
       }
+      let oldest = frame.now;
+      for (const since of coarseNext.values()) oldest = Math.min(oldest, since);
+      stats.otherTier = coarseNext.size;
+      stats.coarseAgeMs = frame.now - oldest;
+      [coarseSince, coarseNext] = [coarseNext, coarseSince];
+      coarseNext.clear();
       stats.drawCalls = draws;
       stats.triangles = used * 2;
       stats.tier = k;
@@ -669,7 +734,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       }
       const started = performance.now();
       if (started < blockedUntil) return true;
-      const limit = frame?.moving ? 1 : 4;
+      const limit = frame?.moving ? MOVING_BAKES : 4;
       let baked = 0,
         arrived = false,
         pending = false;
@@ -706,6 +771,15 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     invalidate(): void {
       generation++;
       tileRevision++;
+    },
+
+    lookChanged(): void {
+      generation++;
+      tileRevision++;
+      lookGeneration = generation;
+      lookAt = performance.now();
+      // The frame that lets the old tiles show if tier 0 of the new look cannot be baked in time (`ready`).
+      setTimeout(options.invalidate, LOOK_HOLD_MS + 1);
     },
 
     contextLost(): void {

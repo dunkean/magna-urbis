@@ -11,6 +11,8 @@ export interface RegionCache<R> {
   put(entry: R): void;
   /** Takes out the most recently used entry `fits` accepts. */
   take(fits: (entry: R) => boolean): R | undefined;
+  /** The most recently used entry `fits` accepts, left in the cache. */
+  find(fits: (entry: R) => boolean): R | undefined;
   /** Releases every entry `dead` accepts. */
   drop(dead: (entry: R) => boolean): void;
   /** Empties the cache; `release` false when the entries' resources are already gone (a lost context). */
@@ -42,6 +44,10 @@ export function createRegionCache<R>(budget: number, count: number, bytesOf: (en
         remove(i, false);
         return e.entry;
       }
+      return undefined;
+    },
+    find(fits: (entry: R) => boolean): R | undefined {
+      for (let i = entries.length - 1; i >= 0; i--) if (fits(entries[i].entry)) return entries[i].entry;
       return undefined;
     },
     drop(dead: (entry: R) => boolean): void {

@@ -29,6 +29,7 @@ import { LIVE_CONTEXT_ATTRIBUTES, LIVE_LAYER_ORDER, resetLiveState, type LiveFra
 import { createGpuTimer } from './gpuTimer';
 import { createIsolatedGroup } from './isolatedGroup';
 import { liveStats, noteLiveUnit, pushSample } from './liveStats';
+import { groundBudgetBehindPace, PACE_MIN_GAP_MS, paceHolds } from './policy';
 import { createRasterQuad, dropRaster, uploadRaster, type Raster, type RasterQuad } from './rasterQuad';
 import { SOFTWARE_GL } from '../softwareGl';
 import type { View } from '../view';
@@ -55,6 +56,9 @@ interface LiveCompositorOptions {
   relief(): WorldRelief | undefined;
   /** Side of the map in metres (0: no map), for the tiles of the map drape. */
   mapSize(): number;
+  /** The page is still making the picture at rest of the view (an exact paint in steps, a layer it waits for): the
+   * work of the layers that only prepare a tilt (LiveLayer.tiltOnly) waits for it in a top-view frame. */
+  restPending(): boolean;
 }
 /** World square of a raster, in map metres. */
 interface LiveRasterRegion {
@@ -78,6 +82,9 @@ export interface LiveCompositor {
    * frame that needs it) and shown, moved with the view, whenever the layer is not ready. Undefined clears it. */
   setStandIn(name: LiveLayerName, source: TexImageSource | undefined, view: View, cssW: number, cssH: number): void;
   clearStandIns(): void;
+  /** The map style was switched: no picture of the previous look shows any more (stand-ins, the map drape's tiles,
+   * what each layer holds: LiveLayer.lookChanged); the new look shows from its coarsest tiles up. */
+  lookChanged(): void;
   /** The vector water raster of the frame (the `water` layer); uploaded when the image object changes. */
   setWater(image: TexImageSource | undefined, region?: LiveRasterRegion): void;
   /** Paper colour behind the layers (CSS colour). */
@@ -383,7 +390,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   };
   /** One slice of preparation, ground first. True while more is pending. */
   /** `refine` false (a moving view behind the display's pace): the ground, whose work only sharpens what is already
-   * shown, waits; the other layers' work is what keeps their frames cheap (a snapshot, a baked prefix) and goes on. */
+   * shown, gets the budget of policy.ts (one tile, or none on light quality); the other layers' work is what keeps
+   * their frames cheap (a snapshot, a baked prefix) and goes on. */
   const workSlice = (budgetMs: number, refine: boolean): boolean => {
     if (lost || disposed || !init()) return false;
     const started = performance.now(),
@@ -395,6 +403,9 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     const drapeFirst = drapeWaited;
     if (drapeFirst && drapeWork(budgetMs, last, refine)) pending = true;
     for (let i = 1; i < LIVE_LAYER_ORDER.length; i++) othersPending ||= !!stats.pending[LIVE_LAYER_ORDER[i]];
+    // In the top view the volumes only prepare a later tilt: they take what the picture on screen leaves.
+    let shownPending = !!last && !last.camera.tilted && options.restPending();
+    if (last && !last.camera.tilted) for (const name of LIVE_LAYER_ORDER) shownPending ||= !layers[name]?.tiltOnly && !!stats.pending[name];
     for (let i = 0; i < LIVE_LAYER_ORDER.length; i++) {
       const name = LIVE_LAYER_ORDER[i],
         layer = layers[name];
@@ -402,11 +413,12 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         stats.pending[name] = false;
         continue;
       }
-      if (!refine && name === 'ground') {
+      const behind = !refine && name === 'ground' ? groundBudgetBehindPace(last?.quality ?? 'light') : -1;
+      if (behind === 0 || (shownPending && layer.tiltOnly)) {
         pending ||= !!stats.pending[name];
         continue;
       }
-      const left = (i === 0 && (othersPending || drapePending) ? budgetMs * GROUND_SHARE : budgetMs) - (performance.now() - started);
+      const left = (behind > 0 ? behind : i === 0 && (othersPending || drapePending) ? budgetMs * GROUND_SHARE : budgetMs) - (performance.now() - started);
       // Out of time: its answer is unknown, so the loop comes back for it.
       if (left <= 0.2) {
         stats.pending[name] = true;
@@ -594,6 +606,21 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
           delete standIns[name];
         }
       }
+    },
+    lookChanged() {
+      this.clearStandIns();
+      drape.forget();
+      for (const name of LIVE_LAYER_ORDER) {
+        const layer = layers[name];
+        if (!layer?.lookChanged) continue;
+        try {
+          layer.lookChanged();
+        } catch (error) {
+          fail(name, error);
+        }
+        stats.pending[name] = !!layer.work;
+      }
+      schedule();
     },
     setWater(image, region) {
       if (region) {
@@ -913,12 +940,13 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     pushSample(stats.frameMs, performance.now() - started);
     if (moving && wasMoving) {
       const gap = started - lastFrameAt;
-      // A gap longer than a gesture's pause is not a frame interval (the view rested in between).
-      if (gap < GESTURE_MS) {
+      // A gap longer than a gesture's pause is not a frame interval (the view rested in between), nor one shorter than
+      // any display's (policy.ts).
+      if (gap < GESTURE_MS && gap >= PACE_MIN_GAP_MS) {
         paceGap = paceGap ? paceGap * 0.8 + gap * 0.2 : gap;
         // The best interval creeps up so a display that slows down (another refresh rate, throttling) is followed.
         paceBest = Math.min(paceBest * 1.002, gap);
-        paceOk = paceGap <= Math.max(paceBest, 4) * 1.4 + 1;
+        paceOk = paceHolds(paceGap, paceBest);
       }
     } else if (!moving) {
       paceGap = 0;

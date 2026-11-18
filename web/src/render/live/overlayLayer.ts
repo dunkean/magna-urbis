@@ -73,6 +73,9 @@ interface OverlayHost {
   record(plan: OverlayPlan, band: Rect4, light: boolean): OverlayBand | undefined;
   /** Asks for a new frame (a region became ready). */
   invalidate(): void;
+  /** Makes, until `deadline`, what a recording would otherwise make in one block (the tree marks of the woods); true
+   * when nothing is left. Called while the view rests and no region is wanted. */
+  warm(deadline: number): boolean;
   now(): number;
   /** A new region waits until the view has rested this long, or the need is older than `maxWaitMs`. */
   readonly settleMs: number;
@@ -111,6 +114,8 @@ const REUSE_MIN = 0.6,
   REUSE_MAX = 1.7;
 /** Main-thread time a band of a drape tile aims at (recording, rasterization, laying), and the bounds of its height
  * in recorded rows: the first band of the first tile (no cost known yet), and the least worth a recording. */
+/** Main-thread time of one idle warming slice (OverlayHost.warm). */
+const WARM_SLICE_MS = 8;
 const DRAPE_BAND_MS = 6,
   DRAPE_FIRST_ROWS = 48,
   DRAPE_MIN_ROWS = 8;
@@ -341,14 +346,15 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
   };
   const drape: DrapeSource = {
     revision(): number {
-      // The tiles hold what the products made per view gave when they were painted: an arrival repaints them.
-      const key = failed || raster.lost || !host.active() ? undefined : `${host.key(1, 1, false)}|${host.arrivals()}`;
+      // Content only: a product made per scale (contour paths) repaints the tiles painted without it (`arrivals`).
+      const key = failed || raster.lost || !host.active() ? undefined : host.key(1, 1, false);
       if (key !== drapeKey) {
         drapeKey = key;
         drapeRevision++;
       }
       return drapeRevision;
     },
+    arrivals: () => host.arrivals(),
     // Nothing to paint (the vector engine is off, the layer failed) is ready; else the programs must be linked.
     ready(tile: DrapeCanvas): boolean {
       if (failed || raster.lost || !host.active()) return true;
@@ -367,7 +373,10 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       if (failed || raster.lost || !host.active()) return false;
       if (tile.step === 0) {
         const r = regionFor(tile);
-        if (r && replayInto(tile, r)) return false;
+        if (r && replayInto(tile, r)) {
+          if (r.provisional) tile.provisional();
+          return false;
+        }
       }
       const side = tile.rect.maxX - tile.rect.minX,
         // Recorded pixels of the tile's side: a whole number, so the edges of the tile are texel edges of the bake.
@@ -390,6 +399,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         band: Rect4 = { minX: tile.rect.minX, maxX: tile.rect.maxX, minY: tile.rect.minY + top * metres, maxY: tile.rect.minY + (top + rows) * metres },
         made = host.record({ key, rect: tile.rect, scale, dpr: tile.dpr, bands: [band] }, band, tile.light);
       if (!made) return false;
+      if (made.provisional) tile.provisional();
       const list = cullList(made.list, boxOf(made));
       raster.prepare(list);
       const baked = raster.bake(list, tile.pixels / made.w, { samples: 4 });
@@ -595,6 +605,48 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     return beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO) ? 'far' : '';
   };
 
+  /** Parts of a frame that draws the kept region `u` where the region shown `r` does not reach, then `r` over it: each
+   * band of `u` is cut by scissor to its rows above and below `r`'s rectangle and its spans beside it, so that no pixel
+   * is drawn by both (their tints would add up). `u` is drawn by its snapshots far from its scale, as `r` is. Its lists
+   * were prepared when it was shown; what the arena dropped since is uploaded in this frame. */
+  const underPool: MutablePart[] = [];
+  const underLive: MutablePart[] = [];
+  const beneath = (u: Region, r: Region, frame: LiveFrame): readonly LivePart[] => {
+    const [sx, sy, tx, ty] = frame.worldToPixel,
+      kx = sx / (u.scale * u.dpr),
+      ky = sy / (u.scale * u.dpr),
+      far = beyond(kx, SNAPSHOT_RATIO),
+      hole = r.rect;
+    underLive.length = 0;
+    const piece = (b: Band, minX: number, minY: number, maxX: number, maxY: number): void => {
+      if (!(maxX > minX && maxY > minY) || !(minX < frame.rect.maxX && maxX > frame.rect.minX && minY < frame.rect.maxY && maxY > frame.rect.minY)) return;
+      const p = (underPool[underLive.length] ??= { list: NOTHING, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] }),
+        snapshot = far ? b.snapshot : undefined;
+      p.baked = snapshot ?? b.baked;
+      p.list = snapshot ? NOTHING : b.suffix;
+      p.post[0] = kx;
+      p.post[3] = ky;
+      p.post[4] = b.cx * sx + tx - (kx * b.w) / 2;
+      p.post[5] = b.cy * sy + ty - (ky * b.h) / 2;
+      p.scissor[0] = minX * sx + tx;
+      p.scissor[1] = minY * sy + ty;
+      p.scissor[2] = maxX * sx + tx;
+      p.scissor[3] = maxY * sy + ty;
+      underLive.push(p);
+    };
+    for (const b of u.parts) {
+      const a = b.rect,
+        y0 = Math.max(a.minY, hole.minY),
+        y1 = Math.min(a.maxY, hole.maxY);
+      piece(b, a.minX, a.minY, a.maxX, Math.min(a.maxY, hole.minY));
+      piece(b, a.minX, Math.max(a.minY, hole.maxY), a.maxX, a.maxY);
+      piece(b, a.minX, y0, Math.min(a.maxX, hole.minX), y1);
+      piece(b, Math.max(a.minX, hole.maxX), y0, a.maxX, y1);
+    }
+    for (const p of r.live) underLive.push(p as MutablePart);
+    return underLive as readonly LivePart[];
+  };
+
   return {
     name: 'overlay',
     isolated: true,
@@ -650,8 +702,11 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
           if (far && b.suffix.ops.length && meets(b.rect, frame.rect)) replayedFar++;
         }
       }
+      // A region that only meets the view (a pan past its margin, a zoom out past its side): a kept region fills the
+      // rest of the view under it, rather than the bare ground, until the region of this view is made.
+      const under = covers(r.rect, frame.rect) ? undefined : cache.find(c => !c.stale && c.dpr === frame.dpr && current(c) && meets(c.rect, frame.rect));
       try {
-        raster.replayLive(r.live as readonly LivePart[], frame.target, frame.width, frame.height);
+        raster.replayLive(under ? beneath(under, r, frame) : (r.live as readonly LivePart[]), frame.target, frame.width, frame.height);
         const s = raster.lastStats(),
           tally = raster.liveTally();
         stats.drawCalls = s.drawCalls;
@@ -699,6 +754,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         due.scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
         due.dpr = frame.dpr;
         more = wanted || !warm;
+        // Idle and at rest: a slice of what the next recordings would make in one block, at most WARM_SLICE_MS.
+        if (!more && !moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
         // Then, for the region shown now (the one this call may just have completed): its snapshots, as soon as the
         // view drifts from its scale and before it is far, so that no frame replays its lists there.
         const r = shown;
@@ -719,6 +776,18 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       cache.clear(true);
       failedKey = undefined;
       drapeRevision++;
+    },
+    lookChanged(): void {
+      // The region shown is the old look's map: it goes now, and the new look's region is recorded at once (nothing
+      // is shown: no settle wait). The programs stay.
+      release(shown);
+      shown = undefined;
+      dropPending();
+      cache.clear(true);
+      failedKey = undefined;
+      needSince = -1;
+      drapeRevision++;
+      refresh();
     },
     contextLost(): void {
       // Every handle is dead: forget them without deleting anything; the next `work` records and uploads again.

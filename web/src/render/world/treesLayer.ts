@@ -14,7 +14,7 @@ import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../..
 import type { TerrainHeights } from './heights';
 import { TREES_BLOCK, treeBlockSteps, treeDrawCount, treeInputsKey, treeLathe } from './treesBlocks';
 import { SATELLITE_TREES, TREE_LATHES, WORLD_TREE_FS, WORLD_TREE_VS, latheVertices, type TreePalette } from './treesShader';
-import { VOLUME_LIGHT, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
+import { VOLUME_LIGHT, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
 export interface WorldTreesOptions {
   /** The inputs of the near trees of the satellite looks, as the 3D view makes them (ui/view3d/terrain/trees.ts),
@@ -80,6 +80,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     tick = 0,
     bytes = 0;
   let program: Program | undefined;
+  /** The program the driver is linking (startVolumeProgram), from the first work slice on. */
+  let linking: WebGLProgram | undefined;
   let source: Omit<TreeInputs, 'height'> | undefined,
     sourceKey = '',
     heights: TerrainHeights | undefined,
@@ -163,9 +165,15 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     }
   };
 
-  const link = (): Program => {
-    const linked = linkVolumeProgram(gl, WORLD_TREE_VS, WORLD_TREE_FS, 'World trees');
-    return { program: linked, u: uniformsOf(gl, linked, UNIFORMS) };
+  /** The program once the driver has linked it: started in the first work slice, whatever the view (the map shows,
+   * nothing tilts yet), polled in the next ones; false while it links. */
+  const link = (): boolean => {
+    if (program) return true;
+    linking ??= startVolumeProgram(gl, WORLD_TREE_VS, WORLD_TREE_FS);
+    if (!volumeProgramLinked(gl, linking, 'World trees')) return false;
+    program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS) };
+    linking = undefined;
+    return true;
   };
   const slice = (started: number, pending: boolean): boolean => {
     const ms = performance.now() - started;
@@ -176,16 +184,16 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   return {
     name: 'trees',
     tilts: true,
+    tiltOnly: true,
     ready: () => true,
     restExact: frame => !volumesDrawn(frame.camera) || !options.shown() || (!wanted && !building),
     work(budgetMs, frame) {
       const started = performance.now();
       sync();
-      if (!inputs) return false;
-      if (!program) {
-        program = link();
-        return slice(started, true);
-      }
+      // Started whether or not the trees show: the link runs in the driver's threads, polled once per slice.
+      const linked = link();
+      if (!inputs) return !linked;
+      if (!linked) return slice(started, true);
       for (;;) {
         if (!building) {
           // The nearest block the last frame wanted that is not built yet.
@@ -335,14 +343,15 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       // Every handle is dead: forget them without deleting (the block being built goes on).
       slots.clear();
       bytes = 0;
-      program = undefined;
+      program = linking = undefined;
       drawnCountTotal = 0;
     },
     stats: () => stats,
     dispose() {
       dropAll();
       if (program) gl.deleteProgram(program.program);
-      program = undefined;
+      if (linking) gl.deleteProgram(linking);
+      program = linking = undefined;
       source = heights = inputs = undefined;
     },
   };

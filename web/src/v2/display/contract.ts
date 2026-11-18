@@ -96,6 +96,9 @@ export interface Water {
   waterDisplay(): WaterDisplay;
   /** The ink water must read above the land-use tints. */
   waterAboveLand(): boolean;
+  /** The map on screen is tilted (set by the composed view): `cutWater` uses the whole-map raster, the one the map
+   * drape lays as water, so no raster made for a top view changes the drape's tiles. */
+  tilted: boolean;
   /** Erases what `ctx` holds over the vector water. */
   cutWater(ctx: CanvasRenderingContext2D, rect: WorldBox): void;
   /** The raster for a frame; `refine` false keeps the one at hand instead of asking for a finer one. */

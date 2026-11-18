@@ -205,7 +205,13 @@ export class ComposedView {
     if (ground.fantasy || isFantasyStyle(r.ground.style)) return 'illustrated ground';
     // The GPU terrain renderer, or the CPU raster of a look without relief (GroundProducts.groundTiles).
     if (!ground.groundTiles()) return 'CPU ground';
-    const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality, relief: () => this.relief(), mapSize: () => map.world?.mapSize ?? 0 }));
+    const live = (this.live ??= createLiveCompositor({
+      invalidate: map.compose,
+      quality: getDisplayQuality,
+      relief: () => this.relief(),
+      mapSize: () => map.world?.mapSize ?? 0,
+      restPending: () => this.motion.restOwed || this.rest === 'due' || this.rest === 'painting' || !!this.awaited,
+    }));
     if (!live) {
       this.refused = true;
       return 'no hardware WebGL2';
@@ -275,6 +281,9 @@ export class ComposedView {
     if (!live) return;
     // Another ground style or terrain: the rasters of the previous map must not stand in for this one.
     if (before.resolved?.ground.style !== r.ground.style || before.native !== this.map.native) live.clearStandIns();
+    // Another map style: the old look leaves the screen as soon as the coarsest tiles of the new one are baked (the
+    // first thing baked), and nothing of it is ever drawn with the new one.
+    if (before.resolved && before.resolved.styleId !== r.styleId) live.lookChanged();
     // The terrain pass takes the renderer away while it runs (gpuActive), and the ground layer's work stops without
     // one: its tiles are marked stale (they keep showing until re-baked) and the work loop starts again.
     if (ran.includes('terrainData')) live.invalidateLayer('ground');
@@ -329,6 +338,7 @@ export class ComposedView {
   leave(): void {
     if (!this.onPage) return;
     this.onPage = false;
+    this.parts.water.tilted = false;
     this.live?.canvas.remove();
     this.overlayOnPage?.remove();
     this.overlayOnPage = undefined;
@@ -375,6 +385,8 @@ export class ComposedView {
       map = this.map;
     this.enter(live, w, h);
     map.dpr = dpr;
+    // A tilted map drapes the whole-map water raster: the land is cut with it too, never with a raster of the top view.
+    this.parts.water.tilted = isTilted(view);
     if (isTilted(view)) {
       this.drawTilted(live, view, w, h, dpr, moved, now);
       return;
@@ -410,6 +422,11 @@ export class ComposedView {
     this.yaw = yaw;
     this.show(undefined);
     this.rest = 'due';
+    // The picture at rest of the top view is not owed here: a layer awaited for it, or an exact paint under way, would
+    // keep the page's pending work above 0 for as long as the view stays tilted, and the readiness loop (settled)
+    // would ask for a frame at every animation frame.
+    this.exactFrom = this.awaited = undefined;
+    this.townPending = false;
     this.motion.restDone();
     if (changed) {
       this.tiltMovingUntil = now + SETTLE_MS;
@@ -422,6 +439,9 @@ export class ComposedView {
       this.volumes.refresh();
     }
     this.composeFrame(live, view, w, h, dpr, moving, now);
+    // A tilted view at rest is presented by this frame: the readiness marks of the request (visible-complete ends the
+    // page's wait for the display) are given here as the top view's picture at rest gives them.
+    if (!moving) this.readiness.notePresented();
   }
   /** The names of a tilted view at rest: the placement of the top view of its centre and scale (the names then keep
    * the sizes and the spacing of the map the camera tilts from), over a wider square. Placing for the perspective

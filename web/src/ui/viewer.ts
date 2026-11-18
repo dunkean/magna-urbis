@@ -15,7 +15,7 @@
  * Optional minimap canvas (drawn by the renderer, or from a base bitmap + the view rectangle).
  *
  * One camera (render/world/camera.ts): when the frame source presents a map that tilts (its element says so,
- * `data-camera="tilt"`; never with `?camera=dual`), the view also has a pitch and a yaw. Right-drag or Ctrl-drag
+ * `data-camera="tilt"`; never with `?camera=dual`, nor while the page locks it in 2D), the view also has a pitch and a yaw. Right-drag or Ctrl-drag
  * turns and tilts it, as do Shift+arrows, Shift+wheel and a two-finger vertical drag; Home eases back to the top
  * view and the fit key (0) resets it. Pan and zoom then act on the ground under the cursor. In the top view the
  * views handed out carry no pitch and no yaw: they are the views of the 2D map.
@@ -92,6 +92,9 @@ export interface Viewer {
   /** Eases the camera to a pitch (radians, 0 looks straight down) and a yaw (radians clockwise from north; the
    * current one when absent). Without effect while the map on screen does not tilt. */
   tiltTo(pitch: number, yaw?: number): void;
+  /** Holds the map in the top view (the page's 2D lock): a tilted camera returns to it at once, and no gesture, key or
+   * call tilts it until unlocked. */
+  setTiltLocked(locked: boolean): void;
   /** Calls `listener` with the view whenever its pitch, its yaw or the navigation mode changed; returns the function
    * that stops it. */
   onCamera(listener: (view: View) => void): () => void;
@@ -176,8 +179,10 @@ export function createViewer(o: ViewerOptions): Viewer {
   /** Keys held that move a free eye (KeyboardEvent.code), and the time of the last step. */
   const held = new Set<string>();
   let heldStamp = 0;
-  /** The frame source presents a map that tilts. */
-  const tilts = (): boolean => !dualCameras() && direct?.element.dataset.camera === 'tilt';
+  /** The page holds the map in the top view (Viewer.setTiltLocked). */
+  let tiltLocked = false;
+  /** The frame source presents a map that tilts, and the page lets it. */
+  const tilts = (): boolean => !tiltLocked && !dualCameras() && direct?.element.dataset.camera === 'tilt';
   const free = (): boolean => navigation !== 'orbit' && tilts();
   const tilted = (): boolean => (pitch !== 0 || yaw !== 0 || navigation !== 'orbit') && tilts();
   /** A centre and a scale with the tilt of the camera (a free eye: its look and altitude); in the top view, the view
@@ -836,12 +841,13 @@ export function createViewer(o: ViewerOptions): Viewer {
       // eye is a flight (a walk stays a walk), one without is the orbit.
       tiltTarget = null;
       held.clear();
-      const eye = !dualCameras() && Number.isFinite(v.eye);
+      const flat = dualCameras() || tiltLocked,
+        eye = !flat && Number.isFinite(v.eye);
       if (eye && navigation === 'orbit') orbitPitch = pitch || 1;
       navigation = eye ? (navigation === 'walk' ? 'walk' : 'fly') : 'orbit';
       if (eye) flightAltitude = v.eye!;
-      pitch = dualCameras() ? 0 : eye ? clampLook(v.pitch) : clampPitch(v.pitch);
-      yaw = dualCameras() ? 0 : wrapYaw(v.yaw);
+      pitch = flat ? 0 : eye ? clampLook(v.pitch) : clampPitch(v.pitch);
+      yaw = flat ? 0 : wrapYaw(v.yaw);
       set({ cx: v.cx, cy: v.cy, scale: v.scale });
     },
     setNavigation,
@@ -853,6 +859,14 @@ export function createViewer(o: ViewerOptions): Viewer {
       return projected.value;
     },
     tiltTo: (toPitch, toYaw) => tiltTo(toPitch, toYaw ?? tiltTarget?.yaw ?? yaw),
+    setTiltLocked(locked) {
+      if (locked === tiltLocked) return;
+      // A walk or a flight goes back to the orbit above where the eye stands, then the top view.
+      if (locked && navigation !== 'orbit' && tilts()) setNavigation('orbit');
+      if (locked) level();
+      tiltLocked = locked;
+      invalidate();
+    },
     onCamera(listener) {
       cameraListeners.add(listener);
       return () => cameraListeners.delete(listener);

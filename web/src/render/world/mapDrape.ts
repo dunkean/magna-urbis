@@ -23,7 +23,8 @@
  * the town, which no frame of a moving view can afford. A tile is baked by each source in turn painting its picture
  * of the tile's square with its own GPU renderer in this context, into a layer no tile is shown from; a source whose
  * picture is long to make paints it in steps, and the bake then spans several slices (`baking`). Tiles are stale when
- * a source's revision changes, and keep showing until baked again. Least recently shown tiles are evicted; tiers 0
+ * a source's revision (its content) changes, and keep showing until baked again; a tile a source painted without a
+ * product still being made for its scale (contour paths) is stale, alone, when that source's `arrivals` changes. Least recently shown tiles are evicted; tiers 0
  * and 1 never, nor a tile the last frame shows.
  *
  * Line widths: tier k has 512 * 2^k / mapSize pixels per metre, and the terrain picks for a square the coarsest tier
@@ -123,6 +124,8 @@ interface Baking {
   source: number;
   step: number;
   ms: number;
+  /** A source painted it without a product still being made (DrapeCanvas.provisional). */
+  provisional: boolean;
 }
 
 function link(gl: WebGL2RenderingContext): WebGLProgram {
@@ -154,6 +157,8 @@ export class MapDrape {
   /** The sources of the last slice and their revisions: another list or revision makes every tile stale. */
   private readonly seen: DrapeSource[] = [];
   private readonly seenRevision: number[] = [];
+  /** Their `arrivals` in the last slice: another count makes the tiles painted provisionally stale, and only those. */
+  private readonly seenArrivals: number[] = [];
   private blockedUntil = 0;
   private tiltedAt = 0;
   /** A source whose `paint` threw is reported once. */
@@ -189,6 +194,9 @@ export class MapDrape {
       put: (texture, uWest, vNorth, uEast, vSouth, opacity, uMin, vMin, uMax, vMax) => this.put(texture, uWest, vNorth, uEast, vSouth, opacity, uMin, vMin, uMax, vMax),
       group: () => this.openGroup(),
       putGroup: opacity => this.putGroup(opacity),
+      provisional: () => {
+        if (this.baking) this.baking.provisional = true;
+      },
     };
   }
 
@@ -331,7 +339,7 @@ export class MapDrape {
       resetLiveState(gl, s.layer, TILE, TILE);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
-      baking = this.baking = { tier, ix, iy, slot, source: 0, step: 0, ms: 0 };
+      baking = this.baking = { tier, ix, iy, slot, source: 0, step: 0, ms: 0, provisional: false };
     }
     if (baking.source < sources.length) {
       // A source that starts after another is asked again: the bake spans slices, and the source's own work between
@@ -354,7 +362,7 @@ export class MapDrape {
       }
       if (baking.source < sources.length) return 'more';
     }
-    pyramid.baked(baking.tier, baking.ix, baking.iy, baking.slot);
+    pyramid.baked(baking.tier, baking.ix, baking.iy, baking.slot, baking.provisional);
     this.baking = undefined;
     return 'baked';
   }
@@ -375,7 +383,10 @@ export class MapDrape {
     this.tiltedAt = now;
     const size = this.options.mapSize();
     if (!(size > 0)) return false;
-    const s = this.ensure(drapeLayers(frame.quality));
+    // Never smaller than the array in use: a switch to the light quality (the automatic demotion) would otherwise
+    // reallocate it and blank every tile of the drape until baked again. The light size applies from the next tilt
+    // after the array is released.
+    const s = this.ensure(Math.max(this.state?.layers ?? 0, drapeLayers(frame.quality)));
     if (!s) return false;
     if (size !== this.gridSize) {
       this.gridSize = size;
@@ -383,18 +394,25 @@ export class MapDrape {
       pyramid.reset(s.layers);
     }
     const seen = this.seen,
-      seenRevision = this.seenRevision;
-    let same = seen.length === sources.length;
+      seenRevision = this.seenRevision,
+      seenArrivals = this.seenArrivals;
+    let same = seen.length === sources.length,
+      arrived = false;
     for (let i = 0; i < sources.length; i++) {
-      const revision = sources[i].revision();
+      const revision = sources[i].revision(),
+        arrivals = sources[i].arrivals?.() ?? 0;
       if (seen[i] !== sources[i] || seenRevision[i] !== revision) same = false;
+      else if (seenArrivals[i] !== arrivals) arrived = true;
       seen[i] = sources[i];
       seenRevision[i] = revision;
+      seenArrivals[i] = arrivals;
     }
-    seen.length = seenRevision.length = sources.length;
+    seen.length = seenRevision.length = seenArrivals.length = sources.length;
     if (!same) pyramid.stale();
-    // A bake under way was started for other sources, or for another pixel ratio or quality: it starts again.
-    if (this.baking && (!same || this.canvas.dpr !== frame.dpr || this.canvas.light !== (frame.quality === 'light'))) this.abandon();
+    else if (arrived) pyramid.staleProvisional();
+    // A bake under way was started for other sources, or for another pixel ratio or quality, or painted without a
+    // product that has just arrived: it starts again.
+    if (this.baking && (!same || (arrived && this.baking.provisional) || this.canvas.dpr !== frame.dpr || this.canvas.light !== (frame.quality === 'light'))) this.abandon();
     const finest = this.finestTier(frame.dpr);
     stats.capacity = s.layers - 1;
     stats.bytes = s.layers * TILE_BYTES;
@@ -458,7 +476,7 @@ export class MapDrape {
     this.group.contextLost();
     this.pyramid.reset(0);
     this.gridSize = 0;
-    this.seen.length = this.seenRevision.length = 0;
+    this.seen.length = this.seenRevision.length = this.seenArrivals.length = 0;
     this.blockedUntil = 0;
   }
 

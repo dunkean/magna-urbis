@@ -135,13 +135,20 @@ export interface DrapeCanvas {
   group(): WebGLFramebuffer | undefined;
   /** Resolves the group and lays it over the tile with `opacity`. */
   putGroup(opacity: number): void;
+  /** The source painted this tile without a product that is still being made for its scale (contour paths in the
+   * worker): the tile is baked again, alone, when the source's `arrivals` changes. */
+  provisional(): void;
 }
 
 /** What a layer that lies flat on the ground gives the map drape (LiveLayer.drape). Called between frames only. */
 export interface DrapeSource {
   /** Changes whenever `paint` would paint another picture, or `ready` could answer differently for good: the tiles
-   * baked before are stale. Read once per work slice. */
+   * baked before are stale. Content only: a product made per scale or per view does not move it (`arrivals`). Read
+   * once per work slice. */
   revision(): number;
+  /** Changes when a product that a tile was painted without arrives: only the tiles painted `provisional` are baked
+   * again. Absent: the source never paints a tile provisionally. */
+  arrivals?(): number;
   /** False while the source cannot paint this tile yet (programs linking, data not on the GPU): the tile is baked
    * later, and until then the drape bakes nothing. A source with nothing to show is ready and paints nothing. Cheap. */
   ready(canvas: DrapeCanvas): boolean;

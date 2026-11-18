@@ -81,6 +81,19 @@
   padding: 6px 9px;
   font-size: 11px;
 }
+.style-control #view3d:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.style-control #view-lock2d {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 6px;
+  margin-right: -4px;
+}
+.style-control #view-lock2d[aria-pressed='false'] {
+  opacity: 0.6;
+}
 .style-control #capture3d {
   font-size: 10px;
   white-space: nowrap;

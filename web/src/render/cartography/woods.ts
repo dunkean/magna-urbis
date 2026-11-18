@@ -64,6 +64,30 @@ function tileTreeMarks(c: CartographyContext, tl: TextureLayer, tile: number): M
     return points;
   }
 }
+/** Warming of the tree marks (`warmTreeMarks`): per wood or orchard layer, its index tiles and the next one to compute. */
+const WARMING = new WeakMap<TextureLayer, { tiles: number[]; next: number }>();
+/** Index tiles a layer may warm: the mark cache keeps 8192 per layer, a larger layer would evict what it warms. */
+const WARM_TILES = 8192;
+/** Computes the tree marks of the woods and orchards, index tile by index tile, until `deadline`: the clearings and
+ * room tests of a tile cost milliseconds, and a band or a drape tile meeting tens of cold tiles at once was one
+ * block of 220 ms (parchment, 40 km). The marks are zoom-independent and cached for the whole map, so they are made
+ * once per content in the idle slices of the live overlay. True when every tile is warm. */
+export function warmTreeMarks(c: CartographyContext, deadline: number): boolean {
+  const size = c.world.mapSize;
+  for (const tl of c.scene.textures) {
+    if (tl.kind !== 'forest' && tl.kind !== 'orchard') continue;
+    let state = WARMING.get(tl);
+    if (!state) {
+      const tiles = tl.index.tilesInRect({ minX: 0, minY: 0, maxX: size, maxY: size });
+      WARMING.set(tl, (state = { tiles: tiles.length <= WARM_TILES ? tiles : [], next: 0 }));
+    }
+    while (state.next < state.tiles.length) {
+      if (performance.now() >= deadline) return false;
+      tileTreeMarks(c, tl, state.tiles[state.next++]);
+    }
+  }
+  return true;
+}
 /** False when the canopy draws vector glyphs at this scale (no atlas): the caller paints the trees itself. */
 export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, tl: TextureLayer, area: Rect4, pxPerMetre: number): boolean {
   const { canopy, brushes, treeSprites } = c;

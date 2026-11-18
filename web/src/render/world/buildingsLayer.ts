@@ -20,7 +20,7 @@ import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildi
 import { BlockGrouping, blockHidden, blockLevel, blockPart, joinParts, worldPaint, worldSeat, type BuildingBlock } from './buildingsBlocks';
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
-import { VOLUME_HAZE, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
+import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 import { pickBuilding, type BuildingPick } from './buildingsPick';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 
@@ -85,8 +85,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     tick = 0,
     bytes = 0,
     missing = false,
-    dirty = true;
+    dirty = true,
+    /** A level was evicted since the blocks were made: the overviews of the whole town do not fit the budget. */
+    spilled = false;
   let program: Program | undefined;
+  /** The program the driver is linking (startVolumeProgram), from the first work slice on. */
+  let linking: WebGLProgram | undefined;
   let scene: Building3dScene | undefined,
     heights: TerrainHeights | undefined,
     appearanceKey = '',
@@ -110,6 +114,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     slots = [];
     blocks = [];
     visibleCount = 0;
+    spilled = false;
   };
 
   /** The inputs of the page: a new scene, appearance or terrain starts the blocks again (grouped in later slices). */
@@ -181,6 +186,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         }
       if (!oldest) return;
       dropLevel(oldest, oldestIndex);
+      spilled = true;
     }
   };
 
@@ -191,21 +197,30 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     return pending;
   };
 
-  const link = (): Program => {
-    const linked = linkVolumeProgram(gl, WORLD_BUILDING_VS, WORLD_BUILDING_FS, 'World buildings');
-    return { program: linked, u: uniformsOf(gl, linked, UNIFORMS) };
+  /** The program once the driver has linked it: started in the first work slice, whatever the view (the map shows,
+   * nothing tilts yet), polled in the next ones; false while it links. */
+  const link = (): boolean => {
+    if (program) return true;
+    linking ??= startVolumeProgram(gl, WORLD_BUILDING_VS, WORLD_BUILDING_FS);
+    if (!volumeProgramLinked(gl, linking, 'World buildings')) return false;
+    program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS) };
+    linking = undefined;
+    return true;
   };
 
   return {
     name: 'buildings',
     tilts: true,
+    tiltOnly: true,
     ready: () => true,
     restExact: frame => !volumesDrawn(frame.camera) || !missing,
     work(budgetMs, frame) {
-      // Each step below is bounded: the grouping and the meshes go a chunk at a time, a program link is one step.
+      // Each step below is bounded: the grouping and the meshes go a chunk at a time, the link is polled.
       const started = performance.now(),
         deadline = started + budgetMs;
       sync();
+      // The link runs in the driver's threads while the town is grouped and meshed; polled once per slice.
+      const linked = link();
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
         paint = worldPaint(scene!, appearance!, grouping.altitudes);
@@ -215,10 +230,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         return slice(started, true);
       }
       if (!slots.length || !paint) return slice(started, false);
-      if (!program) {
-        program = link();
-        return slice(started, true);
-      }
+      if (!linked) return slice(started, true);
       let built = false;
       for (;;) {
         if (!pending) {
@@ -227,7 +239,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           let next: Slot | undefined;
           for (const slot of slots) if (slot.seen === tick && slot.want < slot.block.levels && !slot.levels[slot.want] && (!next || slot.depth < next.depth)) next = slot;
           if (next) pending = { slot: next, level: next.want, next: 0, parts: [] };
-          else {
+          else if (!spilled) {
+            // Not once the budget has spilled: an overview built then evicts another, which is bare again, without end.
             const bare = slots.find(slot => !slot.levels.some(Boolean));
             if (bare) pending = { slot: bare, level: bare.block.levels - 1, next: 0, parts: [] };
           }
@@ -243,7 +256,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         if (job.next >= count) {
           upload(job.slot, job.level, joinParts(job.parts));
           pending = undefined;
-          built = true;
+          // A frame is due only for a block the last frame saw; an overview built ahead shows nothing new.
+          built ||= job.slot.seen === tick;
         }
         if (performance.now() >= deadline) {
           if (built && frame?.camera.tilted) options.invalidate();
@@ -344,7 +358,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       // Every handle is dead: forget them without deleting.
       for (const slot of slots) slot.levels.fill(undefined);
       bytes = 0;
-      program = undefined;
+      program = linking = undefined;
       pending = undefined;
       visibleCount = 0;
     },
@@ -352,7 +366,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     dispose() {
       dropAll();
       if (program) gl.deleteProgram(program.program);
-      program = undefined;
+      if (linking) gl.deleteProgram(linking);
+      program = linking = undefined;
       scene = heights = undefined;
     },
   };

@@ -1,7 +1,7 @@
 /**
  * Volumes of the world view: what stands on the terrain of a tilted frame, the town's buildings (buildingsLayer.ts) and
  * the modelled trees (treesLayer.ts). This file holds what both share: the layer they are, how they rise with the
- * relief, which world blocks a frame sees, and the program link.
+ * relief, which world blocks a frame sees, and the program link (started early, polled, never waited for).
  *
  * How a volume layer meets the compositor (render/live/contract.ts, owned by the world stream). It is a LiveLayer that
  * takes the camera (`tilts`), drawn after the ground and the draped layers and before the names, NOT isolated: it draws
@@ -96,7 +96,14 @@ export class ViewVolume {
   }
 }
 
-export function linkVolumeProgram(gl: WebGL2RenderingContext, vertex: string, fragment: string, label: string): WebGLProgram {
+/** KHR_parallel_shader_compile's COMPLETION_STATUS_KHR. */
+const COMPLETION_STATUS = 0x91b1;
+
+/** Starts the compile and link of a volume program and returns at once: with KHR_parallel_shader_compile the driver
+ * links it in its own threads while the layer polls `volumeProgramLinked` in its work slices (reading LINK_STATUS
+ * before completion would wait for the whole link on the main thread: 250 ms measured for the buildings). */
+export function startVolumeProgram(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
+  gl.getExtension('KHR_parallel_shader_compile');
   const program = gl.createProgram()!;
   for (const [type, source] of [
     [gl.VERTEX_SHADER, vertex],
@@ -109,8 +116,14 @@ export function linkVolumeProgram(gl: WebGL2RenderingContext, vertex: string, fr
     gl.deleteShader(shader);
   }
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`${label} program: ${gl.getProgramInfoLog(program)}`);
   return program;
+}
+/** The program started by `startVolumeProgram` is linked (false while the driver still links it: ask again in a later
+ * slice). Without the extension the status read waits for the link, once. Throws when the link failed. */
+export function volumeProgramLinked(gl: WebGL2RenderingContext, program: WebGLProgram, label: string): boolean {
+  if (gl.getExtension('KHR_parallel_shader_compile') && !gl.getProgramParameter(program, COMPLETION_STATUS)) return false;
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`${label} program: ${gl.getProgramInfoLog(program)}`);
+  return true;
 }
 
 /** Uniform locations of a program by name. */

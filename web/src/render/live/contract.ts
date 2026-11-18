@@ -121,6 +121,13 @@ export interface LiveLayer {
   work?(budgetMs: number, frame: LiveFrame | undefined): boolean;
   /** What the layer shows changed (new world, appearance, revision): retained GPU data is stale. */
   invalidate?(): void;
+  /** Another look (the map style was switched): what the layer shows is a picture of the previous look and must not
+   * be shown with any part of the new one. The layer shows the new look as soon as it has some of it (coarse first),
+   * and nothing of the old one from then on. */
+  lookChanged?(): void;
+  /** The layer draws nothing in the top view (the volumes): its work there only prepares a later tilt, so in a
+   * top-view frame it runs only once the other layers and the page's picture at rest have nothing left to do. */
+  readonly tiltOnly?: boolean;
   /** The context was lost: every GL handle is dead. */
   contextLost?(): void;
   stats?(): LiveLayerStats;

@@ -229,8 +229,9 @@ export class CartographyProducts implements Cartography {
         look: semanticLook,
         arrivals: () => {
           const water = this.parts.water;
-          if (water.waterAboveLand() && (water.vectorView !== this.semanticWaterView || water.vectorBase !== this.semanticWaterBase)) {
-            this.semanticWaterView = water.vectorView;
+          // Tilted, the cut is the whole-map raster's (WaterProducts.cutWater): a raster of a top view is no arrival.
+          if (water.waterAboveLand() && ((!water.tilted && water.vectorView !== this.semanticWaterView) || water.vectorBase !== this.semanticWaterBase)) {
+            if (!water.tilted) this.semanticWaterView = water.vectorView;
             this.semanticWaterBase = water.vectorBase;
             this.semanticWaterViews++;
           }
@@ -246,7 +247,8 @@ export class CartographyProducts implements Cartography {
           const water = this.parts.water,
             view = water.vectorView?.region,
             covered = !!view && view.x <= rect.minX && view.y <= rect.minY && view.x + view.width >= rect.maxX && view.y + view.height >= rect.maxY;
-          if (this.parts.contours.pendingAt(mpp) || (water.waterAboveLand() && !!water.vectors && !covered && (!water.vectorBase || water.vectorPending))) this.provisionalDraws++;
+          const coarser = water.tilted ? !water.vectorBase : !covered && (!water.vectorBase || water.vectorPending);
+          if (this.parts.contours.pendingAt(mpp) || (water.waterAboveLand() && !!water.vectors && coarser)) this.provisionalDraws++;
         },
         legend: () => this.semanticLegend(),
       },

@@ -167,10 +167,11 @@ export class WaterProducts implements Water {
    * The vector water raster lies under the overlay: erase the land use, contours and semantics above it (the parchment
    * backdrop does the same with `destination-in`), so rivers and lakes stay crisp in their palette blue. Roads and bridges come later.
    */
+  tilted = false;
   cutWater(ctx: CanvasRenderingContext2D, rect: WorldBox): void {
     if (!this.waterAboveLand()) return;
     const covers = (v?: { region: ViewRasterRegion }): boolean => !!v && v.region.x <= rect.minX && v.region.y <= rect.minY && v.region.x + v.region.width >= rect.maxX && v.region.y + v.region.height >= rect.maxY;
-    const mask = covers(this.vectorView) ? this.vectorView : this.vectorBase;
+    const mask = !this.tilted && covers(this.vectorView) ? this.vectorView : this.vectorBase;
     if (!mask) return;
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';

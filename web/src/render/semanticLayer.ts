@@ -251,6 +251,23 @@ function ringsPath(rings: readonly (readonly { x: number; y: number }[])[]): Pat
   return path;
 }
 
+/** Batches kept per land-use product for recorded draws (`batchCell`), most recently used last. */
+const RECORDED_BATCHES = 32;
+interface Batch {
+  path: Path2D;
+  area: SemanticBox;
+}
+const RURAL_BATCHES = new WeakMap<LandUseLayer, Map<string, Batch>>();
+/** A recorded draw (the GPU recorder: live overlay bands, map drape tiles) asks for the areas of the lattice cell around
+ * its viewport rather than of the viewport itself: the thin bands of one region or tile then share one batch path per
+ * class, whose GPU stroke and fill geometry is made once (render/gpu/resources.ts caches it by path), where a path per
+ * band tessellated every field crossing the tile once per band (a cadastre drape tile: seconds). The extra areas lie
+ * outside the band, whose recording clips them. A canvas draw keeps its own viewport: it pays per area drawn. */
+function batchCell(viewport: SemanticBox): SemanticBox {
+  const cell = 2 ** Math.ceil(Math.log2(Math.max(viewport.maxX - viewport.minX, viewport.maxY - viewport.minY, 1e-6)));
+  return { minX: Math.floor(viewport.minX / cell) * cell, minY: Math.floor(viewport.minY / cell) * cell, maxX: Math.ceil(viewport.maxX / cell) * cell, maxY: Math.ceil(viewport.maxY / cell) * cell };
+}
+
 export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUseLayer | undefined, options: RuralSemanticOptions): boolean {
   const style = lookStyle(options.look, options.opacity);
   if (!landuse || !style || !(options.mpp > 0)) return false;
@@ -258,13 +275,20 @@ export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUs
     { boxes, paths } = geometry,
     { viewport, mpp, classes } = options,
     tiny = mpp * 1.2;
+  const recorded = typeof (ctx as unknown as { finish?: unknown }).finish === 'function',
+    query = recorded ? batchCell(viewport) : viewport;
+  const cellKey = recorded ? `${query.minX},${query.minY},${query.maxX},${query.maxY}|${mpp}|${options.fieldStrips === true}|${RURAL_ORDER.map(kind => (classes[kind] === false ? 0 : 1)).join('')}` : '';
+  let batches = recorded ? RURAL_BATCHES.get(landuse) : undefined;
+  if (recorded && !batches) RURAL_BATCHES.set(landuse, (batches = new Map()));
   const visible = new Map<LandKind, number[]>();
-  const candidates = options.indexed ? (geometry.bins ??= new SpatialBins(boxes, 128)).query(viewport) : landuse.areas.keys();
+  let inViewport = false;
+  const candidates = options.indexed ? (geometry.bins ??= new SpatialBins(boxes, 128)).query(query) : landuse.areas.keys();
   for (const i of candidates) {
     const area = landuse.areas[i];
     if (classes[area.kind] === false || !RURAL_SEMANTIC[area.kind]) continue;
     const box = boxes[i];
-    if (!overlaps(box, viewport) || (box.maxX - box.minX < tiny && box.maxY - box.minY < tiny)) continue;
+    if (!overlaps(box, query) || (box.maxX - box.minX < tiny && box.maxY - box.minY < tiny)) continue;
+    if (!inViewport && overlaps(box, viewport)) inViewport = true;
     const list = visible.get(area.kind);
     if (list) list.push(i);
     else visible.set(area.kind, [i]);
@@ -272,22 +296,37 @@ export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUs
   for (const kind of RURAL_ORDER) {
     const ids = visible.get(kind);
     if (!ids) continue;
-    const path = newPath(),
-      area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    for (const i of ids) {
-      path.addPath((paths[i] ??= ringsPath([landuse.areas[i].poly, ...(landuse.areas[i].holes ?? [])])));
-      if (kind === 'field' && options.fieldStrips && landuse.areas[i].strips?.length) path.addPath((geometry.stripPaths[i] ??= ringsPath(landuse.areas[i].strips!)));
-      const box = boxes[i];
-      area.minX = Math.min(area.minX, box.minX);
-      area.minY = Math.min(area.minY, box.minY);
-      area.maxX = Math.max(area.maxX, box.maxX);
-      area.maxY = Math.max(area.maxY, box.maxY);
+    const key = `${kind}|${cellKey}`;
+    let batch = batches?.get(key);
+    if (batch) {
+      // Most recently used last: the oldest goes first when the map is full.
+      batches!.delete(key);
+      batches!.set(key, batch);
+    } else {
+      const path = newPath(),
+        area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+      for (const i of ids) {
+        path.addPath((paths[i] ??= ringsPath([landuse.areas[i].poly, ...(landuse.areas[i].holes ?? [])])));
+        if (kind === 'field' && options.fieldStrips && landuse.areas[i].strips?.length) path.addPath((geometry.stripPaths[i] ??= ringsPath(landuse.areas[i].strips!)));
+        const box = boxes[i];
+        area.minX = Math.min(area.minX, box.minX);
+        area.minY = Math.min(area.minY, box.minY);
+        area.maxX = Math.max(area.maxX, box.maxX);
+        area.maxY = Math.max(area.maxY, box.maxY);
+      }
+      batch = { path, area };
+      if (batches) {
+        batches.set(key, batch);
+        if (batches.size > RECORDED_BATCHES) batches.delete(batches.keys().next().value!);
+      }
     }
+    const area = batch.area;
     // Hatching is clipped to the shapes, so only the part of their box in view needs lines.
     const inView = { minX: Math.max(area.minX, viewport.minX), minY: Math.max(area.minY, viewport.minY), maxX: Math.min(area.maxX, viewport.maxX), maxY: Math.min(area.maxY, viewport.maxY) };
-    paintBatch(ctx, path, inView, RURAL_SEMANTIC[kind], style, options.look, mpp, options.patterns !== false);
+    const hatched = options.patterns !== false && inView.minX < inView.maxX && inView.minY < inView.maxY;
+    paintBatch(ctx, batch.path, inView, RURAL_SEMANTIC[kind], style, options.look, mpp, hatched);
   }
-  return visible.size > 0;
+  return inViewport;
 }
 
 // ---------------------------------------------------------------- urban

@@ -17,7 +17,7 @@ import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
 import { drawVector } from './vector';
-import { releaseDrapeTemps } from './woods';
+import { releaseDrapeTemps, warmTreeMarks } from './woods';
 
 export function createLiveHost(c: CartographyContext) {
   const { deps, now } = c;
@@ -85,6 +85,7 @@ export function createLiveHost(c: CartographyContext) {
       },
       plan: regionPlan,
       arrivals: () => deps.semantic?.arrivals() ?? 0,
+      warm: deadline => c.disposed || warmTreeMarks(c, deadline),
       record(plan, band, light) {
         // One band is one step: recorded at the region's quality and at the compositor's pixel ratio.
         const stepwise = c.stepwise,
