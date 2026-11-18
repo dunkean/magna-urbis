@@ -1,15 +1,24 @@
 /**
  * Direct edits of the map: the names and labels editor (and the name redraw, serialized and superseded by revision),
- * the river and road editors, and the town mover. Each edit replaces the displayed world through `applyDirectMapEdit`.
+ * the river and road editors, the outline editor of quarters, blocks and parcels, and the town mover. Each edit
+ * replaces the displayed world through `applyDirectMapEdit`.
  */
 import type { PageActions, PageState } from './contract';
-import { getLanguage, registerMessages } from '../i18n';
+import { getLanguage, numberLocale, registerMessages, translate } from '../i18n';
 import { settlementDisplayName } from '../mapPresentation';
 import type { World } from '../../gen/types';
 import { applyBuildingEdits } from '../edits';
 import { mountMapLabelEditor } from '../mapLabelEditor';
 import { mountNetworkEditor } from '../networkEditor';
 import { mountTownMoveEditor } from '../townMoveEditor';
+import { roadAffectedTowns, roadTownNeedsChoice } from '../roadTownAccess';
+import { withRoadEditChanges } from '../urbanRoadEditing';
+import { mountContourEditor } from '../contourEditor';
+import { editableContours, settingsForContourEdit, controlledContour, type ContourEdit, type ContourState } from '../contourEdits';
+import { chooseAction } from '../actionDialog';
+import { validateSettings } from '../project';
+import type { RustTownSnapshot } from '../rustUrban';
+import { atTopView } from './editingToolbar';
 import { translateLand } from '../../ui/urbanSnapshot';
 import { renameMap } from '../mapNaming';
 import { $ } from './dom';
@@ -70,6 +79,82 @@ export function createMapEditingActions(state: PageState, actions: PageActions) 
   return { syncNameOrigins, redrawNames, applyDirectMapEdit };
 }
 
+/** Finish of a road session: the towns the edited roads reach are rebuilt (only their affected blocks) or keep their
+ * buildings and only adapt their accesses, as the user chooses. Undefined: the user goes on editing. */
+async function prepareRoadEdit(state: PageState, actions: PageActions, before: World, next: World): Promise<World | undefined> {
+  const keys = roadAffectedTowns(before, next);
+  if (!keys.length) return { ...next, stats: { ...next.stats, 'v2.roadEditReport': translate('Road edits applied. No settlement needs rebuilding.') } };
+  const towns = keys.filter(key => roadTownNeedsChoice(next, key));
+  let choice: 'access' | 'rebuild' | 'edit' = 'access';
+  if (towns.length) {
+    const answer = await chooseAction({
+      id: 'road-towns-dialog',
+      title: 'Update affected settlements',
+      message: 'Keep the edited roads and rebuild only the affected blocks, or adapt the accesses while keeping the buildings.',
+      details: towns.map(key => settlementDisplayName(next, key, state.settings) ?? key),
+      cancelValue: 'edit',
+      choices: [
+        { value: 'edit', label: 'Continue road editing' },
+        { value: 'rebuild', label: 'Rebuild affected blocks' },
+        { value: 'access', label: 'Update accesses only', primary: true },
+      ],
+    });
+    choice = answer.value ?? 'edit';
+    if (choice === 'edit') return undefined;
+  }
+  const rebuild = keys.filter(key => !roadTownNeedsChoice(next, key) || choice === 'rebuild'),
+    access = choice === 'rebuild' ? [] : towns;
+  await state.smallPlaces?.stop();
+  actions.setBusy(true, true);
+  try {
+    let updated = withRoadEditChanges(before, { ...next, stats: { ...next.stats, 'v2.roadRebuiltBlocks': 0, 'v2.roadAccessUnreachable': '' } }, keys);
+    if (rebuild.length) updated = await state.client.run('towns', state.settings, updated, undefined, undefined, undefined, rebuild, undefined, actions.updateProgress, false, 'rebuild');
+    if (access.length) updated = await state.client.run('towns', state.settings, updated, undefined, undefined, undefined, access, undefined, actions.updateProgress, false, 'access');
+    if (updated.stats['v2.roadAccessUnreachable']) actions.toast('Some town accesses could not be routed. Try another waypoint or rebuild the affected town.', true);
+    const blocks = Number(updated.stats['v2.roadRebuiltBlocks'] ?? 0);
+    const report = translate('Road edits applied: {blocks} blocks rebuilt, {places} settlements checked.').replace('{blocks}', blocks.toLocaleString(numberLocale())).replace('{places}', keys.length.toLocaleString(numberLocale()));
+    return { ...updated, terrain: next.terrain, stats: { ...updated.stats, 'v2.roadEditReport': report } };
+  } finally {
+    actions.setBusy(false);
+  }
+}
+
+const OUTLINE_KEPT = 'The engine kept the existing outline. Check the surrounding streets, neighbours and reserved areas.';
+registerMessages({ [OUTLINE_KEPT]: { en: OUTLINE_KEPT, fr: 'Le moteur a conservé le contour existant. Vérifiez les rues, les voisins et les surfaces réservées autour.' } });
+
+/** One outline edit: the chosen town alone is rebuilt through its current stage with the edited recipe. Returns the
+ * engine's warning when it refused or changed the outline. */
+async function applyContourEdit(state: PageState, actions: PageActions, edit: ContourEdit): Promise<string | undefined> {
+  if (!state.world) throw new Error('Create the terrain first.');
+  const before = state.world,
+    next = settingsForContourEdit(state.settings, edit);
+  validateSettings(next);
+  // An outline the control leaves unchanged only updates the recipe: nothing to rebuild.
+  if (edit.shape && controlledContour(edit.target.shape, edit.shape) === edit.shape) {
+    state.settings = next;
+    await actions.applyDirectMapEdit({ ...before });
+    return;
+  }
+  await state.smallPlaces?.stop();
+  actions.setBusy(true, true);
+  let updated: World;
+  try {
+    updated = await state.client.run('town', next, before, edit.target.town, undefined, undefined, undefined, undefined, actions.updateProgress, false, undefined, true);
+  } finally {
+    actions.setBusy(false);
+  }
+  state.settings = next;
+  await actions.applyDirectMapEdit({ ...updated, terrain: before.terrain, landuse: before.landuse });
+  const warningsOf = (world: World) => (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[edit.target.town]?.warnings ?? [];
+  const warnings = warningsOf(updated),
+    previous = warningsOf(before);
+  const pattern = /retouche|outline|contour|split|block edit|parcel edit|quarter edit/i;
+  const targets = editableContours(updated, edit.target.kind),
+    actual = targets.find(t => t.town === edit.target.town && t.id === edit.target.id);
+  const unchanged = edit.parts ? targets.length <= editableContours(before, edit.target.kind).length : edit.shape ? actual && controlledContour(edit.target.shape, actual.shape) === actual.shape : !!actual;
+  return warnings.find(w => !previous.includes(w) && pattern.test(w)) ?? (unchanged ? (warnings.find(w => pattern.test(w)) ?? translate(OUTLINE_KEPT)) : undefined);
+}
+
 export function mountMapEditing(state: PageState, actions: PageActions): void {
   state.labelEditor = mountMapLabelEditor($('#edit-labels'), {
     getWorld: () => (state.previewBase ? undefined : state.world),
@@ -106,13 +191,40 @@ export function mountMapEditing(state: PageState, actions: PageActions): void {
 
   $('#edit-rivers').append(riverEditorHost);
 
-  const networkHost = { map: $('#map'), getWorld: () => (state.previewBase ? undefined : state.world), setWorld: actions.applyDirectMapEdit, getView: () => state.client.viewer.getView(), getSettings: () => state.settings, busy: () => state.busy, toast: actions.toast };
+  const networkHost = {
+    map: $('#map'),
+    getWorld: () => (state.previewBase ? undefined : state.world),
+    setWorld: actions.applyDirectMapEdit,
+    getView: () => state.client.viewer.getView(),
+    topView: () => atTopView(state),
+    getSettings: () => state.settings,
+    busy: () => state.busy,
+    toast: actions.toast,
+  };
 
   state.riverEditor = mountNetworkEditor({ ...networkHost, panel: riverEditorHost, tools: ['rivers'] });
 
-  state.roadEditor = mountNetworkEditor({ ...networkHost, panel: $('#edit-roads'), tools: ['roads', 'draw'], getSettings: () => state.settings });
+  state.roadEditor = mountNetworkEditor({ ...networkHost, panel: $('#edit-roads'), tools: ['roads', 'draw'], prepareRoadEdit: (before, next) => prepareRoadEdit(state, actions, before, next) });
 
   $('#network-tool-slot').append($('.v2-network-shortcuts'));
+
+  const contourTools = document.createElement('div');
+  contourTools.id = 'contour-tool-slot';
+  $('#network-tool-slot').append(contourTools);
+  state.contourEditor = mountContourEditor({
+    map: $('#map'),
+    toolbar: contourTools,
+    getView: networkHost.getView,
+    topView: networkHost.topView,
+    busy: () => state.busy,
+    toast: actions.toast,
+    capture: () => (state.world && !state.previewBase ? { world: state.world, settings: state.settings } : undefined),
+    restore: async (snapshot: ContourState) => {
+      state.settings = structuredClone(snapshot.settings);
+      await actions.applyDirectMapEdit(snapshot.world);
+    },
+    apply: edit => applyContourEdit(state, actions, edit),
+  });
 
   state.townMover = mountTownMoveEditor({
     map: $('#map'),

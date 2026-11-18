@@ -23,6 +23,7 @@ import type { mountMapControls } from '../mapControls';
 import type { mountNameOriginControls } from '../nameOriginControls';
 import type { mountMapLabelEditor } from '../mapLabelEditor';
 import type { mountNetworkEditor } from '../networkEditor';
+import type { mountContourEditor } from '../contourEditor';
 import type { mountTownMoveEditor } from '../townMoveEditor';
 import type { createSelectionOverlay } from '../selectionOverlay';
 import type { mountViewLoadingIndicator } from '../viewLoadingIndicator';
@@ -125,7 +126,7 @@ export interface PageWork {
  * earlier throws (`state.ts`), it never yields undefined. Written once, by:
  * mapClient (canvas, client, selectionOutline), appearance (viewLoading, sceneControls, renderControls),
  * stageChain (terrainControls, regionControls; then chain, mapControls), runtime (backendBindings, settingsPanel;
- * then nativeNeuralManager, neuralModelManager), mapEditing (labelEditor, riverEditor, roadEditor, townMover),
+ * then nativeNeuralManager, neuralModelManager), mapEditing (labelEditor, riverEditor, roadEditor, contourEditor, townMover),
  * toolbar (editingTools), projects (cityCodeSharing).
  */
 export interface PageParts {
@@ -144,6 +145,7 @@ export interface PageParts {
   labelEditor: ReturnType<typeof mountMapLabelEditor>;
   riverEditor: ReturnType<typeof mountNetworkEditor>;
   roadEditor: ReturnType<typeof mountNetworkEditor>;
+  contourEditor: ReturnType<typeof mountContourEditor>;
   townMover: ReturnType<typeof mountTownMoveEditor>;
   nativeNeuralManager: ReturnType<typeof mountDesktopNeural>;
   neuralModelManager: { dispose(): void };
@@ -216,7 +218,7 @@ export interface PageActions {
   renderLog(): void;
   log(message: string): void;
   dialog(id: string): void;
-  setBusy(value: boolean): void;
+  setBusy(value: boolean, keepEditor?: boolean): void;
   showProgressSettlement(settlement?: V2Progress['settlement']): void;
   // generation
   generateMainOnly(): Promise<void>;

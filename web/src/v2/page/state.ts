@@ -26,6 +26,7 @@ const PARTS: readonly (keyof PageParts)[] = [
   'labelEditor',
   'riverEditor',
   'roadEditor',
+  'contourEditor',
   'townMover',
   'nativeNeuralManager',
   'neuralModelManager',

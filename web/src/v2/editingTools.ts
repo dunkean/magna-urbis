@@ -1,4 +1,4 @@
-import { registerMessages, setText, onLanguageChange } from './i18n';
+import { registerMessages, setText, onLanguageChange, translate } from './i18n';
 
 registerMessages({
   Appearance: { en: 'Appearance', fr: 'Apparence' },
@@ -23,7 +23,7 @@ export function stickySelection(token: string, selecting: boolean): boolean {
 
 /** One place for activation, one contextual dock. Existing tools keep ownership of their edits. `canSelect`: "Select on
  * map" is offered (it picks in a tilted view too, where the editors are not). */
-export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolean }): { sync(): void } {
+export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolean; roadSession?(): boolean; finishRoads?(): Promise<boolean>; cancelRoads?(): Promise<boolean> }): { sync(): void } {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
   const dock = $('#editor-dock'),
     inspect = $<HTMLInputElement>('#inspect-mode'),
@@ -39,6 +39,7 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
     for (const selector of ['#labels-open', '#rivers-open', '#move-towns', '[data-network-quick]']) document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => (control.disabled = !available));
     inspect.disabled = !selectable;
     $<HTMLSelectElement>('#inspect-target').disabled = !selectable || !inspect.checked;
+    setText($('#edit-done'), api.roadSession?.() ? 'Validate road edits' : 'Finish editing');
   }
   function show(next: string): void {
     mode = next;
@@ -46,9 +47,26 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
     dock.hidden = !section || section === 'buildings';
     for (const key of ['buildings', 'roads', 'rivers', 'labels']) $(`#edit-${key}`).hidden = key !== section;
     const label =
-      section === 'buildings' ? 'Buildings' : section === 'roads' ? 'Network editing' : section === 'rivers' ? 'Rivers' : section === 'labels' ? 'Names & labels' : next === 'town-move' ? 'Move towns' : next === 'placement' ? 'Choose a position on the map' : 'Navigate';
+      next === 'contours'
+        ? 'Edit outline'
+        : section === 'buildings'
+          ? 'Buildings'
+          : section === 'roads'
+            ? 'Network editing'
+            : section === 'rivers'
+              ? 'Rivers'
+              : section === 'labels'
+                ? 'Names & labels'
+                : next === 'town-move'
+                  ? 'Move towns'
+                  : next === 'placement'
+                    ? 'Choose a position on the map'
+                    : 'Navigate';
     setText($('#editor-title'), label);
     setText($('#active-tool'), label);
+    const closeLabel = section === 'roads' ? 'Cancel road edits' : 'Close';
+    $('#editor-close').setAttribute('aria-label', translate(closeLabel));
+    $('#editor-close').title = translate(closeLabel);
     $('#edit-navigate').setAttribute('aria-pressed', String(next === 'navigate'));
     $('#labels-open').setAttribute('aria-pressed', String(next === 'labels'));
     $('#edit-done').hidden = next === 'navigate';
@@ -57,7 +75,15 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
     sync();
   }
   const finish = () => window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'navigate' }));
-  for (const id of ['edit-navigate', 'editor-close', 'edit-done']) $(`#${id}`).onclick = finish;
+  $('#edit-navigate').onclick = finish;
+  $('#edit-done').onclick = async () => {
+    if (api.roadSession?.() && api.finishRoads && !(await api.finishRoads())) return;
+    finish();
+  };
+  $('#editor-close').onclick = async () => {
+    if (api.roadSession?.() && api.cancelRoads && !(await api.cancelRoads())) return;
+    finish();
+  };
   inspect.onchange = () => {
     if (inspect.checked && !api.canSelect()) {
       inspect.checked = false;
@@ -89,7 +115,7 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
       });
   });
   window.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && !document.querySelector('dialog[open]')) finish();
+    if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]')) finish();
   });
   onLanguageChange(() => show(mode));
   show('navigate');

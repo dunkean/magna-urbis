@@ -8,7 +8,7 @@ import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
 export interface SettlementEngine {
   run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse>;
-  dispose?(): void;
+  dispose?(): void | Promise<void>;
 }
 
 /**
@@ -21,13 +21,18 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
   const SettlementTerrain = runtime?.profile !== 'local' ? (await loadCoreWasm()).SettlementTerrain : undefined;
   let terrain: InstanceType<NonNullable<typeof SettlementTerrain>> | undefined;
   const native = nativeRasterClient();
+  let nativeRuntime: ExecutionRuntime | undefined;
   return {
     dispose() {
       terrain?.free();
       terrain = undefined;
+      const prior = nativeRuntime;
+      nativeRuntime = undefined;
+      if (prior) return native.release(prior);
     },
     run(request) {
       if (request.runtime?.profile === 'local') {
+        nativeRuntime = request.runtime;
         return native<SettlementResponse>('/settlements', { ...request, runtime: request.runtime }).catch(error => ({ id: request.id, error: String(error) }));
       }
       try {

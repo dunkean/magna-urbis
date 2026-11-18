@@ -464,7 +464,7 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
       // Keep the physical widths used by the 3D ground and the forest corridors, including narrow footpaths.
       const widths = new Map<number, Polyline[]>();
       for (const road of world.roads ?? [])
-        if (road.kind === kind) {
+        if (!road.urban && road.kind === kind) {
           const width = road.width > 0 ? road.width : roadW[kind];
           const paths = widths.get(width) ?? [];
           paths.push(road.path);

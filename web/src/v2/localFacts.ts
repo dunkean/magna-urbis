@@ -1,7 +1,7 @@
 import type { Settlement, UrbanLayer, PolyH } from '../gen/types';
 import type { RustTownSnapshot } from './rustUrban';
 import { areaWithHoles, pointInRing } from '../gen/geo/poly';
-import { blockEditId } from '../../../rust/bridge/urbanBlockEdits';
+import { blockEditKey } from '../../../rust/bridge/urbanBlockEdits';
 import { registerMessages, translate, numberLocale } from './i18n';
 import { displayUnit, getDistanceUnit, unitFactor } from './units';
 import './localFacts.css';
@@ -65,7 +65,7 @@ export function localFacts(input: LocalFactsInput) {
   const blockIndices = new Set(
     selection?.kind === 'quarter'
       ? layout
-        ? layout.blocks.flatMap((block, i) => (String(block.quarter) === (quarter?.nativeId ?? String(selection.index)) ? [i] : []))
+        ? layout.blocks.flatMap((block, i) => (block.quarter === selection.index ? [i] : []))
         : urban?.blocks.flatMap((ring, i) => (ring.length && shape && pointInRing(shape.outer, ring[0]) ? [i] : []))
       : selection?.kind === 'block'
         ? [selection.index]
@@ -92,7 +92,7 @@ export function localFacts(input: LocalFactsInput) {
     .find(value => value !== undefined);
   const area = (polygon: { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }) => areaWithHoles(polygon.outer, polygon.holes);
   return {
-    identifier: selection ? (quarter?.nativeId ?? (selection.kind === 'parcel' ? urban?.parcels[selection.index]?.nativeId : layout?.blocks[selection.index] ? blockEditId(layout, layout.blocks[selection.index].shape) : undefined) ?? String(selection.index)) : settlement.key,
+    identifier: selection ? (quarter?.nativeId ?? (selection.kind === 'parcel' ? urban?.parcels[selection.index]?.nativeId : layout?.blocks[selection.index] ? blockEditKey(layout, selection.index) : undefined) ?? String(selection.index)) : settlement.key,
     culture: quarter?.culture ?? (quarter && layout?.phases?.[quarter.phase]?.culture) ?? layout?.culture ?? urban?.culture ?? settlement.culture,
     zone: quarter?.zone ?? (selection?.kind === 'block' ? layout?.blocks[selection.index]?.zone : selection?.kind === 'parcel' ? urban?.parcels[selection.index]?.zone : undefined),
     phase: quarter ? quarter.phase + 1 : undefined,

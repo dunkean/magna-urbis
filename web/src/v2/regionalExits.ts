@@ -44,8 +44,7 @@ export function effectiveRegionalExits(settings: V2Settings, plan?: RegionalPopu
 
 /** Count actual classes: a downgraded highway appears under the class obtained. */
 export function regionalExitResults(report: readonly ExitReport[]) {
-  return Object.fromEntries(REGIONAL_EXIT_CLASSES.map(cls => [cls, { requested: report.filter(exit => exit.requested === cls).length, obtained: report.filter(exit => exit.class === cls && exit.point !== null && exit.gateway !== null).length }])) as Record<
-    keyof ExitCounts,
-    { requested: number; obtained: number }
-  >;
+  return Object.fromEntries(
+    REGIONAL_EXIT_CLASSES.map(cls => [cls, { requested: report.filter(exit => exit.requested === cls).length, obtained: report.filter(exit => exit.class === cls && exit.point !== null && exit.gateway !== null && exit.connected !== false).length }]),
+  ) as Record<keyof ExitCounts, { requested: number; obtained: number }>;
 }

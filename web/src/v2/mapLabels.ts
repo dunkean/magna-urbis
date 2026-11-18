@@ -79,7 +79,7 @@ export function nativeLabelCandidates(world: World): LabelCandidate[] {
       const districtRings = new Map<number, Vec2[][]>();
       for (const district of layout.structure?.districts ?? []) for (const quarter of district.quarters) districtByQuarter.set(quarter, district.id);
       for (const block of layout.blocks) {
-        if (block.kind.startsWith('reserve')) continue;
+        if (block.kind.startsWith('reserve') || block.kind === 'deleted') continue;
         const id = districtByQuarter.get(block.quarter);
         if (id === undefined) continue;
         let rings = districtRings.get(id);

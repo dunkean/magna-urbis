@@ -70,7 +70,7 @@ export function appendNativeNames(world: World, naming?: NamingSettings, seed = 
       const layoutKey = encodeURIComponent(layout.key);
       const cultureAt = (index: number) => layout.config?.overrides?.quarters?.[String(index)]?.culture ?? layout.phases?.[layout.quarters[index]?.phase ?? 0]?.culture ?? layout.culture ?? cityCulture;
       for (const district of layout.structure?.districts ?? []) {
-        const points = layout.blocks.filter(b => district.quarters.includes(b.quarter) && !b.kind.startsWith('reserve')).flatMap(b => b.shape.outer);
+        const points = layout.blocks.filter(b => district.quarters.includes(b.quarter) && !b.kind.startsWith('reserve') && b.kind !== 'deleted').flatMap(b => b.shape.outer);
         const id = `${prefix}:district:${layoutKey}:${district.id}`;
         add(id, 'quarter', center(points), cultureAt(district.quarters[0] ?? 0), 0.2, undefined, Math.sqrt(points.length ? Math.abs(polygonArea(points)) : 0));
       }

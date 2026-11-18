@@ -1441,15 +1441,20 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
     }
     lap.lap("partition");
     let mut connectors: Vec<_> = roads.iter().map(|r| (r.path.clone(), r.width)).collect();
-    for f in &farmsteads {
-        let drive = poly(&f["drive"]);
+    // Farm drives start on a road or on the drive of another farm they join (landuse/farm_access.rs).
+    let drives: Vec<Vec<Point>> = farmsteads.iter().map(|f| poly(&f["drive"])).collect();
+    for (k, drive) in drives.iter().enumerate() {
         if drive.len() >= 2
             && dist(drive[0], *drive.last().unwrap()) > 0.5
-            && roads
+            && (roads
                 .iter()
                 .any(|r| line_dist(drive[0], &r.path) <= r.width / 2.0 + 1.5)
+                || drives
+                    .iter()
+                    .enumerate()
+                    .any(|(j, other)| j != k && other.len() >= 2 && line_dist(drive[0], other) <= 1.5))
         {
-            connectors.push((drive, 3.0));
+            connectors.push((drive.clone(), 3.0));
         }
     }
     for u in std::iter::once(urban).chain(secondary.iter().map(|st| &st["urban"])) {

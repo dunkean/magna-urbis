@@ -1,5 +1,6 @@
 use super::hash::{HashMap, HashSet};
 use super::{
+    farm_access::FarmAccess,
     farms::{self, Context, LocalFarm},
     geom::*,
     raster::*,
@@ -16,6 +17,16 @@ struct Planned {
     lf: LocalFarm,
     o: Point,
     v: Point,
+}
+/// How a placed farm reaches the network.
+#[derive(Clone, Copy)]
+enum Drive {
+    /// No drive (no network within reach).
+    None,
+    /// A planned straight lane from this point (the hamlet street).
+    Lane(Point),
+    /// A track routed over the ground to the nearest road, street or farm drive, at most this far (m).
+    Route(f64),
 }
 #[derive(Clone, Copy)]
 struct Nearest {
@@ -38,6 +49,7 @@ struct Builder<'a> {
     segments: Vec<(Point, Point, f64)>,
     buckets: HashMap<i32, Vec<usize>>,
     bw: i32,
+    access: FarmAccess,
 }
 impl Builder<'_> {
     fn cell_at(&self, p: Point) -> usize {
@@ -238,7 +250,7 @@ impl Builder<'_> {
         }
         None
     }
-    fn accept(&mut self, pl: Planned, culture: &str, bp: Option<Point>) {
+    fn accept(&mut self, pl: Planned, culture: &str, drive: Drive) {
         let input = self.input;
         let mut g = farms::place(&pl.lf, pl.o, pl.v);
         let c = p(
@@ -275,12 +287,21 @@ impl Builder<'_> {
         let gate: Point = serde_json::from_value(g["gate"].clone()).unwrap_or_default();
         g["pos"] = serde_json::to_value(c).unwrap();
         g["buildings"] = Value::Array(arr(&g["parts"]).iter().map(|p| p["poly"].clone()).collect());
-        g["drive"] = serde_json::to_value(if let Some(bp) = bp {
-            vec![bp, gate]
-        } else {
-            vec![gate, gate]
-        })
-        .unwrap();
+        // The drive runs from the network to the gate (`drive[0]` on the road, street or drive it joins).
+        let lot = poly(&g["lot"]);
+        let line = match drive {
+            Drive::Lane(bp) => vec![bp, gate],
+            Drive::Route(range) => self
+                .access
+                .route(&input.height, &input.water, gate, &lot, range)
+                .unwrap_or_else(|| vec![gate, gate]),
+            Drive::None => vec![gate, gate],
+        };
+        // A hamlet's farms join the access network once the whole hamlet stands (it may be dropped).
+        if !matches!(drive, Drive::Lane(_)) {
+            self.access.add_farm(&lot, &line);
+        }
+        g["drive"] = serde_json::to_value(line).unwrap();
         g["type"] = pl.lf.type_.clone().into();
         g["size"] = farms::SIZES[pl.lf.size].into();
         g["culture"] = culture.into();
@@ -346,6 +367,7 @@ fn new_builder<'a>(
         segments: vec![],
         buckets: HashMap::default(),
         bw: (s_map / 200.0).ceil() as i32 + 1,
+        access: FarmAccess::new(input.w, input.h, input.cell, roads.iter().map(|r| (r.path.as_slice(), r.width))),
     };
     let mut add = |a: Point, b: Point, pad: f64| {
         let id = build.segments.len();
@@ -401,6 +423,8 @@ pub(crate) fn add_for_demand<'a>(
         if let Ok(c) = serde_json::from_value::<Point>(f["pos"].clone()) {
             build.lots.push((c, 30.0));
         }
+        // New tracks go round the farms already drawn and may join their drives.
+        build.access.add_farm(&poly(&f["lot"]), &poly(&f["drive"]));
     }
     let fr = rr.fork("demand-farm");
     let mut built = Vec::with_capacity(sites.len());
@@ -426,8 +450,10 @@ pub(crate) fn add_for_demand<'a>(
                 })
                 .collect::<Vec<_>>()
         };
+        // Its track is routed over the ground to the network within walking range: never a straight
+        // line to the nearest road point (it ran over water, lots and slopes, up to 1.5 km).
         if let Some(pl) = build.plan_on(ctx, fr.fork(&format!("d{k}")), places, 12.0) {
-            build.accept(pl, &culture, (nr.d < 1500.0).then_some(nr.bp));
+            build.accept(pl, &culture, if nr.d < 1500.0 { Drive::Route(1500.0) } else { Drive::None });
         }
         built.push(build.farms.len() > before);
     }
@@ -538,7 +564,7 @@ pub(crate) fn generate<'a>(
             build.accept(
                 farm.unwrap(),
                 s(&st["culture"]),
-                if nr.d < 400.0 { Some(nr.bp) } else { None },
+                if nr.d < 400.0 { Drive::Route(400.0) } else { Drive::None },
             );
         }
     }
@@ -671,10 +697,8 @@ pub(crate) fn generate<'a>(
             else {
                 continue;
             };
-            let g = farms::place(&pl.lf, pl.o, pl.v);
-            let gate = serde_json::from_value(g["gate"].clone()).unwrap_or_default();
-            let nr = build.nearest_road(gate);
-            build.accept(pl, &culture, Some(nr.bp));
+            // A farm by its road: the routed track is the few metres to it, round the ditch or the bank.
+            build.accept(pl, &culture, Drive::Route(400.0));
             made += 1;
         }
     }
@@ -765,7 +789,7 @@ pub(crate) fn generate<'a>(
                     let Some(pl) = build.plan_on(ctx, fr, |_| vec![Place { o: oo, v }], 2.0) else {
                         continue;
                     };
-                    build.accept(pl, &culture, Some(q));
+                    build.accept(pl, &culture, Drive::Lane(q));
                     last = Some(build.farms.len() - 1);
                     last_q = q;
                 }
@@ -785,6 +809,8 @@ pub(crate) fn generate<'a>(
                 let mut tags = arr(&build.farms[k]["tags"]).to_vec();
                 tags.push("hamlet".into());
                 build.farms[k]["tags"] = tags.into();
+                let (lot, drive) = (poly(&build.farms[k]["lot"]), poly(&build.farms[k]["drive"]));
+                build.access.add_farm(&lot, &drive);
             }
             made += 1;
         }

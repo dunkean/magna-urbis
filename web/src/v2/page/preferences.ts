@@ -11,6 +11,7 @@ import { mountRoadDisplayControl } from '../roadDisplayControl';
 import { mountNameOriginControls } from '../nameOriginControls';
 import { saveAutosaveNow } from '../autosave';
 import { resetSettings, markAllStagesStale, RESET_LABEL, RESET_TITLE, RESET_CONFIRM, RESET_DONE } from '../settingsReset';
+import { confirmAction } from '../actionDialog';
 import { $ } from './dom';
 
 export function mountPreferences(state: PageState, actions: PageActions): void {
@@ -96,7 +97,7 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
     reset.title = translate(RESET_TITLE);
     $('#map-advanced-open').after(reset);
     reset.onclick = async () => {
-      if (state.busy || !window.confirm(translate(RESET_CONFIRM))) return;
+      if (state.busy || !(await confirmAction(RESET_CONFIRM, { id: 'reset-settings-dialog', title: RESET_LABEL, confirmLabel: RESET_LABEL, danger: true }))) return;
       state.labelBaseline = undefined;
       state.smallPlaceRecipe = undefined;
       await state.smallPlaces?.stop();

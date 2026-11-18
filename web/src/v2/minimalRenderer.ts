@@ -43,11 +43,12 @@ export function* minimalFeatures(world: World, scene: RenderScene): Generator<Mi
         ],
       };
     }
-  for (const road of world.roads ?? []) for (let i = 1; i < road.path.length; i++) yield { layer: road.kind === 'track' ? 'path' : road.kind, points: [road.path[i - 1], road.path[i]] };
+  // Town streets the road editor exposes as roads (`urban`) are drawn once, as the streets of their layout.
+  for (const road of world.roads ?? []) if (!road.urban) for (let i = 1; i < road.path.length; i++) yield { layer: road.kind === 'track' ? 'path' : road.kind, points: [road.path[i - 1], road.path[i]] };
   const nativeKeys = new Set(Object.keys(scene.cityByKey));
   for (const city of scene.cities) {
     for (const layout of city.layouts) {
-      for (const block of layout.blocks) yield polygon('block', block.shape);
+      for (const block of layout.blocks) if (block.kind !== 'deleted') yield polygon('block', block.shape);
       for (const street of layout.streets) for (let i = 1; i < street.path.length; i++) yield { layer: street.rank <= 1 ? 'streetMajor' : 'streetMinor', points: [street.path[i - 1], street.path[i]] };
       for (const wall of layout.enclosures ?? []) yield { layer: 'wall', points: wall.path, closed: true };
       for (const waterway of layout.structure?.waterways ?? []) {

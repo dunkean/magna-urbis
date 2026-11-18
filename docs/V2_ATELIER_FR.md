@@ -195,18 +195,114 @@ La revue d’optimisation (historical validation, archived locally) détaille le
 les caches, le rendu, les mesures avant/après et les vérifications d’identité
 des résultats.
 
-Les commandes **Déplacer les villes**, **Modifier les routes** et **Tracer une
-route** sont visibles directement sur la carte. Activez une commande puis
-glissez la ville ou la route ; **Échap** termine l’édition. Déplacer une ville
-translate son plan existant et ses bâtiments, sans relancer leur génération.
+Les commandes **Modifier les routes** et **Tracer une route** sont accessibles
+dans l’onglet **Éditeur**. En modification, un clic sur la ligne sélectionne
+la route entière, ou le point de contrôle sous le clic. Double-cliquer un point
+sélectionne la ligne ; double-cliquer la ligne ajoute un point immédiatement
+sélectionné, sans modifier le trajet existant. Un appui de 500 ms sur une ligne
+déjà sélectionnée sélectionne le segment entre deux points de contrôle. Glisser
+la ligne déplace la route, glisser un point recalcule son trajet. Les attaches aux villes et aux autres routes restent
+fixes lors du déplacement global ; déplacer un carrefour recalcule ensemble
+ses branches incidentes. Les raccordements aux villes restent fixes.
 
-**Tracer une route** utilise par défaut le mode **Automatique · relief** :
-cliquez le départ puis l’arrivée. Le moteur Rust calcule le parcours avec les
-réglages régionaux de pente, de franchissement, de culture et de revêtement.
-Le calcul s’exécute dans un worker ; **Échap** ou **Annuler** l’interrompt.
-Le mode **Libre · points de contrôle** reste disponible dans le panneau.
-Le raccordement aux routes existantes est conservé ; leur utilisation comme
-réseau de partage pendant cette recherche n’est pas exposée par l’API actuelle.
+Le bouton **Ajouter une étape** permet aussi de choisir un emplacement sur la
+ligne. Déplacer un segment déplace ses deux points et conserve les raccordements
+incidents ; **Suppr** retire la sélection (point, segment ou ligne). Les accès aux fermes et les chemins agricoles
+sont sélectionnables et modifiables comme les autres routes. Autour du point
+sélectionné, **moins** retire la contrainte de passage et recalcule le trajet
+entre ses voisins. Les **ciseaux** créent une interruption visible :
+un clic crée deux lignes et deux extrémités indépendantes, séparées d’un petit
+espace physique stable au changement de zoom. Les contrôles
+sont distincts des sommets du chemin calculé, restent stables au changement de
+zoom et sont conservés avec le projet complet.
+
+Les contrôles automatiques ne reprennent pas chaque coude calculé : une route
+existante commence avec ses deux extrémités et une poignée centrale. Au lâcher,
+le moteur recherche à nouveau le chemin sur le relief ; les virages résultants
+ne deviennent pas des contraintes de passage. L’aperçu pendant le déplacement
+utilise aussi ce routage.
+
+Le dé **Autre trajet** est disponible pendant la création (après deux points)
+et sur une route sélectionnée. Il conserve les points et les raccordements,
+mais explore une autre graine et un autre compromis de coût de pente, sans
+relâcher la pente maximale ni les règles de franchissement. Si la recherche
+retrouve le même passage praticable, l’éditeur l’indique.
+
+**Tracer une route** pose une suite de points de passage : le moteur Rust
+calcule les liaisons successives avec les réglages régionaux de pente, de
+franchissement et de culture, pour la catégorie de route choisie. L’aperçu suit
+le curseur. **Échap**, **Entrée** ou **Terminer la route** valide le brouillon ;
+**Annuler** l’abandonne. Un premier clic hors carte crée une entrée sur le bord
+le plus proche. Un clic hors carte après le départ ajoute une entrée et termine
+la route. Une route traversante peut donc avoir deux entrées.
+
+Les entrées régionales sont des losanges contraints au bord. Leur suppression
+demande confirmation et retire leur branche exclusive en conservant les tronçons
+partagés. Le composant **Routes régionales** actualise ses résultats et le nombre
+demandé de la catégorie concernée. Une liaison coupée est signalée comme non
+raccordée. **Annuler/Rétablir** restaure à la fois la carte et ces nombres
+(Ctrl/Cmd+Z, Ctrl/Cmd+Maj+Z ou Ctrl+Y).
+
+Les recalculs s’exécutent dans un worker. Un échec conserve la carte valide
+précédente ; Échap pendant un calcul l’interrompt. Les modifications restent
+enregistrées dans le projet, mais une régénération régionale les remplace.
+L’utilisation des routes existantes comme réseau de partage pendant la recherche
+de chemin n’est pas exposée par l’API actuelle ; leurs raccordements sont conservés.
+
+Après une modification, les dégagements de forêt suivent le nouveau tracé,
+y compris hors des zones cultivées ; le dégagement abandonné disparaît.
+Le gros bouton **Terminer l’édition**, placé au-dessus de la minimap, reste visible
+avec le nombre d’actions et le retour de la dernière opération, jusqu’à validation
+ou **Annuler l’édition des routes**. Les déplacements,
+ajouts et suppressions restent visibles pendant les ajustements ; les localités
+attendent la validation. Échap termine un tracé, sans valider toute la session.
+
+À la validation, les changements sont comparés à l’état initial. Un seul dialogue
+regroupe les hameaux, villages et lieux plus grands réellement touchés et propose
+**Adapter seulement les accès** ou **Reconstruire les îlots touchés** (parcelles
+et bâtiments). Les rues modifiées restent prioritaires et sont sauvegardées ;
+une régénération ultérieure les réapplique. Seuls les îlots traversés par l’ancien
+ou le nouveau passage sont redécoupés ; les autres îlots, quartiers et bâtiments
+restent conservés. **Continuer l’édition des routes** revient aux ajustements sans
+appliquer ce choix. Les fermes et bâtiments isolés concernés sont mis à jour
+directement, à la validation. Une modification éloignée d’une localité ne
+déclenche pas de question. Annuler restaure la carte et les entrées régionales
+du début de session ; Ctrl+Z annule chaque action, suppression comprise, même
+après fermeture de l’outil. Annuler la validation rouvre le brouillon ; les gestes
+précédents restent ensuite annulables individuellement.
+
+Les rues internes et accès urbains sont sélectionnables dans le même éditeur,
+y compris les petites voies qui dépassent de la ville. Le panneau indique leur
+localité. Déplacer une jonction conserve les rues incidentes ; supprimer ou couper
+une rue permet un nettoyage manuel. Un tracé créé entièrement dans une localité
+devient une rue de cette localité.
+
+La répartition de population ne plafonne plus les villages à 999 habitants.
+Les effectifs choisis sont conservés ; la désignation démographique affichée
+peut évoluer avec le nombre d’habitants.
+
+Les outils **Quartier**, **Îlot** et **Parcelle** appliquent les mêmes gestes
+aux contours extérieurs : clic pour sélectionner, double-clic sur un bord pour
+ajouter un point, double-clic sur un point pour sélectionner le contour entier,
+appui long pour sélectionner un segment. Déplacer ce segment déplace ses deux
+sommets. **Suppr** retire la sélection ; retirer un point retend le contour.
+Les ciseaux d’un point demandent un second point du bord extérieur et créent
+deux surfaces fermées. Une coupe traversant une cour intérieure est refusée.
+Les dépendances urbaines sont recalculées au lâcher ; les rues, le relief,
+la campagne et les autres localités sont conservés. Les limites admissibles
+restent celles du moteur (voisins, rues et surfaces réservées).
+**Ctrl+Z** restaure le contour et ses dépendances, y compris après
+**Terminer l’édition**. Le projet enregistre les contrôles et les scissions.
+
+La liste des implantations répertorie aussi les **Fermes isolées** issues de
+l’occupation des sols, avec leur catégorie (ferme ou écart agricole), le nombre
+de foyers, la localité proche et leur raccordement au réseau. Ces foyers sont
+déjà compris dans la population des localités : leur affichage n’ajoute pas
+d’habitants. Leurs accès sont calculés sur le terrain, contournent les obstacles
+et peuvent rejoindre un accès agricole existant. Une ferme sans parcours
+praticable est indiquée **sans chemin**. Après une édition du réseau, cet
+indicateur est actualisé ; les accès eux-mêmes sont recalculés à la prochaine
+génération de l’occupation des sols.
 
 Le rendu **Topographique** est une vue de travail simplifiée : fond uni, courbes
 de niveau, limites et bandes des champs, rivières, routes et villes. Il conserve les données de

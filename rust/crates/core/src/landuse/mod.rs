@@ -1,5 +1,6 @@
 //! Rural land use, shared by the stateless native and synchronous WASM bridges.
 mod boolean;
+mod farm_access;
 mod farms;
 mod fields;
 mod geom;

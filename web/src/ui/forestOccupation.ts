@@ -258,12 +258,32 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     shapes.push({ rings: [offsetRibbon(path, 12)], cls: CLEARANCE, forest: false });
   }
   for (const shape of clearings) shapes.push({ rings: [shape.outer, ...(shape.holes ?? [])], cls: CLEARING, forest: false });
+  const ways = [...corridors, ...(landuse.forestCorridors ?? [])];
+  const farms = farmClearings(landuse);
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
     maxY = -Infinity;
   for (const s of shapes)
     for (const p of s.rings[0]) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+  // Natural woods extend beyond the cultivated polygons. A road must clear them there too,
+  // including on a terrain-only map with no fields or town reserves yet.
+  for (const way of ways)
+    for (let i = 0; i < way.path.length; i++) {
+      const p = way.path[i],
+        half = typeof way.half === 'number' ? way.half : way.half[i];
+      minX = Math.min(minX, p.x - half);
+      minY = Math.min(minY, p.y - half);
+      maxX = Math.max(maxX, p.x + half);
+      maxY = Math.max(maxY, p.y + half);
+    }
+  for (const ring of farms)
+    for (const p of ring) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x);
@@ -291,7 +311,7 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     });
   }
   // Forest clearings (farmsteads, road corridors) open only wild or wooded ground: fields and plots keep their class.
-  // They never widen the raster: corridors outside the rural land use stay with the forest field.
+  // The raster includes every corridor, including those outside cultivated land.
   const clearing = (rings: Polygon[]): void =>
     fillRings(rings, x, y, cell, n, (from, to) => {
       for (let i = from; i < to; i++)
@@ -301,11 +321,10 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
           forest[i] = 0;
         }
     });
-  for (const ring of farmClearings(landuse)) clearing([ring]);
+  for (const ring of farms) clearing([ring]);
   // Corridors are distance fields, not rasterized ribbons: a road a few texels wide filled cell by cell left a
   // staircase edge in the ground and the crowns. Each texel keeps its exact signed distance (texels, positive
   // inside) to the nearest corridor capsule; it is merged into the open/forest fields below.
-  const ways = [...corridors, ...(landuse.forestCorridors ?? [])];
   const corridor = corridorDistance(
     ways.filter(way => !way.covered),
     x,
