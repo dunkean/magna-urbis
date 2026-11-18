@@ -27,6 +27,20 @@ From `web/`, run `npm run typecheck` and the tests relevant to the change (`npm 
 
 V2 and the benches must share generation and rendering decisions. Update shared modules rather than applying the same behavior separately in each page. Document new generation methods, sources and limitations in `docs/methods/`.
 
+## Pull request CI
+
+The [PR CI workflow](.github/workflows/pr-ci.yml) runs on pull requests to `main`, pushes to `main`, merge queue checks and manual dispatch. It uses hosted Linux runners and read-only repository permissions; it needs no repository secrets or local services.
+
+- Web: formatting, freshly built procedural/house WASM with locked dependencies, TypeScript, `npm run test:fast` (including V2 and bench parity), and the V2 static build.
+- Rust: library, integration and documentation tests for random, terrain, core, houses and the native procedural service in one Cargo invocation.
+- Tooling: desktop version alignment, model manifest handling, public asset names/checksums, portable packaging and optional Python runtime management using fixtures.
+
+Configure branch protection or a ruleset to require the stable **CI** check after its first successful run. It fails if any of the three jobs fails, is cancelled or is skipped. There are no path filters, so documentation-only pull requests also report this check. Fork pull requests use `pull_request`; they do not run with a privileged `pull_request_target` token.
+
+This baseline does not qualify hardware rendering or inference, the threaded WASM package, the exhaustive `npm run test:slow` city matrix, Godot experiments, or installed desktop applications. Keep the real GPU display gate and packaged-app qualification before publication; desktop releases continue to use the existing release workflow. Rust formatting and Clippy are not enforced yet: establish their baseline in a separate change rather than reformatting unrelated Rust in a CI change.
+
+For local web checks, first run `npm ci` and `npm run prepare:v2 -- --no-threads` from `web/`, then `npm run format:check`, `npm run typecheck`, `npm run test:fast` and `npm run build:v2`. Coordinate WASM/Rust builds with other sessions before preparing packages. A fresh checkout's fallback WASM declarations are not a substitute for generated bindings when checking types.
+
 ## Repository contents
 
 - Keep public documentation in `docs/`, component instructions beside their code, and durable interface specifications in `docs/design/`.

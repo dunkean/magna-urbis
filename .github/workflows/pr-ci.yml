@@ -1,0 +1,167 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '2'
+
+jobs:
+  web:
+    name: Web / WASM, types, tests and build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install pinned Rust toolchain
+        working-directory: rust
+        run: rustup show active-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-pr-web-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pr-web-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock') }}-
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Check formatting
+        working-directory: web
+        run: npm run format:check
+      - name: Install pinned wasm-pack
+        working-directory: rust
+        run: cargo install wasm-pack --version 0.13.1 --locked
+      # The bridges and tests need real generated bindings. Keep this CPU-only
+      # baseline independent of optional neural sources, weights and GPU drivers.
+      - name: Build procedural and house WASM with locked dependencies
+        working-directory: rust
+        run: |
+          wasm-pack build crates/wasm --target web --out-dir ../../pkg/wasm --release --no-opt -- --locked
+          wasm-pack build crates/houses-wasm --target web --out-dir ../../pkg/houses --release --no-opt -- --locked
+      - name: Check TypeScript
+        working-directory: web
+        run: npm run typecheck
+      - name: Run fast unit suites, including V2 and bench parity
+        working-directory: web
+        run: npm run test:fast
+      - name: Build the V2 static site
+        working-directory: web
+        run: npm run build:v2
+      - name: Ensure builds preserved dependency locks
+        run: git diff --exit-code -- web/package-lock.json rust/Cargo.lock
+
+  rust:
+    name: Rust / procedural engine and houses
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        working-directory: rust
+        run: rustup show active-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-pr-native-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pr-native-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock') }}-
+      # One invocation shares compilation across libraries, integration tests,
+      # doctests and the native service. Neural/GPU and Tauri stay in release CI.
+      - name: Test the native procedural crates
+        working-directory: rust
+        run: >-
+          cargo test --locked
+          -p magna-urbis-random
+          -p magna-urbis-terrain
+          -p magna-urbis-core
+          -p magna-urbis-houses
+          -p magna-urbis-local
+
+  tooling:
+    name: Tooling / releases and optional module contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Check desktop version alignment
+        run: node web/scripts/v2_version.mjs --check
+      - name: Test manifests and public download checksums
+        working-directory: web
+        run: |
+          node --test scripts/neural_manifest.test.mjs
+          node scripts/v2_release_check_test.mjs
+          node scripts/v2_portable_test.mjs
+      - name: Test optional runtime management without model downloads
+        run: |
+          python -m unittest discover -s python_runtime -p 'test_*.py'
+          python -m unittest discover -s docs/models-release -p 'test_*.py'
+
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs: [web, rust, tooling]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ['RESULTS'])
+          failed = [name for name, job in results.items() if job['result'] != 'success']
+          if failed:
+              print('Required jobs did not succeed: ' + ', '.join(failed))
+              sys.exit(1)
+          print('All required jobs passed.')
+          PY
