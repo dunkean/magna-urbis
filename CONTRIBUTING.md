@@ -9,7 +9,7 @@ Magna Urbis V2 is an alpha. Interfaces, recipes and saved formats may change bet
 
 ## Setup
 
-Install Node.js LTS and npm, Rust through rustup and `wasm-pack`. From `web/`:
+Use Node.js 22 and npm (the CI baseline), Rust through rustup with the toolchain pinned in `rust/rust-toolchain.toml`, and `wasm-pack` 0.13.1. Install `wasm-pack` with `cargo install wasm-pack --version 0.13.1 --locked` from `rust/`. Windows also needs the Visual Studio C++ build tools. From `web/`:
 
 ```sh
 npm ci
@@ -18,6 +18,8 @@ npm run dev:v2
 ```
 
 The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, neural relief and optional Python modules. Engine details are in the [Rust README](rust/README.md).
+
+The [repository map](docs/REPOSITORY_LAYOUT.md) identifies the V2 product, shared code, optional modules and experiments. Start with the procedural web application above; optional neural sources, models and Python environments have their own setup and are not prerequisites for that path.
 
 ## Changes and verification
 
