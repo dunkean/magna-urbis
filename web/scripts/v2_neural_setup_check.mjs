@@ -34,19 +34,31 @@ try{
   report.checks.push(gpu?'Missing models opens Settings at model download':'Unavailable WebGPU keeps setup accessible');
   await page.locator('#hardware-dialog [data-close]').first().click();
   await page.evaluate(async({manifest,bytes})=>{
-   const cache=await caches.open('magna-urbis-neural-models-v1'),assets=new URL('./neural/',location.href);
-   await cache.put(new URL('models/manifest.json',assets).href,new Response(JSON.stringify(manifest)));
-   for(const entry of Object.values(manifest.models)){
-    const url=new URL(`models/${entry.file}`,assets);url.searchParams.set('sha256',entry.sha256);
-    await cache.put(url.href,new Response(new Uint8Array(bytes),{headers:{'X-Magna-Model-Bytes':String(entry.bytes)}}));
+   const cache=await caches.open('magna-urbis-neural-models-v1'),assets=new URL('./previous-build/neural/',location.href);
+   // Existing downloads from a previous hosting path; even the catalogue has been lost.
+   await cache.delete(new URL('./neural/models/manifest.json',location.href).href);
+   for(const [name,entry] of Object.entries(manifest.models)){
+    const url=new URL(`models/old-${entry.file}`,assets);url.searchParams.set('sha256',entry.sha256);
+    await cache.put(url.href,new Response(new Uint8Array(bytes),{headers:{'X-Magna-Model-Bytes':String(entry.bytes),'X-Magna-Model-Name':name}}));
    }
   },{manifest,bytes});
   await page.locator('#source-procedural').click();await page.locator('#source-neural').click();
   await page.waitForFunction(()=>document.querySelector('#source-neural').getAttribute('aria-busy')==='false');
   if(gpu){
    assert.equal(await page.locator('#hardware-dialog').isVisible(),false);
-   report.checks.push('A complete saved model set does not reopen setup');
-   await page.evaluate(async()=>{const cache=await caches.open('magna-urbis-neural-models-v1');for(const request of await cache.keys())if(request.url.includes('/base.bin?'))await cache.delete(request);});
+   report.checks.push('A saved set from another hosting path is recovered without a saved catalogue or weight downloads');
+   await page.reload({waitUntil:'domcontentloaded'});
+   await page.locator('#boot-splash').waitFor({state:'detached'});
+   await page.locator('#source-neural').click();
+   await page.waitForFunction(()=>document.querySelector('#source-neural').getAttribute('aria-busy')==='false');
+   assert.equal(await page.locator('#hardware-dialog').isVisible(),false);
+   await page.locator('#hardware-open').click();
+   await page.waitForFunction(()=>document.querySelectorAll('#neural-model-manager [data-stored="true"]').length===3);
+   assert.equal(await page.locator('#neural-model-download-all').isDisabled(),true);
+   report.checks.push('Reload and model Settings recognize all existing files and disable redundant downloads');
+   await page.locator('[data-model="base"] [data-action="remove"]').click();
+   await page.waitForFunction(()=>document.querySelector('[data-model="base"]')?.getAttribute('data-stored')==='false');
+   await page.locator('#hardware-dialog [data-close]').first().click();
    await page.locator('#source-neural').click();
    await page.locator('#hardware-dialog').waitFor({state:'visible'});
    report.checks.push('Selecting Neural again detects a deleted model');

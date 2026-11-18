@@ -37,15 +37,46 @@ describe('browser neural model storage shared by settings and inference', () => 
     expect(await hasStoredNeuralModels(assets)).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it('recognizes a complete current set and notices deletion or a different model address', async () => {
+  it('recognizes a complete current set and notices deletion without network access', async () => {
     files.set(new URL('models/manifest.json',assets).href,new Response(JSON.stringify(manifest)));
     for(const name of NEURAL_MODEL_NAMES)await obtainNeuralModel(assets,manifest,name);
     fetcher.mockClear();
     expect(await hasStoredNeuralModels(assets)).toBe(true);
-    expect(await hasStoredNeuralModels('https://example.test/other/')).toBe(false);
     await deleteStoredNeuralModel(neuralModelUrl(assets,manifest.models.coarse));
     expect(await hasStoredNeuralModels(assets)).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('reuses the same weights after an update changes the hosting path and filenames', async () => {
+    for (const name of NEURAL_MODEL_NAMES) await obtainNeuralModel(assets, manifest, name);
+    const updated = structuredClone(manifest), nextAssets = 'https://example.test/v2-next/neural/';
+    updated.engineRevision = 'next-app-build'; updated.runtimeSha256 = 'b'.repeat(64);
+    for (const name of NEURAL_MODEL_NAMES) updated.models[name].file = `renamed-${name}.bin`;
+    fetcher.mockReset().mockResolvedValueOnce(new Response(JSON.stringify(updated)));
+    expect(await hasStoredNeuralModels(nextAssets)).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1); // Only the small catalogue; no weight downloads.
+    expect(await listStoredNeuralModels(nextAssets, updated)).toEqual(NEURAL_MODEL_NAMES.map(name => expect.objectContaining({ name, current: true })));
+    fetcher.mockReset().mockRejectedValue(new TypeError('Offline'));
+    for (const name of NEURAL_MODEL_NAMES) expect(await obtainNeuralModel(nextAssets, updated, name, { requireStorage: true })).toEqual(payload);
+    expect(await hasStoredNeuralModels(nextAssets)).toBe(true);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect([...files.keys()].filter(url => url.includes('sha256='))).toHaveLength(3);
+  });
+  it('recovers the downloaded set if only its saved catalogue is missing', async () => {
+    for (const name of NEURAL_MODEL_NAMES) await obtainNeuralModel(assets, manifest, name);
+    fetcher.mockReset().mockResolvedValueOnce(new Response(JSON.stringify(manifest)));
+    expect(await hasStoredNeuralModels(assets)).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(await hasStoredNeuralModels(assets)).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('verifies reused weights from another hosting path before inference', async () => {
+    await obtainNeuralModel(assets, manifest, 'base');
+    const url = neuralModelUrl(assets, manifest.models.base), saved = files.get(url)!;
+    files.set(url, new Response(new Uint8Array([4, 3, 2, 1]), { headers: saved.headers }));
+    fetcher.mockClear();
+    expect(await obtainNeuralModel('https://example.test/next/neural/', manifest, 'base')).toEqual(payload);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(files.has(url)).toBe(false);
   });
   it('assembles ordered chunks, verifies them and the whole file, then reuses the whole cache offline', async () => {
     const chunks = [payload.slice(0, 2), payload.slice(2)];
@@ -80,6 +111,8 @@ describe('browser neural model storage shared by settings and inference', () => 
   it('verifies the runtime build and reuses the identified JS/WASM offline', async () => {
     manifest.runtimeSha256 = manifest.models.base.sha256; manifest.runtimeJsSha256 = manifest.models.base.sha256;
     expect((await obtainNeuralRuntime(assets, manifest)).wasm).toEqual(payload);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect((await obtainNeuralRuntime('https://example.test/new/neural/', manifest)).wasm).toEqual(payload);
     expect(fetcher).toHaveBeenCalledTimes(2);
     fetcher.mockRejectedValue(new TypeError('Offline'));
     expect((await obtainNeuralRuntime(assets, manifest)).wasm).toEqual(payload);

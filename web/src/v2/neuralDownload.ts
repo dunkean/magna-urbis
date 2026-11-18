@@ -1,4 +1,4 @@
-import { loadNeuralManifest, obtainNeuralModel, listStoredNeuralModels, neuralModelUrl, NEURAL_MODEL_NAMES, NeuralModelError } from '../../../rust/bridge/neuralModels';
+import { loadNeuralManifest, obtainNeuralModel, listStoredNeuralModels, NEURAL_MODEL_NAMES, NeuralModelError } from '../../../rust/bridge/neuralModels';
 import { obtainNeuralRuntime } from '../../../rust/bridge/neuralRuntime';
 import { setText, getLanguage, numberLocale } from './i18n';
 import { desktopReleasesUrl, getLatestDesktopRelease } from './desktopUpdates';
@@ -61,7 +61,7 @@ export async function prepareBrowserNeuralDownload(assets: string, signal: Abort
   await confirmNeuralDownload(signal, async () => {
     loaded = await loadNeuralManifest(assets, signal);
     const saved = await listStoredNeuralModels(assets, loaded.manifest);
-    return NEURAL_MODEL_NAMES.every(name => saved.some(r => r.url === neuralModelUrl(assets, loaded!.manifest.models[name])));
+    return NEURAL_MODEL_NAMES.every(name => saved.some(r => r.current && r.name === name));
   });
   progress({ stage: 'neural-download', label: 'Verifying neural models…', completed: 0, total: 0 });
   try {

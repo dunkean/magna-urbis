@@ -98,6 +98,19 @@ nouveaux fichiers ; un cache corrompu est réparé. L’annulation conserve uniq
 les modèles complets déjà vérifiés. Le mode développement accepte toujours les
 fichiers complets sous `./neural/` sans découpage.
 
+La reconnaissance des poids repose sur leur SHA-256, leur taille et leur étape
+(coarse/base/decoder), indépendamment du chemin d’hébergement et du nom du fichier.
+Une mise à jour de l’application ou du runtime ne retélécharge donc pas les poids
+inchangés. Les fichiers déjà conservés sont reconnus directement, sans seconde
+copie. Si seul le catalogue sauvegardé manque et que des poids sont présents,
+la sélection récupère le petit manifeste avant de conclure qu’un téléchargement
+est nécessaire ; elle ne télécharge aucun poids. Le runtime identifié est lui
+aussi réutilisé entre chemins du même site.
+Le stockage reste propre au profil du navigateur et à l’origine (protocole,
+domaine, port) : un autre navigateur, domaine ou port ne partage pas ce cache.
+Un partage entre navigateurs exigerait un service local ou un dossier choisi
+explicitement ; le site seul ne peut pas lire les modèles de l’application native.
+
 Choisir **Neural** vérifie la présence du jeu de modèles dans le stockage local.
 S’il manque un fichier, **Réglages → Télécharger les modèles** s’ouvre directement,
 y compris lorsqu’on reclique sur Neural déjà sélectionné. Ce clic ne télécharge

@@ -1,6 +1,6 @@
 import {
   loadNeuralManifest, listStoredNeuralModels, obtainNeuralModel, deleteStoredNeuralModel,
-  neuralModelUrl, NEURAL_MODEL_NAMES, NeuralModelError,
+  NEURAL_MODEL_NAMES, NeuralModelError,
   type NeuralManifest, type NeuralModelName, type StoredNeuralModel, type ModelTransfer,
 } from '../../../rust/bridge/neuralModels';
 import { registerMessages, setText, translate, numberLocale, onLanguageChange, getLanguage } from './i18n';
@@ -11,7 +11,7 @@ const copy = (en: string, fr: string) => { registerMessages({ [en]: { en, fr } }
 const T = {
   title: copy('Download models', 'Télécharger les modèles'),
   intro: copy('Neural generation works best in the desktop app. It requires a capable GPU with WebGPU and downloads about 163 MB once.', 'La génération neuronale fonctionne mieux dans l’application de bureau. Elle nécessite une carte graphique performante avec WebGPU et télécharge environ 163 Mo une seule fois.'),
-  scope: copy('Stored on this device, for this browser profile and site address. Clearing site data removes the models. These files do not install Python/CUDA models.', 'Conservés sur cet appareil, pour ce profil de navigateur et cette adresse du site. Effacer les données du site supprime les modèles. Ces fichiers n’installent pas les modèles Python/CUDA.'),
+  scope: copy('Stored for this browser profile and site. App updates reuse unchanged models. Other browsers and site addresses have separate storage. Clearing site data removes the models. These files do not install Python/CUDA models.', 'Conservés pour ce profil de navigateur et ce site. Les mises à jour de l’application réutilisent les modèles inchangés. Les autres navigateurs et adresses de site ont un stockage séparé. Effacer les données du site supprime les modèles. Ces fichiers n’installent pas les modèles Python/CUDA.'),
   offlineScope: copy('Downloaded weights still need WebGPU and must be loaded into GPU memory at each new session. This does not make the whole application available offline.', 'Les poids téléchargés nécessitent toujours WebGPU et doivent être chargés en mémoire GPU à chaque nouvelle session. Cela ne rend pas toute l’application disponible hors connexion.'),
   nf4: copy('NF4 B75 is the distilled base network: branch B, exponential moving-average weights at 75,000 training steps, 4-bit weight compression and a two-step solver. B75 names the training checkpoint.', 'NF4 B75 est le réseau de base distillé : branche B, moyenne exponentielle des poids à 75 000 étapes d’entraînement, compression des poids sur 4 bits et solveur à deux étapes. B75 désigne le checkpoint d’entraînement.'),
   nf4Details: copy('NF4 B75 · quality and speed', 'NF4 B75 · qualité et vitesse'),
@@ -32,7 +32,7 @@ const T = {
   checking: copy('Checking downloaded models…', 'Vérification des modèles téléchargés…'),
   stored: copy('On this device', 'Sur cet appareil'), missing: copy('Not downloaded', 'Non téléchargé'),
   old: copy('Other downloaded versions', 'Autres versions téléchargées'),
-  oldHelp: copy('These files are not used by the current catalogue. They may belong to another model address or version.', 'Ces fichiers ne sont pas utilisés par le catalogue actuel. Ils peuvent appartenir à une autre adresse de modèles ou à une autre version.'),
+  oldHelp: copy('These files do not match the models in the current catalogue.', 'Ces fichiers ne correspondent pas aux modèles du catalogue actuel.'),
   catalogue: copy('Catalogue unavailable. Check the model address and connection. Previously downloaded files are listed below when browser storage is accessible.', 'Catalogue indisponible. Vérifiez l’adresse des modèles et la connexion. Les fichiers déjà téléchargés figurent ci-dessous si le stockage du navigateur est accessible.'),
   savedCatalogue: copy('Showing the saved catalogue: the server could not be reached or did not provide a valid catalogue.', 'Affichage du catalogue conservé : le serveur est inaccessible ou n’a pas fourni de catalogue valide.'),
   storageError: copy('Unable to access or save browser files. Check available disk space and site storage permissions, then try again. This download has not been confirmed as saved.', 'Impossible d’accéder aux fichiers du navigateur ou de les enregistrer. Vérifiez l’espace disque disponible et les autorisations de stockage du site, puis réessayez. Ce téléchargement n’a pas été confirmé comme enregistré.'),
@@ -99,14 +99,16 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
     nf4.hidden = nf4Details.hidden = manifest?.models.base.selection !== 'nf4_b75';
     list.replaceChildren();
     if (manifest) for (const name of NEURAL_MODEL_NAMES) {
-      const entry = manifest.models[name], url = neuralModelUrl(assets, entry), saved = records.some(r => r.url === url);
+      const entry = manifest.models[name], stored = records.find(r => r.current && r.name === name), saved = !!stored;
       const row = document.createElement('div'); row.className = 'neural-model-row'; row.dataset.model = name; row.dataset.stored = String(saved);
       const info = document.createElement('div'), label = document.createElement('strong'); label.dataset.l10nKeep = ''; label.textContent = title(name); info.append(label);
       const detail = p('', info); detail.dataset.l10nKeep = ''; detail.textContent = `${entry.file} · ${size(entry.bytes)}`;
       const state = p(saved ? T.stored : T.missing, info); state.classList.add('neural-model-state');
       const buttons = document.createElement('div'); buttons.className = 'neural-model-actions';
       const download = makeButton(buttons, T.download, () => void runDownload(name)); download.disabled = active || saved; download.dataset.action = 'download';
-      const remove = makeButton(buttons, T.remove, () => void run(() => deleteStoredNeuralModel(url), T.removed)); remove.disabled = active || !saved; remove.dataset.action = 'remove';
+      const remove = makeButton(buttons, T.remove, () => void run(async () => {
+        for (const record of records.filter(r => r.current && r.name === name)) await deleteStoredNeuralModel(record.url);
+      }, T.removed)); remove.disabled = active || !saved; remove.dataset.action = 'remove';
       row.append(info, buttons); list.append(row);
     }
     other.replaceChildren();
@@ -119,7 +121,7 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
         const remove = makeButton(row, T.remove, () => void run(() => deleteStoredNeuralModel(model.url), T.removed)); remove.disabled = active; row.prepend(label); other.append(row);
       }
     }
-    const complete = !!manifest && NEURAL_MODEL_NAMES.every(name => records.some(r => r.url === neuralModelUrl(assets, manifest!.models[name])));
+    const complete = !!manifest && NEURAL_MODEL_NAMES.every(name => records.some(r => r.current && r.name === name));
     all.disabled = active || complete; intro.hidden = complete;
     clear.disabled = active || !records.length; refreshButton.disabled = active;
     cancel.hidden = !controller || !active;
@@ -171,7 +173,7 @@ export function mountNeuralModelManager(host: HTMLElement, getAssets: () => stri
     controller = new AbortController();
     const signal = controller.signal, selectedManifest = manifest;
     await run(async () => {
-      const names = name ? [name] : NEURAL_MODEL_NAMES.filter(key => !records.some(r => r.url === neuralModelUrl(assets, selectedManifest.models[key])));
+      const names = name ? [name] : NEURAL_MODEL_NAMES.filter(key => !records.some(r => r.current && r.name === key));
       if (names.length) await confirmNeuralDownload(signal);
       for (const key of names) {
         signal.throwIfAborted();

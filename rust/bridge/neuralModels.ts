@@ -62,17 +62,36 @@ export function neuralModelUrl(assets: string, entry: NeuralModelEntry): string 
   return url.href;
 }
 
-/** Selection preflight only: inspect saved metadata, without network access or reading all weight bytes.
- * Inference still verifies the files before using them. A missing catalogue belongs in model Settings. */
+function matchesModel(url: URL, response: Response, entry: NeuralModelEntry, name: NeuralModelName): boolean {
+  return url.searchParams.get('sha256') === entry.sha256
+    && Number(response.headers.get('X-Magna-Model-Bytes')) === entry.bytes
+    && (response.headers.get('X-Magna-Model-Name') === name || url.pathname.split('/').pop() === entry.file);
+}
+
+/** Reuse identified weights throughout this site's storage, independently of the hosting path or filename. */
+async function storedModel(cache: Cache, assets: string, entry: NeuralModelEntry, name: NeuralModelName): Promise<{ url: string; response: Response } | undefined> {
+  const url = neuralModelUrl(assets, entry), response = await cache.match(url);
+  if (response) return { url, response };
+  for (const request of await cache.keys()) {
+    const candidate = new URL(request.url);
+    if (candidate.searchParams.get('sha256') !== entry.sha256) continue;
+    const saved = await cache.match(request);
+    if (saved && matchesModel(candidate, saved, entry, name)) return { url: request.url, response: saved };
+  }
+}
+
+/** Selection preflight: inspect saved metadata without reading weight bytes. Fetch only the small catalogue
+ * if weights exist but this hosting address has no saved catalogue. Inference still verifies all bytes. */
 export async function hasStoredNeuralModels(assets: string): Promise<boolean> {
   try {
     const cache = await neuralModelCache(false);
-    const saved = await cache?.match(new URL('models/manifest.json', assets).href);
-    if (!cache || !saved) return false;
-    const manifest = validateManifest(await saved.json());
+    if (!cache) return false;
+    const saved = await cache.match(new URL('models/manifest.json', assets).href);
+    if (!saved && !(await cache.keys()).some(request => new URL(request.url).searchParams.has('sha256'))) return false;
+    const manifest = saved ? validateManifest(await saved.json()) : (await loadNeuralManifest(assets)).manifest;
     for (const name of NEURAL_MODEL_NAMES) {
-      const entry = manifest.models[name], model = await cache.match(neuralModelUrl(assets, entry));
-      if (!model || Number(model.headers.get('X-Magna-Model-Bytes')) !== entry.bytes) return false;
+      const entry = manifest.models[name], model = await storedModel(cache, assets, entry, name);
+      if (!model || Number(model.response.headers.get('X-Magna-Model-Bytes')) !== entry.bytes) return false;
     }
     return true;
   } catch { return false; }
@@ -80,12 +99,13 @@ export async function hasStoredNeuralModels(assets: string): Promise<boolean> {
 
 export async function listStoredNeuralModels(assets: string, manifest?: NeuralManifest): Promise<StoredNeuralModel[]> {
   const cache = await neuralModelCache();
-  const current = new Map(manifest ? NEURAL_MODEL_NAMES.map(name => [neuralModelUrl(assets, manifest.models[name]), name]) : []);
   const result: StoredNeuralModel[] = [];
   for (const request of await cache!.keys()) {
     const url = new URL(request.url);
     if (!url.searchParams.has('sha256')) continue;
-    const response = await cache!.match(request), name = current.get(request.url);
+    const response = await cache!.match(request);
+    if (!response) continue;
+    const name = manifest && NEURAL_MODEL_NAMES.find(name => matchesModel(url, response, manifest.models[name], name));
     const size = Number(response?.headers.get('X-Magna-Model-Bytes'));
     result.push({ url: request.url, name: name ?? response?.headers.get('X-Magna-Model-Name') ?? url.pathname.split('/').pop()!,
       bytes: name ? manifest!.models[name].bytes : size > 0 ? size : undefined, current: !!name,
@@ -107,13 +127,13 @@ export async function obtainNeuralModel(assets: string, manifest: NeuralManifest
   signal?.throwIfAborted();
   const cache = await neuralModelCache(options.requireStorage ?? false);
   if (!cache) options.onStorageFailure?.();
-  const stored = await cache?.match(url);
+  const stored = cache && await storedModel(cache, assets, entry, name);
   if (stored) {
-    const bytes = new Uint8Array(await stored.arrayBuffer());
+    const bytes = new Uint8Array(await stored.response.arrayBuffer());
     onProgress?.({ name, phase: 'verify', received: bytes.length, total: entry.bytes });
     const valid = await verifyNeuralFile(bytes, entry); signal?.throwIfAborted();
     if (valid) return bytes;
-    await cache?.delete(url);
+    await cache?.delete(stored.url);
   }
   const bytes = new Uint8Array(entry.bytes);
   let received = 0;
