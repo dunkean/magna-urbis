@@ -1,0 +1,30 @@
+# Build output, dependencies and working folders
+node_modules/
+web/out/
+web/dist/
+web/dist-v2/
+web/public/
+web/web/
+web/scratch/
+web/decors/
+web/src/ui/out/
+rust/pkg/
+rust/target/
+rust/out/
+rust/desktop/
+rust/desktop-v2/
+.tmp/
+.local-archive/
+
+# Generated or vendored sources
+**/*.generated.ts
+web/src/render/assets/
+web/src/vendor/
+
+# Data tables (translations, catalogues): one row per line is their format
+web/src/v2/locale*.ts
+web/src/v2/*Messages.ts
+web/src/**/*Locale*.ts
+web/src/ui/houseAtlas*.ts
+web/src/ui/*Translations.ts
+web/src/data/
