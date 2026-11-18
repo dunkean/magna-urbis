@@ -1,5 +1,5 @@
 // From web/: node scripts/nav_fps_table.mjs <label>
-// Compares the nine input sequences, with fast and slow navigation split like yesterday's table.
+// Summarises full or short navigation runs and compares compositor/fallback reports when both exist.
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -10,8 +10,8 @@ const load = mode => {
   const file = `${OUT}/${mode}.json`;
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
 };
-const runs = { compositor: load('compositor'), classic: load('classic') };
-if (!runs.compositor && !runs.classic) throw new Error(`No reports in ${OUT}`);
+const runs = { compositor: load('compositor'), fallback: load('fallback') };
+if (!runs.compositor && !runs.fallback) throw new Error(`No reports in ${OUT}`);
 const round = n => Math.round(n * 100) / 100;
 const q = (values, f) => {
   const s = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -46,8 +46,8 @@ console.log('FPS = median gesture p50 FPS / FPS equivalent of the worst gesture 
 console.log('Uncapped rAF callback throughput is not monitor scan-out or a guaranteed count of presented map frames.');
 console.log('Columns: FPS | compositor CPU p50/p95/max ms | GPU p50/p95/max ms | long during n/sum/max ms | long after n/sum/max ms | settle median/worst ms (timeouts) | compositor frames');
 console.log('CPU/GPU quantiles pool recorded frame samples; GPU contains only queries resolved by input completion. Missing GPU samples are unavailable, never zero.');
-console.log('Long tasks split at the last actual input event; after windows end after each bounded settle/quiet wait (observedAfterMs).');
-console.log("rAF and CPU/GPU windows retain yesterday's final input gap (inputTailMs); settle is relative to the actual last input and sampled every 20 ms, including that gap.");
+console.log('Long tasks overlap the complete input sequence, including its final gap; after windows end after each bounded settle/quiet wait (observedAfterMs).');
+console.log('rAF and CPU/GPU windows include the final input gap (inputTailMs); settle is relative to the last input and sampled every 20 ms.');
 for (const [mode, r] of Object.entries(runs)) {
   if (!r) {
     console.log(`WARNING ${mode}: report missing`);
@@ -58,29 +58,30 @@ for (const [mode, r] of Object.entries(runs)) {
   const rows = Object.values(r.gestures);
   for (const style of styles) {
     const n = gestures(r, style, () => true).length;
-    if (n !== 9) console.log(`WARNING ${mode} ${style}: ${n}/9 gestures recorded`);
+    const expected = r.scenario === 'short' ? 4 : 9;
+    if (n !== expected) console.log(`WARNING ${mode} ${style}: ${n}/${expected} gestures recorded`);
   }
-  if (rows.some(v => !v.live?.available)) console.log(`WARNING ${mode}: __muLive missing in some/all gestures (older build); rAF/classic stats still recorded`);
+  if (rows.some(v => !v.live?.available)) console.log(`WARNING ${mode}: __muLive missing in some/all gestures (older build); rAF stats still recorded`);
   if (rows.some(v => !v.longTaskSupported)) console.log(`WARNING ${mode}: Long Tasks API unavailable`);
   if (rows.some(v => v.live?.samplesCapped || v.dropped)) console.log(`WARNING ${mode}: frame sample buffers capped; inspect JSON`);
   if (rows.some(v => v.live?.mode && v.live.mode !== mode)) console.log(`WARNING ${mode}: page reported a different live policy`);
 }
-if (runs.compositor && runs.classic) {
-  for (const key of ['profile', 'extent', 'towns', 'seed', 'viewport', 'dpr', 'headed', 'world']) {
-    if (JSON.stringify(runs.compositor[key]) !== JSON.stringify(runs.classic[key])) console.log(`WARNING modes differ in ${key}; inspect both reports before comparison`);
+if (runs.compositor && runs.fallback) {
+  for (const key of ['profile', 'extent', 'towns', 'seed', 'viewport', 'dpr', 'headed', 'scenario', 'world']) {
+    if (JSON.stringify(runs.compositor[key]) !== JSON.stringify(runs.fallback[key])) console.log(`WARNING modes differ in ${key}; inspect both reports before comparison`);
   }
 }
 for (const [name, pick] of [
-  ['all nine gestures', () => true],
-  ['fast wheel + pan (7 gestures)', k => !k.startsWith('wheel-slow')],
-  ['slow wheel (2 gestures)', k => k.startsWith('wheel-slow')],
+  ['all recorded gestures', () => true],
+  ['fast wheel + pan', k => !k.startsWith('wheel-slow')],
+  ['slow wheel', k => k.startsWith('wheel-slow')],
 ]) {
   console.log(`\n${name}`);
   for (const style of styles) {
     for (const [mode, run] of Object.entries(runs)) console.log(`${style.padEnd(14)} ${mode.padEnd(10)} ${row(gestures(run, style, pick))}`);
   }
 }
-console.log('\nCompositor policy and layers over all gestures (observed once per changed compositor frame; may miss frames).');
+console.log('\nCompositor policy (rAF and submitted frames) and layers (every submitted frame) over all gestures.');
 for (const style of styles) {
   const g = gestures(runs.compositor, style, () => true),
     policy = {},
@@ -98,14 +99,6 @@ for (const style of styles) {
   if (!Object.keys(layers).length) console.log('  no live layer observations');
   for (const [name, s] of Object.entries(layers)) {
     console.log(`  ${name.padEnd(8)} live-ready ${s.ready}/${s.observations}, stand-in ${s.standIn}/${s.observations}; calls mean/max ${round(s.drawCalls / s.observations)}/${s.maxDrawCalls}; triangles mean/max ${round(s.triangles / s.observations)}/${s.maxTriangles}`);
-  }
-}
-console.log('\nClassic vector engine liveParts (per-part worst across gestures, in the original units).');
-for (const style of styles) {
-  for (const [mode, run] of Object.entries(runs)) {
-    const parts = {};
-    for (const v of gestures(run, style, () => true)) for (const [key, value] of Object.entries(v.parts ?? {})) parts[key] = Math.max(parts[key] ?? 0, value);
-    console.log(`${style.padEnd(14)} ${mode.padEnd(10)} ${JSON.stringify(parts)}`);
   }
 }
 
@@ -131,7 +124,7 @@ if (!deps.pngjs && !deps.sharp) {
     for (const camera of ['full', 'town', 'close', 'town-after'])
       for (const kind of ['exact', 'live']) {
         const a = runs.compositor?.rest?.[`${style}:${camera}`],
-          b = runs.classic?.rest?.[`${style}:${camera}`];
+          b = runs.fallback?.rest?.[`${style}:${camera}`];
         if (!a || !b || !existsSync(`${OUT}/${a[kind]}`) || !existsSync(`${OUT}/${b[kind]}`)) {
           console.log(`${style} ${camera} ${kind}: missing pair`);
           continue;

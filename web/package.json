@@ -55,6 +55,7 @@
     "test:fast": "vitest run --project fast",
     "test:slow": "vitest run --project slow",
     "typecheck": "tsc --noEmit",
+    "check:display": "node scripts/display_check.mjs",
     "shaders:wgsl": "tsx --import ./scripts/shaderModuleStubs.mjs scripts/wgsl_shaders.ts",
     "shaders:wgsl:check": "tsx --import ./scripts/shaderModuleStubs.mjs scripts/wgsl_shaders_check.ts",
     "shaders:wgsl:3d": "tsx --import ./scripts/shaderModuleStubs.mjs scripts/wgsl_shaders_3d.ts",

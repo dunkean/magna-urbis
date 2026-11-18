@@ -210,6 +210,11 @@ export function cityTextLabels(scene: CityScene, text: Readonly<TextSettings>, p
 const curvedHalos = new Map<string, { canvas: OffscreenCanvas | HTMLCanvasElement; x: number; y: number; w: number; h: number }>();
 /** Rasterize before rotation: Chrome's deferred strokeText tessellation can leave long stray edges on a composited map. */
 function curvedHalo(ctx: CanvasRenderingContext2D, ch: string): void {
+  // Node render tests supply only a drawing context; browsers always have a surface for the rasterized halo.
+  if (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined') {
+    ctx.strokeText(ch, 0, 0);
+    return;
+  }
   const t = ctx.getTransform(),
     density = Math.max(2, Math.round(Math.hypot(t.a, t.b) * 100) / 100),
     key = JSON.stringify([ch, ctx.font, ctx.lineWidth, ctx.strokeStyle, density]);

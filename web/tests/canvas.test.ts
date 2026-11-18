@@ -262,6 +262,7 @@ describe('canvas renderer on a real generated world', () => {
     }
     expect(m.log.calls.fill ?? 0).toBeGreaterThan(0);
     expect(m.log.calls.fillText ?? 0).toBeGreaterThan(0);
+    expect(m.log.calls.strokeText ?? 0).toBeGreaterThan(0);
   });
 });
 

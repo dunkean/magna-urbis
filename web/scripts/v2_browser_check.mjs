@@ -10,25 +10,47 @@ const base = process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5174';
 const out = `${web}/out/v2-browser`;
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const hashTerrain = terrain => hash({ ...terrain, rivers: terrain.rivers.map(({ name, ...river }) => river) });
-const result = { time: new Date().toISOString(), checks: {}, errors: [] };
+const result = { time: new Date().toISOString(), checks: {}, errors: [], serviceProbeErrors: [] };
 let browser, page;
 await mkdir(out, { recursive: true });
 try {
-  browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true, args: ['--enable-unsafe-webgpu'] });
+  browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true, timeout: 30000, args: ['--enable-unsafe-webgpu'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
   page = await context.newPage();
+  page.setDefaultTimeout(20000);
+  page.setDefaultNavigationTimeout(30000);
   page.on('pageerror', error => result.errors.push(error.message));
   page.on('console', message => {
-    if (message.type() === 'error') result.errors.push(message.text());
+    if (message.type() !== 'error') return;
+    // Local Settings probes optional services even when TypeScript does all generation. Record their absence
+    // separately; application exceptions and every other console error still fail this integration check.
+    const optionalProbe = /^http:\/\/127\.0\.0\.1:879[123]\/status$/.test(message.location().url) && /^Failed to load resource:/.test(message.text());
+    (optionalProbe ? result.serviceProbeErrors : result.errors).push(message.text());
   });
-  await page.goto(`${base}/v2.html?empty&lang=fr`, { waitUntil: 'networkidle' });
-  await page.locator('#terrain-only').waitFor({ state: 'visible' });
+  // The local profile exposes the explicit TypeScript engine in Settings; the web profile offers CPU/GPU only.
+  await page.goto(`${base}/v2.html?empty&lang=fr&profile=local`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#generate-region').waitFor({ state: 'visible' });
+  const dismissPanels = async () => {
+    for (let i = 0; i < 8 && (await page.locator(':popover-open').count()); i++) await page.locator(':popover-open > header > button').last().click();
+    assert.equal(await page.locator(':popover-open').count(), 0, 'Could not close advanced panels');
+    if (await page.locator('#hardware-dialog').evaluate(el => el.open)) await page.locator('#hardware-dialog [data-close]').last().click();
+  };
   const reveal = async selector => {
-    await page.locator(selector).evaluate(element => {
-      const sections = [];
-      for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) sections.push(parent);
-      for (const section of sections.reverse()) section.open = true;
+    const family = await page.locator(selector).evaluate(el => el.closest('.chain-family[hidden]')?.dataset.family);
+    if (family) await page.locator(`#family-tab-${family}`).click();
+    const dialog = await page.locator(selector).evaluate(el => el.closest('dialog:not([open])')?.id);
+    if (dialog === 'hardware-dialog') await page.locator('#hardware-open').click();
+    const popovers = await page.locator(selector).evaluate(element => {
+      const ids = [];
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent.hasAttribute('popover')) ids.push(parent.id);
+      return ids.reverse();
     });
+    for (const id of popovers) if (!(await page.locator(`#${id}`).evaluate(el => el.matches(':popover-open')))) await page.locator(`button[aria-controls="${id}"]`).click();
+    const sections = page.locator(selector).locator('xpath=ancestor::details');
+    for (let i = 0; i < (await sections.count()); i++) {
+      const section = sections.nth(i);
+      if (!(await section.evaluate(el => el.open))) await section.locator(':scope > summary').click();
+    }
   };
   const setInput = async (selector, value) => {
     await reveal(selector);
@@ -43,15 +65,22 @@ try {
     if (await page.locator(id).evaluate(el => el.open)) await page.locator(`${id} [data-close]`).last().click();
   };
   const job = async selector => {
+    await dismissPanels();
     const before = await page.locator('#job-log').textContent();
     await page.locator(selector).click();
     await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false', null, { timeout: 180000 });
     const log = (await page.locator('#job-log').textContent()).slice(before.length);
-    assert(!log.includes('Échec :'), log);
-    assert.match(await page.locator('#footer-status').textContent(), /Carte prête/);
+    assert(!/Échec\s*:|Failed\s*:/.test(log), log);
+    assert.match(await page.locator('#footer-status').textContent(), /Carte prête|Map ready/);
     return log;
   };
+  const familyJob = async family => {
+    await dismissPanels();
+    await page.locator(`#family-tab-${family}`).click();
+    return job('#generate-region');
+  };
   const exportFile = async (format, name, crop = false) => {
+    await dismissPanels();
     await page.locator('#export-open').click();
     await page.locator('#export-format').selectOption(format);
     if (format === 'svg' || format === 'png') await page.locator('#export-crop').setChecked(crop);
@@ -72,19 +101,27 @@ try {
   };
   const project = async stage => JSON.parse(await exportFile('project', `${stage}.project.json`));
   const importData = async (buffer, name) => {
+    await dismissPanels();
     await page.locator('#import-open').click();
+    await page.locator('#import-scope').selectOption('complete');
     await page.locator('#project-file').setInputFiles({ name, mimeType: 'application/json', buffer });
     await page.locator('#import-dialog').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   };
 
   await setInput('#seed', 'v2-ui-evidence');
-  await select('#terrain-backend', 'typescript');
+  await select('#exec-engine', 'typescript');
+  await select('#exec-urban', 'typescript');
+  await select('#units-select', 'm');
+  await dismissPanels();
+  await page.locator('#family-tab-region').click();
+  await select('#terrain-width-unit', 'km');
   await setInput('#terrain-width', '2.4');
   await page.locator('#terrain-width').blur();
   await select('[data-setting-path="options.relief"]', 'flat');
   await select('[data-setting-path="options.coast"]', 'none');
   await select('[data-setting-path="options.river"]', 'stream');
-  result.checks.terrainLog = await job('#terrain-only');
+  result.checks.terrainLog = await familyJob('region');
   const terrain = await project('01-terrain');
   assert.equal(terrain.world.stats['v2.stage'], 'terrain');
   assert.equal(terrain.settings.runtime.backend, 'typescript');
@@ -95,10 +132,14 @@ try {
   result.checks.terrain = { hash: terrainHash, rivers: terrain.world.terrain.rivers.length, grid: terrain.world.terrain.height.w };
   await page.screenshot({ path: `${out}/01-topography.png`, fullPage: true });
 
-  await page.locator('#tab-settlements').click();
-  await setInput('[data-option="population"]', 300);
-  await setInput('#town-count', 2);
-  result.checks.regionLog = await job('#region-only');
+  await page.locator('#family-tab-settlements').click();
+  for (const kind of ['city', 'town', 'hamlet', 'farmstead']) await setInput(`#region-${kind}`, 0);
+  await setInput('#region-village', 2);
+  await setInput('#region-isolatedCount', 0);
+  await setInput('#region-population', 600);
+  // Individual-build and neighbour-retention assertions need to control when each small place is built.
+  await setInput('[data-setting-path="autoBuildPopulation"]', 0);
+  result.checks.regionLog = await familyJob('settlements');
   const region = await project('02-region');
   assert.equal(hashTerrain(region.world.terrain), terrainHash);
   assert(region.world.settlements.length >= 2, 'Expected at least two retained settlements');
@@ -119,7 +160,8 @@ try {
   assert.equal(hash(oneTown.world.roads), hash(region.world.roads));
   result.checks.individual = { buildings: oneTown.world.urban.buildings.length, neighborsUnbuilt: true, roadsRetained: true };
 
-  await page.locator('#editor-close').click();
+  await page.locator('#inspector .close').click();
+  await page.locator('#cities-select-all').click();
   result.checks.allTownsLog = await job('#towns-only');
   const allTowns = await project('04-all-towns');
   const neighbors = allTowns.world.settlements.filter(s => !s.main);
@@ -136,14 +178,16 @@ try {
   // Select a real exported building via the public map interaction and persist its local modification.
   await page.locator('[data-town="main"]').click();
   await page.locator('#inspect-mode').check();
+  await select('#inspect-target', 'house');
   const main = rebuilt.world.settlements.find(s => s.main),
     map = await page.locator('#map').boundingBox();
   const scale = Math.min(3, Math.min(map.height, map.width) / Math.max(600, main.radius * 3));
   let editedHouse = false;
   for (const building of rebuilt.world.urban.buildings) {
     const p = building.poly.reduce((s, p) => ({ x: s.x + p.x / building.poly.length, y: s.y + p.y / building.poly.length }), { x: 0, y: 0 });
-    const x = map.x + map.width / 2 + (p.x - main.center.x) * scale,
-      y = map.y + map.height / 2 + (p.y - main.center.y) * scale;
+    const seat = main.core ?? main.center;
+    const x = map.x + map.width / 2 + (p.x - seat.x) * scale,
+      y = map.y + map.height / 2 + (p.y - seat.y) * scale;
     if (x < map.x + 60 || x > map.x + map.width - 360 || y < map.y + 180 || y > map.y + map.height - 180) continue;
     await page.mouse.click(x, y);
     if (await page.locator('#house-height').count()) {
@@ -161,12 +205,13 @@ try {
   assert.equal(edited.mods[0].patch.height, 9.5);
   result.checks.house = { persisted: true, height: edited.mods[0].patch.height, storeys: edited.mods[0].patch.storeys };
   await page.screenshot({ path: `${out}/03-house-inspector.png`, fullPage: true });
-  await page.locator('#editor-close').click();
+  await page.locator('#inspect-mode').uncheck();
+  await page.locator('#inspector .close').click();
 
-  const beforeStyle = hash(await page.locator('#map-canvas').screenshot());
+  const beforeStyle = hash(await page.locator('#map').screenshot());
   await page.locator('#map-style').selectOption('atlas');
   await page.waitForTimeout(1200);
-  const afterStyle = hash(await page.locator('#map-canvas').screenshot());
+  const afterStyle = hash(await page.locator('#map').screenshot());
   assert.notEqual(afterStyle, beforeStyle, 'Changing map style should redraw the same world');
   const svg = (await exportFile('svg', '07-atlas.svg')).toString();
   assert.match(svg, /<svg/);
@@ -185,24 +230,24 @@ try {
 
   const recipe = await exportFile('recipe', '09-recipe.json');
   const savedProject = Buffer.from(JSON.stringify(edited));
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.locator('#terrain-only').waitFor();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#generate-region').waitFor();
   await importData(savedProject, 'restored.project.json');
   const restored = await project('10-restored');
   assert.equal(hashTerrain(restored.world.terrain), terrainHash);
   assert.equal(restored.mods.length, 1);
   assert.equal(restored.mods[0].patch.height, 9.5);
   result.checks.projectImport = { terrainExact: true, modificationsRetained: true };
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.locator('#terrain-only').waitFor();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#generate-region').waitFor();
   await importData(recipe, 'cached.recipe.json');
-  result.checks.diskCacheLog = await job('#terrain-only');
-  assert.match(result.checks.diskCacheLog, /disk/);
+  result.checks.diskCacheLog = await familyJob('region');
+  assert.match(result.checks.diskCacheLog, /disk|disque/);
   const cached = await project('11-cache-restored');
   assert.equal(hashTerrain(cached.world.terrain), terrainHash);
   result.checks.diskCache = { sameTerrain: true, source: cached.world.stats['v2.cache'] };
 
-  result.checks.oneClickLog = await job('#generate-region');
+  result.checks.oneClickLog = await familyJob('region');
   const oneClick = await project('12-one-click');
   assert.equal(hashTerrain(oneClick.world.terrain), terrainHash);
   assert.equal(oneClick.world.stats['v2.stage'], 'terrain');
@@ -211,8 +256,8 @@ try {
   result.checks.oneClick = { terrainOnly: true, terrainRetained: true };
   await page.screenshot({ path: `${out}/05-one-click.png`, fullPage: true });
 
-  await page.locator('#tab-settlements').click();
-  result.checks.oneClickPlacementLog = await job('#region-only');
+  result.checks.oneClickPlacementLog = await familyJob('settlements');
+  await page.locator('#cities-select-all').click();
   result.checks.oneClickConstructionLog = await job('#towns-only');
   const staged = await project('12b-staged-world');
   assert.equal(hashTerrain(staged.world.terrain), terrainHash);
@@ -238,13 +283,14 @@ try {
   await page.locator('#heightmap-file').setInputFiles({ name: 'v2-heightmap-fixture.png', mimeType: 'image/png', buffer: Buffer.from(heightPng, 'base64') });
   await page.waitForFunction(() => document.querySelector('#import-height-info').textContent.includes('32 × 32'));
   await close('#import-dialog');
-  await page.locator('#tab-terrain').click();
-  await setInput('[data-option="heightScale"]', 200);
-  await setInput('[data-option="importSea"]', 20);
-  await job('#terrain-only');
+  await page.locator('#family-tab-region').click();
+  await setInput('#heightmap-fit-black', 0);
+  await setInput('#heightmap-fit-white', 200);
+  await setInput('#heightmap-fit-datum', 20);
+  await familyJob('region');
   const importedHeight = await project('13-heightmap-import');
-  assert.equal(importedHeight.settings.options.importedHeight.w, 32);
-  assert.equal(importedHeight.settings.options.importedHeight.h, 32);
+  assert.equal(importedHeight.settings.terrain.sketch.resolution, 32);
+  assert.equal(importedHeight.settings.terrain.sketch.heights.length, 32 * 32);
   assert.notEqual(hashTerrain(importedHeight.world.terrain), terrainHash);
   result.checks.heightmapImport = { dimensions: [32, 32], replacedTerrain: true };
 
