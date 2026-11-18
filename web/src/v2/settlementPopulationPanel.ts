@@ -4,6 +4,7 @@ import { POPULATION_CLASSES, regionalPopulation, automaticSettlementLimits, auto
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './settlementPopulationPanel.css';
 import { activitySitesOf } from './activitySites';
+import { isolatedPlacesOf } from './isolatedPlaces';
 import { clearRegionalPopulation, editRegionalPopulation, followEnvironmentPopulation, type RegionalPopulationField } from './regionalPopulationEdits';
 
 registerMessages(Object.fromEntries(Object.entries({
@@ -103,7 +104,7 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
     summary.textContent = s.region?.placement?.mode === 'list' ? translate('Manual list active. Editing these controls returns to regional distribution.') : plan.unallocated ? translate('Allocated: {population} inhabitants. The requested population does not fit the selected counts.').replace('{population}',String(plan.allocatedPopulation))
       : translate('{area} km² · largest settlement: {population} inhabitants').replace('{area}',String(Number(plan.areaKm2.toFixed(2)))).replace('{population}',String(Math.max(0,...plan.places.map(p=>p.population))));
     const world = api.getWorld(); placed.hidden = !world?.settlements;
-    if (world?.settlements) placed.textContent = translate('Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites').replace('{places}',String(world.settlements.length)).replace('{population}',String(world.settlements.reduce((n,p)=>n+p.population,0))).replace('{isolated}',String(activitySitesOf(world).length));
+    if (world?.settlements) placed.textContent = translate('Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites').replace('{places}',String(world.settlements.length)).replace('{population}',String(world.settlements.reduce((n,p)=>n+p.population,0))).replace('{isolated}',String(activitySitesOf(world).length+isolatedPlacesOf(world).length));
   }
   onLanguageChange(sync); sync(); return { sync };
 }

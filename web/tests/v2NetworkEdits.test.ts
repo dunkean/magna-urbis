@@ -4,6 +4,12 @@ import type { RiverLine, RiverNetwork } from '../src/ui/riverVectors';
 import type { RoadOutput, RoadSegment } from '../../rust/bridge/settlements';
 import { forCellsNearPolyline } from '../src/gen/core/field';
 import { addRoad, deleteRiver, deleteRoad, planRiverDeletion, roadAt, roadCrossings, setRoadClass, setRoadPath, translateRoad } from '../src/v2/networkEdits';
+import { editableRoadGeometry, roadBorderPoint, roadGeometry } from '../src/v2/roadControlModel';
+import { addRoadEntries, commitRoutedRoads, connectedRoadControls, cutRoadControl, deleteRoadEntry, entryForControl,
+  insertRoadWaypoint, roadEntryDeletionPlan, roadExitReports, translatedRoadControls, withRoadExitReports } from '../src/v2/roadEditing';
+import { regionalExitResults } from '../src/v2/regionalExits';
+import { defaultSettings } from '../src/v2/settings';
+import { parseProject, serializeProject } from '../src/v2/project';
 
 const N = 40, CELL = 5, SIZE = N * CELL;
 type Spec = { points: number[]; width: number; id?: number; joins?: number };
@@ -133,6 +139,91 @@ describe('V2 regional road edits', () => {
     const removed = deleteRoad(added, 1).world;
     expect(region(removed).junctions.length).toBe(2); expect(removed.roads!.length).toBe(1);
     expect(region(removed).lengthByClass.trail).toBeCloseTo(region(trail).segments[0].length);
+  });
+});
+
+describe('persistent road controls and connected edits',()=>{
+  const routed=(controls:Vec2[])=>roadGeometry(controls.map(p=>({...p})),controls);
+  it('seeds a straight road with a stable middle control and preserves all controls through save/reopen and reclassification',()=>{
+    const w=fixture({native:'none'}),g=editableRoadGeometry(w.roads![0],w.mapSize);
+    expect(g.controls).toEqual([{x:40,y:130},{x:105,y:130},{x:170,y:130}]);
+    const saved=setRoadPath(w,0,g.path,{controls:g.controls}).world;
+    const changed=setRoadClass(saved,0,'track').world;
+    expect(changed.roads![0].controls).toEqual(g.controls);
+    const settings=defaultSettings();changed.mapSize=1000;changed.options=settings.options;
+    const reopened=parseProject(serializeProject(settings,changed)).world!;
+    expect(editableRoadGeometry(reopened.roads![0],1000)).toEqual(g);
+    expect(w.roads![0].controls).toBeUndefined();
+  });
+  it('moves the interior controls while keeping town attachments fixed',()=>{
+    const w=fixture(),g=editableRoadGeometry(w.roads![0],w.mapSize);
+    const controls=translatedRoadControls(w,0,g.controls,0,-30),next=commitRoutedRoads(w,[{index:0,geometry:routed(controls)}]);
+    expect(controls).toEqual([g.controls[0],{x:105,y:100},g.controls[2]]);
+    expect(region(next).segments[0].a).toBe(region(w).segments[0].a);expect(region(next).segments[0].b).toBe(region(w).segments[0].b);
+    expect(region(next).junctions.map(j=>j.point)).toEqual(region(w).junctions.map(j=>j.point));
+    const two=w.roads![0].path;
+    expect(translatedRoadControls(w,0,two,0,-30)).toEqual([two[0],{x:105,y:100},two[1]]);
+  });
+  it('moves a shared junction with all three incident roads in one immutable commit',()=>{
+    const w=addRoad(fixture(),[{x:70,y:10},{x:70,y:130}],{snap:1,cls:'track'}).world;
+    const g=editableRoadGeometry(w.roads![0],w.mapSize),controls=g.controls.map(p=>({...p}));controls[controls.length-1]={x:75,y:120};
+    const changes=connectedRoadControls(w,0,controls);
+    expect(changes.map(c=>c.index).sort()).toEqual([0,1,2]);
+    const next=commitRoutedRoads(w,changes.map(c=>({index:c.index,geometry:routed(c.controls)})));
+    const junction=region(next).junctions.findIndex(j=>j.point.x===75&&j.point.y===120);
+    expect(region(next).junctions[junction].degree).toBe(3);
+    for(const s of region(next).segments){expect(s.a===junction||s.b===junction).toBe(true);expect(s.a===junction?s.path[0]:s.path.at(-1)).toEqual({x:75,y:120});}
+    expect(region(w).junctions.some(j=>j.point.x===70&&j.point.y===130)).toBe(true);
+  });
+  it('keeps an isolated activity attached when it is a native site outside the settlement list',()=>{
+    const w=fixture(),g=editableRoadGeometry(w.roads![0],w.mapSize);
+    region(w).junctions[1].site='activity:mill';w.settlements=w.settlements!.slice(0,1);
+    const moved=translatedRoadControls(w,0,g.controls,0,-30);
+    expect(moved.at(-1)).toEqual(g.controls.at(-1));
+    expect(()=>connectedRoadControls(w,0,[...g.controls.slice(0,-1),{x:180,y:100}])).toThrow('Road connections to places stay fixed.');
+  });
+  it('inserts along the actual routed leg and removes the constraint without cutting the road',()=>{
+    const g=roadGeometry([{x:0,y:0},{x:30,y:40},{x:60,y:0},{x:90,y:0}],[{x:0,y:0},{x:60,y:0},{x:90,y:0}]);
+    const inserted=insertRoadWaypoint(g,{x:30,y:40});
+    expect(inserted.index).toBe(1);expect(inserted.controls).toEqual([{x:0,y:0},{x:30,y:40},{x:60,y:0},{x:90,y:0}]);
+    expect(insertRoadWaypoint(g,{x:60,y:0}).controls).toEqual(g.controls);
+  });
+  it('cuts a real gap with separate free tips and preserves the outer town attachments',()=>{
+    const w=fixture(),g=editableRoadGeometry(w.roads![0],w.mapSize),prepared=setRoadPath(w,0,g.path,{controls:g.controls}).world;
+    const next=cutRoadControl(prepared,0,1,12),out=region(next),[left,right]=next.roads!;
+    expect(next.roads).toHaveLength(2);expect(left.path.at(-1)!.x).toBeCloseTo(99);expect(right.path[0].x).toBeCloseTo(111);
+    expect(out.segments[0].a).toBe(0);expect(out.segments[1].b).toBe(1);
+    expect(out.segments[0].b).not.toBe(out.segments[1].a);
+    expect(out.junctions[out.segments[0].b].degree).toBe(1);expect(out.junctions[out.segments[1].a].degree).toBe(1);
+    expect(w.roads).toHaveLength(1);
+  });
+  it('projects outside clicks and entry movement onto the nearest geometric edge',()=>{
+    expect(roadBorderPoint({x:-20,y:80},200)).toEqual({x:0,y:80});
+    expect(roadBorderPoint({x:230,y:80},200)).toEqual({x:200,y:80});
+    expect(roadBorderPoint({x:60,y:-20},200)).toEqual({x:60,y:0});
+    expect(roadBorderPoint({x:60,y:240},200)).toEqual({x:60,y:200});
+    expect(roadBorderPoint({x:-10,y:240},200)).toEqual({x:0,y:200});
+    expect(roadBorderPoint({x:120,y:2},200)).toEqual({x:120,y:0});
+  });
+  it('deletes only the private entry stem and updates the report while preserving the shared main road',()=>{
+    const w=addRoad(fixture(),[{x:70,y:0},{x:70,y:130}],{snap:.1,cls:'main'}).world;
+    const withEntry=addRoadEntries(w,2,[0]);
+    expect(entryForControl(withEntry,2,0)).toBe(0);expect(roadEntryDeletionPlan(withEntry,0)).toEqual([2]);
+    const next=deleteRoadEntry(withEntry,0);
+    expect(next.roads).toHaveLength(2);expect(roadExitReports(next)).toEqual([]);
+    expect(region(next).junctions.some(j=>j.point.y===0)).toBe(false);
+    expect(next.roads!.every(r=>r.path.every(p=>p.y===130))).toBe(true);
+    expect(roadExitReports(withEntry)).toHaveLength(1);
+  });
+  it('updates a moved entry and counts a cut gateway as disconnected',()=>{
+    const w=addRoad(fixture(),[{x:40,y:0},{x:40,y:130}],{snap:.1,cls:'main'}).world;
+    const withEntry=withRoadExitReports(w,[{requested:'main',class:'main',point:{x:40,y:0},gateway:'main',reason:null}]);
+    const g=editableRoadGeometry(withEntry.roads![1],w.mapSize),controls=g.controls.map(p=>({...p}));controls[0]={x:50,y:0};
+    const moved=commitRoutedRoads(withEntry,[{index:1,geometry:routed(controls)}]);
+    expect(roadExitReports(moved)[0].point).toEqual({x:50,y:0});expect(regionalExitResults(roadExitReports(moved)).main.obtained).toBe(1);
+    const cut=cutRoadControl(moved,1,1,10);
+    expect(regionalExitResults(roadExitReports(cut)).main).toEqual({requested:1,obtained:0});
+    expect(entryForControl(cut,1,0)).toBe(0);
   });
 });
 

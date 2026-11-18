@@ -97,7 +97,10 @@ export interface RoadSegment {
   tunnels?: { kind: 'dug'; path: Point[] }[];
 }
 export interface RoadJunction { point: Point; degree: number; site: string | null }
-export interface ExitReport { requested: RoadClass; class: RoadClass | null; gateway: string | null; point: Point | null; reason: string | null }
+export interface ExitReport { requested: RoadClass; class: RoadClass | null; gateway: string | null; point: Point | null; reason: string | null;
+  /** Map edits can cut a generated gateway connection while retaining its boundary handle. */
+  connected?: boolean;
+}
 export interface RoadOutput {
   segments: RoadSegment[]; junctions: RoadJunction[]; warnings: string[]; unreachable: string[]; routes: number;
   lengthByClass: Partial<Record<RoadClass, number>>; lengthBySurface: Partial<Record<RoadSurface, number>>; ms: number;

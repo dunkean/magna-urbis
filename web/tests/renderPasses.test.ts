@@ -61,6 +61,13 @@ describe('render passes', () => {
     expect(keysOf(v2, revisions, 'gpu').terrainLook).not.toBe(keysOf(v2, revisions, 'cpu').terrainLook);
     expect(keysOf(v2, revisions, 'gpu').forest).not.toBe(keysOf(v2, revisions, 'cpu').forest);
   });
+  it('a changed road refreshes GPU woods and the raster forest without regenerating terrain or cities',()=>{
+    for(const mode of ['cpu','gpu'] as const){
+      const before=keysOf(v2,revisions,mode),after=keysOf(v2,{...revisions,roads:90},mode);
+      expect(before[mode==='gpu'?'forest':'terrainLook']).not.toBe(after[mode==='gpu'?'forest':'terrainLook']);
+      expect(before.terrainData).toBe(after.terrainData);expect(before.city).toBe(after.city);
+    }
+  });
   it('a failed pass keeps its key so it runs again', async () => {
     const state = new PassState(), runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
     let fail = true; runners.water = () => { if (fail) throw new Error('boom'); };

@@ -1,4 +1,5 @@
 import type { World, Settlement } from '../gen/types';
+import {confirmAction} from './actionDialog';
 import type { View } from '../render/view';
 import { screenToWorld, worldToScreen } from '../render/view';
 import { PALETTES } from '../render/styles';
@@ -63,7 +64,7 @@ export function mountTownMoveEditor(api:{map:HTMLElement;toolbar:HTMLElement;pla
   }
   function follow(){draw();if(enabled)frame=requestAnimationFrame(follow);}
   function stop(){pending.clear();validate.hidden=cancel.hidden=true;enabled=false;if(drag)try{api.map.releasePointerCapture(drag.id);}catch{}drag=undefined;selection.setActive(false);cancelAnimationFrame(frame);svg.toggleAttribute('hidden',true);hint.hidden=true;button.setAttribute('aria-pressed','false');api.map.classList.remove('v2-moving-towns');}
-  function start(){if(api.busy()||!api.getWorld()?.settlements?.length)return;if(api.deferred&&api.getWorld()!.settlements!.some(s=>s.main?api.getWorld()!.urban:s.urban)&&!window.confirm(translate('Moving positions resets generated cities when you apply. Continue?')))return;validate.hidden=cancel.hidden=!api.deferred;window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'town-move'}));enabled=true;selection.setActive(true);svg.toggleAttribute('hidden',false);hint.hidden=false;button.setAttribute('aria-pressed','true');api.map.classList.add('v2-moving-towns');follow();}
+  async function start(){if(api.busy()||!api.getWorld()?.settlements?.length)return;const source=api.getWorld();if(api.deferred&&source!.settlements!.some(s=>s.main?source!.urban:s.urban)&&!await confirmAction('Moving positions resets generated cities when you apply. Continue?',{id:'move-towns-dialog',title:'Move settlements',confirmLabel:'Continue'}))return;if(api.busy()||api.getWorld()!==source)return;validate.hidden=cancel.hidden=!api.deferred;window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'town-move'}));enabled=true;selection.setActive(true);svg.toggleAttribute('hidden',false);hint.hidden=false;button.setAttribute('aria-pressed','true');api.map.classList.add('v2-moving-towns');follow();}
   button.onclick=()=>enabled?stop():start();
   api.map.addEventListener('pointerdown',event=>{
     if(!enabled||working||api.busy()||event.button!==0)return;const w=api.getWorld();if(!w)return;
@@ -83,6 +84,6 @@ export function mountTownMoveEditor(api:{map:HTMLElement;toolbar:HTMLElement;pla
   api.map.addEventListener('pointerup',event=>void finish(event),true);api.map.addEventListener('pointercancel',event=>void finish(event),true);
   api.map.addEventListener('click',event=>{if(enabled)event.stopImmediatePropagation();},true);
   window.addEventListener('v2-edit-mode',event=>{if((event as CustomEvent).detail!=='town-move')stop();});
-  window.addEventListener('keydown',event=>{if(event.key==='Escape')stop();});
+  window.addEventListener('keydown',event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open]'))stop();});
   return {sync(){button.disabled=api.busy()||!api.getWorld()?.settlements?.length;draw();},stop};
 }

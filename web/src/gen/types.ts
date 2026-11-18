@@ -381,7 +381,16 @@ export interface World {
   terrain: TerrainLayer;
   // later stages
   site?: SiteLayer;
-  roads?: { path: Polyline; kind: 'major' | 'minor' | 'track'; width: number }[];
+  roads?: { path: Polyline; kind: 'major' | 'minor' | 'track'; width: number;
+    /** Stable selection identity through local edits and redraws. */
+    editorId?: string;
+    /** User routing constraints, independent of zoom and of the sampled engine path. */
+    controls?: Polyline; controlIndices?: number[];
+    routingVariant?: number;
+    /** City ownership: the native street remains the source drawn by the city renderer. */
+    urban?: { key:string; layout:string; id:string; part:string; original:{path:Polyline;widths:number[];rank:number;role:string}|null; role:string; rank:number; access:boolean };
+    editorPickPaths?: Polyline[];
+  }[];
   bridges?: { a: Vec2; b: Vec2; width: number }[];
   urban?: UrbanLayer;
   landuse?: LandUseLayer;

@@ -599,6 +599,8 @@ pub struct SitePage {
 }
 
 struct LayoutIndex {
+    /// Only structurally edited blocks need an owned view of the retained source.
+    prepared: Option<Layout>,
     layout: usize,
     frontages: super::parcels::FrontageIndex,
     districts: BTreeMap<usize, (String, Option<f64>)>,
@@ -682,10 +684,12 @@ impl BuildingSiteIndex {
             let Some(pr) = &partition.programme else {
                 continue;
             };
-            let layout = &layouts[layout_id];
+            let prepared = partition.prepared.as_ref().map(|_| super::partition_layout(&layouts[layout_id], partition));
+            let layout = prepared.as_ref().unwrap_or(&layouts[layout_id]);
             let layout_slot = *layout_indices.entry(layout_id).or_insert_with(|| {
                 let slot = index.layouts.len();
                 index.layouts.push(LayoutIndex {
+                    prepared: prepared.clone(),
                     layout: layout_id,
                     frontages: super::parcels::FrontageIndex::new(&super::shanty::formal_layout(layout)),
                     districts: district_programmes(layout),
@@ -871,8 +875,7 @@ impl BuildingSiteIndex {
         let site = &self.sites[i];
         let partition_index = &self.partitions[site.partition];
         let layout_index = &self.layouts[partition_index.layout];
-        let layout = layouts
-            .get(layout_index.layout)
+        let layout = layout_index.prepared.as_ref().or_else(|| layouts.get(layout_index.layout))
             .ok_or("Retained layout missing")?;
         let partition = partitions
             .get(partition_index.partition)

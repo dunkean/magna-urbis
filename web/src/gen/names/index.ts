@@ -217,6 +217,7 @@ export function generateNames(world: World, root: Rng, presentation: NamePresent
   // Internal roads refer to settlement identities; only edge exits get extra village labels.
   const onEdge = (p: Vec2): boolean => p.x < 1 || p.y < 1 || p.x > S - 1 || p.y > S - 1;
   (world.roads ?? []).forEach((r) => {
+    if(r.urban)return;
     if (r.kind === 'track' || r.path.length < 2) return;
     const a = r.path[0], b = r.path[r.path.length - 1];
     const internal = world.settlements && world.settlements.length > 1 && !onEdge(a) && !onEdge(b);

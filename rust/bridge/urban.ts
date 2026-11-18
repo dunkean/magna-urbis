@@ -73,7 +73,21 @@ export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key
 export interface Parcel { pressure?: number; id?: string; parentIds?: string[]; provenance?: string[]; family?: string; reason?: string; contacts?: ParcelContact[]; envelope?: Shape; shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number } }
 export interface LotEnclosure { path: Point[]; material: 'wall' | 'hedge' | 'fence'; side: 'front' | 'side' | 'back' }
 export interface ResolvedEnclosure { plot: number; field: number; material: 'wall' | 'hedge' | 'fence'; fieldMaterial: 'wall' | 'hedge' | 'fence'; front: number; side: number; back: number; /** The culture draws no lot limits (catalogue `render.plotLines: false`). */ hideLotLines?: boolean; /** Share of the country lots (village, hamlet zones) that keep a yard; absent = 0.95. */ country?: number }
-export interface Partition { enclosure?: ResolvedEnclosure; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
+export interface Partition { enclosure?: ResolvedEnclosure; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number };
+  /** Present when structural block edits changed the input blocks: `parcels[].block` indexes `prepared.blocks`.
+   * Every later stage reads the layout with `blocks = prepared.blocks` and `config.blockEdits = prepared.edits`. */
+  prepared?: PreparedBlocks }
+/** Prepared block `block` is part `part` of input block `source`; its edit key is `"<source>"` (part 0) or `"<source>/<part>"`. */
+export interface BlockOrigin { block: number; source: number; part: number; deleted: boolean }
+/** What a prepared layout replaced (Rust `BlockEdits`): the parcel stage restores it before applying the edits again. */
+export interface BlockEdits { count: number; signature: string; originals: { index: number; block: Block }[]; origins: BlockOrigin[] }
+export interface PreparedBlocks { blocks: Block[]; edits?: BlockEdits }
+/** Output quarter `quarter` is part `part` of source quarter `source`; its edit key is `"<source>"` (part 0) or `"<source>/<part>"`. */
+export interface QuarterPart { quarter: number; source: number; part: number; deleted: boolean }
+/** Quarter splits applied by the quarter stage (Rust `QuarterEdits`, `layout.config.quarterEdits`).
+ * `count`: quarters of the plan before the splits (parts k ≥ 1 follow); `blockCount`: blocks before the splits (extra pieces follow).
+ * `parts`: every output quarter of a split, part 0 included; a quarter absent here was not split. */
+export interface QuarterEdits { count: number; blockCount: number; parts: QuarterPart[]; originals: { index: number; shape: Shape }[] }
 export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
 export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
 export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }

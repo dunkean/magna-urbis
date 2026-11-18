@@ -68,6 +68,7 @@ type OccupationParts = { occupation: Promise<ForestOccupation | undefined>; deta
 interface OccupationEntry { whole?: ForestOccupation; complete?: boolean; parts?: OccupationParts }
 const workerOccupations = new WeakMap<Uint8Array, WorkerOccupation>();
 const occupations = new WeakMap<LandUseLayer, Map<string, OccupationEntry>>();
+const emptyLanduse: LandUseLayer = { areas: [], reserve: [], farmsteads: [] };
 /** Every way of the world as a forest corridor: regional roads by class (tracks stay covered, country roads clear)
  * and the streets of the towns, so no tree is rooted on a street, in 2D as in 3D. */
 function v2Corridors(world: World): ForestCorridor[] {
@@ -79,7 +80,7 @@ function v2Corridors(world: World): ForestCorridor[] {
 const withWays = (occupation: ForestOccupation | undefined, ways: readonly ForestCorridor[]): ForestOccupation | undefined => occupation && { ...occupation, ways };
 function occupationEntry(world: World): OccupationEntry | undefined {
   retainTerrainDisplayPreparation(world);
-  const landuse = world.landuse; if (!landuse) return;
+  const landuse = world.landuse ?? emptyLanduse;
   const region = world.debug?.v2RustRegion as { placement?: { activities?: object }; roads?: { nodes?: object } } | undefined;
   const key = `1:${productRevision(world.roads)}:${productRevision(region?.placement?.activities)}:${productRevision(region?.roads?.nodes)}:${nativeCitiesOf(world).map(city => productRevision(city.layouts)).join(',')}`;
   let entries = occupations.get(landuse); if (!entries) { entries = new Map(); occupations.set(landuse, entries); }
@@ -89,12 +90,12 @@ function occupationEntry(world: World): OccupationEntry | undefined {
 /** Land-use/corridor revision, independent from presentation and visibility. Synchronous consumers reuse the async product. */
 export function v2ForestOccupation(world: World): ForestOccupation | undefined {
   const entry = occupationEntry(world); if (!entry) return;
-  if (!entry.complete) { const ways = v2Corridors(world); entry.whole = withLandDetail(withWays(forestOccupation(world.landuse!, undefined, undefined, ways, fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? []))), ways), world.landuse!, worldLandCultures(world)); entry.complete = true; }
+  if (!entry.complete) { const ways = v2Corridors(world), landuse = world.landuse ?? emptyLanduse; entry.whole = withLandDetail(withWays(forestOccupation(landuse, undefined, undefined, ways, fortificationClearings(nativeCitiesOf(world).flatMap(city => city.layouts ?? []))), ways), landuse, worldLandCultures(world)); entry.complete = true; }
   return entry.whole;
 }
 /** One preparation lane for occupation, holdings, footprint merges and display forest overrides. */
 export function v2ForestOccupationParts(world: World): OccupationParts {
-  const entry = occupationEntry(world), landuse = world.landuse;
+  const entry = occupationEntry(world), landuse = world.landuse ?? emptyLanduse;
   if (!entry || !landuse) return { occupation: Promise.resolve(undefined), detail: Promise.resolve(undefined) };
   if (entry.complete || typeof Worker === 'undefined' || typeof document === 'undefined') {
     const whole = v2ForestOccupation(world);

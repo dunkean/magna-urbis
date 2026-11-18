@@ -3,6 +3,7 @@
 import type { UrbanLayer, UrbanBuilding, UrbanZone, StreetRole } from '../gen/types';
 import type { RustTownSnapshot } from './rustUrban';
 import { harbourPlatform } from '../render/harbourStyle';
+import {quarterEditKey,quarterEditSource} from '../../../rust/bridge/urbanQuarterEdits';
 
 /** The last projection of each snapshot (urban layer, population, culture): a worker/page hop sends the urban layers that
  * share its arrays (naming copies included) without those arrays, and the receiver projects them again (urbanPack.ts). */
@@ -66,10 +67,10 @@ function projectTown(snapshot: RustTownSnapshot, population: number, culture: st
   return {
     footprintH, footprint: footprintH.map(p => p.outer), population, culture, cultures: [culture],
     archetype: population < 200 ? 'hamlet' : population < 1200 ? 'nucleated-village' : 'town', morphology: `rust:${layout.structure?.family ?? layout.culture}`,
-    blocks: layout.blocks.map(b => b.shape.outer),
+    blocks: layout.blocks.map(b => b.kind==='deleted'?[]:b.shape.outer),
     blockInfo: layout.blocks.map(b => ({ quarter: b.quarter, phase: b.phase ?? 0, zone: zone(b.zone),
       kind: b.kind === 'place' || b.kind === 'market' || b.kind === 'church' || b.kind === 'green' || b.kind === 'compound' ? b.kind : 'block', culture })),
-    quarters: layout.quarters.map((q, index) => ({ poly: q.shape, phase: q.phase, zone: zone(q.zone), streetSpace: [], nativeId: String(index),culture:layout.config?.overrides?.quarters?.[String(index)]?.culture ?? layout.phases?.[q.phase]?.culture ?? layout.culture ?? culture })),
+    quarters: layout.quarters.map((q, index) => ({ poly:quarterEditSource(layout,index).deleted?{outer:[],holes:[]}:q.shape, phase: q.phase, zone: zone(q.zone), streetSpace: [], nativeId:quarterEditKey(layout,index),culture:layout.config?.overrides?.quarters?.[String(index)]?.culture ?? layout.phases?.[q.phase]?.culture ?? layout.culture ?? culture })),
     phases: (layout.phases ?? []).map((phase, id) => ({ id, kind: phase.kind === 'village' ? 'village' : id === 0 ? 'core' : phase.kind === 'faubourg' ? 'faubourg' : 'ring', zone: zone(phase.zone), region: phase.shapes, walled: false, fossil: false })),
     streets: layout.streets.map(street => ({ path: street.path, width: street.widths.reduce((a, b) => a + b, 0) / Math.max(1, street.widths.length),
       widths: street.widths, rank: street.rank, kind: street.rank < 2 ? 'main' : street.rank < 4 ? 'street' : 'alley',

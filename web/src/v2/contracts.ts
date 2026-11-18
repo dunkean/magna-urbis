@@ -134,7 +134,9 @@ export type ProgressCallback = (progress: V2Progress) => void;
 export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
 export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; keys?: string[]; townStage?: V2TownStage; terrainStage?: string; cityOutput?: string; assetBase?: string;
   /** Scheduling only: one background pass reuses its bounded urban sessions across batches. */
-  keepUrbanLanes?: boolean }
+  keepUrbanLanes?: boolean;
+  /** Direct road edits retain placement and update only the selected built towns. */
+  roadEdit?: 'access' | 'rebuild'; contourEdit?: boolean }
 /** Lazy fetch of the resource payload of a world's terrain; never a generation (id shares the client's counter). */
 export interface V2ResourceRequest { type: 'resources'; id: number; settings: V2Settings; world?: World; retainedWorldId?: number }
 export type V2WorkerResponse =

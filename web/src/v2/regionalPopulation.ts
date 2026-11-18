@@ -6,7 +6,7 @@ import { cultureEnvironment } from './environmentCultures';
 import type { SettlementSpec } from '../../../rust/bridge/settlements';
 
 export const POPULATION_CLASSES = ['city', 'town', 'village', 'hamlet', 'farmstead'] as const;
-export const REGIONAL_POPULATION_VERSION = 'list-first-regional-population-v3';
+export const REGIONAL_POPULATION_VERSION = 'list-first-regional-population-v4';
 export type PopulationClass = typeof POPULATION_CLASSES[number];
 /** Missing values follow the region; only deliberate overrides travel in a recipe. */
 export interface RegionalDemography {
@@ -42,7 +42,8 @@ export function populationProfile(culture: string): PopulationProfile {
 }
 /** Class floors. A farmstead holds one household (`FARM_HOUSEHOLD`); a list entry below it still counts as a farmstead. */
 const FARM_HOUSEHOLD = 5;
-const MINIMUM = [20000,1000,150,15,FARM_HOUSEHOLD], MAXIMUM = [5000000,19999,999,149,14];
+// Demographic names may change with size; a requested village is not capped at 999 residents.
+const MINIMUM = [20000,1000,150,15,FARM_HOUSEHOLD], MAXIMUM = [5000000,19999,5000000,149,14];
 /** Automatic places are a readable regional hierarchy, not one simulated site per rural household.
  * Both area and population bound counts. Extra residents fill larger settlements; these ceilings
  * are never lifted to make room. Explicit counts/list entries remain deliberate overrides. */

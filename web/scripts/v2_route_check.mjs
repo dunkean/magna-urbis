@@ -19,17 +19,19 @@ page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.goto('http://127.0.0.1:5174/v2.html?lang=fr');await page.locator('#import-open').click();
  await page.locator('#project-file').setInputFiles(`${out}/route-fixture.json`);
- await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false'&&document.querySelector('#map-name').textContent==='Editor fixture');
+ await page.locator('#import-dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false');
+ await page.locator('#family-tab-map').click();
  await page.locator('[data-network-quick=draw]').click();
  const map=await page.locator('#map').boundingBox(),scale=(Math.min(map.width,map.height)-24)/6400;
  const point=(x,y)=>({x:map.x+map.width/2+(x-3200)*scale,y:map.y+map.height/2+(y-3200)*scale});
  for(const p of [point(1000,1300),point(5400,1300)])await page.mouse.click(p.x,p.y);
- await page.waitForFunction(()=>document.querySelectorAll('.v2-network-overlay:not([hidden]) [data-role=vertex]').length>2,null,{timeout:90000});
+ await page.keyboard.press('Escape');
+ await page.waitForFunction(()=>document.querySelectorAll('.v2-network-overlay:not([hidden]) [data-role=vertex]').length===2,null,{timeout:90000});
  await page.screenshot({path:`${out}/automatic-route.png`});await page.keyboard.press('Escape');
  await page.locator('#export-open').click();await page.locator('#export-format').selectOption('project');
  const downloading=page.waitForEvent('download');await page.locator('#export-go').click();const file=await downloading;
  const saved=JSON.parse(await readFile(await file.path(),'utf8')),path=saved.world.roads[0].path;
  await writeFile(`${out}/automatic-route.project.json`,JSON.stringify(saved));console.log('Route endpoints:',path[0],path.at(-1));
  assert(path.length>2);assert(Math.max(...path.map(p=>p.y))>1700);assert(Math.abs(path[0].x-1000)<2/scale);assert(Math.abs(path.at(-1).x-5400)<2/scale);
- assert.deepEqual(errors,[]);console.log('Automatic two-click UI route detoured around water:',path.length,'points');
+ assert.deepEqual(errors,[]);console.log('Waypoint UI route detoured around water:',path.length,'points');
 }catch(error){await page.screenshot({path:`${out}/route-failure.png`}).catch(()=>{});console.error(errors);throw error;}finally{await browser.close();}

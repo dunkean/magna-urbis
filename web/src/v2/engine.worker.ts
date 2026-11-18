@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, clearTerrainPreviews, namesRenamedAfterActions } from './engine';
+import { generateTerrain, planRegion, rerouteRegion, generateTowns, generateTown, generateTownStage, updateRoadTowns,updateContourTown, clearTerrainPreviews, namesRenamedAfterActions } from './engine';
 import type { V2WorkerRequest, V2WorkerResponse, V2ResourceRequest, ProgressCallback } from './contracts';
 import { WorkerWorld } from './workerWorld';
 import { renameMap } from './mapNaming';
@@ -59,10 +59,11 @@ scope.onmessage = ({ data: request }: MessageEvent<V2WorkerRequest|V2ResourceReq
         const named = new Map(renameMap(world, settings).settlements?.map(place => [place.key, place.name]));
         for (const place of world.settlements ?? []) place.name = named.get(place.key) ?? place.name;
       } catch { /* The progress line then shows the provisional names of the placement. */ }
-      if (action === 'towns' || action === 'all') world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes));
+      if (action === 'towns' && request.roadEdit)world=await stage(effective=>updateRoadTowns(world!,effective,request.keys??[],request.roadEdit!,progress));
+      else if (action === 'towns' || action === 'all') world = await stage(effective => generateTowns(world!, effective, progress, action === 'towns' ? request.keys : undefined, action === 'towns' ? request.townStage : undefined, !!request.keepUrbanLanes));
       if (action === 'town') {
         if (!request.key) throw new Error('Choose a settlement.');
-        world = await stage(effective => request.townStage ? generateTownStage(world!, effective, request.key!, request.townStage, progress)
+        world = await stage(effective => request.contourEdit?updateContourTown(world!,effective,request.key!,progress):request.townStage ? generateTownStage(world!, effective, request.key!, request.townStage, progress)
           : generateTown(world!, effective, request.key!, progress));
       }
       if (!['terrain', 'region', 'roads', 'towns', 'town', 'settlements', 'all'].includes(action)) throw new Error('Unknown action.');

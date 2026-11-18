@@ -4,6 +4,8 @@ import { LANGUAGES, isLanguage, type Language } from './languages';
 import { localeMessages } from './localeMessages';
 import { onUnitsChange } from './units';
 import { editingMessages } from './editingMessages';
+import { roadEditorMessages } from './roadEditorMessages';
+import { isolatedPlaceMessages } from './isolatedPlaceMessages';
 
 export type { Language } from './languages';
 export { LANGUAGES } from './languages';
@@ -31,6 +33,8 @@ export function registerMessages(messages:Record<string,{en:string;fr:string}>):
 /** English texts of every registered message, for coverage checks. */
 export function registeredEnglishMessages():string[]{return [...new Set(Object.values(registeredMessages).map(message=>message.en))];}
 registerMessages(Object.fromEntries(editingMessages.map(row=>[row[0],{en:row[0],fr:row[1]}])));
+registerMessages(Object.fromEntries(roadEditorMessages.map(row=>[row[0],{en:row[0],fr:row[1]}])));
+registerMessages(Object.fromEntries(isolatedPlaceMessages.map(row=>[row[0],{en:row[0],fr:row[1]}])));
 registerMessages({
   'Magna Urbis: Fantasy & Historical Map and City Generator': { en: 'Magna Urbis: Fantasy & Historical Map and City Generator', fr: 'Magna Urbis : générateur de cartes et de villes fantasy et historiques' },
   'Free fantasy and historical map generator in your browser: regions, rivers and towns down to streets, parcels and buildings, in 2D and 3D, across many cultures.': { en: 'Free fantasy and historical map generator in your browser: regions, rivers and towns down to streets, parcels and buildings, in 2D and 3D, across many cultures.', fr: 'Générateur gratuit de cartes fantasy et historiques dans votre navigateur : régions, rivières et villes jusqu’aux rues, parcelles et bâtiments, en 2D et en 3D, pour de nombreuses cultures.' },

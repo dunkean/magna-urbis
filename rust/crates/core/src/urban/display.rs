@@ -10,7 +10,7 @@
 //! Polygon layers use `polys` (n+1 ring starts), `rings` (r+1 coordinate starts,
 //! in points) and `coords` (x, y pairs); polylines use `lines` (n+1 point starts).
 use super::pack::{Polygons, Strings, Table, Writer};
-use super::{Layout, Partition, Point};
+use super::{Layout, Partition, Point,Shape};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -117,7 +117,8 @@ pub fn display_buffers_refs(layouts: &[&Layout], partitions: &[&Partition], ids:
             quarters.push(&q.shape, origin);
         }
         for b in &layout.blocks {
-            blocks.push(&b.shape, origin);
+            if b.kind == "deleted" { blocks.push(&Shape {outer: vec![],holes:vec![]}, origin); }
+            else { blocks.push(&b.shape, origin); }
             block_zone.push(tables.entry("zone").or_default().code(&b.zone));
             block_kind.push(tables.entry("blockKind").or_default().code(&b.kind));
             block_quarter.push(b.quarter as u32);
@@ -541,6 +542,7 @@ mod tests {
             warnings: vec![],
             diagnostics: None,
             enclosure: None,
+            prepared: None,
         };
         quay_water_levels(std::slice::from_mut(&mut layout), 200.0, 4, &[1; 16], &[7.0; 16]);
         let blob = display_buffers(&[layout], &[partition], true);

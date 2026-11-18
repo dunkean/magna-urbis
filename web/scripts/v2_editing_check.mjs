@@ -13,7 +13,8 @@ try{
   await page.locator('#labels-open').waitFor({state:'attached'});
   await reveal('#import-open');await page.locator('#import-open').click();
   await page.locator('#project-file').setInputFiles(`${out}/fixture.json`);
-  await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false'&&document.querySelector('#map-name').textContent==='Editor fixture');
+  await page.locator('#import-dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false');
+  await page.locator('#family-tab-map').click();
   const map=await page.locator('#map').boundingBox();
   const scale=(Math.min(map.width,map.height)-24)/1000;
   const point=(x,y)=>({x:map.x+map.width/2+(x-500)*scale,y:map.y+map.height/2+(y-500)*scale});
@@ -21,16 +22,15 @@ try{
   await page.mouse.click(point(500,400).x,point(500,400).y);
   await page.getByRole('button',{name:'Delete river and tributaries',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#map-metrics').textContent.startsWith('1 '));
-  await page.locator('#family-tab-settlements').click();
+  await page.locator('#family-tab-map').click();
   await reveal('[data-network-quick=roads]');await page.locator('[data-network-quick=roads]').click();
   await page.mouse.click(point(300,600).x,point(300,600).y);
   await page.getByRole('button',{name:'Delete road',exact:true}).click();
   await page.waitForTimeout(350);
   await page.locator('[data-network-quick=draw]').click();
-  await page.locator('[data-route-method]').selectOption('free');
   await page.mouse.click(point(200,700).x,point(200,700).y);await page.mouse.click(point(650,700).x,point(650,700).y);
   await page.getByRole('button',{name:'Finish road',exact:true}).click();
-  await page.waitForTimeout(350);
+  await page.waitForFunction(()=>document.querySelectorAll('.v2-network-overlay:not([hidden]) [data-role=vertex]').length>=2,null,{timeout:90000});
   const handle=page.locator('.v2-network-overlay:not([hidden]) [data-role=vertex]').first();
   const h=await handle.boundingBox();assert(h);
   await page.mouse.move(h.x+h.width/2,h.y+h.height/2);await page.mouse.down();await page.mouse.move(h.x+h.width/2+25,h.y+h.height/2-35,{steps:5});await page.mouse.up();

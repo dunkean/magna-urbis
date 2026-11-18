@@ -9,6 +9,7 @@ import { organizeInspector } from './advancedPanel';
 import { localFactsHtml, type LocalFactsInput } from './localFacts';
 import { firstPendingGeneration, runRemainingGeneration } from './fullGeneration';
 import { activitySitesOf } from './activitySites';
+import { isolatedPlacesOf } from './isolatedPlaces';
 import { demographicClass, DEMOGRAPHIC_CLASSES } from '../../../rust/bridge/settlementDemography';
 import { mountSceneControls } from './sceneControls';
 import { mountRoadDisplayControl } from './roadDisplayControl';
@@ -46,7 +47,8 @@ import { mountParameterForm } from './parameterForm';
 import { compatibleBuildingTypes, forcedUseRefusal, polygonArea } from './urbanEditOptions';
 import { mergedOutline, type LotShape } from './parcelMerge';
 import { massingRoofs } from '../../../rust/bridge/urbanHouseEdits';
-import { blockEditId } from '../../../rust/bridge/urbanBlockEdits';
+import { blockEditKey } from '../../../rust/bridge/urbanBlockEdits';
+import {quarterEditKey} from '../../../rust/bridge/urbanQuarterEdits';
 import { pointInRing } from '../gen/geo/poly';
 import { runtimeOptions, runtimeWorkerOptions, loopbackServer } from './platform';
 import { applyBuildingEdits, buildingAt, nearestSettlement, townUrban, buildingSignature, validateBuildingPatch, type BuildingEdit } from './edits';
@@ -81,6 +83,11 @@ import { mountMapLabelEditor } from './mapLabelEditor';
 import { mountPlaceRename } from './placeRename';
 import { applyLabelEdits } from './mapLabels';
 import { mountNetworkEditor } from './networkEditor';
+import { roadAffectedTowns,roadTownNeedsChoice } from './roadTownAccess';
+import {withRoadEditChanges} from './urbanRoadEditing';
+import {mountContourEditor} from './contourEditor';
+import {editableContours,settingsForContourEdit,controlledContour,type ContourState} from './contourEdits';
+import {chooseAction,confirmAction} from './actionDialog';
 import { mountTownMoveEditor } from './townMoveEditor';
 import { translateLand } from '../ui/urbanSnapshot';
 import { mountSubdivisionActions, mountDeletedSubdivisions } from './localUrbanEditor';
@@ -268,6 +275,7 @@ function rerollStage(stage: StageDef, family = false): void {
 }
 let selectedBuilding: { settlement: string; index: number; building: UrbanBuilding } | null = null;
 let selectedSubdivision: { key: string; kind: 'quarter' | 'block' | 'parcel'; id: string; point: { x: number; y: number } } | undefined;
+let contourEditor:ReturnType<typeof mountContourEditor>|undefined;
 let busy = false, cancelled = false, currentTab = 'terrain', toastTimer: ReturnType<typeof setTimeout>;
 let elapsedTimer: ReturnType<typeof setInterval> | undefined;
 const logs: {time:Date;message:string}[] = [];
@@ -601,8 +609,52 @@ registerMessages({'Names & labels':{en:'Names & labels',fr:'Noms et étiquettes'
 const riverEditorHost=document.createElement('div');riverEditorHost.id='river-editor';$('#edit-rivers').append(riverEditorHost);
 const networkHost={map:$('#map'),getWorld:()=>previewBase?undefined:world,setWorld:applyDirectMapEdit,getView:()=>client.viewer.getView(),getSettings:()=>settings,busy:()=>busy,toast};
 const riverEditor=mountNetworkEditor({...networkHost,panel:riverEditorHost,tools:['rivers']});
-const roadEditor=mountNetworkEditor({...networkHost,panel:$('#edit-roads'),tools:['roads','draw'],getSettings:()=>settings});
+const roadEditor=mountNetworkEditor({...networkHost,panel:$('#edit-roads'),tools:['roads','draw'],getSettings:()=>settings,
+  prepareRoadEdit:async(before,next)=>{
+    const keys=roadAffectedTowns(before,next);if(!keys.length)return {...next,stats:{...next.stats,'v2.roadEditReport':translate('Road edits applied. No settlement needs rebuilding.')}};
+    const towns=keys.filter(key=>roadTownNeedsChoice(next,key));
+    let choice:'access'|'rebuild'|'edit'='access';
+    if(towns.length){
+      const answer=await chooseAction({id:'road-towns-dialog',title:'Update affected settlements',message:'Keep the edited roads and rebuild only the affected blocks, or adapt the accesses while keeping the buildings.',
+        details:towns.map(key=>settlementDisplayName(next,key,settings)??key),cancelValue:'edit',
+        choices:[{value:'edit',label:'Continue road editing'},{value:'rebuild',label:'Rebuild affected blocks'},{value:'access',label:'Update accesses only',primary:true}]});
+      choice=answer.value??'edit';if(choice==='edit')return undefined;
+    }
+    const rebuild=keys.filter(key=>!roadTownNeedsChoice(next,key)||choice==='rebuild'),access=choice==='rebuild'?[]:towns;
+    await smallPlaces?.stop();setBusy(true,true);
+    try{
+      let updated=withRoadEditChanges(before,{...next,stats:{...next.stats,'v2.roadRebuiltBlocks':0,'v2.roadAccessUnreachable':''}},keys);
+      if(rebuild.length)updated=await client.run('towns',settings,updated,undefined,undefined,undefined,rebuild,undefined,updateProgress,false,'rebuild');
+      if(access.length)updated=await client.run('towns',settings,updated,undefined,undefined,undefined,access,undefined,updateProgress,false,'access');
+      if(updated.stats['v2.roadAccessUnreachable'])toast('Some town accesses could not be routed. Try another waypoint or rebuild the affected town.',true);
+      const blocks=Number(updated.stats['v2.roadRebuiltBlocks']??0);
+      const report=translate('Road edits applied: {blocks} blocks rebuilt, {places} settlements checked.').replace('{blocks}',blocks.toLocaleString(numberLocale())).replace('{places}',keys.length.toLocaleString(numberLocale()));
+      return {...updated,terrain:next.terrain,stats:{...updated.stats,'v2.roadEditReport':report}};
+    }finally{setBusy(false);}
+  }});
 $('#network-tool-slot').append($('.v2-network-shortcuts'));
+const contourTools=document.createElement('div');contourTools.id='contour-tool-slot';$('#network-tool-slot').append(contourTools);
+registerMessages({'The engine kept the existing outline. Check the surrounding streets, neighbours and reserved areas.':{en:'The engine kept the existing outline. Check the surrounding streets, neighbours and reserved areas.',fr:'Le moteur a conservé le contour existant. Vérifiez les rues, les voisins et les surfaces réservées autour.'}});
+contourEditor=mountContourEditor({map:$('#map'),toolbar:contourTools,getView:networkHost.getView,busy:()=>busy,toast,
+  capture:()=>world&&!previewBase?{world,settings}:undefined,
+  restore:async(state:ContourState)=>{settings=structuredClone(state.settings);await applyDirectMapEdit(state.world);},
+  apply:async edit=>{
+    if(!world)throw new Error('Create the terrain first.');
+    const before=world,next=settingsForContourEdit(settings,edit);validateSettings(next);
+    if(edit.shape&&controlledContour(edit.target.shape,edit.shape)===edit.shape){settings=next;await applyDirectMapEdit({...before});return;}
+    await smallPlaces?.stop();setBusy(true,true);
+    let updated:World;
+    try{updated=await client.run('town',next,before,edit.target.town,undefined,undefined,undefined,undefined,updateProgress,false,undefined,true);}
+    finally{setBusy(false);}
+    settings=next;await applyDirectMapEdit({...updated,terrain:before.terrain,landuse:before.landuse});
+    const warnings=(updated.debug?.v2RustCities as Record<string,RustTownSnapshot>|undefined)?.[edit.target.town]?.warnings;
+    const previous=(before.debug?.v2RustCities as Record<string,RustTownSnapshot>|undefined)?.[edit.target.town]?.warnings??[];
+    const pattern=/retouche|outline|contour|split|block edit|parcel edit|quarter edit/i;
+    const targets=editableContours(updated,edit.target.kind),actual=targets.find(t=>t.town===edit.target.town&&t.id===edit.target.id);
+    const unchanged=edit.parts?targets.length<=editableContours(before,edit.target.kind).length:edit.shape?actual&&controlledContour(edit.target.shape,actual.shape)===actual.shape:!!actual;
+    return warnings?.find(w=>!previous.includes(w)&&pattern.test(w))??(unchanged?(warnings?.find(w=>pattern.test(w))??translate('The engine kept the existing outline. Check the surrounding streets, neighbours and reserved areas.')):undefined);
+  },
+});
 const townMover=mountTownMoveEditor({map:$('#map'),toolbar:$('.v2-network-shortcuts'),getWorld:networkHost.getWorld,getView:networkHost.getView,busy:()=>busy,error:reportAppearanceError,
   places:$('#places-panel'),setView:view=>client.viewer.setView(view),getSettings:networkHost.getSettings,getName:key=>world?settlementDisplayName(world,key,settings):undefined,
   deferred:{commit:async positions=>{
@@ -699,7 +751,8 @@ $('#places-collapse').onclick=()=>{const panel=$('#places-panel'),collapsed=pane
 function disposeInspectorForms():void{inspectorForms.forEach(form=>form.dispose());inspectorForms=[];}
 function syncUrbanBackend():void{const backend=settings.urban?.backend??settings.runtime?.backend??'typescript';$('#urban-controls').hidden=backend==='typescript';}
 insertHTML($('#inspect-mode').parentElement!, 'beforeend', `<select id="inspect-target" aria-label="Inspection level" style="width:90px;padding:3px 5px;font-size:10px"><option value="settlement">Settlements</option><option value="quarter">Quarter</option><option value="block">Block</option><option value="parcel">Parcel</option><option value="house">House</option></select>`);
-const editingTools=mountEditingTools({canEdit:()=>!!world&&!busy&&!previewBase&&!city3d?.active});
+const editingTools=mountEditingTools({canEdit:()=>!!world&&!busy&&!previewBase&&!city3d?.active,
+  roadSession:()=>roadEditor.active()||roadEditor.pending(),finishRoads:()=>roadEditor.validate(),cancelRoads:()=>roadEditor.cancel()});
 // Layer toggles live in the Display stages (widget:layer-*).
 insertHTML($('#hardware-details'), 'afterend', `<details class="section"><summary>Local service addresses</summary><p class="hint">The desktop edition starts Rust automatically. Python can use an existing local service. Addresses stay on your machine.</p><label class="label" for="rust-server">Native Rust</label><input id="rust-server" type="url" value="${esc(bootRuntime.localServer)}"><label class="label" for="python-server">Neural Python</label><input id="python-server" type="url" value="${esc(bootRuntime.pythonServer)}"><button id="services-apply" class="small" style="margin-top:12px">Save & verify</button><p class="hint">Python and model configuration: <a href="./scientific/index.html#runtime" target="_blank" rel="noopener">read the atlas ↗</a></p></details>`);
 if(!localEdition){$('#rust-server').hidden=true;$('label[for="rust-server"]').hidden=true;$('#rust-server').parentElement!.querySelector<HTMLElement>('p.hint')!.hidden=true;}
@@ -780,8 +833,8 @@ function updateProgress(p: V2Progress): void {
   chain.progress(p);
   setText($('#progress-detail'), p.detail??cache); log(p.label + (p.cache ? ` · ${p.cache}` : ''));
 }
-function setBusy(value: boolean): void {
-  if(value)window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'busy'}));
+function setBusy(value: boolean, keepNetworkEditor = false): void {
+  if(value&&!keepNetworkEditor)window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'busy'}));
   labelEditorHostInert(value);
   busy = value; $('#progress-card').hidden = !value; showProgressSettlement(); $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
   for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector','#editor-content']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
@@ -791,7 +844,7 @@ function setBusy(value: boolean): void {
   if (!value && elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = undefined; }
   terrainControls.sync();regionControls.sync();urbanControls.sync();inspectorForms.forEach(form=>form.sync());if(!value)syncUrbanBackend();
   $<HTMLButtonElement>('#cancel-job').disabled=false;
-  syncCitySelection();mapControls.sync();syncNameOrigins();riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();workbenchLayout?.sync();
+  syncCitySelection();mapControls.sync();syncNameOrigins();riverEditor.sync();roadEditor.sync();contourEditor?.sync();townMover.sync();editingTools.sync();workbenchLayout?.sync();
 }
 function labelEditorHostInert(value:boolean):void{const panel=document.querySelector<HTMLElement>('.map-label-editor');if(panel)panel.inert=value;}
 // ── Small places built in the background (smallPlaces.ts) ───────────────────────────────
@@ -889,7 +942,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
 function updateWorld(keepInspector = false): void {
   if (!world) return;
   labelEditor.sync();
-  riverEditor.sync();roadEditor.sync();townMover.sync();editingTools.sync();
+  riverEditor.sync();roadEditor.sync();contourEditor?.sync();townMover.sync();editingTools.sync();
   mapControls.sync();
   if(!keepInspector)disposeInspectorForms();regionControls.sync();terrainControls.sync();city3d?.refresh();
   const towns = (world.settlements ?? []).map(place=>({...place,name:settlementDisplayName(world!,place.key,settings)}));
@@ -900,6 +953,10 @@ function updateWorld(keepInspector = false): void {
   setHTML($('#settlement-list'), towns.length ? [...towns].sort((a,b)=>b.population-a.population).map((s,index,list)=>`${index===0||demographicClass(list[index-1].population)!==demographicClass(s.population)?`<h3 class="settlement-group">${esc(translate(demographicClass(s.population)))}</h3>`:''}<div class="settlement-choice"><input type="radio" name="city-target" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}',s.name??s.key))}" ${selectedCities.has(s.key)?'checked':''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${selectedTown===s.key}"><span class="settlement-dot ${(s.main ? world?.urban : s.urban)?'ready':''}"></span><span class="grow"><span class="settlement-name"><strong>${nameHTML(s.name,s.main?'Main settlement':s.key)}</strong>${((warning:string)=>warning?`<span class="settlement-warning" role="img" title="${esc(warning)}" aria-label="${esc(warning)}">⚠</span>`:'')(placeWarningText(s.key,s.population))}</span><small>${populationMarkup(s.key,s.population)} · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? world?.urban : s.urban)?'↗':'＋'}</span></button></div>`).join('') : '<p class="hint">Create settlement sites to select a place.</p>');
   const activities=activitySitesOf(world);
   if(activities.length)insertHTML($('#settlement-list'),'beforeend',`<h3 class="settlement-group">Isolated buildings · ${activities.length}</h3>${[...activities].sort((a,b)=>b.buildings.length-a.buildings.length).map(site=>`<button class="activity-place" data-activity="${esc(site.id)}"><strong>${esc(site.template)}</strong><small>${esc(site.kind)} · ${site.buildings.length}</small></button>`).join('')}`);
+  // Inhabited farms outside every listed place (land use): listed as farmsteads and hamlets of their nearest place.
+  const isolated=isolatedPlacesOf(world);
+  if(isolated.length)insertHTML($('#settlement-list'),'beforeend',`<h3 class="settlement-group">${esc(translate('Isolated farmsteads'))} · ${isolated.length}</h3>${isolated.map(place=>`<button class="activity-place" data-isolated="${esc(place.key)}"><strong>${esc(translate(place.category==='hamlet'?'Farm hamlet':'Isolated farmstead'))}</strong><small>${esc(translate('{farms} households').replace('{farms}',String(place.farms)))}${place.near?` · ${esc(translate('near {place}').replace('{place}',settlementDisplayName(world!,place.near,settings)??place.near))}`:''}${place.connected?'':` · ${esc(translate('no track'))}`}</small></button>`).join('')}`);
+  document.querySelectorAll<HTMLButtonElement>('[data-isolated]').forEach(button=>button.onclick=()=>{const place=isolated.find(place=>place.key===button.dataset.isolated);if(!place)return;client.viewer.setView({cx:place.center.x,cy:place.center.y,scale:2});if(place.near)showInspector(place.near);});
   document.querySelectorAll<HTMLButtonElement>('[data-activity]').forEach(button=>button.onclick=()=>{const site=activities.find(site=>site.id===button.dataset.activity);if(!site)return;client.viewer.setView({cx:site.x,cy:site.y,scale:2});showInspector(site.parent);setHTML($('#building-inspector'),`<div class="edit-building"><h3>${esc(site.template)}</h3><p>${esc(site.kind)} · ${site.buildings.length} buildings · ${site.residents} inhabitants</p><p class="hint">${esc(site.resource)} · ${esc(site.culture)}</p></div>`);});
   document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(b=>b.onclick=()=>{selectedCities.clear();selectedCities.add(b.dataset.town!);cityScope='selection';syncCitySelection();showInspector(b.dataset.town!,true);});
   document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input=>input.onchange=()=>{const key=input.dataset.citySelect!;if(!input.checked)return;selectedCities.clear();selectedCities.add(key);cityScope='selection';smallPlaces?.prioritize(key);syncCitySelection();showInspector(key);});
@@ -1125,7 +1182,7 @@ function inspectSubdivision(kind:'quarter'|'block'|'parcel',p:{x:number;y:number
     const urban=townUrban(world,settlement.key);if(!urban)continue;
     const native=nativeCityRecords(world)?.[settlement.key],layout=native?.layouts[0];
     const items = kind==='quarter' ? urban.quarters.map((q,i)=>({shape:q.poly,id:q.nativeId,index:i}))
-      : kind==='block' ? urban.blocks.map((ring,i)=>({shape:layout?.blocks[i]?.shape??{outer:ring,holes:[]},id:layout?blockEditId(layout,layout.blocks[i].shape):undefined,index:i}))
+      : kind==='block' ? urban.blocks.map((ring,i)=>({shape:layout?.blocks[i]?.kind==='deleted'?{outer:[],holes:[]}:layout?.blocks[i]?.shape??{outer:ring,holes:[]},id:layout?blockEditKey(layout,i):undefined,index:i}))
       : urban.parcels.map((parcel,i)=>({shape:native?.partitions?.[0]?.parcels[i]?.shape??{outer:parcel.poly,holes:[]},id:parcel.nativeId,index:i}));
     const item=items.find(item=>selectedId!==undefined ? item.id===selectedId : pointInRing(item.shape.outer,p)&&!item.shape.holes?.some(h=>pointInRing(h,p)));
     if(!item)continue;
@@ -1136,11 +1193,12 @@ function inspectSubdivision(kind:'quarter'|'block'|'parcel',p:{x:number;y:number
     const title=translate(kind==='quarter'?'Quarter':kind==='block'?'Block':'Parcel')+' '+(item.index+1);
     setHTML($('#building-inspector'), `<div class="edit-building"><h3 data-l10n-keep>${esc(title)}</h3><p class="hint" data-i18n="Regenerate this area and its descendants. Display settings stay unchanged.">${translate('Regenerate this area and its descendants. Display settings stay unchanged.')}</p><div id="subdivision-actions" class="v2-edit-actions"><button id="subdivision-apply" class="small selection-rebuild">↻ <span data-i18n="Regenerate area">${translate('Regenerate area')}</span></button><button id="subdivision-reset" class="quiet small selection-reset" data-i18n="Use parent settings">${translate('Use parent settings')}</button></div><p id="selection-status" class="hint selection-status" role="status" data-i18n="Regenerate keeps the seed. The dice creates a new random layout and descendants.">${translate('Regenerate keeps the seed. The dice creates a new random layout and descendants.')}</p><div id="subdivision-controls"></div></div>`);
     if(!nativeId){setText($('#subdivision-controls'),'Local editing requires the Rust engine.');$('#subdivision-actions').hidden=true;appendLocalFacts($('#building-inspector'),settlement.key,{kind,index:item.index});return true;}
-    const quarterId=kind==='quarter'?nativeId:kind==='block'?String(layout!.blocks[item.index].quarter):String(layout?.blocks[urban.parcels[item.index].block]?.quarter??0);
-    const blockId=kind==='block'?nativeId:kind==='parcel'&&layout?blockEditId(layout,layout.blocks[urban.parcels[item.index].block].shape):undefined;
-    const blockIds=new Set(kind==='quarter'?layout?.blocks.flatMap((b,i)=>String(b.quarter)===nativeId?[String(i)]:[]):kind==='block'?[String(item.index)]:[]);
+    const quarterIndex=kind==='quarter'?item.index:kind==='block'?layout!.blocks[item.index].quarter:layout?.blocks[urban.parcels[item.index].block]?.quarter??0;
+    const quarterId=layout?quarterEditKey(layout,quarterIndex):String(quarterIndex);
+    const blockId=kind==='block'?nativeId:kind==='parcel'&&layout?blockEditKey(layout,urban.parcels[item.index].block):undefined;
+    const blockIds=new Set(kind==='quarter'?layout?.blocks.flatMap((b,i)=>b.quarter===item.index?[String(i)]:[]):kind==='block'?[String(item.index)]:[]);
     const parcelIds=new Set(kind==='parcel'?[nativeId]:urban.parcels.filter(parcel=>blockIds.has(String(parcel.block))).map(parcel=>parcel.nativeId).filter((id):id is string=>!!id));
-    const children={blocks:layout?[...blockIds].map(id=>blockEditId(layout,layout.blocks[Number(id)].shape)):[],parcels:[...parcelIds],requests:[...new Set([...(native?.sites??native?.requests??[]).filter(site=>parcelIds.has(site.parcel_id)).map(site=>site.id),...urban.buildings.filter(building=>parcelIds.has((building as UrbanBuilding&{nativeParcelId?:string}).nativeParcelId??'')).map(building=>(building as UrbanBuilding&{nativeRequestId?:string}).nativeRequestId)].filter((id):id is string=>!!id))]};
+    const children={blocks:layout?[...blockIds].flatMap(id=>{const key=blockEditKey(layout,Number(id));return key?[key]:[];}):[],parcels:[...parcelIds],requests:[...new Set([...(native?.sites??native?.requests??[]).filter(site=>parcelIds.has(site.parcel_id)).map(site=>site.id),...urban.buildings.filter(building=>parcelIds.has((building as UrbanBuilding&{nativeParcelId?:string}).nativeParcelId??'')).map(building=>(building as UrbanBuilding&{nativeRequestId?:string}).nativeRequestId)].filter((id):id is string=>!!id))]};
     const get=():QuarterOverride|BlockOverride|ParcelOverride|undefined=>{const local=settings.urban?.local?.[settlement.key];return kind==='quarter'?local?.layout?.overrides?.quarters?.[nativeId]:kind==='block'?local?.parcels?.overrides?.blocks?.[nativeId]:local?.parcels?.overrides?.parcels?.[nativeId];};
     const apply=(value:QuarterOverride|BlockOverride|ParcelOverride|undefined)=>{
       if(busy){toast('Wait for the current generation to finish.',true);return;}
@@ -1151,13 +1209,15 @@ function inspectSubdivision(kind:'quarter'|'block'|'parcel',p:{x:number;y:number
       void generate('town',settlement.key,'buildings');
     };
     mountSubdivisionActions($('#subdivision-actions'),{kind,actionsOnly:true,french:getLanguage()==='fr',get,apply:value=>{try{apply(value);}catch(e){toast(String(e),true);}},shape:item.shape,map:$('#map'),getView:()=>client.viewer.getView()});
+    const contourButton=document.createElement('button');contourButton.type='button';contourButton.className='small';contourButton.dataset.editContour=kind;setText(contourButton,'Edit outline');
+    contourButton.onclick=()=>{const chosen=world&&editableContours(world,kind,settings).find(t=>t.town===settlement.key&&t.id===nativeId);if(chosen){selectionOutline.set();contourEditor?.edit(chosen);}};$('#subdivision-actions').append(contourButton);
     $('#subdivision-apply').onclick=()=>{try{apply(get()??{});}catch(e){toast(String(e),true);}};
     $('#subdivision-reset').title=translate('Remove local overrides and regenerate using the parent settings.');
     $('#subdivision-reset').onclick=()=>{try{apply(undefined);}catch(e){toast(String(e),true);}};
     const controls=$('#subdivision-controls');
     const allocation=kind==='parcel'?native?.programmePartitions?.[0]?.programme?.allocations.find(a=>a.parcelId===nativeId):undefined;
     if(kind==='parcel')mountParcelMerge(settlement.key,nativeId,item.index,item.shape,allocation?.role);
-    const quarter=layout?.quarters[Number(quarterId)];
+    const quarter=layout?.quarters[quarterIndex];
     const defaults:Record<string,unknown>=kind==='quarter'?{culture:layout?.phases?.[quarter?.phase??0]?.culture??layout?.culture,zone:quarter?.zone}:kind==='block'?{culture:layout?.config?.overrides?.quarters?.[quarterId]?.culture??layout?.phases?.[layout.blocks[item.index].phase??quarter?.phase??0]?.culture??layout?.culture}:allocation?{culture:allocation.culture,role:allocation.role,function:allocation.function,households:allocation.households}:{};
     const available=urban.parcels.filter(parcel=>parcelIds.has(parcel.nativeId??'')).map(parcel=>polygonArea(native?.partitions?.[0]?.parcels.find(p=>p.id===parcel.nativeId)?.envelope??native?.partitions?.[0]?.parcels.find(p=>p.id===parcel.nativeId)?.shape??{outer:parcel.poly}));
     Object.assign(defaults,{area:kind==='parcel'?available[0]:available.length?Math.min(...available):polygonArea(item.shape),blockArea:polygonArea(item.shape),historicalMode:layout?.config?.programme.mode??'inspired',period:layout?.config?.programme.period,navigableAccess:layout?.config?.programme.navigableAccess});
@@ -1379,7 +1439,7 @@ workbenchLayout=mountWorkbenchLayout({getSettings:()=>settings,getWorld:()=>worl
   setText(reset,RESET_LABEL);reset.setAttribute('data-i18n-title',RESET_TITLE);reset.title=translate(RESET_TITLE);
   $('#map-advanced-open').after(reset);
   reset.onclick=async()=>{
-    if(busy||!window.confirm(translate(RESET_CONFIRM)))return;
+    if(busy||!await confirmAction(RESET_CONFIRM,{id:'reset-settings-dialog',title:RESET_LABEL,confirmLabel:RESET_LABEL,danger:true}))return;
     labelBaseline=undefined;smallPlaceRecipe=undefined;await smallPlaces?.stop();
     settings=resetSettings(settings);mods=[];
     markAllStagesStale(world,pristine,previewBase?.world,previewBase?.pristine);

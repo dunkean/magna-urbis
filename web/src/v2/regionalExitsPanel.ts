@@ -1,6 +1,6 @@
 import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
-import type { RustRegionSnapshot } from './region';
+import { roadExitReports } from './roadEditing';
 import { effectiveRegionalExits, MAX_REGIONAL_EXITS, REGIONAL_EXIT_CLASSES, regionalExitResults } from './regionalExits';
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './regionalExitsPanel.css';
@@ -14,7 +14,7 @@ const T = {
   reset: copy('Restore automatic road counts', 'Rétablir les nombres de routes automatiques'),
   hint: copy('Requested roads from outside the map, via towns across the region. Terrain may prevent some connections.', 'Routes demandées depuis l’extérieur de la carte, via les lieux de toute la région. Le terrain peut empêcher certaines liaisons.'),
   limit: copy('At most 16 regional road exits can be requested.', 'Vous pouvez demander au plus 16 sorties routières régionales.'),
-  result: copy('Last generation: obtained / requested', 'Dernière génération : obtenues / demandées'),
+  result: copy('Current map: connected / requested', 'Carte actuelle : raccordées / demandées'),
   automatic: copy('Suggested from the region', 'Suggestion selon la région'),
   manual: copy('Requested count', 'Nombre demandé'),
 };
@@ -65,7 +65,7 @@ export function mountRegionalExitsPanel(host: HTMLElement, api: {
   };
   function sync(): void {
     const settings = api.getSettings(), exits = effectiveRegionalExits(settings);
-    const report = (api.getWorld?.()?.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.roads?.exits;
+    const world=api.getWorld?.(),report=world?roadExitReports(world):undefined;
     const results = report === undefined ? undefined : regionalExitResults(report);
     resultHint.hidden = !results;
     fields.disabled = !!api.disabled?.() || settings.region?.roads === null;

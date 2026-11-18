@@ -62,7 +62,7 @@ export type ParcelPackRange = [number, number] | { start: number; end: number };
 export interface ParcelPackPartition {
   key: string; warnings: string[];
   parcels?: ParcelPackRange; allocations?: ParcelPackRange; adjacency?: ParcelPackRange; environment?: ParcelPackRange;
-  config?: unknown; diagnostics?: unknown; enclosure?: unknown;
+  config?: unknown; diagnostics?: unknown; enclosure?: unknown;prepared?: Partition['prepared'];
   /** `UrbanProgramme` without `allocations`, `adjacency`, `environment` (absent: no programme). */
   programme?: Record<string, unknown>;
 }
@@ -353,6 +353,7 @@ export function materializePartitions(pack: ParcelPack, base?: readonly Partitio
     out.warnings = p.warnings;
     if (p.diagnostics !== undefined) out.diagnostics = p.diagnostics;
     if (p.enclosure !== undefined) out.enclosure = p.enclosure;
+    if (p.prepared !== undefined) out.prepared = p.prepared;
     return out as unknown as Partition;
   });
 }

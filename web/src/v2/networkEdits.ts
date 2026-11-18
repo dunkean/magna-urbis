@@ -22,6 +22,7 @@ import { regionalRoadCorridor } from '../render/forestRoom';
 import { deleteGridRiver, type GridRiverDeletion } from './gridRiverDeletion';
 import { snapRoadCrossings } from '../render/cityBridges';
 import { drawnRiverClearance } from '../ui/vectorWaterRender';
+import { roadGeometry, roadPieceGeometry, type RoadGeometry } from './roadControlModel';
 
 export type RegionalRoad = NonNullable<World['roads']>[number];
 export type Bridge = NonNullable<World['bridges']>[number];
@@ -115,8 +116,10 @@ export function roadAt(world: World, p: Vec2, tolerance: number): ({ index: numb
   for (let index = 0; index < roads.length; index++) {
     const road = roads[index];
     if (road.path.length < 2) continue;
-    const hit = nearestOnPolyline(road.path, p), reach = tolerance + road.width / 2;
-    if (hit.distance <= reach && (!best || hit.distance < best.distance)) best = { index, ...hit };
+    const paths=road.editorPickPaths??[road.path];if(!paths.length)continue;
+    const visible=paths.map(path=>nearestOnPolyline(path,p)).sort((a,b)=>a.distance-b.distance)[0];
+    const hit = {...nearestOnPolyline(road.path,visible.point),distance:visible.distance}, reach = tolerance + road.width / 2;
+    if (hit.distance <= reach && (!best || hit.distance < best.distance-1e-5 || Math.abs(hit.distance-best.distance)<1e-5&&road.urban)) best = { index, ...hit };
   }
   return best;
 }
@@ -212,10 +215,16 @@ const bridgesOf = (segment: Pick<RoadSegment, 'crossings' | 'width'>): Bridge[] 
 // ---------------------------------------------------------------------------------------------------------------
 // Road edits
 export interface RoadEditOptions {
+  routingVariant?: number;
   /** Snap distance (m) for changed road ends: junctions, settlement centres, then other roads (split into a T). 0: no snapping. */
   snap?: number;
   cls?: RoadClass;
   width?: number;
+  controls?: Polyline;
+  /** The caller reroutes every incident edge together when moving a shared junction. */
+  preserveConnections?: boolean;
+  /** Explicit endpoints for an atomic split; undefined creates a free endpoint. */
+  connections?: [number | undefined, number | undefined];
 }
 export interface NetworkEditResult { world: World; road?: number }
 interface Change { old?: Polyline; next?: RegionalRoad }
@@ -249,7 +258,9 @@ function ownsBridge(path: Polyline, width: number, bridge: Bridge, cell: number)
 function splitRoad(d: Draft, k: number, hit: PolylineHit): number {
   const road = d.roads[k], p = road.path, point = { x: hit.point.x, y: hit.point.y };
   const first = [...p.slice(0, hit.segment + 1), point], second = [point, ...p.slice(hit.segment + 1)];
-  d.roads[k] = { ...road, path: first }; d.roads.push({ ...road, path: second });
+  d.roads[k] = { ...road, path: first, ...(road.controls ? roadPieceGeometry(first, road.controls) : {}) };
+  d.roads.push({ ...road, editorId:road.editorId?`${road.editorId}:split`:undefined,path: second, ...(road.controls ? roadPieceGeometry(second, road.controls) : {}) });
+  if(road.urban){d.roads[k].urban={...road.urban,part:`${road.urban.part}:0`};d.roads.at(-1)!.urban={...road.urban,part:`${road.urban.part}:1`};}
   d.changes.push({ old: road.path, next: d.roads[k] }, { next: d.roads[d.roads.length - 1] });
   if (!d.output) return -1;
   const segment = d.output.segments[k], cut = along(p, hit), junction = newJunction(d, point);
@@ -324,12 +335,27 @@ function writeRoad(d: Draft, index: number, rawPath: Polyline, options: RoadEdit
   const snapped = normalizeRoadPath(rawPath, d.world.mapSize), snap = options.snap ?? 0;
   let a = oldSegment?.a ?? -1, b = oldSegment?.b ?? -1;
   // Ends that moved are re-attached (possibly splitting another road into a T); an unchanged end keeps its junction.
-  if (!old || !samePoint(old.path[0], snapped[0])) { const end = attachEnd(d, snapped[0], snap, index); snapped[0] = end.point; a = end.junction; }
+  if (!old || !samePoint(old.path[0], snapped[0])) {
+    if (options.preserveConnections && a >= 0 && d.output) d.output.junctions[a] = { ...d.output.junctions[a], point: snapped[0] };
+    else { const end = attachEnd(d, snapped[0], snap, index); snapped[0] = end.point; a = end.junction; }
+  }
   const last = snapped.length - 1;
-  if (!old || !samePoint(old.path[old.path.length - 1], snapped[last])) { const end = attachEnd(d, snapped[last], snap, index); snapped[last] = end.point; b = end.junction; }
+  if (!old || !samePoint(old.path[old.path.length - 1], snapped[last])) {
+    if (options.preserveConnections && b >= 0 && d.output) d.output.junctions[b] = { ...d.output.junctions[b], point: snapped[last] };
+    else { const end = attachEnd(d, snapped[last], snap, index); snapped[last] = end.point; b = end.junction; }
+  }
+  if (options.connections && d.output) {
+    a = options.connections[0] ?? newJunction(d, snapped[0]);
+    b = options.connections[1] ?? newJunction(d, snapped[last]);
+  }
   const path = snapped.filter((p, i) => i === 0 || !samePoint(snapped[i - 1], p, 1e-3));
   if (path.length < 2) throw new Error('A road needs two distinct points.');
-  const road: RegionalRoad = { path, kind: roadKindOf(cls), width };
+  const controls = options.controls ?? (old && samePath(old.path,path) ? old.controls : undefined);
+  const road: RegionalRoad = { path, kind: roadKindOf(cls), width,
+    ...(old?.editorId?{editorId:old.editorId}:{}),
+    ...(old?.urban?{urban:old.urban}:{}),
+    ...((options.routingVariant ?? old?.routingVariant) !== undefined ? { routingVariant: options.routingVariant ?? old?.routingVariant } : {}),
+    ...(controls ? roadGeometry(path, controls) : {}) };
   // Routed on raster cells like Rust, then snapped onto the drawn water like region.ts.
   const drawnWater = (terrain as NativeTerrainLayer).v2NativeTerrain?.water, routed = roadCrossings(terrain, path, cls);
   const crossings = drawnWater ? snapRoadCrossings([{ path, crossings: routed }], drawnRiverClearance(drawnWater), 1.5 * terrain.height.cell)[0].crossings : routed;
@@ -432,6 +458,34 @@ export function deleteRoad(world: World, index: number): NetworkEditResult {
   const d = draft(world);
   removeRoad(d, index);
   return { world: commit(d) };
+}
+
+/** One commit for the selected edge and all edges incident to a moved junction. */
+export function setConnectedRoadPaths(world: World, edits: { index: number; geometry: RoadGeometry }[]): World {
+  const d = draft(world);
+  for (const { index, geometry } of edits) {
+    roadIndex(world,index);
+    writeRoad(d,index,geometry.path,{ controls:geometry.controls,preserveConnections:true,routingVariant:geometry.routingVariant });
+  }
+  return commit(d);
+}
+
+/** Leave a real gap, with distinct free junctions and the two original outer attachments. */
+export function splitRoadWithGap(world: World, index: number, first: RoadGeometry, second: RoadGeometry): World {
+  roadIndex(world,index);
+  const d=draft(world),segment=d.output?.segments[index],old=d.roads[index],cls=roadClassOf(world,index);
+  writeRoad(d,index,first.path,{controls:first.controls,connections:[segment?.a,undefined]});
+  const at=writeRoad(d,-1,second.path,{controls:second.controls,cls,width:old.width,routingVariant:old.routingVariant,connections:[undefined,segment?.b]});
+  if(old.editorId)d.roads[at].editorId=`${old.editorId}:${crypto.randomUUID()}`;
+  if(old.urban){d.roads[index].urban={...old.urban,part:`${old.urban.part}:0`};d.roads[at].urban={...old.urban,part:`${old.urban.part}:1`};}
+  if(segment&&d.output)d.output.segments[at]={...d.output.segments[at],surface:segment.surface,profile:segment.profile,importance:segment.importance};
+  return commit(d);
+}
+
+export function deleteRoads(world: World, indices: readonly number[]): World {
+  const d=draft(world);
+  for(const index of [...new Set(indices)].sort((a,b)=>b-a)){roadIndex(world,index);removeRoad(d,index);}
+  return commit(d);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
