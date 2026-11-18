@@ -12,6 +12,9 @@
  * town plan there. Small structural features are kept at the detailed levels (the 3D view drops them by metres per
  * pixel, a rebuild per zoom octave).
  *
+ * A block keeps its buildings cell by cell (BLOCK_CELLS x BLOCK_CELLS cells of 64 m), so every level of it holds them in
+ * that order and a frame can give each part of a near block its own level: a range of the level's vertices per cell.
+ *
  * Everything here runs in slices: the grouping (BlockGrouping.step) and the vertices of a block (blockPart, a range of
  * its buildings at a time), so a large town never holds the main thread for more than a few milliseconds.
  */
@@ -19,8 +22,12 @@ import { building3dHeight, isBuildingProjection, isYardMesh, yardLod, type Build
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import { buildingBatches, buildingBounds, buildingGround, type BuildingBounds, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import type { WorldRelief } from './contract';
+import type { VolumeTownLook } from '../city/buildingLook';
 
 export const BUILDING_BLOCK = 256;
+/** Cells of a block per side (64 m): the parts of a near block that take their own level. */
+export const BLOCK_CELLS = 4;
+export const BLOCK_CELL = BUILDING_BLOCK / BLOCK_CELLS;
 
 export interface BuildingBlock {
   /** North-west corner (map metres, x east, y south): the origin of the block-local vertex positions. */
@@ -40,6 +47,10 @@ export interface BuildingBlock {
   /** Levels of detail that have vertices: 0 detailed, 1 overview, 2 boxes; for yards the three yard levels. The level
    * `levels` (BLOCK_HIDDEN) draws nothing. */
   readonly levels: number;
+  /** First building of each cell (row by row), and the end: the buildings are in cell order once grouped. */
+  cells: Int32Array;
+  /** The cell of each building while the grouping runs. */
+  cellOf?: number[];
 }
 
 /** Buildings grouped between two looks at the clock. */
@@ -95,10 +106,11 @@ export class BlockGrouping {
         key = `${origin}${yard ? '/yard' : ''}`;
       let block = this.byKey.get(key);
       if (!block) {
-        this.byKey.set(key, (block = { origin, buildings: [], yard, width: 0, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, low: Infinity, high: -Infinity, levels: 3 }));
+        this.byKey.set(key, (block = { origin, buildings: [], yard, width: 0, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, low: Infinity, high: -Infinity, levels: 3, cells: new Int32Array(BLOCK_CELLS * BLOCK_CELLS + 1), cellOf: [] }));
         this.blocks.push(block);
       }
       block.buildings.push(building);
+      block.cellOf!.push(Math.min(BLOCK_CELLS - 1, Math.floor((cx - origin[0]) / BLOCK_CELL)) + BLOCK_CELLS * Math.min(BLOCK_CELLS - 1, Math.floor((cy - origin[1]) / BLOCK_CELL)));
       this.altitudes.add(building);
       block.width += yard ? 1 : Math.max(1, Math.min(box[3] - box[0], box[4] - box[1]));
       block.minX = Math.min(block.minX, box[0]);
@@ -111,7 +123,19 @@ export class BlockGrouping {
       if (this.next % GROUP_CHUNK === 0 && performance.now() > deadline) return false;
     }
     if (this.next === buildings.length) {
-      for (const block of this.blocks) block.width /= block.buildings.length;
+      for (const block of this.blocks) {
+        block.width /= block.buildings.length;
+        // Cell order (counting sort): each level then holds a cell's buildings as one range of its vertices.
+        const cellOf = block.cellOf!,
+          cells = block.cells,
+          sorted = new Array<Building3dVisual>(cellOf.length);
+        for (const c of cellOf) cells[c + 1]++;
+        for (let c = 0; c < BLOCK_CELLS * BLOCK_CELLS; c++) cells[c + 1] += cells[c];
+        const fill = cells.slice(0, BLOCK_CELLS * BLOCK_CELLS);
+        for (let i = 0; i < cellOf.length; i++) sorted[fill[cellOf[i]]++] = block.buildings[i];
+        for (let i = 0; i < sorted.length; i++) block.buildings[i] = sorted[i];
+        block.cellOf = undefined;
+      }
       this.next++;
     }
     return true;
@@ -162,19 +186,20 @@ export class TownAltitudes {
   }
 }
 
-/** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's). */
-export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes): BuildingPaint {
-  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], snowAltitudes: altitudes };
+/** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's), and
+ * the top view's town look where the page gives it. */
+export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes, look?: VolumeTownLook): BuildingPaint {
+  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], snowAltitudes: altitudes, look };
 }
 
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
- * is built in parts over several work slices, then joined (joinParts) into one buffer and one draw. */
+ * is built in parts over several work slices, then copied part by part into one buffer (one draw). */
 export function blockPart(block: BuildingBlock, level: number, paint: BuildingPaint, seat: BuildingSeat, from: number, to: number): Float32Array {
   const buildings = block.buildings.slice(from, to),
     batches = block.yard ? buildingBatches(buildings, block.origin, paint, level > 0, undefined, level, seat) : buildingBatches(level === BOX_LEVEL ? buildings.map(buildingBox) : buildings, block.origin, paint, level > 0, undefined, undefined, seat);
   return joinParts(batches.map(batch => batch.data));
 }
-export function joinParts(parts: readonly Float32Array[]): Float32Array {
+function joinParts(parts: readonly Float32Array[]): Float32Array {
   if (parts.length === 1) return parts[0];
   let length = 0;
   for (const part of parts) length += part.length;
@@ -200,20 +225,18 @@ function buildingBox(building: Building3dVisual): Building3dVisual {
   return { ...building, projection: 'native-building-visual-1', height_m: building3dHeight(building), materials: building.volumes[0].materials, volumes: undefined, structural_features: undefined, structural_foundations: undefined } as unknown as Building3dVisual;
 }
 
-/** Pixels a building block's mean building spans below which it goes one level coarser (detailed, overview, boxes,
- * nothing); it comes back finer above the next value (hysteresis). Detailed / overview are the 3D view's 7 / 10 px. */
-const COARSER = [7, 4, 0.7],
-  FINER = [10, 5.5, 1];
+/** Pixels a building spans (its smaller side, the block's mean) from which it is drawn detailed (the 3D view's 7-10 px), as an overview (capped
+ * bodies), as a box; under the last, nothing (the drape's town plan carries it). */
+const LEVEL_PIXELS = [10, 6, 3];
 /** Yards (pixels per metre): no lot boundary once a metre spans under a quarter pixel. */
-const YARD_HIDDEN = 0.25,
-  YARD_SHOWN = 0.35;
+const YARD_HIDDEN = 0.25;
 
-/** Level a block wants for `pixels`, the screen size of its mean building (CSS px; per metre for yards), given the level
- * it shows now. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. */
-export function blockLevel(block: BuildingBlock, pixels: number, current: number, boxed = false): number {
+/** Level of buildings of a block whose mean building spans `pixels` CSS px (per metre for yards), `blockHidden` for
+ * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis: the
+ * frame's budget (buildingsLayer.ts) moves the thresholds, and a level only ever changes over a whole cell. */
+export function blockLevel(block: BuildingBlock, pixels: number, boxed = false): number {
   const hidden = blockHidden(block);
-  if (block.yard) return pixels < (current === hidden ? YARD_SHOWN : YARD_HIDDEN) ? hidden : yardLod(pixels, Math.min(current, hidden - 1));
-  let level = boxed ? BOX_LEVEL : 0;
-  for (let i = level; i < COARSER.length; i++) if (pixels < (current > i ? FINER[i] : COARSER[i])) level = i + 1;
-  return level;
+  if (block.yard) return pixels < YARD_HIDDEN ? hidden : yardLod(pixels, 0);
+  for (let i = boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels >= LEVEL_PIXELS[i]) return i;
+  return hidden;
 }

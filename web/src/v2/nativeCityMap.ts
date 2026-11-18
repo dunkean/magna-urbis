@@ -14,7 +14,7 @@ import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
-import { buildCityBuildings, buildCityScene, cityGroundSubjects, drawCity, drawCitySteps, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
+import { buildCityBuildings, buildCityScene, cityGroundSubjects, drawCity, drawCitySteps, selectCityLod, type Box, type CityBuilding, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
 import { CityGlComposite, cityGlDrawOptions, mergeCityBuildings, mergeCityBuildingsSteps, mergeCityPlans, mergeCityPlansSteps } from '../render/cityGlView';
 import { cityCanopy } from '../render/cityGrove';
@@ -74,6 +74,8 @@ export interface NativeCityMap {
   suspendStepwise(): void;
   /** The city plans (activity sites included), for the semantic district layer. */
   scenes(): readonly CityScene[];
+  /** The town item of a building (by id) as this map draws it: the tilted view's volumes take its look from it. */
+  building(id: string): CityBuilding | undefined;
   /** Uploads the WebGL2 plan a frame with this appearance would use, if any (exports draw synchronously). */
   prepare(appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>): Promise<void>;
   /** The towns as a layer of the live compositor (render/live/cityLayer.ts), bound to its shared WebGL2 context: retained
@@ -484,6 +486,14 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   }
   return {
     scenes: () => textScenes,
+    building(id) {
+      for (const entry of entries) {
+        const buildings = entry.large?.base ?? entry.buildings,
+          index = buildings.byId.get(id);
+        if (index !== undefined) return buildings.items[index];
+      }
+      return undefined;
+    },
     suspendStepwise: () => stepwiseTown.stop(),
     draw(target, view, w, h, dpr, appearance, visibility = {}, hooks, stepwise) {
       const started = performance.now();

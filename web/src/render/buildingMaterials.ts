@@ -482,6 +482,29 @@ function grainLevels(kind: RoofPattern): GrainCanvas[] | null {
   grainTiles.set(kind, levels);
   return levels;
 }
+/** The tile of a cover family and its halved copies (level 0 to 7, 256 to 2 pixels): the tilted view's roofs sample
+ * them as the mip levels of one texture (render/world/buildingsLayer.ts). Null where the host has no canvas. */
+export const coverGrainTiles = (kind: CoverGrain): readonly (OffscreenCanvas | HTMLCanvasElement)[] | null => grainLevels(kind);
+export const COVER_GRAIN_TILE = GRAIN_TILE,
+  COVER_GRAIN_LEVELS = GRAIN_LEVELS;
+/** The grain marks of the top view (coverGrainPattern at coverGrainFrame's level and strength) on a roof face in
+ * volume. `uCoverGrain`: the tiles of COVER_GRAINS as layers, their levels as mips (premultiplied); `family` 1 + index
+ * in COVER_GRAINS; `N` the face normal (x, up, y south), `p` a point of the face in metres; `gain` the share the pan
+ * takes (grainGain). The tile lies in the face's plane, x along the ridge, y down the slope, its pixels at least the
+ * screen's (mip bias); its strength fades with the metres a device pixel covers as the top view's does. */
+export const COVER_GRAIN_GLSL = `
+uniform highp sampler2DArray uCoverGrain;
+vec3 coverGrainMarks(vec3 color,float family,vec3 N,vec3 p,float gain){
+  float h=length(N.xz);
+  vec2 d=h>.02?N.xz/h:vec2(1.,0.);
+  vec2 q=vec2(dot(p.xz,vec2(d.y,-d.x)),dot(p.xz,d)/max(N.y,.2));
+  float fp=max(length(dFdx(q)),length(dFdy(q)));
+  float s=gain*(1.-smoothstep(${GRAIN_FADE},${GRAIN_GONE},fp));
+  if(s<.03)return color;
+  vec4 t=texture(uCoverGrain,vec3(q/${(GRAIN_TILE * GRAIN_PX_M).toFixed(2)},family-1.),.5);
+  return color*(1.-s*t.a)+s*t.rgb;
+}
+`;
 /** Level of a roof pattern whose pixels are at least as large as the screen's, from the metres one device pixel
  * covers: never minified, so it cannot alias; the last levels are the tile's mean. */
 export const roofPatternLevel = (deviceMetresPerPixel: number): number => Math.max(0, Math.min(GRAIN_LEVELS - 1, Math.ceil(Math.log2(Math.max(deviceMetresPerPixel, 1e-6) / GRAIN_PX_M))));

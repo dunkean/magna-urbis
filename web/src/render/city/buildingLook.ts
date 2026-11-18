@@ -8,7 +8,8 @@
  */
 import type { CityBuilding, CityLod, CityPalette, CityRoofs, CityView } from './model/contract';
 import type { RenderColors } from '../customColors';
-import { coverGrainFrame } from '../buildingMaterials';
+import { COVER_GRAINS, coverGrainFrame, roofGrain } from '../buildingMaterials';
+import { roofLight } from '../cityMassing';
 import { tintedWallColor } from '../buildingPalette';
 import { planBuildingColors, planRoofColor, planShade } from '../cityBuildingPalette';
 import { caveRoof, nightRoof } from '../cityNight';
@@ -142,7 +143,7 @@ interface RoofFrameInput {
   /** The user's building colours. */ colors?: RenderColors;
   /** Textured materials replace the procedural grain. */ textured?: boolean;
 }
-interface RoofFrame {
+export interface RoofFrame {
   palette: CityPalette;
   night: boolean;
   cave: boolean;
@@ -214,6 +215,41 @@ export function roofPanGrain(f: RoofFrame, roofs: CityRoofs, k: number, ground: 
   const strength = f.grain!.alpha[family - 1] * gain;
   return strength > GRAIN_MIN ? { family, strength } : undefined;
 }
+
+// ---------------------------------------------------------------- roofs in volume
+/** The town look the tilted view's volumes take (render/world/buildingsMesh.ts): the top view's roof frame (no rims:
+ * the parapet stands in volume) and the town item of a building by id (its culture, role, age and ground). */
+export interface VolumeTownLook {
+  readonly frame: RoofFrame;
+  item(id: string): CityBuilding | undefined;
+}
+/** A roof face in volume as one pan of the top view: its volume's massing (render/city3d/materials.ts MassingLook) and
+ * its normal (map frame, z up). */
+export interface VolumePan {
+  cover: string;
+  wall: string;
+  tone: number;
+  tint?: string;
+  normal: readonly [number, number, number];
+}
+const onePan = { shapes: [], owner: new Uint32Array(1), light: new Float32Array(1), cover: [''], wall: [''], tone: new Float32Array(1), dir: new Float32Array(1), flat: new Uint8Array(1), tint: [undefined as string | undefined], shadows: [] } satisfies CityRoofs;
+/** The paint roofPanPaint gives that pan in the top view (palette, cover, light of its slope, weathering, ground
+ * contrast, night), its grain gain and grain family (1 + COVER_GRAINS index, 0: none). The light is the 2D plan's sun
+ * on the face's own slope, so a tilted roof keeps the tone it has from above. Snow stays the volume's own. */
+export function volumeRoofPaint(f: RoofFrame, item: CityBuilding, pan: VolumePan): { color: string; gain: number; family: number } {
+  const flat = Math.abs(pan.normal[2]) > 0.995 * (Math.hypot(pan.normal[0], pan.normal[1], pan.normal[2]) || 1);
+  onePan.light[0] = roofLight(pan.normal);
+  onePan.cover[0] = pan.cover;
+  onePan.wall[0] = pan.wall;
+  onePan.tone[0] = pan.tone;
+  onePan.flat[0] = flat ? 1 : 0;
+  onePan.tint[0] = pan.tint;
+  const paint = roofPanPaint(f, item, onePan, 0, 0),
+    grain = f.natural ? roofGrain(pan.cover, flat, item.material?.culture ?? '') : undefined;
+  return { color: paint.color, gain: paint.gain, family: grain ? COVER_GRAINS.indexOf(grain) + 1 : 0 };
+}
+/** The wall colour of that volume as the top view tints it (the wall base under the pans). */
+export const volumeWallColor = (f: RoofFrame, item: CityBuilding, pan: Omit<VolumePan, 'normal'>): string => tintedWall(planBuildingColors(item, f.palette, pan.cover, pan.wall, pan.tone).wall, pan.tint, f.palette, pan.wall);
 
 // ---------------------------------------------------------------- cast shadow tint, mill marks
 const shadowTints = new Map<string, [number, number, number, number]>();

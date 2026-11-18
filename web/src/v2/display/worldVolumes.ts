@@ -27,7 +27,10 @@ import type { City3dDisplayScene } from '../../render/city3d/scene';
 import type { City3dHeight } from '../../render/city3d/types';
 import { city3dLotEnclosures } from '../../render/city3d/yards';
 import { cityRegionalStreets } from '../../render/cityContract';
-import { city3dPlanOptions } from '../../render/cityDrawOptions';
+import { RIM_DEVICE_MPP, roofFrame, roofPansShown, type VolumeTownLook } from '../../render/city/buildingLook';
+import { cityBuildingAppearance, city3dPlanOptions } from '../../render/cityDrawOptions';
+import { toneStamp } from '../../render/groundTone';
+import { roofSeasonKey } from '../../render/seasonPalette';
 import { city3dCanopy, cityCanopy } from '../../render/cityGrove';
 import { placeholderPlacedBuildings } from '../../render/farmRoofs';
 import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/underdarkOrnaments';
@@ -35,6 +38,7 @@ import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { WorldBuildingsOptions } from '../../render/world/buildingsLayer';
 import type { TerrainHeights } from '../../render/world/heights';
 import type { WorldTreesOptions } from '../../render/world/treesLayer';
+import { riverCover } from '../../render/world/treesWater';
 import { PAINTED_TREES, SATELLITE_TREES, type TreePalette } from '../../render/world/treesShader';
 import type { City3dGround } from '../../ui/city3d';
 import { clampTreeDistance, TREE_DISTANCE_DEFAULT, type TreeInputs } from '../../ui/terrain3dTrees';
@@ -49,6 +53,10 @@ import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
 
 type TreeSource = Omit<TreeInputs, 'height'>;
+/** Water codes of the planning raster (gen/types.ts). */
+const WATER_SEA = 1,
+  WATER_LAKE = 2,
+  WATER_RIVER = 3;
 type Ground = ReturnType<typeof v2Terrain3dGround>;
 /** The satellite looks model their near trees; the others paint or draw their forest, and the fast satellite keeps to
  * its painted crowns. */
@@ -81,7 +89,10 @@ export class WorldVolumes {
   /** What the town was composed from, besides the world and the relief. */
   private townOf: { cities: readonly RustTownSnapshot[]; world?: World; heights?: TerrainHeights; key: string } = { cities: [], key: '' };
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
-  private waterOf?: { world: World; at: (x: number, y: number) => number };
+  private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
+  /** The top view's town look the volumes take, and what it was made for (the town map, the look on screen, the
+   * ground tones and the season its colours read). */
+  private lookOf?: { key: string; city: unknown; resolved?: ResolvedAppearance; look?: VolumeTownLook };
   /** The composition in progress, and its idle callback. */
   private job?: Generator<void, void>;
   private idle?: number;
@@ -89,7 +100,7 @@ export class WorldVolumes {
 
   constructor(
     private readonly map: MapState,
-    private readonly parts: Pick<DisplayParts, 'town'>,
+    private readonly parts: Pick<DisplayParts, 'town' | 'water'>,
     private readonly relief: () => TerrainHeights | undefined,
   ) {
     this.buildings = {
@@ -98,6 +109,7 @@ export class WorldVolumes {
         return this.display;
       },
       appearance: () => this.appearance,
+      look: () => this.townLook(),
       terrain: relief,
       // The fast looks draw the town as boxes.
       boxed: () => map.resolved?.quality === 'light',
@@ -160,6 +172,38 @@ export class WorldVolumes {
     };
     if (typeof requestIdleCallback === 'function') this.idle = requestIdleCallback(run, { timeout: IDLE_TIMEOUT_MS });
     else this.timer = setTimeout(run, 16);
+  }
+
+  /** The look of the town as the top view paints it (render/city/buildingLook.ts): its palette, colours and ambience,
+   * no rims (the parapets stand in volume); undefined where that view draws no roof pans. Called in every work slice
+   * of the buildings layer: the same object while nothing it reads changes. */
+  private townLook(): VolumeTownLook | undefined {
+    const city = this.parts.town.city,
+      resolved = this.map.resolved,
+      key = `${toneStamp()}|${roofSeasonKey()}`,
+      of = this.lookOf;
+    if (of && of.city === city && of.resolved === resolved && of.key === key) return of.look;
+    let look: VolumeTownLook | undefined;
+    if (city && resolved) {
+      const a = cityBuildingAppearance(resolved),
+        view = resolved.city.view;
+      if (a.style !== 'silhouette' && roofPansShown({ view, footprint: false, diagnostic: a.diagnostic ?? 'none' }))
+        look = {
+          frame: roofFrame({
+            palette: resolved.city.palette,
+            mpp: 2 * RIM_DEVICE_MPP,
+            dpr: 1,
+            night: !!resolved.underdark || resolved.composition.ambience === 'night',
+            cave: !!resolved.underdark,
+            diagnostic: a.diagnostic ?? 'none',
+            colors: a.colors,
+            textured: resolved.city.textured,
+          }),
+          item: id => city.building(id),
+        };
+    }
+    this.lookOf = { key, city, resolved, look };
+    return look;
   }
 
   private *compose(world: World, r: ResolvedAppearance, resolved: ResolvedAppearance, heights: TerrainHeights, ground: ReturnType<typeof v2Terrain3dGround>): Generator<void, void> {
@@ -248,17 +292,23 @@ export class WorldVolumes {
     this.madeFor.content = -1;
     this.map.compose();
   };
-  /** Water of the planning raster (rivers, lakes, sea; cave rock is not water): 1 on a wet cell. */
+  /** The water the trees keep off, as the painted crowns see it (render/world/treesWater.ts): sea and lakes from the
+   * planning raster (cave rock is not water), rivers from the segments the ground draws; the raster's river cells only
+   * when the ground draws no river segments. 1 on water. */
   private waterAt(world: World): (x: number, y: number) => number {
-    if (this.waterOf?.world === world) return this.waterOf.at;
+    const rivers = this.parts.water.cityWater;
+    if (this.waterOf?.world === world && this.waterOf.rivers === rivers) return this.waterOf.at;
     const raster = rustSettlementRaster(world),
       n = raster.n,
       cells = n / raster.width,
+      river = rivers && riverCover(rivers),
       at = (x: number, y: number): number => {
-        const i = Math.max(0, Math.min(n - 1, Math.floor(y * cells))) * n + Math.max(0, Math.min(n - 1, Math.floor(x * cells)));
-        return raster.water[i] && !raster.rock?.[i] ? 1 : 0;
+        const i = Math.max(0, Math.min(n - 1, Math.floor(y * cells))) * n + Math.max(0, Math.min(n - 1, Math.floor(x * cells))),
+          code = raster.rock?.[i] ? 0 : raster.water[i];
+        if (code === WATER_SEA || code === WATER_LAKE) return 1;
+        return (river ? river(x, y) : code === WATER_RIVER) ? 1 : 0;
       };
-    this.waterOf = { world, at };
+    this.waterOf = { world, rivers, at };
     return at;
   }
 }

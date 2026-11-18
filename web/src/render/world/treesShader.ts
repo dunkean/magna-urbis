@@ -9,17 +9,20 @@
 import { TREE_3D_GLSL, TREE_PROFILE_GLSL } from '../../ui/terrain3dTrees';
 
 /** A level of detail of the lathe: segments around (even, for the alternating bough tips of a spire), the stem rings
- * (3: foot, breast height, crown base; 2: foot and crown base) and the crown rings, as indices of the profile tables. */
+ * (3: foot, breast height, crown base; 2: foot and crown base) and the crown rings, as indices of the profile tables.
+ * An impostor is one flat band facing the camera (one segment, its two sides on the screen's right), the tree's
+ * outline from the same parameters, shaded with the same light: 8 triangles. */
 export interface TreeLathe {
   segments: number;
   stem: number;
   crown: readonly number[];
+  impostor?: boolean;
 }
-/** Full (the 3D view's 480 vertices), middle (180) and far (96). */
+/** Full (the 3D view's 480 vertices), light (96) and impostor (24). */
 export const TREE_LATHES: readonly TreeLathe[] = [
   { segments: 10, stem: 3, crown: [0, 1, 2, 3, 4, 5] },
-  { segments: 6, stem: 2, crown: [0, 2, 4, 5] },
   { segments: 4, stem: 2, crown: [0, 3, 5] },
+  { segments: 1, stem: 2, crown: [0, 2, 5], impostor: true },
 ];
 export const latheVertices = (lathe: TreeLathe): number => lathe.segments * (lathe.stem + lathe.crown.length - 1) * 6;
 
@@ -50,11 +53,14 @@ uniform mat4 uProjection;
 uniform vec3 uBlock;
 // Metres drawn per metre of ground height (exaggeration x rise); share of the trees' height shown (rise).
 uniform vec2 uRelief;
-// Eye relative to the target (x, y), and the distances where trees start and end growing out of the ground.
+// The eye's ground point relative to the target (x, y), and the distances, from the nearer of it and the target, where
+// trees start and end growing out of the ground.
 uniform vec4 uFade;
-// Segments around, stem rings; the profile index of each crown ring.
-uniform ivec2 uLathe;
+// Segments around, stem rings, impostor (1: one flat band facing the camera); the profile index of each crown ring.
+uniform ivec3 uLathe;
 uniform int uCrown[6];
+// Impostors: the direction towards the eye in the 3D view's frame, and the angle of the screen's right on the ground.
+uniform vec4 uFacing;
 // The look's colours (TreePalette): the trunk; the repaint ramp, low and high colour with their luminance in w, and
 // whether it applies.
 uniform vec3 uTrunk;
@@ -70,18 +76,19 @@ out vec4 crownInfo;
 ${TREE_PROFILE_GLSL}float profileU(bool parasol,bool spire,int k){return parasol?PARASOL_U[k]:spire?NEEDLE_U[k]:BROAD_U[k];}
 float profileR(bool parasol,bool spire,int k){return parasol?PARASOL_R[k]:spire?NEEDLE_R[k]:BROAD_R[k];}
 void main(){
-  int segments=uLathe.x,stemRings=uLathe.y;
+  int segments=uLathe.x,stemRings=uLathe.y;bool impostor=uLathe.z==1;
   int v=gl_VertexID,quad=v/6,corner=v-quad*6;
   int band=quad/segments,seg=quad-band*segments;
   int dseg=corner==1||corner==2||corner==4?1:0,dring=corner==2||corner==4||corner==5?1:0;
   int ring=band+dring;
   vec2 place=uBlock.xy+treeBase.xy;
-  float fade=(1.-smoothstep(uFade.z,uFade.w,distance(place,uFade.xy)))*uRelief.y;
+  float fade=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uRelief.y;
   if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
   // Form (instance z): 0 broadleaf, 1 conifer spire, 2 broadleaf parasol, 3 conifer parasol (umbrella pine).
   int form=int(treeShape.z+.5);bool needle=form==1||form==3,parasol=form>=2,spire=form==1;
   float r=treeBase.w,h=treeShape.x,bottom=clamp(h-treeShape.y,.02*h,.75*h);
-  float angle=float(seg+dseg)*6.2831853/float(segments)+treeShape.w;
+  // An impostor's two sides lie along the screen's right, at the tree's profile radius: the lathe's outline, flat.
+  float angle=impostor?float(dseg)*3.1415927+uFacing.w:float(seg+dseg)*6.2831853/float(segments)+treeShape.w;
   vec2 dir=vec2(cos(angle),sin(angle));
   // Stem girth, flare and taper: TREE_3D_GLSL (terrain3dTrees.ts) gives the sources.
   float dbh=max(max(needle?h/45.:h/32.,2.*r/(needle?8.:12.)),.5),stem=.5*dbh,collar=stem*mix(1.,.65,smoothstep(1.5,10.,bottom));
@@ -100,13 +107,15 @@ void main(){
     }
     cap=spire?((seg+dseg)%2==0?1.3:.45)*mix(.8,1.2,u):mix(.45,1.4,u);
     radius=max(r*profileR(parasol,spire,k),k==0?collar:0.);y=bottom+u*(h-bottom);
-    if(spire)radius*=((seg+dseg)%2==0?1.:.68)*(1.+.045*sin(3.*angle+treeShape.w));
+    if(spire&&!impostor)radius*=((seg+dseg)%2==0?1.:.68)*(1.+.045*sin(3.*angle+treeShape.w));
     else radius*=(1.+.13*sin(3.*angle+2.*treeShape.w)*(1.-abs(u-.5)*1.4))*(!needle&&treeColor.w>.5?.8:1.);
   }
   vec3 local=vec3(dir.x*radius,y*fade,dir.y*radius);
   if(trunk)treeNormal=vec3(dir.x,0.,dir.y);
   else if(spire)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
   else {float mid=bottom+(parasol?.72:.4)*(h-bottom),hd=max(.55*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
+  // A flat impostor is lit as the crown's side that faces the eye: its edge normals turned towards the camera.
+  if(impostor)treeNormal=normalize(treeNormal+uFacing.xyz);
   vec3 position=vec3(place+local.xz,treeBase.z*uRelief.x+local.y+uBlock.z);
   world=position.xzy;
   tint=trunk?uTrunk:treeColor.rgb;

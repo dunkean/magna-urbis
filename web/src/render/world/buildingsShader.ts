@@ -7,11 +7,14 @@
  * World program: a vertex is (block-local x, height above its seat, block-local y) with the seat, the terrain height
  * under the building as TerrainHeights gives it at full relief (buildingsMesh.ts, worldSeat in buildingsLayer.ts).
  * Seat and height rise with the relief (`uRise`), so the volumes stand on the drawn terrain at every pitch and lie
- * flat at a pitch of 0 (roofs seen from above, never hidden: volumes.ts). Light: the roof light of the 2D
- * plan (buildingLight, roofPlaneLight.ts), so a roof keeps the tone the map gives it; haze as the draped ground.
+ * flat at a pitch of 0 (roofs seen from above, never hidden: volumes.ts). A roof face of a town the top view draws
+ * comes painted with its pan's colour there, light and ambience included, and takes the top view's grain marks
+ * (COVER_GRAIN_GLSL), so tilting keeps the town's look; other faces take the roof light of the 2D plan (buildingLight,
+ * roofPlaneLight.ts) and the procedural grain. Haze as the draped ground.
  */
 import { MOONLIGHT_GLSL } from '../materialLook';
 import { ROOF_PLANE_LIGHT_GLSL } from '../roofPlaneLight';
+import { COVER_GRAIN_GLSL } from '../buildingMaterials';
 
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
@@ -157,11 +160,13 @@ uniform vec3 uBlock;
 uniform float uRise;
 // Eye relative to the target.
 uniform vec3 uEye;
-out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; out float vDistance;
+out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
 void main(){
   n=normalize(normal);base=albedo;
-  // The normal's length carries the material class (1 + class / 32); block-local metres keep the grain's hashes exact.
-  materialClass=floor((length(normal)-1.)*32.+.5);
+  // The normal's length carries 1 + code / 32 (buildingsMesh.ts faceCode): the material class, plus 64 x the grain gain
+  // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
+  float code=floor((length(normal)-1.)*32.+.5),painted=floor(code/64.);
+  materialClass=code-64.*painted;townGain=painted/15.;
   grainPosition=position;facadePosition=position;
   vec3 world=vec3(uBlock.xy+position.xz,(seat+position.y)*uRise+uBlock.z);
   vDistance=length(world-uEye);
@@ -170,7 +175,7 @@ void main(){
 
 export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; in float vDistance;
+in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
 // Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
 uniform vec3 uHaze;
@@ -178,12 +183,20 @@ out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
 ${BUILDING_COVER_LIGHT_GLSL}
+${COVER_GRAIN_GLSL}
 void main(){
   vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
-  float light=coverLight(buildingLight(N,N),cls,N);
-  vec3 rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  vec3 rgb;
+  if(townGain>0.){
+    // A roof face painted by the top view's town look: its colour holds the light of its slope and the ambience
+    // (volumeRoofPaint); the grain marks of its cover family are the top view's, the snow class keeps its own.
+    rgb=cls>.5&&cls<18.5?coverGrainMarks(base,cls,N,grainPosition,townGain):materialGrain(base,cls,N,grainPosition,fp);
+  }else{
+    float light=coverLight(buildingLight(N,N),cls,N);
+    rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  }
   float haze=min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
   color=vec4(mix(rgb,uHaze,haze),1.);
 }`;

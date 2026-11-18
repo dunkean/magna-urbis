@@ -133,12 +133,12 @@ describe('world buildings', () => {
     expect(step.value!.buildings).toEqual(whole.buildings);
   });
 
-  it('switches to the overview below 7 px and back above 10, as the 3D view', () => {
+  it('draws a building detailed from 10 px, as an overview from 6, as a box from 3, not under', () => {
     const block = grouped(town(4, relief(4000)), relief(4000))[0];
-    expect(blockLevel(block, 20, 0)).toBe(0);
-    expect(blockLevel(block, 6, 0)).toBe(1);
-    expect(blockLevel(block, 8, 1)).toBe(1);
-    expect(blockLevel(block, 11, 1)).toBe(0);
+    expect([40, 10, 8, 6, 5, 3, 2].map(px => blockLevel(block, px))).toEqual([0, 0, 1, 1, 2, 2, 3]);
+    expect(blockLevel(block, 40, true)).toBe(2);
+    // Grouped cell by cell: the cells cover the buildings in order.
+    expect(block.cells[block.cells.length - 1]).toBe(block.buildings.length);
   });
 
   it('draws a tilted frame from blocks built in slices, nothing in the top view', () => {
@@ -197,7 +197,7 @@ describe('world trees', () => {
         const work = treeBlockSteps(inputs, bx, by);
         let step = work.next();
         while (!step.done) step = work.next();
-        const block = step.value;
+        const block = step.value.data.subarray(0, step.value.count * TREE_STRIDE);
         trees += block.length / TREE_STRIDE;
         count++;
         for (let i = 0; i < block.length; i += TREE_STRIDE) blocks.set(`${(block[i] + bx * TREES_BLOCK).toFixed(2)},${(block[i + 1] + by * TREES_BLOCK).toFixed(2)}`, block.subarray(i, i + TREE_STRIDE));
@@ -212,17 +212,40 @@ describe('world trees', () => {
     console.info(`world trees: ${count} blocks of ${TREES_BLOCK} m, ${Math.round(trees / count)} trees per block, ${ms.toFixed(1)} ms per block`);
   });
 
-  it('draws coarser lathes and fewer trees with the distance', () => {
+  it('draws coarser lathes and fewer trees as they get smaller on screen', () => {
     expect(latheVertices(TREE_LATHES[0])).toBe(TREE_VERTICES);
-    expect(TREE_LATHES.map(latheVertices)).toEqual([480, 180, 96]);
-    const limits = treeLimits(600);
-    expect([0, 150, 250, 500, 600, 601].map(d => treeLathe(d, limits))).toEqual([0, 0, 1, 2, 2, -1]);
-    const wide = treeLimits(1500);
-    expect(treeDrawCount(500, wide.full / 2, wide)).toBe(500);
-    expect(treeDrawCount(500, wide.full * 2, wide)).toBe(125);
+    expect(TREE_LATHES.map(latheVertices)).toEqual([480, 96, 24]);
+    expect([80, 60, 30, 20, 3, 2, 1.5].map(treeLathe)).toEqual([0, 0, 1, 1, 2, 2, -1]);
+    expect(treeDrawCount(500, 8)).toBe(500);
+    expect(treeDrawCount(500, 2.5)).toBe(125);
   });
 
-  it('draws a tilted frame from the blocks around the eye, built once', () => {
+  it('keeps the trees around the target whatever the pitch', () => {
+    // A distance whose triangle budget the dense stand stays under: the budget thins the smallest trees otherwise.
+    const heights = relief(2400),
+      inputs = stand(220, 100, 120),
+      gl = mockGl(),
+      layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 1500, shown: () => true, invalidate: () => {} });
+    const inner: number[] = [],
+      front: number[] = [];
+    for (let pitch = 0.3; pitch <= 1.2001; pitch += 0.15) {
+      const view = frame(gl, { cx: 1200, cy: 1200, scale: 1, pitch, yaw: 0.2 }, heights);
+      for (let pass = 0; pass < 4; pass++) {
+        layer.draw(view);
+        while (layer.work!(8, view));
+      }
+      layer.draw(view);
+      inner.push(layer.stats!().inner);
+      front.push(layer.stats!().front);
+    }
+    expect(inner[0]).toBeGreaterThan(0);
+    for (const count of inner) expect(count).toBe(inner[0]);
+    // As the orbit goes down, the trees in front of the eye stay: a low camera stands among them.
+    for (const count of front) expect(count).toBeGreaterThan(0);
+    console.info(`world trees, pitch 0.3 to 1.2: around the target ${inner.join(' ')}; in front of the eye ${front.join(' ')}`);
+  });
+
+  it('draws a tilted frame from the blocks around the target, built once', () => {
     const heights = relief(2400),
       inputs = stand(220, 100, 120),
       gl = mockGl(),
@@ -296,5 +319,50 @@ describe('world buildings by distance', () => {
     expect(views.turned.camera.tilted).toBe(true);
     expect(views.turned.camera.rise).toBe(0);
     expect(out.turned.drawCalls).toBeGreaterThan(0);
+  });
+});
+
+describe('world trees and water', () => {
+  it('keeps trees off the drawn channel only, not off its banks', async () => {
+    const { riverCover } = await import('../src/render/world/treesWater');
+    // A 6 m river along y = 100, from x = 0 to 400.
+    const cover = riverCover(new Float32Array([0, 100, 400, 100, 6, 6, 0, 0, 1]));
+    expect(cover(200, 100)).toBe(true);
+    expect(cover(200, 102.9)).toBe(true);
+    expect(cover(200, 103.5)).toBe(false);
+    expect(cover(200, 112)).toBe(false);
+    expect(cover(450, 100)).toBe(false);
+  });
+});
+
+describe('world trees cost', () => {
+  it('stays bounded by the tree distance, not by the view', () => {
+    const heights = relief(2400),
+      inputs = stand(235, 110, 120),
+      rows: string[] = [],
+      out: Record<string, number> = {};
+    for (const distance of [600, 1000, 1500]) {
+      const gl = mockGl(),
+        layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => distance, shown: () => true, invalidate: () => {} });
+      const views = {
+        close: { cx: 1200, cy: 1200, scale: 4, pitch: (70 * Math.PI) / 180, yaw: 0.3 },
+        mid: { cx: 1200, cy: 1200, scale: 1, pitch: (55 * Math.PI) / 180, yaw: 0.3 },
+        town: { cx: 1200, cy: 1200, scale: 0.3, pitch: Math.PI / 4, yaw: 0.3 },
+        low: { cx: 1200, cy: 1200, scale: 2, pitch: 1.2, yaw: 0.3 },
+      };
+      for (const [name, v] of Object.entries(views)) {
+        const view = frame(gl, v, heights);
+        for (let pass = 0; pass < 6; pass++) {
+          layer.draw(view);
+          while (layer.work!(8, view));
+        }
+        layer.draw(view);
+        const s = layer.stats!();
+        out[`${name}@${distance}`] = s.triangles;
+        rows.push(`${name}@${distance}: ${s.drawCalls} draws, ${s.instances} trees, ${Math.round(s.triangles / 1000)}k triangles (coarser ${s.coarser.toFixed(1)}, thinner ${s.thinner.toFixed(1)})`);
+      }
+    }
+    console.info(`world trees cost: ${rows.join('; ')}`);
+    for (const view of ['close', 'mid', 'town', 'low']) expect(out[`${view}@600`]).toBeLessThan(300000);
   });
 });
