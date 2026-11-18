@@ -326,7 +326,7 @@ setHTML($('#app'), `
     <div class="map-compass" aria-hidden="true"><small>N</small><b>✧</b></div>
     <div class="glass map-tools"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="fit-map" aria-label="Fit map" title="Fit map">⛶</button></div>
     <aside class="glass places-panel" id="places-panel" hidden aria-labelledby="places-title"><header><h2 class="serif" id="places-title">Places</h2><span class="count-badge" id="towns-count">0</span><button id="towns-only">Build targeted cities</button><button id="places-collapse" class="quiet small" aria-expanded="true" aria-controls="settlement-list" title="Collapse the list">–</button></header><div class="places-selection"><button id="cities-select-all" class="small">Select all</button><button id="cities-select-none" class="small" hidden>Clear selection</button><output id="cities-selected-count" aria-live="polite"></output></div><div class="settlement-list" id="settlement-list"><p class="hint">Create settlement sites to select a place.</p></div><aside id="inspector" class="inspector" hidden aria-label="Settlement inspector"></aside></aside>
-    <div class="glass progress-card" id="progress-card" hidden role="status" aria-live="polite"><div class="row"><i class="spinner"></i><strong class="grow small" id="progress-label">Preparing the region…</strong><button id="cancel-job" class="quiet small">Cancel</button></div><progress id="progress" max="100" value="0"></progress><div class="row spread"><p id="progress-detail">CPU · generation worker</p><p id="progress-time">0 s</p></div></div>
+    <div class="glass progress-card" id="progress-card" hidden role="status" aria-live="polite"><div class="row"><i class="spinner"></i><strong class="grow small" id="progress-label">Preparing the region…</strong><button id="cancel-job" class="quiet small">Cancel</button></div><p id="progress-context" hidden></p><progress id="progress" max="100" value="0"></progress><div class="row spread"><p id="progress-detail">CPU · generation worker</p><p id="progress-time">0 s</p></div></div>
     <div class="map-bottom"><div class="glass mini-card"><canvas id="minimap" aria-label="Overview"></canvas><div class="map-scale"><span id="scale-label">—</span><div class="scale-line"></div><p id="map-metrics">No map</p><div id="cursor-readout"></div></div></div></div><div class="legend-strip"></div>
   </section>
 </main>
@@ -766,8 +766,13 @@ function syncControls(): Promise<void> {
   renderControls.sync();mapControls.sync();syncNameOrigins();return client.setAppearance(settings).catch(reportAppearanceError);
 }
 function selectTab(tab: string): void { currentTab = tab; chain.selectFamily(tab==='terrain'?'region':tab==='map'?'map':tab==='cities'?'cities':'settlements'); }
+/** Second line of the progress card: which settlement of a town run is being built (its counters restart with each one). */
+function showProgressSettlement(settlement?: V2Progress['settlement']): void {
+  const context=$('#progress-context');context.hidden=!settlement;
+  if(settlement)setText(context,`Settlement ${settlement.index}/${settlement.total} (${settlement.name})`);
+}
 function updateProgress(p: V2Progress): void {
-  setText($('#progress-label'), p.label);
+  setText($('#progress-label'), p.label);showProgressSettlement(p.settlement);
   const meter=$<HTMLProgressElement>('#progress');
   if(p.total>0)meter.value=Math.max(0,Math.min(100,100*p.completed/p.total));else meter.removeAttribute('value');
   meter.setAttribute('aria-labelledby','progress-label');meter.setAttribute('aria-describedby','progress-detail');
@@ -778,7 +783,7 @@ function updateProgress(p: V2Progress): void {
 function setBusy(value: boolean): void {
   if(value)window.dispatchEvent(new CustomEvent('v2-edit-mode',{detail:'busy'}));
   labelEditorHostInert(value);
-  busy = value; $('#progress-card').hidden = !value; $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
+  busy = value; $('#progress-card').hidden = !value; showProgressSettlement(); $('#hardware-led').classList.toggle('busy-led',value); $('#app').setAttribute('aria-busy',String(value));
   for(const selector of ['#terrain-controls .chain-scroll','#urban-settings-panel','#inspector','#editor-content']){const panel=document.querySelector<HTMLElement>(selector);if(panel)panel.inert=value;}
   for (const id of ['generate-region','run-chain','relief-symbolic-open','relief-modify-open','terrain-only','region-only','towns-only','cities-select-all','cities-select-none','random-seed','expert-apply','export-go','save-map','clear-heightmap','preview-close']) { const button = document.getElementById(id) as HTMLButtonElement | null; if (button) button.disabled = value; } // Some buttons are mounted with their stage: a missing one must not abort a generation.
   document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('[data-option],#culture-environment,#culture-random,#town-count,#project-file,#heightmap-file,#terrain-controls .chain-scroll input,#terrain-controls .chain-scroll select,#terrain-controls .chain-scroll button,#urban-settings-panel input,#urban-settings-panel select,#urban-settings-panel button').forEach(e=>e.disabled=value);
@@ -857,7 +862,7 @@ async function generate(action: Action, key?: string, townStage?:V2TownStage, te
     pristine = result;
     const edited = applyBuildingEdits(result, mods); world = edited.world;
     if (edited.skipped) log(`${edited.skipped} edit(s) no longer match their original building.`);
-    setText($('#progress-label'), 'Drawing the map…');$<HTMLButtonElement>('#cancel-job').disabled=true;log('Preparing the scene and drawing in the render worker…');
+    setText($('#progress-label'), 'Drawing the map…');showProgressSettlement();$<HTMLButtonElement>('#cancel-job').disabled=true;log('Preparing the scene and drawing in the render worker…');
     const showStart=performance.now();await client.show(world,action === 'town' || action === 'towns');canvas.hidden=false; $('#empty-map').hidden = true;
     updateWorld();void refresh3dWorld();performance.measure('v2:show',{start:showStart}); if (['region','settlements'].includes(action)) selectTab('settlements'); else if (['all','towns'].includes(action)) selectTab('cities');
     setText($('#footer-status'), `Map ready · ${((performance.now()-started)/1000).toFixed(1)} s`);
@@ -1398,7 +1403,10 @@ syncControls();
 try{await client.init();}finally{document.getElementById('boot-splash')?.remove();}
 mountV2TestHook({getSettings:()=>settings,getWorld:()=>world??undefined,isBusy:()=>busy,load:loadProject,run:async places=>{if(places==='main')await generateMainOnly();else await generate('all');},smallPlacesSettled:()=>smallPlaces?.settled()??Promise.resolve(),getViewer:()=>client.viewer,get3d:()=>city3d,prepareCapture:()=>client.prepareViewportCapture(),rerollTown:key=>rerollCityStep('composition',[key]),displaySettled:()=>client.displaySettled()});
 await cityCodeSharing.restoreFromLocation();
-{ // Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
+// Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
+// Never awaited here: this module must finish evaluating before the restored run draws its map. In the build, the lazy
+// renderer chunk imports this entry chunk, so `import('./benchRenderer')` waited for this module, which waited for the run.
+void (async () => {
   const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';
   const saved = explicit ? undefined : await takeAutosave(); // the entry is removed here and written back only after a successful restore
   if (saved) {
@@ -1416,8 +1424,8 @@ await cityCodeSharing.restoreFromLocation();
     } catch { /* View state is optional. */ }
   }
   armAutosave(() => ({ settings, mods, view: world ? client.viewer.getView() : undefined, ui: { tab: currentTab, mode3d: !!city3d?.active, camera: city3d?.active ? city3d.getCamera() : undefined } }));
-  mountNewButton($('#import-open'));
-  $('#export-open').before($('#city-code-open'));
-}
+})();
+mountNewButton($('#import-open'));
+$('#export-open').before($('#city-code-open'));
 const startupProbe=inspectHardware();client.capabilitiesReady=()=>startupProbe;
 // Keep source, dimensions and coasts editable before the first generation.

@@ -127,6 +127,8 @@ export interface V2Progress {
   /** Actual backend/work context. Omit totals for work that has no measurable completion fraction. */
   detail?:string;
   cache?: 'memory' | 'disk' | 'miss';
+  /** Town run: the settlement this event belongs to (1-based). The counters above restart with each settlement. */
+  settlement?: { index: number; total: number; name: string };
 }
 export type ProgressCallback = (progress: V2Progress) => void;
 export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';

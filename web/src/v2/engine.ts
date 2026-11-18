@@ -66,6 +66,10 @@ function effectiveOptions(settings: V2Settings, mapSize = adaptedExtent(settings
 }
 function report(onProgress: ProgressCallback | undefined, stage: string, label: string, completed: number, total: number,
   cache?: 'memory' | 'disk' | 'miss'): void { onProgress?.({ stage, label, completed, total, ...(cache ? { cache } : {}) }); }
+/** Progress of one settlement inside a town run: its events say which one it is, since their counters restart with each. */
+function forSettlement(onProgress: ProgressCallback | undefined, index: number, total: number, place: { name?: string; key: string }): ProgressCallback | undefined {
+  return onProgress && (p => onProgress({ ...p, settlement: { index: index + 1, total, name: place.name ?? place.key } }));
+}
 
 /** Hash imported pixels; retaining only their filename would incorrectly reuse a changed heightmap. */
 function stableStringify(value: unknown): string {
@@ -576,8 +580,9 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
 async function buildTownRun(world: World, settings: V2Settings, key: string, onProgress?: ProgressCallback, stage?: V2TownStage): Promise<void> {
   const run = townRun(world, settings, [key]), order = run?.order ?? [key], stages = runStages(world, run, order, stage);
   for (const [i, place] of order.entries()) {
-    if (order.length > 1) { const s = world.settlements!.find(s => s.key === place)!; report(onProgress, 'town', `${s.name ?? s.key}: plan, streets, parcels and buildings…`, i, order.length); }
-    await buildTown(world, settings, place, onProgress, stages.get(place));
+    const s = world.settlements!.find(s => s.key === place)!, town = forSettlement(onProgress, i, order.length, s);
+    if (order.length > 1) report(town, 'town', `${s.name ?? s.key}: plan, streets, parcels and buildings…`, i, order.length);
+    await buildTown(world, settings, place, town, stages.get(place));
   }
 }
 export async function generateTown(regionWorld: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
@@ -607,8 +612,9 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
   // Its one engine uses the internal Rust/pool parallelism where a stage has enough work.
   if (backend !== 'native' || places.length < 2 || TOWN_CONCURRENCY < 2) {
     for (let i = 0; i < places.length; i++) {
-      report(onProgress, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, places.length);
-      await buildTown(world, settings, places[i].key, onProgress, stages.get(places[i].key));
+      const town = forSettlement(onProgress, i, places.length, places[i]);
+      report(town, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, places.length);
+      await buildTown(world, settings, places[i].key, town, stages.get(places[i].key));
     }
   } else {
     // Native cities only read the pre-loop world (roads, terrain key, their own retained snapshot) and write
@@ -618,7 +624,8 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     const waiters: ((o: Outcome) => void)[] = [], outcomes = places.map((_, i) => new Promise<Outcome>(resolve => { waiters[i] = resolve; }));
     // Only the leader (first unapplied city) drives the stage rows, so progress never interleaves; a new leader replays its last event.
     let leader = 0; const last: (Parameters<ProgressCallback>[0] | undefined)[] = [];
-    const forward = (i: number) => (p: Parameters<ProgressCallback>[0]): void => { last[i] = p; if (i === leader) onProgress?.(p); };
+    const towns = places.map((place, i) => forSettlement(onProgress, i, n, place));
+    const forward = (i: number) => (p: Parameters<ProgressCallback>[0]): void => { last[i] = p; if (i === leader) towns[i]?.(p); };
     const { generateRustTown, releaseUrbanLanes } = await import('./rustUrban');
     let completed = false;
     const index = new Map(places.map((place, i) => [place.key, i]));
@@ -647,8 +654,8 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     try {
       for (let i = 0; i < n; i++) {
         leader = i;
-        report(onProgress, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, n);
-        if (last[i]) onProgress?.(last[i]!);
+        report(towns[i], 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, n);
+        if (last[i]) towns[i]?.(last[i]!);
         const outcome = await outcomes[i];
         if (!outcome.ok) throw outcome.error;
         await buildTown(world, settings, places[i].key, undefined, stages.get(places[i].key), Promise.resolve(outcome.value));
